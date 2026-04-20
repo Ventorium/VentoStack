@@ -20,17 +20,29 @@ export interface DatabaseConfig {
 
 export interface QueryExecutor<T> {
   where(field: string, op: string, value?: unknown): QueryExecutor<T>;
+  orWhere(field: string, op: string, value?: unknown): QueryExecutor<T>;
   orderBy(field: string, direction?: "asc" | "desc"): QueryExecutor<T>;
   limit(n: number): QueryExecutor<T>;
   offset(n: number): QueryExecutor<T>;
   select(...fields: string[]): QueryExecutor<T>;
 
+  groupBy(...fields: string[]): QueryExecutor<T>;
+  having(field: string, op: string, value: unknown): QueryExecutor<T>;
+  withDeleted(): QueryExecutor<T>;
+
   list(): Promise<T[]>;
   get(): Promise<T | undefined>;
   count(): Promise<number>;
+  sum(field: string): Promise<number>;
+  avg(field: string): Promise<number>;
+  min(field: string): Promise<number>;
+  max(field: string): Promise<number>;
   insert(data: Partial<T>, options?: { returning?: boolean }): Promise<T | void>;
   update(data: Partial<T>, options?: { returning?: boolean }): Promise<T | void>;
   delete(options?: { force?: boolean }): Promise<void>;
+  batchInsert(rows: Partial<T>[], fields?: string[]): Promise<void>;
+  hardDelete(): Promise<void>;
+  restore(): Promise<void>;
 }
 
 export interface Database {
@@ -51,6 +63,9 @@ function createQueryExecutor<T>(
       where(field: string, op: string, value?: unknown): QueryExecutor<T> {
         return wrap(nextBuilder.where(field, op, value));
       },
+      orWhere(field: string, op: string, value?: unknown): QueryExecutor<T> {
+        return wrap(nextBuilder.orWhere(field, op, value));
+      },
       orderBy(field: string, direction?: "asc" | "desc"): QueryExecutor<T> {
         return wrap(nextBuilder.orderBy(field, direction));
       },
@@ -62,6 +77,15 @@ function createQueryExecutor<T>(
       },
       select(...fields: string[]): QueryExecutor<T> {
         return wrap(nextBuilder.select(...fields));
+      },
+      groupBy(...fields: string[]): QueryExecutor<T> {
+        return wrap(nextBuilder.groupBy(...fields));
+      },
+      having(field: string, op: string, value: unknown): QueryExecutor<T> {
+        return wrap(nextBuilder.having(field, op, value));
+      },
+      withDeleted(): QueryExecutor<T> {
+        return wrap(nextBuilder.withDeleted());
       },
 
       async list(): Promise<T[]> {
@@ -83,6 +107,38 @@ function createQueryExecutor<T>(
         const rows = await executor(text, params);
         const first = (rows as Array<{ count: number }>)[0];
         return first?.count ?? 0;
+      },
+
+      async sum(field: string): Promise<number> {
+        const aggBuilder = nextBuilder.select(`SUM(${field}) as result`);
+        const { text, params } = aggBuilder.toSQL();
+        const rows = await executor(text, params);
+        const first = (rows as Array<{ result: number | null }>)[0];
+        return first?.result ?? 0;
+      },
+
+      async avg(field: string): Promise<number> {
+        const aggBuilder = nextBuilder.select(`AVG(${field}) as result`);
+        const { text, params } = aggBuilder.toSQL();
+        const rows = await executor(text, params);
+        const first = (rows as Array<{ result: number | null }>)[0];
+        return first?.result ?? 0;
+      },
+
+      async min(field: string): Promise<number> {
+        const aggBuilder = nextBuilder.select(`MIN(${field}) as result`);
+        const { text, params } = aggBuilder.toSQL();
+        const rows = await executor(text, params);
+        const first = (rows as Array<{ result: number | null }>)[0];
+        return first?.result ?? 0;
+      },
+
+      async max(field: string): Promise<number> {
+        const aggBuilder = nextBuilder.select(`MAX(${field}) as result`);
+        const { text, params } = aggBuilder.toSQL();
+        const rows = await executor(text, params);
+        const first = (rows as Array<{ result: number | null }>)[0];
+        return first?.result ?? 0;
       },
 
       async insert(data: Partial<T>, options?: { returning?: boolean }): Promise<T | void> {
@@ -111,38 +167,36 @@ function createQueryExecutor<T>(
 
       async delete(options?: { force?: boolean }): Promise<void> {
         if (options?.force && model.options.softDelete) {
-          // Force delete on soft-delete model: build a hard delete
-          const { params } = nextBuilder.toSQL();
-          // We need to rebuild with soft delete disabled
-          const hardBuilder = nextBuilder.deleteQuery();
-          // Override: build raw DELETE ignoring softDelete
-          const selectSQL = nextBuilder.toSQL();
-          // Extract where conditions from select SQL and build DELETE
-          let deleteText = `DELETE FROM ${model.tableName}`;
-          const whereIdx = selectSQL.text.indexOf(" WHERE ");
-          if (whereIdx !== -1) {
-            // Get where clause but strip ORDER BY/LIMIT/OFFSET
-            let whereClause = selectSQL.text.substring(whereIdx);
-            const orderIdx = whereClause.indexOf(" ORDER BY ");
-            if (orderIdx !== -1) {
-              whereClause = whereClause.substring(0, orderIdx);
-            }
-            const limitIdx = whereClause.indexOf(" LIMIT ");
-            if (limitIdx !== -1) {
-              whereClause = whereClause.substring(0, limitIdx);
-            }
-            deleteText += whereClause;
-          }
-          // Filter params (only where params, not limit/offset)
-          const whereParams = selectSQL.params.slice(0, selectSQL.params.length);
-          // Remove limit/offset params if present
-          const sql = nextBuilder.toSQL();
-          const whereParamCount = (sql.text.match(/\$/g) ?? []).length;
-          await executor(deleteText, selectSQL.params.slice(0, countWhereParams(selectSQL.text)));
+          const hardBuilder = nextBuilder.hardDelete();
+          const { text, params } = hardBuilder.toSQL();
+          await executor(text, params);
           return;
         }
         const deleteBuilder = nextBuilder.deleteQuery();
         const { text, params } = deleteBuilder.toSQL();
+        await executor(text, params);
+      },
+
+      async batchInsert(rows: Partial<T>[], fields?: string[]): Promise<void> {
+        if (rows.length === 0) return;
+        const actualFields = fields ?? Object.keys(rows[0]!);
+        const batchBuilder = nextBuilder.batchInsert(
+          rows as Record<string, unknown>[],
+          actualFields,
+        );
+        const { text, params } = batchBuilder.toSQL();
+        await executor(text, params);
+      },
+
+      async hardDelete(): Promise<void> {
+        const hardBuilder = nextBuilder.hardDelete();
+        const { text, params } = hardBuilder.toSQL();
+        await executor(text, params);
+      },
+
+      async restore(): Promise<void> {
+        const restoreBuilder = nextBuilder.restore();
+        const { text, params } = restoreBuilder.toSQL();
         await executor(text, params);
       },
     };
@@ -150,19 +204,6 @@ function createQueryExecutor<T>(
   }
 
   return wrap(builder);
-}
-
-function countWhereParams(text: string): number {
-  // Count $N placeholders only in WHERE clause
-  const whereIdx = text.indexOf(" WHERE ");
-  if (whereIdx === -1) return 0;
-  let whereClause = text.substring(whereIdx);
-  const orderIdx = whereClause.indexOf(" ORDER BY ");
-  if (orderIdx !== -1) whereClause = whereClause.substring(0, orderIdx);
-  const limitIdx = whereClause.indexOf(" LIMIT ");
-  if (limitIdx !== -1) whereClause = whereClause.substring(0, limitIdx);
-  const matches = whereClause.match(/\$\d+/g);
-  return matches ? matches.length : 0;
 }
 
 export function createDatabase(config: DatabaseConfig): Database {

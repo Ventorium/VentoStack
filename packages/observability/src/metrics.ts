@@ -1,5 +1,9 @@
 // @aeron/observability — Metrics (Prometheus-compatible)
 
+import { createGauge, labelsToKey, type Gauge } from "./gauge";
+
+export type { Gauge } from "./gauge";
+
 export interface Counter {
   inc(labels?: Record<string, string>, value?: number): void;
   get(labels?: Record<string, string>): number;
@@ -19,6 +23,7 @@ export interface Histogram {
 export interface Metrics {
   counter(name: string, help?: string): Counter;
   histogram(name: string, help?: string, buckets?: number[]): Histogram;
+  gauge(name: string, help?: string): Gauge;
   render(): string;
   reset(): void;
 }
@@ -62,9 +67,18 @@ const noopHistogram: Histogram = {
   get() { return { count: 0, sum: 0, buckets: new Map() }; },
 };
 
+const noopGauge: Gauge = {
+  set() {},
+  inc() {},
+  dec() {},
+  get() { return 0; },
+  reset() {},
+};
+
 const noopMetrics: Metrics = {
   counter() { return noopCounter; },
   histogram() { return noopHistogram; },
+  gauge() { return noopGauge; },
   render() { return ""; },
   reset() {},
 };
@@ -90,6 +104,7 @@ export function createMetrics(options?: MetricsOptions): Metrics {
 
   const counters = new Map<string, CounterState>();
   const histograms = new Map<string, HistogramState>();
+  const gauges = new Map<string, { help?: string; gauge: Gauge }>();
 
   function counter(name: string, help?: string): Counter {
     const fullName = `${prefix}${name}`;
@@ -147,6 +162,16 @@ export function createMetrics(options?: MetricsOptions): Metrics {
     };
   }
 
+  function gauge(name: string, help?: string): Gauge {
+    const fullName = `${prefix}${name}`;
+    let entry = gauges.get(fullName);
+    if (!entry) {
+      entry = { help, gauge: createGauge() };
+      gauges.set(fullName, entry);
+    }
+    return entry.gauge;
+  }
+
   function render(): string {
     const lines: string[] = [];
 
@@ -191,7 +216,8 @@ export function createMetrics(options?: MetricsOptions): Metrics {
   function reset(): void {
     counters.clear();
     histograms.clear();
+    gauges.clear();
   }
 
-  return { counter, histogram, render, reset };
+  return { counter, histogram, gauge, render, reset };
 }

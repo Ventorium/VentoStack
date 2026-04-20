@@ -19,6 +19,14 @@ export interface RouteDefinition {
   middleware: Middleware[];
 }
 
+export interface ResourceHandlers {
+  index?: RouteHandler;
+  show?: RouteHandler;
+  create?: RouteHandler;
+  update?: RouteHandler;
+  destroy?: RouteHandler;
+}
+
 export interface Router {
   get(path: string, handler: RouteHandler, ...middleware: Middleware[]): Router;
   post(path: string, handler: RouteHandler, ...middleware: Middleware[]): Router;
@@ -39,6 +47,19 @@ export interface Router {
     ...middleware: Middleware[]
   ): Router;
   use(...middleware: Middleware[]): Router;
+  resource(
+    prefix: string,
+    handlers: ResourceHandlers,
+    ...middleware: Middleware[]
+  ): Router;
+  namedRoute(
+    name: string,
+    method: string,
+    path: string,
+    handler: RouteHandler,
+    ...middleware: Middleware[]
+  ): Router;
+  url(name: string, params?: Record<string, string>): string;
   routes(): readonly RouteDefinition[];
   compile(globalMiddleware?: Middleware[]): CompiledRoutes;
 }
@@ -46,6 +67,7 @@ export interface Router {
 export function createRouter(): Router {
   const routeDefs: RouteDefinition[] = [];
   const routerMiddleware: Middleware[] = [];
+  const namedRoutes = new Map<string, string>();
 
   function addRoute(
     method: string,
@@ -87,6 +109,49 @@ export function createRouter(): Router {
       return router;
     },
 
+    resource(prefix, handlers, ...mw) {
+      if (handlers.index) {
+        addRoute("GET", prefix, handlers.index, mw);
+      }
+      if (handlers.create) {
+        addRoute("POST", prefix, handlers.create, mw);
+      }
+      if (handlers.show) {
+        addRoute("GET", `${prefix}/:id`, handlers.show, mw);
+      }
+      if (handlers.update) {
+        addRoute("PUT", `${prefix}/:id`, handlers.update, mw);
+      }
+      if (handlers.destroy) {
+        addRoute("DELETE", `${prefix}/:id`, handlers.destroy, mw);
+      }
+      return router;
+    },
+
+    namedRoute(name, method, path, handler, ...mw) {
+      if (namedRoutes.has(name)) {
+        throw new Error(`Route name "${name}" is already registered`);
+      }
+      namedRoutes.set(name, path);
+      addRoute(method.toUpperCase(), path, handler, mw);
+      return router;
+    },
+
+    url(name, params) {
+      const path = namedRoutes.get(name);
+      if (path === undefined) {
+        throw new Error(`Route name "${name}" not found`);
+      }
+      if (!params) {
+        return path;
+      }
+      let result = path;
+      for (const [key, value] of Object.entries(params)) {
+        result = result.replace(`:${key}`, value);
+      }
+      return result;
+    },
+
     routes(): readonly RouteDefinition[] {
       return routeDefs.map((route) => ({
         ...route,
@@ -96,6 +161,19 @@ export function createRouter(): Router {
 
     compile(globalMiddleware: Middleware[] = []): CompiledRoutes {
       const finalRoutes = router.routes();
+
+      // 路由冲突检测
+      const seen = new Set<string>();
+      for (const route of finalRoutes) {
+        const key = `${route.method} ${route.path || "/"}`;
+        if (seen.has(key)) {
+          throw new Error(
+            `Duplicate route detected: ${route.method} ${route.path || "/"}`,
+          );
+        }
+        seen.add(key);
+      }
+
       const compiled: Record<string, Record<string, BunRouteHandler>> = {};
 
       for (const route of finalRoutes) {

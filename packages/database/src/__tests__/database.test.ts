@@ -267,7 +267,7 @@ describe("Database.query - delete", () => {
     await db.query(PostModel).where("id", "=", 1).delete({ force: true });
 
     expect(executor).toHaveBeenCalledWith(
-      "DELETE FROM posts WHERE id = $1 AND deleted_at IS NULL",
+      "DELETE FROM posts WHERE id = $1",
       [1],
     );
   });

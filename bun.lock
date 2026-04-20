@@ -24,6 +24,16 @@
         "bun-types": "latest",
       },
     },
+    "packages/ai": {
+      "name": "@aeron/ai",
+      "version": "0.1.0",
+      "dependencies": {
+        "@aeron/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/auth": {
       "name": "@aeron/auth",
       "version": "0.1.0",
@@ -97,6 +107,16 @@
         "bun-types": "latest",
       },
     },
+    "packages/openapi": {
+      "name": "@aeron/openapi",
+      "version": "0.1.0",
+      "dependencies": {
+        "@aeron/core": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/testing": {
       "name": "@aeron/testing",
       "version": "0.1.0",
@@ -109,6 +129,8 @@
     },
   },
   "packages": {
+    "@aeron/ai": ["@aeron/ai@workspace:packages/ai"],
+
     "@aeron/auth": ["@aeron/auth@workspace:packages/auth"],
 
     "@aeron/cache": ["@aeron/cache@workspace:packages/cache"],
@@ -123,7 +145,11 @@
 
     "@aeron/observability": ["@aeron/observability@workspace:packages/observability"],
 
+    "@aeron/openapi": ["@aeron/openapi@workspace:packages/openapi"],
+
     "@aeron/testing": ["@aeron/testing@workspace:packages/testing"],
+
+    "@types/bun": ["@types/bun@1.3.12", "", { "dependencies": { "bun-types": "1.3.12" } }, "sha512-DBv81elK+/VSwXHDlnH3Qduw+KxkTIWi7TXkAeh24zpi5l0B2kUg9Ga3tb4nJaPcOFswflgi/yAvMVBPrxMB+A=="],
 
     "@types/node": ["@types/node@25.6.0", "", { "dependencies": { "undici-types": "~7.19.0" } }, "sha512-+qIYRKdNYJwY3vRCZMdJbPLJAtGjQBudzZzdzwQYkEPQd+PJGixUL5QfvCLDaULoLv+RhT3LDkwEfKaAkgSmNQ=="],
 
@@ -134,5 +160,7 @@
     "typescript": ["typescript@5.9.3", "", { "bin": { "tsc": "bin/tsc", "tsserver": "bin/tsserver" } }, "sha512-jl1vZzPDinLr9eUt3J/t7V6FgNEw9QjvBPdysz9KfQDD41fQrC2Y4vKQdiaUpFT4bXlb1RHhLpp8wtm6M5TgSw=="],
 
     "undici-types": ["undici-types@7.19.2", "", {}, "sha512-qYVnV5OEm2AW8cJMCpdV20CDyaN3g0AjDlOGf1OW4iaDEx8MwdtChUp4zu4H0VP3nDRF/8RKWH+IPp9uW0YGZg=="],
+
+    "@types/bun/bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
   }
 }
