@@ -1,0 +1,15 @@
+{
+  "name": "aeron-framework",
+  "private": true,
+  "workspaces": ["packages/*", "apps/*"],
+  "scripts": {
+    "dev": "bun --hot apps/example/src/main.ts",
+    "build": "bun run packages/cli/src/build.ts",
+    "test": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "bunx biome check ."
+  },
+  "devDependencies": {
+    "typescript": "^5.8"
+  }
+}

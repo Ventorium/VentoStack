@@ -1,0 +1,9 @@
+[install]
+registry = "https://registry.npmjs.org"
+
+[run]
+env = ".env"
+
+[test]
+coverage = true
+coverageThreshold = { line = 100, function = 100, statement = 100 }
