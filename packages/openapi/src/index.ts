@@ -53,3 +53,15 @@ export type { SwaggerUIOptions } from "./swagger-ui";
 // API Version
 export { apiVersion, parseVersionFromAccept } from "./api-version";
 export type { APIVersionOptions } from "./api-version";
+
+// Doc Version Management
+export { createDocVersionManager } from "./doc-version";
+export type { DocVersionManager, DocVersion, VersionDiff } from "./doc-version";
+
+// API Diff
+export { computeAPIDiff, generateDiffReport } from "./api-diff";
+export type { APIDiffResult, APIDiffEntry } from "./api-diff";
+
+// Deprecation
+export { createDeprecationManager, createCompatibilityGuard, DEFAULT_COMPATIBILITY_POLICY } from "./deprecation";
+export type { DeprecationManager, DeprecationNotice, CompatibilityPolicy } from "./deprecation";

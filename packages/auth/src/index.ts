@@ -29,3 +29,12 @@ export type {
   OAuthTokenResponse,
   OAuthUserInfo,
 } from "./oauth";
+
+export { createMultiDeviceManager } from "./multi-device";
+export type { MultiDeviceManager, DeviceSession, MultiDeviceOptions } from "./multi-device";
+
+export { createPolicyEngine } from "./policy-engine";
+export type { PolicyEngine, PolicyRule, PolicyEvalContext, PolicyConditionDef } from "./policy-engine";
+
+export { createRowFilter } from "./row-filter";
+export type { RowFilter, RowFilterRule, RowFilterContext } from "./row-filter";

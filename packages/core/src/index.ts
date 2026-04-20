@@ -128,3 +128,48 @@ export type { IPFilterOptions } from "./middlewares/ip-filter";
 
 export { httpsEnforce } from "./middlewares/https";
 export type { HTTPSOptions } from "./middlewares/https";
+
+export { createAutoBinder } from "./auto-bind";
+export type { AutoBinder, AutoBindOptions, BindableRoute } from "./auto-bind";
+
+export { createInterceptorChain } from "./interceptor";
+export type { Interceptor, Filter, InterceptorChain } from "./interceptor";
+
+export { createPoolManager } from "./pool-manager";
+export type { PoolManager, PoolConfig, PoolStats } from "./pool-manager";
+
+export { createInstanceCoordinator } from "./instance-coordinator";
+export type { InstanceCoordinator, InstanceInfo } from "./instance-coordinator";
+
+export { createGRPCRouter } from "./grpc";
+export type { GRPCRouter, GRPCService, GRPCMethod } from "./grpc";
+
+export { createRPCRouter, createRPCClient } from "./rpc";
+export type { RPCRouter, RPCClient, RPCMethod } from "./rpc";
+
+export { createHotRestart } from "./hot-restart";
+export type { HotRestart, HotRestartOptions } from "./hot-restart";
+
+export { createMemoryManager } from "./memory";
+export type { MemoryManager, MemoryStats, MemoryThresholds } from "./memory";
+
+export { createPluginSandbox } from "./plugin-sandbox";
+export type { PluginSandbox, SandboxOptions, SandboxResult } from "./plugin-sandbox";
+
+export { createPluginRegistry } from "./plugin-registry";
+export type { PluginRegistry, PluginManifest, PluginEntry } from "./plugin-registry";
+
+export { createYamlConfig, parseYaml } from "./yaml-config";
+export type { YamlConfigOptions } from "./yaml-config";
+
+export { createConfigWatcher } from "./config-watch";
+export type { ConfigWatcher, ConfigWatchOptions, ConfigChangeEvent } from "./config-watch";
+
+export { createConfigEncryption } from "./config-encryption";
+export type { ConfigEncryption, EncryptionOptions } from "./config-encryption";
+
+export { createABTesting } from "./ab-testing";
+export type { ABTesting, Experiment, ABTestingOptions } from "./ab-testing";
+
+export { createTwelveFactorConfig, validateTwelveFactor } from "./twelve-factor";
+export type { TwelveFactorConfig, TwelveFactorValidation } from "./twelve-factor";

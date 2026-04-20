@@ -15,3 +15,21 @@ export { createW3CTraceContextPropagator, createB3Propagator } from "./trace-con
 export type { TraceContextPropagator } from "./trace-context";
 export { createAuditExporter } from "./audit-export";
 export type { AuditExporter } from "./audit-export";
+
+export { createAsyncWriter } from "./async-writer";
+export type { AsyncWriter, AsyncWriterOptions } from "./async-writer";
+
+export { createLogHook } from "./log-hook";
+export type { LogHook, LogHookConfig, LogEntry as LogHookEntry } from "./log-hook";
+
+export { createTracer as createOTelTracer, createConsoleExporter } from "./otel";
+export type { OTelSpan, OTelConfig, SpanExporter, Tracer as OTelTracer } from "./otel";
+
+export { createTraceExporter } from "./trace-exporter";
+export type { TraceExporterConfig } from "./trace-exporter";
+
+export { createGrafanaDashboard, createHttpDashboard } from "./grafana";
+export type { GrafanaDashboard, GrafanaDashboardConfig, GrafanaPanelConfig } from "./grafana";
+
+export { createErrorReporter, createSentryChannel, createDingTalkChannel, createWebhookChannel } from "./error-reporter";
+export type { ErrorReporter, ErrorReporterConfig, ErrorChannel, ErrorReport } from "./error-reporter";

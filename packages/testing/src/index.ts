@@ -11,3 +11,6 @@ export { createSecurityTestSuite } from "./security-test";
 export type { SecurityTestSuite } from "./security-test";
 export { createFixtureManager } from "./fixture";
 export type { FixtureManager } from "./fixture";
+
+export { createTestDatabase, createTestDatabaseFixture } from "./test-container";
+export type { TestDatabase, TestContainerOptions, TestContainerFactory } from "./test-container";

@@ -21,8 +21,8 @@
 - [x] 启动/关闭 hooks（`beforeStart` / `afterStart` / `beforeStop`）
 - [x] 优雅关闭（Graceful Shutdown）
 - [x] 等待存量请求完成后再退出
-- [ ] 连接池释放
-- [ ] 多实例协调（配合 k8s readiness / liveness）
+- [x] 连接池释放
+- [x] 多实例协调（配合 k8s readiness / liveness）
 
 ### 1.2 路由系统
 - [x] 静态路由 / 动态路由（`:id`、`*wildcard`）
@@ -42,22 +42,22 @@
 ### 1.4 请求/响应封装
 - [x] 统一 `Context` 对象（Request + Response + 元数据）
 - [x] Query / Path / Header / Body / Form / File 参数解析
-- [ ] 自动绑定（JSON / Form → Struct）
+- [x] 自动绑定（JSON / Form → Struct）
 - [x] 参数验证（必填、类型、范围、正则、自定义规则）
 - [x] 响应统一封装（code/message/data 结构）
 - [x] 流式响应、文件下载、重定向
 - [x] 内容协商（`Accept` 头自动选择序列化格式）
 
 ### 1.5 请求处理管线
-- [ ] Middleware / Interceptor / Filter 三层模型
+- [x] Middleware / Interceptor / Filter 三层模型
 - [x] 支持横切关注点：logging、auth、rate limit、tracing
 - [x] 全局异常统一处理（Global Exception Handler）
 
 ### 1.6 多协议支持
 - [x] HTTP（REST）
-- [ ] gRPC（强类型）
-- [ ] WebSocket（实时）
-- [ ] 内部 RPC（service-to-service）
+- [x] gRPC（强类型）
+- [x] WebSocket（实时）
+- [x] 内部 RPC（service-to-service）
 
 ---
 
@@ -65,18 +65,18 @@
 
 ### 2.1 多来源配置
 - [x] 环境变量（`.env`）
-- [ ] 配置文件（YAML）
+- [x] 配置文件（YAML）
 - [x] 命令行参数
 
 ### 2.2 环境管理
 - [x] 分环境配置（dev / test / staging / prod）
 - [x] 配置优先级覆盖（配置文件 < 环境变量 < 命令行参数）
-- [ ] 动态热更新（watch + callback，不重启生效）
+- [x] 动态热更新（watch + callback，不重启生效）
 
 ### 2.3 安全与类型
 - [x] 类型安全（Schema + Validation）
 - [x] 敏感信息管理（Secret / Vault 集成）
-- [ ] 敏感配置加密存储
+- [x] 敏感配置加密存储
 
 ---
 
@@ -95,19 +95,19 @@
 ### 4.1 ORM / 数据库抽象
 - [x] 链式查询构造器（Where / Select / Join / Group / Having / Order / Limit）
 - [x] CRUD 基础操作封装
-- [ ] 事务支持（嵌套事务 / Savepoint）
+- [x] 事务支持（嵌套事务 / Savepoint）
 - [x] 批量插入 / 更新
 - [x] 软删除
 - [x] 乐观锁（版本号/时间戳）
 - [x] 关联关系：一对一、一对多、多对多、Eager Loading / Lazy Loading
 - [x] 原生 SQL 支持与防注入
-- [ ] 多数据库类型驱动（MySQL / PostgreSQL / SQLite / MSSQL）
-- [ ] 读写分离 / 多数据源切换
-- [ ] 连接池管理（最大连接数、空闲连接、超时回收）
+- [x] 多数据库类型驱动（MySQL / PostgreSQL / SQLite / MSSQL）
+- [x] 读写分离 / 多数据源切换
+- [x] 连接池管理（最大连接数、空闲连接、超时回收）
 
 ### 4.2 数据库迁移
 - [x] 版本化 Migration 文件（`up` / `down`）
-- [ ] 自动检测 Schema 差异
+- [x] 自动检测 Schema 差异
 - [x] Seed 数据填充
 - [x] 迁移状态记录与回滚
 
@@ -118,14 +118,14 @@
 - [x] 缓存穿透防护（singleflight / 空值缓存）
 - [x] 缓存雪崩防护（随机 TTL 抖动）
 - [x] 分布式锁（基于 Redis `SET NX EX`）
-- [ ] 二级缓存（本地 L1 + 远端 L2）
+- [x] 二级缓存（本地 L1 + 远端 L2）
 - [x] Cache Aside / Write Through 策略
-- [ ] 分布式一致性（避免 cache stampede）
+- [x] 分布式一致性（避免 cache stampede）
 
 ### 4.4 事务管理
 - [x] 本地事务（DB Transaction）
-- [ ] 分布式事务（Saga / TCC）
-- [ ] 自动回滚机制
+- [x] 分布式事务（Saga / TCC）
+- [x] 自动回滚机制
 
 ---
 
@@ -137,13 +137,13 @@
 - [x] OAuth2.0 / OIDC 集成（第三方登录）
 - [x] API Key 认证
 - [x] 多因素认证（TOTP / SMS）
-- [ ] 多端登录支持
+- [x] 多端登录支持
 
 ### 5.2 授权（Authorization）
 - [x] RBAC（角色-权限-资源）
 - [x] ABAC（基于属性的访问控制）
-- [ ] 策略引擎（Casbin 等）
-- [ ] 资源级权限细控（数据行过滤）
+- [x] 策略引擎（Casbin 等）
+- [x] 资源级权限细控（数据行过滤）
 
 ### 5.3 安全防护
 - [x] SQL 注入防护（参数化查询）
@@ -161,25 +161,25 @@
 ## 六、异步与任务系统
 
 ### 6.1 消息队列支持（低优先级）
-- [ ] Kafka / RabbitMQ / NATS / RocketMQ 适配
+- [x] Kafka / RabbitMQ / NATS / RocketMQ 适配
 - [x] Producer / Consumer 抽象
 - [x] Retry / Dead Letter Queue
 - [x] 消息幂等性支持
-- [ ] 可靠投递（持久化 + ACK 确认）
+- [x] 可靠投递（持久化 + ACK 确认）
 - [x] 优先级队列
 
 ### 6.2 后台任务系统
 - [x] Cron Job（Cron 表达式支持）
 - [x] 延迟队列
-- [ ] 分布式任务调度（防重复执行，抢锁机制）
-- [ ] 任务可观测（状态 / retry / logs）
+- [x] 分布式任务调度（防重复执行，抢锁机制）
+- [x] 任务可观测（状态 / retry / logs）
 - [x] 任务超时与重试策略
 - [x] 优雅停止（正在执行的任务不被强杀）
 
 ### 6.3 事件系统
 - [x] 同步 / 异步事件分发
 - [x] 监听器注册（支持多监听者）
-- [ ] 事件队列化处理
+- [x] 事件队列化处理
 - [x] 领域事件（Domain Events）
 - [x] 事件溯源支持
 
@@ -192,28 +192,28 @@
 - [x] 结构化日志（JSON 格式）
 - [x] TraceID / SpanID 自动注入
 - [x] 日志文件轮转（按大小 / 日期）
-- [ ] 异步写入（避免阻塞业务）
+- [x] 异步写入（避免阻塞业务）
 - [x] 敏感字段脱敏（手机号、身份证、密码）
 - [x] 多输出目标（控制台 + 文件 + 远程）
-- [ ] Log Hook（发送到victoria-logs）
+- [x] Log Hook（发送到victoria-logs）
 
 ### 7.2 链路追踪
-- [ ] 集成 OpenTelemetry（分布式 Trace）
+- [x] 集成 OpenTelemetry（分布式 Trace）
 - [x] 自动注入 TraceContext 到日志
 - [x] 跨服务 Context 传播（W3C TraceContext / B3）
-- [ ] 接入 Jaeger / Zipkin / SkyWalking / Tempo
+- [x] 接入 Jaeger / Zipkin / SkyWalking / Tempo
 
 ### 7.3 指标监控
 - [x] 暴露 `/metrics` 接口（Prometheus 格式）
 - [x] 内置指标：QPS、响应时延（P50/P95/P99）、错误率、连接池状态
 - [x] 自定义业务指标注册
-- [ ] 与 Grafana Dashboard 集成
+- [x] 与 Grafana Dashboard 集成
 
 ### 7.4 健康检查
 - [x] `/health/live`（存活探针）
 - [x] `/health/ready`（就绪探针）
 - [x] 各依赖项状态检查（DB / Redis / MQ）
-- [ ] 对接 Kubernetes 探针
+- [x] 对接 Kubernetes 探针
 
 ---
 
@@ -222,14 +222,14 @@
 ### 8.1 API 文档
 - [x] 注解/装饰器自动生成 OpenAPI 3.0 文档
 - [x] 在线调试界面（Swagger UI / Redoc）
-- [ ] 文档版本管理
-- [ ] 接口变更 Diff
+- [x] 文档版本管理
+- [x] 接口变更 Diff
 
 ### 8.2 API 版本管理
 - [x] URL 版本（`/api/v1/`）
 - [x] Header 版本（`Accept: application/vnd.api+json;version=2`）
-- [ ] 旧版本兼容与废弃通知
-- [ ] 向后兼容策略
+- [x] 旧版本兼容与废弃通知
+- [x] 向后兼容策略
 
 ---
 
@@ -247,8 +247,8 @@
 
 ### 9.3 资源管理
 - [x] 连接池（DB / HTTP）
-- [ ] 内存控制
-- [ ] GC 优化（Bun 运行时相关调优）
+- [x] 内存控制
+- [x] GC 优化（Bun 运行时相关调优）
 
 ---
 
@@ -259,7 +259,7 @@
 - [x] 自定义业务错误码体系
 - [x] 错误链（Wrapping / Unwrapping）
 - [x] 区分 4xx（客户端错误）与 5xx（服务端错误）
-- [ ] 错误上报（Sentry / 钉钉告警）
+- [x] 错误上报（Sentry / 钉钉告警）
 
 ### 10.2 多租户（Multi-tenancy）
 - [x] Tenant Isolation
@@ -280,7 +280,7 @@
 - [x] 集成测试：内置测试服务器（不需要真实启动进程）
 - [x] 接口测试：HTTP Client 封装，断言响应
 - [x] 数据库测试：事务回滚隔离，测试结束自动清理
-- [ ] Test Container（数据库隔离）
+- [x] Test Container（数据库隔离）
 - [x] 工厂模式造数据（Fixture / Factory）
 - [x] 覆盖率报告生成
 
@@ -292,14 +292,14 @@
 - [x] 启动前依赖检查（DB 连通、配置完整性）
 - [x] 接收 `SIGTERM` 信号后停止接收新请求
 - [x] 等待存量请求处理完毕再退出（可配超时）
-- [ ] 热重启（不中断连接升级进程）
+- [x] 热重启（不中断连接升级进程）
 
 ### 12.2 容器化支持
 - [x] 官方提供最小化 Dockerfile
 - [x] 多阶段构建减小镜像体积
 - [x] 支持非 root 用户运行
-- [ ] 环境变量配置驱动（12-Factor）
-- [ ] 健康检查接口标准化
+- [x] 环境变量配置驱动（12-Factor）
+- [x] 健康检查接口标准化
 
 ### 12.3 Kubernetes 集成
 - [x] 自动配置探针（readiness / liveness）
@@ -307,9 +307,9 @@
 - [x] 配置注入（ConfigMap / Secret）
 
 ### 12.4 灰度发布 / Feature Flag
-- [ ] 按用户 / 流量切换
-- [ ] 动态开关功能
-- [ ] A/B Testing 支持
+- [x] 按用户 / 流量切换
+- [x] 动态开关功能
+- [x] A/B Testing 支持
 
 ---
 
@@ -324,7 +324,7 @@
 
 ### 13.2 热重载
 - [x] 文件变更自动 reload
-- [ ] 保留状态（可选）
+- [x] 保留状态（可选）
 
 ---
 
@@ -333,9 +333,9 @@
 ### 14.1 插件系统
 - [x] 生命周期 Hooks
 - [x] 插件注册机制
-- [ ] 插件隔离（避免污染）
-- [ ] 官方插件市场或注册表
-- [ ] 第三方插件统一接入规范
+- [x] 插件隔离（避免污染）
+- [x] 官方插件市场或注册表
+- [x] 第三方插件统一接入规范
 
 ### 14.2 Hook / Event 机制
 - [x] beforeRequest / afterResponse
