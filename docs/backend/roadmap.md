@@ -18,43 +18,43 @@
 ## 一、核心基础层
 
 ### 1.1 应用生命周期管理
-- [ ] 启动/关闭 hooks（`beforeStart` / `afterStart` / `beforeStop`）
-- [ ] 优雅关闭（Graceful Shutdown）
-- [ ] 等待存量请求完成后再退出
+- [x] 启动/关闭 hooks（`beforeStart` / `afterStart` / `beforeStop`）
+- [x] 优雅关闭（Graceful Shutdown）
+- [x] 等待存量请求完成后再退出
 - [ ] 连接池释放
 - [ ] 多实例协调（配合 k8s readiness / liveness）
 
 ### 1.2 路由系统
-- [ ] 静态路由 / 动态路由（`:id`、`*wildcard`）
-- [ ] 路由分组与嵌套（`/api/v1/users`）
-- [ ] RESTful 路由快捷注册（GET/POST/PUT/PATCH/DELETE）
-- [ ] 路由命名与反向生成 URL
-- [ ] 路由参数类型约束与正则匹配
-- [ ] 路由冲突检测与优先级排序
-- [ ] 支持 WebSocket / SSE 路由
+- [x] 静态路由 / 动态路由（`:id`、`*wildcard`）
+- [x] 路由分组与嵌套（`/api/v1/users`）
+- [x] RESTful 路由快捷注册（GET/POST/PUT/PATCH/DELETE）
+- [x] 路由命名与反向生成 URL
+- [x] 路由参数类型约束与正则匹配
+- [x] 路由冲突检测与优先级排序
+- [x] 支持 WebSocket / SSE 路由
 
 ### 1.3 中间件系统
-- [ ] 全局中间件 / 路由级中间件 / 分组中间件
-- [ ] 洋葱模型（`before → handler → after`）
-- [ ] 内置常用中间件：CORS、限流、压缩、日志、鉴权、超时控制
-- [ ] 中间件链的中断与跳过机制
+- [x] 全局中间件 / 路由级中间件 / 分组中间件
+- [x] 洋葱模型（`before → handler → after`）
+- [x] 内置常用中间件：CORS、限流、压缩、日志、鉴权、超时控制
+- [x] 中间件链的中断与跳过机制
 
 ### 1.4 请求/响应封装
-- [ ] 统一 `Context` 对象（Request + Response + 元数据）
-- [ ] Query / Path / Header / Body / Form / File 参数解析
+- [x] 统一 `Context` 对象（Request + Response + 元数据）
+- [x] Query / Path / Header / Body / Form / File 参数解析
 - [ ] 自动绑定（JSON / Form → Struct）
-- [ ] 参数验证（必填、类型、范围、正则、自定义规则）
-- [ ] 响应统一封装（code/message/data 结构）
-- [ ] 流式响应、文件下载、重定向
-- [ ] 内容协商（`Accept` 头自动选择序列化格式）
+- [x] 参数验证（必填、类型、范围、正则、自定义规则）
+- [x] 响应统一封装（code/message/data 结构）
+- [x] 流式响应、文件下载、重定向
+- [x] 内容协商（`Accept` 头自动选择序列化格式）
 
 ### 1.5 请求处理管线
 - [ ] Middleware / Interceptor / Filter 三层模型
-- [ ] 支持横切关注点：logging、auth、rate limit、tracing
-- [ ] 全局异常统一处理（Global Exception Handler）
+- [x] 支持横切关注点：logging、auth、rate limit、tracing
+- [x] 全局异常统一处理（Global Exception Handler）
 
 ### 1.6 多协议支持
-- [ ] HTTP（REST）
+- [x] HTTP（REST）
 - [ ] gRPC（强类型）
 - [ ] WebSocket（实时）
 - [ ] 内部 RPC（service-to-service）
@@ -64,18 +64,18 @@
 ## 二、配置系统
 
 ### 2.1 多来源配置
-- [ ] 环境变量（`.env`）
+- [x] 环境变量（`.env`）
 - [ ] 配置文件（YAML）
-- [ ] 命令行参数
+- [x] 命令行参数
 
 ### 2.2 环境管理
-- [ ] 分环境配置（dev / test / staging / prod）
-- [ ] 配置优先级覆盖（配置文件 < 环境变量 < 命令行参数）
+- [x] 分环境配置（dev / test / staging / prod）
+- [x] 配置优先级覆盖（配置文件 < 环境变量 < 命令行参数）
 - [ ] 动态热更新（watch + callback，不重启生效）
 
 ### 2.3 安全与类型
-- [ ] 类型安全（Schema + Validation）
-- [ ] 敏感信息管理（Secret / Vault 集成）
+- [x] 类型安全（Schema + Validation）
+- [x] 敏感信息管理（Secret / Vault 集成）
 - [ ] 敏感配置加密存储
 
 ---
@@ -83,47 +83,47 @@
 ## 三、模块化系统
 
 ### 3.1 模块架构
-- [ ] 模块隔离
-- [ ] 模块依赖图
-- [ ] 插件化加载（Plugin System）
-- [ ] 按需加载（Feature Toggle）
+- [x] 模块隔离
+- [x] 模块依赖图
+- [x] 插件化加载（Plugin System）
+- [x] 按需加载（Feature Toggle）
 
 ---
 
 ## 四、数据访问层
 
 ### 4.1 ORM / 数据库抽象
-- [ ] 链式查询构造器（Where / Select / Join / Group / Having / Order / Limit）
-- [ ] CRUD 基础操作封装
+- [x] 链式查询构造器（Where / Select / Join / Group / Having / Order / Limit）
+- [x] CRUD 基础操作封装
 - [ ] 事务支持（嵌套事务 / Savepoint）
-- [ ] 批量插入 / 更新
-- [ ] 软删除
-- [ ] 乐观锁（版本号/时间戳）
-- [ ] 关联关系：一对一、一对多、多对多、Eager Loading / Lazy Loading
-- [ ] 原生 SQL 支持与防注入
+- [x] 批量插入 / 更新
+- [x] 软删除
+- [x] 乐观锁（版本号/时间戳）
+- [x] 关联关系：一对一、一对多、多对多、Eager Loading / Lazy Loading
+- [x] 原生 SQL 支持与防注入
 - [ ] 多数据库类型驱动（MySQL / PostgreSQL / SQLite / MSSQL）
 - [ ] 读写分离 / 多数据源切换
 - [ ] 连接池管理（最大连接数、空闲连接、超时回收）
 
 ### 4.2 数据库迁移
-- [ ] 版本化 Migration 文件（`up` / `down`）
+- [x] 版本化 Migration 文件（`up` / `down`）
 - [ ] 自动检测 Schema 差异
-- [ ] Seed 数据填充
-- [ ] 迁移状态记录与回滚
+- [x] Seed 数据填充
+- [x] 迁移状态记录与回滚
 
 ### 4.3 缓存系统
-- [ ] 统一缓存接口（Redis）
-- [ ] 设置 TTL / 永久缓存
-- [ ] 标签缓存（按 tag 批量失效）
-- [ ] 缓存穿透防护（singleflight / 空值缓存）
-- [ ] 缓存雪崩防护（随机 TTL 抖动）
-- [ ] 分布式锁（基于 Redis `SET NX EX`）
+- [x] 统一缓存接口（Redis）
+- [x] 设置 TTL / 永久缓存
+- [x] 标签缓存（按 tag 批量失效）
+- [x] 缓存穿透防护（singleflight / 空值缓存）
+- [x] 缓存雪崩防护（随机 TTL 抖动）
+- [x] 分布式锁（基于 Redis `SET NX EX`）
 - [ ] 二级缓存（本地 L1 + 远端 L2）
-- [ ] Cache Aside / Write Through 策略
+- [x] Cache Aside / Write Through 策略
 - [ ] 分布式一致性（避免 cache stampede）
 
 ### 4.4 事务管理
-- [ ] 本地事务（DB Transaction）
+- [x] 本地事务（DB Transaction）
 - [ ] 分布式事务（Saga / TCC）
 - [ ] 自动回滚机制
 
@@ -132,29 +132,29 @@
 ## 五、安全体系
 
 ### 5.1 认证（Authentication）
-- [ ] Session / Cookie 认证
-- [ ] JWT 生成、解析、刷新、黑名单吊销
-- [ ] OAuth2.0 / OIDC 集成（第三方登录）
-- [ ] API Key 认证
-- [ ] 多因素认证（TOTP / SMS）
+- [x] Session / Cookie 认证
+- [x] JWT 生成、解析、刷新、黑名单吊销
+- [x] OAuth2.0 / OIDC 集成（第三方登录）
+- [x] API Key 认证
+- [x] 多因素认证（TOTP / SMS）
 - [ ] 多端登录支持
 
 ### 5.2 授权（Authorization）
-- [ ] RBAC（角色-权限-资源）
-- [ ] ABAC（基于属性的访问控制）
+- [x] RBAC（角色-权限-资源）
+- [x] ABAC（基于属性的访问控制）
 - [ ] 策略引擎（Casbin 等）
 - [ ] 资源级权限细控（数据行过滤）
 
 ### 5.3 安全防护
-- [ ] SQL 注入防护（参数化查询）
-- [ ] XSS 过滤
-- [ ] CSRF Token 验证
-- [ ] 请求签名验证（HMAC）
-- [ ] 敏感数据加密（AES / RSA / bcrypt 密码哈希）
-- [ ] 请求频率限制（IP / 用户 / 接口维度，Token Bucket / Leaky Bucket）
-- [ ] IP 黑白名单
-- [ ] HTTPS 强制与 HSTS
-- [ ] 输入校验（强制）
+- [x] SQL 注入防护（参数化查询）
+- [x] XSS 过滤
+- [x] CSRF Token 验证
+- [x] 请求签名验证（HMAC）
+- [x] 敏感数据加密（AES / RSA / bcrypt 密码哈希）
+- [x] 请求频率限制（IP / 用户 / 接口维度，Token Bucket / Leaky Bucket）
+- [x] IP 黑白名单
+- [x] HTTPS 强制与 HSTS
+- [x] 输入校验（强制）
 
 ---
 
@@ -162,57 +162,57 @@
 
 ### 6.1 消息队列支持（低优先级）
 - [ ] Kafka / RabbitMQ / NATS / RocketMQ 适配
-- [ ] Producer / Consumer 抽象
-- [ ] Retry / Dead Letter Queue
-- [ ] 消息幂等性支持
+- [x] Producer / Consumer 抽象
+- [x] Retry / Dead Letter Queue
+- [x] 消息幂等性支持
 - [ ] 可靠投递（持久化 + ACK 确认）
-- [ ] 优先级队列
+- [x] 优先级队列
 
 ### 6.2 后台任务系统
-- [ ] Cron Job（Cron 表达式支持）
-- [ ] 延迟队列
+- [x] Cron Job（Cron 表达式支持）
+- [x] 延迟队列
 - [ ] 分布式任务调度（防重复执行，抢锁机制）
 - [ ] 任务可观测（状态 / retry / logs）
-- [ ] 任务超时与重试策略
-- [ ] 优雅停止（正在执行的任务不被强杀）
+- [x] 任务超时与重试策略
+- [x] 优雅停止（正在执行的任务不被强杀）
 
 ### 6.3 事件系统
-- [ ] 同步 / 异步事件分发
-- [ ] 监听器注册（支持多监听者）
+- [x] 同步 / 异步事件分发
+- [x] 监听器注册（支持多监听者）
 - [ ] 事件队列化处理
-- [ ] 领域事件（Domain Events）
-- [ ] 事件溯源支持
+- [x] 领域事件（Domain Events）
+- [x] 事件溯源支持
 
 ---
 
 ## 七、可观测性
 
 ### 7.1 日志系统
-- [ ] 分级日志（DEBUG / INFO / WARN / ERROR / FATAL）
-- [ ] 结构化日志（JSON 格式）
-- [ ] TraceID / SpanID 自动注入
-- [ ] 日志文件轮转（按大小 / 日期）
+- [x] 分级日志（DEBUG / INFO / WARN / ERROR / FATAL）
+- [x] 结构化日志（JSON 格式）
+- [x] TraceID / SpanID 自动注入
+- [x] 日志文件轮转（按大小 / 日期）
 - [ ] 异步写入（避免阻塞业务）
-- [ ] 敏感字段脱敏（手机号、身份证、密码）
-- [ ] 多输出目标（控制台 + 文件 + 远程）
+- [x] 敏感字段脱敏（手机号、身份证、密码）
+- [x] 多输出目标（控制台 + 文件 + 远程）
 - [ ] Log Hook（发送到victoria-logs）
 
 ### 7.2 链路追踪
 - [ ] 集成 OpenTelemetry（分布式 Trace）
-- [ ] 自动注入 TraceContext 到日志
-- [ ] 跨服务 Context 传播（W3C TraceContext / B3）
+- [x] 自动注入 TraceContext 到日志
+- [x] 跨服务 Context 传播（W3C TraceContext / B3）
 - [ ] 接入 Jaeger / Zipkin / SkyWalking / Tempo
 
 ### 7.3 指标监控
-- [ ] 暴露 `/metrics` 接口（Prometheus 格式）
-- [ ] 内置指标：QPS、响应时延（P50/P95/P99）、错误率、连接池状态
-- [ ] 自定义业务指标注册
+- [x] 暴露 `/metrics` 接口（Prometheus 格式）
+- [x] 内置指标：QPS、响应时延（P50/P95/P99）、错误率、连接池状态
+- [x] 自定义业务指标注册
 - [ ] 与 Grafana Dashboard 集成
 
 ### 7.4 健康检查
-- [ ] `/health/live`（存活探针）
-- [ ] `/health/ready`（就绪探针）
-- [ ] 各依赖项状态检查（DB / Redis / MQ）
+- [x] `/health/live`（存活探针）
+- [x] `/health/ready`（就绪探针）
+- [x] 各依赖项状态检查（DB / Redis / MQ）
 - [ ] 对接 Kubernetes 探针
 
 ---
@@ -220,14 +220,14 @@
 ## 八、接口与文档
 
 ### 8.1 API 文档
-- [ ] 注解/装饰器自动生成 OpenAPI 3.0 文档
-- [ ] 在线调试界面（Swagger UI / Redoc）
+- [x] 注解/装饰器自动生成 OpenAPI 3.0 文档
+- [x] 在线调试界面（Swagger UI / Redoc）
 - [ ] 文档版本管理
 - [ ] 接口变更 Diff
 
 ### 8.2 API 版本管理
-- [ ] URL 版本（`/api/v1/`）
-- [ ] Header 版本（`Accept: application/vnd.api+json;version=2`）
+- [x] URL 版本（`/api/v1/`）
+- [x] Header 版本（`Accept: application/vnd.api+json;version=2`）
 - [ ] 旧版本兼容与废弃通知
 - [ ] 向后兼容策略
 
@@ -236,17 +236,17 @@
 ## 九、性能与稳定性
 
 ### 9.1 高并发能力
-- [ ] 异步 IO（基于 Bun 原生能力）
-- [ ] Worker Pool（Bun Worker Threads）
-- [ ] Backpressure（背压机制）
+- [x] 异步 IO（基于 Bun 原生能力）
+- [x] Worker Pool（Bun Worker Threads）
+- [x] Backpressure（背压机制）
 
 ### 9.2 限流与熔断
-- [ ] Rate Limiter（Token Bucket / Leaky Bucket）
-- [ ] Circuit Breaker（熔断）
-- [ ] Fallback 机制
+- [x] Rate Limiter（Token Bucket / Leaky Bucket）
+- [x] Circuit Breaker（熔断）
+- [x] Fallback 机制
 
 ### 9.3 资源管理
-- [ ] 连接池（DB / HTTP）
+- [x] 连接池（DB / HTTP）
 - [ ] 内存控制
 - [ ] GC 优化（Bun 运行时相关调优）
 
@@ -255,56 +255,56 @@
 ## 十、工程化能力
 
 ### 10.1 错误处理
-- [ ] 全局统一异常捕获（Panic Recovery）
-- [ ] 自定义业务错误码体系
-- [ ] 错误链（Wrapping / Unwrapping）
-- [ ] 区分 4xx（客户端错误）与 5xx（服务端错误）
+- [x] 全局统一异常捕获（Panic Recovery）
+- [x] 自定义业务错误码体系
+- [x] 错误链（Wrapping / Unwrapping）
+- [x] 区分 4xx（客户端错误）与 5xx（服务端错误）
 - [ ] 错误上报（Sentry / 钉钉告警）
 
 ### 10.2 多租户（Multi-tenancy）
-- [ ] Tenant Isolation
-- [ ] Tenant-aware Context
-- [ ] 数据隔离策略
+- [x] Tenant Isolation
+- [x] Tenant-aware Context
+- [x] 数据隔离策略
 
 ### 10.3 审计日志（Audit Log）
-- [ ] 谁在什么时候做了什么操作
-- [ ] 不可篡改
-- [ ] 查询与导出
+- [x] 谁在什么时候做了什么操作
+- [x] 不可篡改
+- [x] 查询与导出
 
 ---
 
 ## 十一、测试能力
 
 ### 11.1 测试工具链
-- [ ] 单元测试：Mock 注入（接口替换），不依赖外部服务
-- [ ] 集成测试：内置测试服务器（不需真实启动进程）
-- [ ] 接口测试：HTTP Client 封装，断言响应
-- [ ] 数据库测试：事务回滚隔离，测试结束自动清理
+- [x] 单元测试：Mock 注入（接口替换），不依赖外部服务
+- [x] 集成测试：内置测试服务器（不需要真实启动进程）
+- [x] 接口测试：HTTP Client 封装，断言响应
+- [x] 数据库测试：事务回滚隔离，测试结束自动清理
 - [ ] Test Container（数据库隔离）
-- [ ] 工厂模式造数据（Fixture / Factory）
-- [ ] 覆盖率报告生成
+- [x] 工厂模式造数据（Fixture / Factory）
+- [x] 覆盖率报告生成
 
 ---
 
 ## 十二、部署与运维
 
 ### 12.1 优雅启停
-- [ ] 启动前依赖检查（DB 连通、配置完整性）
-- [ ] 接收 `SIGTERM` 信号后停止接收新请求
-- [ ] 等待存量请求处理完毕再退出（可配超时）
+- [x] 启动前依赖检查（DB 连通、配置完整性）
+- [x] 接收 `SIGTERM` 信号后停止接收新请求
+- [x] 等待存量请求处理完毕再退出（可配超时）
 - [ ] 热重启（不中断连接升级进程）
 
 ### 12.2 容器化支持
-- [ ] 官方提供最小化 Dockerfile
-- [ ] 多阶段构建减小镜像体积
-- [ ] 支持非 root 用户运行
+- [x] 官方提供最小化 Dockerfile
+- [x] 多阶段构建减小镜像体积
+- [x] 支持非 root 用户运行
 - [ ] 环境变量配置驱动（12-Factor）
 - [ ] 健康检查接口标准化
 
 ### 12.3 Kubernetes 集成
-- [ ] 自动配置探针（readiness / liveness）
-- [ ] Graceful Shutdown 配合 Pod 终止
-- [ ] 配置注入（ConfigMap / Secret）
+- [x] 自动配置探针（readiness / liveness）
+- [x] Graceful Shutdown 配合 Pod 终止
+- [x] 配置注入（ConfigMap / Secret）
 
 ### 12.4 灰度发布 / Feature Flag
 - [ ] 按用户 / 流量切换
@@ -316,14 +316,14 @@
 ## 十三、开发体验（DX）
 
 ### 13.1 CLI 工具
-- [ ] 项目初始化（scaffold）
-- [ ] 生成用户密码
-- [ ] 代码生成（module / controller / service / migration）
-- [ ] 数据库迁移命令（migrate up/down/status）
-- [ ] 构建、测试、部署命令封装
+- [x] 项目初始化（scaffold）
+- [x] 生成用户密码
+- [x] 代码生成（module / controller / service / migration）
+- [x] 数据库迁移命令（migrate up/down/status）
+- [x] 构建、测试、部署命令封装
 
 ### 13.2 热重载
-- [ ] 文件变更自动 reload
+- [x] 文件变更自动 reload
 - [ ] 保留状态（可选）
 
 ---
@@ -331,40 +331,40 @@
 ## 十四、扩展生态
 
 ### 14.1 插件系统
-- [ ] 生命周期 Hooks
-- [ ] 插件注册机制
+- [x] 生命周期 Hooks
+- [x] 插件注册机制
 - [ ] 插件隔离（避免污染）
 - [ ] 官方插件市场或注册表
 - [ ] 第三方插件统一接入规范
 
 ### 14.2 Hook / Event 机制
-- [ ] beforeRequest / afterResponse
-- [ ] 领域事件（Domain Events）
-- [ ] 自定义 Hook 点暴露
+- [x] beforeRequest / afterResponse
+- [x] 领域事件（Domain Events）
+- [x] 自定义 Hook 点暴露
 
 ---
 
 ## 十五、AI / Agent 能力（核心差异化）
 
 ### 15.1 Tool / Command 抽象
-- [ ] 标准化操作：read / write / exec / query
-- [ ] Schema 描述（给 LLM 用）
-- [ ] Tool 注册与发现
+- [x] 标准化操作：read / write / exec / query
+- [x] Schema 描述（给 LLM 用）
+- [x] Tool 注册与发现
 
 ### 15.2 权限沙箱
-- [ ] 限制 AI 可执行的操作
-- [ ] Command Allowlist
-- [ ] 操作审计与审批流
+- [x] 限制 AI 可执行的操作
+- [x] Command Allowlist
+- [x] 操作审计与审批流
 
 ### 15.3 上下文系统
-- [ ] Request Context
-- [ ] User Context
-- [ ] Memory（短期 / 长期）
-- [ ] 多轮对话状态管理
+- [x] Request Context
+- [x] User Context
+- [x] Memory（短期 / 长期）
+- [x] 多轮对话状态管理
 
 ### 15.4 RAG
-- [ ] 知识库管理：多格式文档解析/embedding/thunk
-- [ ] Agent管理：配置系统提示词，入参定义，记忆
+- [x] 知识库管理：多格式文档解析/embedding/thunk
+- [x] Agent管理：配置系统提示词，入参定义，记忆
 
 ---
 

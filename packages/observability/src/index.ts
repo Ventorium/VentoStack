@@ -11,3 +11,7 @@ export { createFileLogger } from "./file-logger";
 export type { FileLogger, FileLoggerOptions } from "./file-logger";
 export { createAuditLog } from "./audit";
 export type { AuditEntry, AuditStore } from "./audit";
+export { createW3CTraceContextPropagator, createB3Propagator } from "./trace-context";
+export type { TraceContextPropagator } from "./trace-context";
+export { createAuditExporter } from "./audit-export";
+export type { AuditExporter } from "./audit-export";

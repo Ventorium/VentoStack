@@ -9,3 +9,5 @@ export { createMigrationRunner } from "./migration";
 export type { Migration, MigrationRunner, MigrationStatus } from "./migration";
 export { defineRelation, buildJoinSQL, buildEagerLoadSQL } from "./relation";
 export type { RelationDefinition, RelationType } from "./relation";
+export { createSeedRunner } from "./seed";
+export type { Seed, SeedRunner } from "./seed";

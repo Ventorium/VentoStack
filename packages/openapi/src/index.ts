@@ -45,3 +45,11 @@ export type {
 export { defineRouteDoc, routesToOpenAPI } from "./decorators";
 
 export type { RouteMetadata } from "./decorators";
+
+// Swagger UI
+export { generateSwaggerUI, createSwaggerUIHandler } from "./swagger-ui";
+export type { SwaggerUIOptions } from "./swagger-ui";
+
+// API Version
+export { apiVersion, parseVersionFromAccept } from "./api-version";
+export type { APIVersionOptions } from "./api-version";

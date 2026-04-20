@@ -101,3 +101,30 @@ export type { ApiResponse, PaginatedData } from "./response";
 
 export { defineModule, createModuleRegistry } from "./module";
 export type { ModuleDefinition, ModuleRegistry } from "./module";
+
+export { createWebSocketRouter } from "./websocket";
+export type { WSRoute, WSConnection, WebSocketRouter } from "./websocket";
+
+export { createParamValidator, paramConstraints } from "./param-constraint";
+export type { ParamConstraint, RouteParamValidator } from "./param-constraint";
+
+export { negotiate } from "./content-negotiation";
+export type { NegotiationResult } from "./content-negotiation";
+
+export { createFeatureToggle } from "./feature-toggle";
+export type { FeatureFlag, FeatureToggle } from "./feature-toggle";
+
+export { createHookRegistry } from "./hooks";
+export type { HookCallback, HookRegistry } from "./hooks";
+
+export { createWorkerPool } from "./worker-pool";
+export type { WorkerPool, WorkerPoolOptions, WorkerTask, WorkerResult } from "./worker-pool";
+
+export { xssProtection, escapeHTML, detectXSS } from "./middlewares/xss";
+export type { XSSOptions } from "./middlewares/xss";
+
+export { ipFilter } from "./middlewares/ip-filter";
+export type { IPFilterOptions } from "./middlewares/ip-filter";
+
+export { httpsEnforce } from "./middlewares/https";
+export type { HTTPSOptions } from "./middlewares/https";

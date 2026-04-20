@@ -25,3 +25,13 @@ export type {
   ConversationContext,
   ContextManager,
 } from "./context";
+
+export { createKnowledgeBase, createAgentRegistry } from "./rag";
+export type {
+  Document,
+  ChunkOptions,
+  SearchResult,
+  KnowledgeBase,
+  AgentConfig,
+  AgentRegistry,
+} from "./rag";
