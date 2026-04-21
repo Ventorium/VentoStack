@@ -150,8 +150,8 @@ export type { RPCRouter, RPCClient, RPCMethod } from "./rpc";
 export { createHotRestart } from "./hot-restart";
 export type { HotRestart, HotRestartOptions } from "./hot-restart";
 
-export { createMemoryManager } from "./memory";
-export type { MemoryManager, MemoryStats, MemoryThresholds } from "./memory";
+export { createMemoryController } from "./memory";
+export type { MemoryController, MemoryInfo, MemoryControlOptions } from "./memory";
 
 export { createPluginSandbox } from "./plugin-sandbox";
 export type { PluginSandbox, SandboxOptions, SandboxResult } from "./plugin-sandbox";
@@ -159,17 +159,16 @@ export type { PluginSandbox, SandboxOptions, SandboxResult } from "./plugin-sand
 export { createPluginRegistry } from "./plugin-registry";
 export type { PluginRegistry, PluginManifest, PluginEntry } from "./plugin-registry";
 
-export { createYamlConfig, parseYaml } from "./yaml-config";
-export type { YamlConfigOptions } from "./yaml-config";
+export { parseYAML, stringifyYAML, loadYAMLConfig } from "./yaml-config";
 
 export { createConfigWatcher } from "./config-watch";
-export type { ConfigWatcher, ConfigWatchOptions, ConfigChangeEvent } from "./config-watch";
+export type { ConfigWatcher, ConfigWatcherOptions } from "./config-watch";
 
-export { createConfigEncryption } from "./config-encryption";
-export type { ConfigEncryption, EncryptionOptions } from "./config-encryption";
+export { createConfigEncryptor } from "./config-encryption";
+export type { ConfigEncryptor, ConfigEncryptionOptions } from "./config-encryption";
 
-export { createABTesting } from "./ab-testing";
-export type { ABTesting, Experiment, ABTestingOptions } from "./ab-testing";
+export { createABTestManager } from "./ab-testing";
+export type { ABTestManager, ABTest, ABTestVariant, ABTestResult } from "./ab-testing";
 
-export { createTwelveFactorConfig, validateTwelveFactor } from "./twelve-factor";
-export type { TwelveFactorConfig, TwelveFactorValidation } from "./twelve-factor";
+export { loadTwelveFactorConfig, validateEnvVars } from "./twelve-factor";
+export type { TwelveFactorConfig, TwelveFactorResult } from "./twelve-factor";

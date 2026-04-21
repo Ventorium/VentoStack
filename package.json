@@ -4,7 +4,9 @@
   "workspaces": ["packages/*", "apps/*"],
   "scripts": {
     "dev": "bun --hot apps/example/src/main.ts",
+    "dev:doc": "bun --cwd apps/docs run dev",
     "build": "bun run packages/cli/src/build.ts",
+    "build:doc": "bun --cwd apps/docs run build",
     "test": "bun test --coverage",
     "typecheck": "tsc --noEmit",
     "lint": "bunx biome check ."
