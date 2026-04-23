@@ -182,6 +182,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
       }
 
       await lifecycle.runBeforeStart();
+      await lifecycle.runBeforeRouteCompile();
 
       const compiled = router.compile(globalMiddleware);
       const wrapped = wrapRoutes(compiled);

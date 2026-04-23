@@ -115,6 +115,45 @@ describe("App HTTP integration", () => {
     expect(await res.json()).toEqual({ ok: true });
   });
 
+  test("serves async stream chunks over HTTP without truncation", async () => {
+    const app = createApp();
+    const encoder = new TextEncoder();
+
+    app.router.get("/stream", () => {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode("data: hello\n\n"));
+          timer = setTimeout(() => {
+            controller.enqueue(encoder.encode("data: world\n\n"));
+            controller.close();
+          }, 10);
+        },
+        cancel() {
+          if (timer) {
+            clearTimeout(timer);
+          }
+        },
+      });
+
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
+      });
+    });
+
+    const port = 40000 + Math.floor(Math.random() * 10000);
+    await app.listen(port);
+    appToClose = app;
+
+    const res = await fetch(`http://localhost:${port}/stream`);
+    expect(res.headers.get("Content-Type")).toContain("text/event-stream");
+    expect(await res.text()).toBe("data: hello\n\ndata: world\n\n");
+  });
+
   test("global middleware runs on requests", async () => {
     const app = createApp();
     const headerMw: Middleware = async (_ctx, next) => {

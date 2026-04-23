@@ -47,7 +47,13 @@ export type {
 // ---- 路由元数据 ----
 export { defineRouteDoc, routesToOpenAPI, syncRouterToOpenAPI } from "./decorators";
 
+export type { SyncRouterToOpenAPIOptions } from "./decorators";
+
 export type { RouteMetadata } from "./decorators";
+
+// ---- 应用级一键接入 ----
+export { createOpenAPIPlugin, setupOpenAPI } from "./setup";
+export type { OpenAPISetupOptions } from "./setup";
 
 // ---- Swagger UI ----
 export { generateSwaggerUI, createSwaggerUIHandler, createSwaggerUIPlugin } from "./swagger-ui";

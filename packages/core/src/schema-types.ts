@@ -53,6 +53,19 @@ export interface SchemaField {
   maxFiles?: number;
 }
 
+/** 响应配置（用于声明非 JSON Content-Type 或补充描述） */
+export interface RouteResponseConfig {
+  /** 响应内容类型，例如 text/plain */
+  contentType: string;
+  /** 响应体 Schema */
+  schema: Record<string, SchemaField> | SchemaField;
+  /** OpenAPI: 响应描述 */
+  description?: string;
+}
+
+/** 路由响应声明 */
+export type RouteResponseDefinition = Record<string, SchemaField> | SchemaField | RouteResponseConfig;
+
 /** 路由 Schema 配置 */
 export interface RouteSchemaConfig {
   /** 查询参数 Schema */
@@ -63,8 +76,8 @@ export interface RouteSchemaConfig {
   headers?: Record<string, SchemaField>;
   /** FormData Schema（multipart） */
   formData?: Record<string, SchemaField>;
-  /** 响应 Schema（用于 OpenAPI） */
-  responses?: Record<number | string, Record<string, SchemaField> | SchemaField>;
+  /** 响应 Schema（用于类型推导、运行时校验和 OpenAPI） */
+  responses?: Record<number | string, RouteResponseDefinition>;
   /** 附加元数据 */
   metadata?: Record<string, unknown>;
 }
@@ -108,13 +121,40 @@ export type InferSchema<T extends Record<string, SchemaField> | undefined> =
     ? { [K in keyof T]: T[K] extends SchemaField ? InferFieldType<T[K]> : unknown }
     : Record<string, unknown>;
 
+type ResponseSchemaOf<T> = T extends { contentType: string; schema: infer S } ? S : T;
+
 /** 从响应 Schema 推导 TypeScript 类型（支持对象或单字段） */
 export type InferResponseType<T> =
-  T extends Record<string, SchemaField>
-    ? InferSchema<T>
-    : T extends SchemaField
-      ? InferFieldType<T>
+  ResponseSchemaOf<T> extends Record<string, SchemaField>
+    ? InferSchema<ResponseSchemaOf<T>>
+    : ResponseSchemaOf<T> extends SchemaField
+      ? InferFieldType<ResponseSchemaOf<T>>
       : Record<string, unknown>;
+
+export function isSchemaField(value: unknown): value is SchemaField {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && "type" in value;
+}
+
+export function isRouteResponseConfig(value: unknown): value is RouteResponseConfig {
+  return typeof value === "object" && value !== null && !Array.isArray(value) && "contentType" in value && "schema" in value;
+}
+
+export function resolveRouteResponseDefinition(
+  definition: RouteResponseDefinition,
+): { contentType: string; schema: Record<string, SchemaField> | SchemaField; description?: string } {
+  if (isRouteResponseConfig(definition)) {
+    return {
+      contentType: definition.contentType,
+      schema: definition.schema,
+      ...(definition.description !== undefined ? { description: definition.description } : {}),
+    };
+  }
+
+  return {
+    contentType: "application/json",
+    schema: definition,
+  };
+}
 
 // ---------- 运行时转换 ----------
 
@@ -273,6 +313,122 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
     if (customError !== null) errors.push(`${path}: ${customError}`);
   }
 
+  return errors;
+}
+
+function validateStrictValue(value: unknown, field: SchemaField, path: string): string[] {
+  if (value === undefined) {
+    return field.required ? [`${path} is required`] : [];
+  }
+
+  const errors: string[] = [];
+
+  switch (field.type) {
+    case "string":
+    case "uuid":
+      if (typeof value !== "string") errors.push(`${path} must be a string`);
+      break;
+    case "number":
+    case "float":
+      if (typeof value !== "number") errors.push(`${path} must be a number`);
+      break;
+    case "int":
+      if (typeof value !== "number" || !Number.isInteger(value)) errors.push(`${path} must be an integer`);
+      break;
+    case "boolean":
+    case "bool":
+      if (typeof value !== "boolean") errors.push(`${path} must be a boolean`);
+      break;
+    case "date":
+      if (!(value instanceof Date) || Number.isNaN(value.getTime())) errors.push(`${path} must be a valid date`);
+      break;
+    case "file":
+      if (!(value instanceof File)) errors.push(`${path} must be a file`);
+      break;
+    case "array":
+      if (!Array.isArray(value)) errors.push(`${path} must be an array`);
+      break;
+    case "object":
+      if (typeof value !== "object" || value === null || Array.isArray(value)) errors.push(`${path} must be an object`);
+      break;
+  }
+
+  if (errors.length > 0) return errors;
+
+  if ((field.type === "string" || field.type === "uuid") && typeof value === "string") {
+    if (field.min !== undefined && value.length < field.min) errors.push(`${path} must have at least ${field.min} characters`);
+    if (field.max !== undefined && value.length > field.max) errors.push(`${path} must have at most ${field.max} characters`);
+    if (field.pattern && !field.pattern.test(value)) errors.push(`${path} does not match pattern`);
+    if (field.type === "uuid" && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+      errors.push(`${path} must be a valid UUID`);
+    }
+  }
+
+  if ((field.type === "number" || field.type === "int" || field.type === "float") && typeof value === "number") {
+    if (field.min !== undefined && value < field.min) errors.push(`${path} must be at least ${field.min}`);
+    if (field.max !== undefined && value > field.max) errors.push(`${path} must be at most ${field.max}`);
+  }
+
+  if (field.type === "array" && Array.isArray(value)) {
+    if (field.min !== undefined && value.length < field.min) errors.push(`${path} must have at least ${field.min} items`);
+    if (field.max !== undefined && value.length > field.max) errors.push(`${path} must have at most ${field.max} items`);
+    if (field.items) {
+      for (let i = 0; i < value.length; i += 1) {
+        errors.push(...validateStrictValue(value[i], field.items, `${path}[${i}]`));
+      }
+    }
+  }
+
+  if (field.type === "object" && field.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const obj = value as Record<string, unknown>;
+    for (const [propKey, propField] of Object.entries(field.properties)) {
+      errors.push(...validateStrictValue(obj[propKey], propField, `${path}.${propKey}`));
+    }
+  }
+
+  if (field.type === "file" && value instanceof File) {
+    if (field.maxSize !== undefined && value.size > field.maxSize) errors.push(`${path} exceeds max size of ${field.maxSize} bytes`);
+    if (field.allowedMimeTypes && !field.allowedMimeTypes.includes(value.type)) {
+      errors.push(`${path} MIME type not allowed: ${value.type}`);
+    }
+    if (field.allowedExtensions) {
+      const ext = value.name.split(".").pop()?.toLowerCase() ?? "";
+      if (!field.allowedExtensions.includes(ext)) {
+        errors.push(`${path} extension not allowed: .${ext}`);
+      }
+    }
+  }
+
+  if (field.enum !== undefined && !field.enum.includes(value)) {
+    errors.push(`${path} must be one of: ${field.enum.join(", ")}`);
+  }
+
+  if (field.custom) {
+    const customError = field.custom(value);
+    if (customError !== null) errors.push(`${path}: ${customError}`);
+  }
+
+  return errors;
+}
+
+export function validateResponseData(
+  raw: unknown,
+  schema: Record<string, SchemaField> | SchemaField,
+  path = "response",
+): string[] {
+  if (isSchemaField(schema)) {
+    return validateStrictValue(raw, schema, path);
+  }
+
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return [`${path} must be an object`];
+  }
+
+  const errors: string[] = [];
+  const objectValue = raw as Record<string, unknown>;
+  for (const [key, field] of Object.entries(schema)) {
+    errors.push(...validateStrictValue(objectValue[key], field, `${path}.${key}`));
+  }
   return errors;
 }
 

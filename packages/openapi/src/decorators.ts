@@ -3,7 +3,8 @@
 // 函数式路由元数据定义与 OpenAPI 转换
 // ============================================================
 
-import type { Router, SchemaField, RouteSchemaConfig } from "@ventostack/core";
+import { isRouteResponseConfig, isSchemaField } from "@ventostack/core";
+import type { RouteHandler, RouteResponseDefinition, Router, SchemaField, RouteSchemaConfig } from "@ventostack/core";
 import type {
   OpenAPIGenerator,
   OpenAPIOperation,
@@ -12,6 +13,13 @@ import type {
   OpenAPIResponse,
 } from "./generator";
 import type { OpenAPISchema } from "./schema-builder";
+
+type InferredHelperKind = "json" | "text" | "html" | "redirect" | "stream";
+
+interface InferredHelperCall {
+  kind: InferredHelperKind;
+  args: string[];
+}
 
 /** 路由元数据，用于描述单条路由的 OpenAPI 文档信息 */
 export interface RouteMetadata {
@@ -37,6 +45,11 @@ export interface RouteMetadata {
   security?: Array<Record<string, string[]>>;
   /** 是否已废弃 */
   deprecated?: boolean;
+}
+
+export interface SyncRouterToOpenAPIOptions {
+  /** 生成文档时排除的路由路径 */
+  excludePaths?: readonly string[];
 }
 
 /**
@@ -75,11 +88,6 @@ export function routesToOpenAPI(routes: RouteMetadata[], generator: OpenAPIGener
 }
 
 // ---- Schema 转换辅助函数 ----
-
-/** 支持的 SchemaField 类型集合，用于区分 SchemaField 与 Record<string, SchemaField> */
-const SCHEMA_FIELD_TYPES = new Set([
-  "string", "number", "boolean", "int", "float", "bool", "uuid", "date", "array", "object", "file",
-]);
 
 /**
  * 将核心 SchemaField 转换为 OpenAPISchema
@@ -171,21 +179,19 @@ function buildResponsesFromSchemaConfig(
 
   const responses: Record<string, OpenAPIResponse> = {};
 
-  for (const [statusCode, responseDef] of Object.entries(schemaConfig.responses)) {
+  for (const [statusCode, responseDef] of Object.entries(schemaConfig.responses as Record<string, RouteResponseDefinition>)) {
+    const isConfiguredResponse = isRouteResponseConfig(responseDef);
+    const contentType = isConfiguredResponse ? responseDef.contentType : "application/json";
+    const description = isConfiguredResponse ? responseDef.description : undefined;
+    const schemaDef = isConfiguredResponse ? responseDef.schema : responseDef;
     let responseSchema: OpenAPISchema;
 
-    if (
-      responseDef &&
-      typeof responseDef === "object" &&
-      !Array.isArray(responseDef) &&
-      "type" in responseDef &&
-      SCHEMA_FIELD_TYPES.has(responseDef.type as string)
-    ) {
-      responseSchema = schemaFieldToOpenAPISchema(responseDef as SchemaField);
-    } else if (responseDef && typeof responseDef === "object" && !Array.isArray(responseDef)) {
+    if (isSchemaField(schemaDef)) {
+      responseSchema = schemaFieldToOpenAPISchema(schemaDef);
+    } else if (schemaDef && typeof schemaDef === "object" && !Array.isArray(schemaDef)) {
       const properties: Record<string, OpenAPISchema> = {};
       const requiredFields: string[] = [];
-      for (const [name, field] of Object.entries(responseDef as Record<string, SchemaField>)) {
+      for (const [name, field] of Object.entries(schemaDef as Record<string, SchemaField>)) {
         properties[name] = schemaFieldToOpenAPISchema(field);
         if (field.required) requiredFields.push(name);
       }
@@ -199,9 +205,9 @@ function buildResponsesFromSchemaConfig(
     }
 
     responses[statusCode] = {
-      description: getStatusDescription(statusCode),
+      description: description ?? getStatusDescription(statusCode),
       content: {
-        "application/json": { schema: responseSchema },
+        [contentType]: { schema: responseSchema },
       },
     };
   }
@@ -240,11 +246,16 @@ function buildParametersFromSchemaConfig(
 function buildRequestBodyFromSchemaConfig(
   schemaConfig: RouteSchemaConfig | undefined,
 ): OpenAPIRequestBody | undefined {
-  if (!schemaConfig?.body) return undefined;
+  if (!schemaConfig?.body && !schemaConfig?.formData) return undefined;
+
+  const contentType = schemaConfig?.body ? "application/json" : "multipart/form-data";
+  const schema = schemaConfig?.body ?? schemaConfig?.formData;
+
+  if (!schema) return undefined;
 
   const properties: Record<string, OpenAPISchema> = {};
   const requiredFields: string[] = [];
-  for (const [name, field] of Object.entries(schemaConfig.body)) {
+  for (const [name, field] of Object.entries(schema)) {
     properties[name] = schemaFieldToOpenAPISchema(field);
     if (field.required) requiredFields.push(name);
   }
@@ -252,7 +263,7 @@ function buildRequestBodyFromSchemaConfig(
   return {
     required: requiredFields.length > 0,
     content: {
-      "application/json": {
+      [contentType]: {
         schema: {
           type: "object",
           properties,
@@ -272,7 +283,12 @@ function getStatusDescription(statusCode: string): string {
   const descriptions: Record<string, string> = {
     "200": "OK",
     "201": "Created",
+    "202": "Accepted",
     "204": "No Content",
+    "301": "Moved Permanently",
+    "302": "Found",
+    "307": "Temporary Redirect",
+    "308": "Permanent Redirect",
     "400": "Bad Request",
     "401": "Unauthorized",
     "403": "Forbidden",
@@ -282,6 +298,660 @@ function getStatusDescription(statusCode: string): string {
     "500": "Internal Server Error",
   };
   return descriptions[statusCode] ?? "Response";
+}
+
+function readCallArguments(source: string, openParenIndex: number): string | undefined {
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplate = false;
+  let escaped = false;
+
+  for (let index = openParenIndex; index < source.length; index += 1) {
+    const char = source[index]!;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (inTemplate) {
+      if (char === "`") inTemplate = false;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === "`") {
+      inTemplate = true;
+      continue;
+    }
+
+    if (char === "(") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openParenIndex + 1, index);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function splitTopLevelArguments(argsSource: string): string[] {
+  const args: string[] = [];
+  let current = "";
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplate = false;
+  let escaped = false;
+
+  for (const char of argsSource) {
+    if (escaped) {
+      current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      current += char;
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      current += char;
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      current += char;
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (inTemplate) {
+      current += char;
+      if (char === "`") inTemplate = false;
+      continue;
+    }
+
+    if (char === "'") {
+      current += char;
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      current += char;
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === "`") {
+      current += char;
+      inTemplate = true;
+      continue;
+    }
+
+    if (char === "(") {
+      parenDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === ")") {
+      parenDepth -= 1;
+      current += char;
+      continue;
+    }
+
+    if (char === "{") {
+      braceDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === "}") {
+      braceDepth -= 1;
+      current += char;
+      continue;
+    }
+
+    if (char === "[") {
+      bracketDepth += 1;
+      current += char;
+      continue;
+    }
+
+    if (char === "]") {
+      bracketDepth -= 1;
+      current += char;
+      continue;
+    }
+
+    if (char === "," && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0) {
+      const arg = current.trim();
+      if (arg.length > 0) {
+        args.push(arg);
+      }
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  const lastArg = current.trim();
+  if (lastArg.length > 0) {
+    args.push(lastArg);
+  }
+
+  return args;
+}
+
+function extractQuotedString(valueSource: string | undefined): string | undefined {
+  if (!valueSource) return undefined;
+  const trimmed = valueSource.trim();
+  if (trimmed.length < 2) return undefined;
+
+  const quote = trimmed[0];
+  if ((quote !== '"' && quote !== "'" && quote !== "`") || trimmed.at(-1) !== quote) {
+    return undefined;
+  }
+
+  return trimmed.slice(1, -1);
+}
+
+function parseNumericLiteral(valueSource: string | undefined): number | undefined {
+  if (!valueSource) return undefined;
+  const trimmed = valueSource.trim();
+  return /^\d+$/.test(trimmed) ? Number(trimmed) : undefined;
+}
+
+function inferLiteralSchema(valueSource: string | undefined): OpenAPISchema | undefined {
+  if (!valueSource) return undefined;
+  const trimmed = valueSource.trim();
+
+  if (trimmed === "null") {
+    return { nullable: true };
+  }
+
+  if (trimmed.startsWith("{")) {
+    return { type: "object" };
+  }
+
+  if (trimmed.startsWith("[")) {
+    return { type: "array" };
+  }
+
+  if (trimmed === "true" || trimmed === "false") {
+    return { type: "boolean" };
+  }
+
+  if (/^-?\d+$/.test(trimmed)) {
+    return { type: "integer" };
+  }
+
+  if (/^-?\d+\.\d+$/.test(trimmed)) {
+    return { type: "number" };
+  }
+
+  if (extractQuotedString(trimmed) !== undefined) {
+    return { type: "string" };
+  }
+
+  return undefined;
+}
+
+function stripComments(source: string): string {
+  let result = "";
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplate = false;
+  let inLineComment = false;
+  let inBlockComment = false;
+  let escaped = false;
+
+  for (let index = 0; index < source.length; index += 1) {
+    const char = source[index]!;
+    const next = source[index + 1];
+
+    if (inLineComment) {
+      if (char === "\n") {
+        inLineComment = false;
+        result += char;
+      }
+      continue;
+    }
+
+    if (inBlockComment) {
+      if (char === "*" && next === "/") {
+        inBlockComment = false;
+        index += 1;
+      }
+      continue;
+    }
+
+    if (escaped) {
+      result += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      result += char;
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      result += char;
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      result += char;
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (inTemplate) {
+      result += char;
+      if (char === "`") inTemplate = false;
+      continue;
+    }
+
+    if (char === "/" && next === "/") {
+      inLineComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === "/" && next === "*") {
+      inBlockComment = true;
+      index += 1;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      result += char;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      result += char;
+      continue;
+    }
+
+    if (char === "`") {
+      inTemplate = true;
+      result += char;
+      continue;
+    }
+
+    result += char;
+  }
+
+  return result;
+}
+
+function readBlockBody(source: string, openBraceIndex: number): string | undefined {
+  let depth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplate = false;
+  let escaped = false;
+
+  for (let index = openBraceIndex; index < source.length; index += 1) {
+    const char = source[index]!;
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (inTemplate) {
+      if (char === "`") inTemplate = false;
+      continue;
+    }
+
+    if (char === "'") {
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === "`") {
+      inTemplate = true;
+      continue;
+    }
+
+    if (char === "{") {
+      depth += 1;
+      continue;
+    }
+
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return source.slice(openBraceIndex + 1, index);
+      }
+    }
+  }
+
+  return undefined;
+}
+
+function extractTopLevelReturnedExpressions(blockSource: string): string[] {
+  const returnedExpressions: string[] = [];
+  let current = "";
+  let capturing = false;
+  let parenDepth = 0;
+  let braceDepth = 0;
+  let bracketDepth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inTemplate = false;
+  let escaped = false;
+
+  for (let index = 0; index < blockSource.length; index += 1) {
+    const char = blockSource[index]!;
+
+    if (escaped) {
+      if (capturing) current += char;
+      escaped = false;
+      continue;
+    }
+
+    if (char === "\\") {
+      if (capturing) current += char;
+      escaped = true;
+      continue;
+    }
+
+    if (inSingleQuote) {
+      if (capturing) current += char;
+      if (char === "'") inSingleQuote = false;
+      continue;
+    }
+
+    if (inDoubleQuote) {
+      if (capturing) current += char;
+      if (char === '"') inDoubleQuote = false;
+      continue;
+    }
+
+    if (inTemplate) {
+      if (capturing) current += char;
+      if (char === "`") inTemplate = false;
+      continue;
+    }
+
+    if (char === "'") {
+      if (capturing) current += char;
+      inSingleQuote = true;
+      continue;
+    }
+
+    if (char === '"') {
+      if (capturing) current += char;
+      inDoubleQuote = true;
+      continue;
+    }
+
+    if (char === "`") {
+      if (capturing) current += char;
+      inTemplate = true;
+      continue;
+    }
+
+    if (!capturing && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0) {
+      const tail = blockSource.slice(index);
+      const returnMatch = tail.match(/^return\b/);
+      if (returnMatch) {
+        capturing = true;
+        current = "";
+        index += returnMatch[0].length - 1;
+        continue;
+      }
+    }
+
+    if (char === "(") {
+      parenDepth += 1;
+      if (capturing) current += char;
+      continue;
+    }
+
+    if (char === ")") {
+      parenDepth -= 1;
+      if (capturing) current += char;
+      continue;
+    }
+
+    if (char === "{") {
+      braceDepth += 1;
+      if (capturing) current += char;
+      continue;
+    }
+
+    if (char === "}") {
+      braceDepth -= 1;
+      if (capturing) current += char;
+      continue;
+    }
+
+    if (char === "[") {
+      bracketDepth += 1;
+      if (capturing) current += char;
+      continue;
+    }
+
+    if (char === "]") {
+      bracketDepth -= 1;
+      if (capturing) current += char;
+      continue;
+    }
+
+    if (capturing && char === ";" && parenDepth === 0 && braceDepth === 0 && bracketDepth === 0) {
+      const expression = current.trim();
+      if (expression.length > 0) {
+        returnedExpressions.push(expression);
+      }
+      current = "";
+      capturing = false;
+      continue;
+    }
+
+    if (capturing) {
+      current += char;
+    }
+  }
+
+  if (capturing) {
+    const expression = current.trim();
+    if (expression.length > 0) {
+      returnedExpressions.push(expression);
+    }
+  }
+
+  return returnedExpressions;
+}
+
+function extractReturnedExpression(source: string): string | undefined {
+  const arrowIndex = source.indexOf("=>");
+
+  if (arrowIndex !== -1) {
+    const expressionSource = source.slice(arrowIndex + 2).trim();
+    if (!expressionSource.startsWith("{")) {
+      return expressionSource;
+    }
+
+    const openBraceIndex = source.indexOf("{", arrowIndex);
+    if (openBraceIndex === -1) {
+      return undefined;
+    }
+
+    const blockBody = readBlockBody(source, openBraceIndex);
+    if (blockBody === undefined) {
+      return undefined;
+    }
+
+    const returnedExpressions = extractTopLevelReturnedExpressions(blockBody);
+    return returnedExpressions.length === 1 ? returnedExpressions[0] : undefined;
+  }
+
+  const openBraceIndex = source.indexOf("{");
+  if (openBraceIndex === -1) {
+    return undefined;
+  }
+
+  const blockBody = readBlockBody(source, openBraceIndex);
+  if (blockBody === undefined) {
+    return undefined;
+  }
+
+  const returnedExpressions = extractTopLevelReturnedExpressions(blockBody);
+  return returnedExpressions.length === 1 ? returnedExpressions[0] : undefined;
+}
+
+function extractDirectCtxHelperCall(handler: RouteHandler): InferredHelperCall | undefined {
+  const source = stripComments(handler.toString());
+  const returnedExpression = extractReturnedExpression(source)?.replace(/^await\s+/, "").trim();
+  if (!returnedExpression) {
+    return undefined;
+  }
+
+  const match = returnedExpression.match(/^ctx\.(json|text|html|redirect|stream)\s*\(/);
+  if (!match) {
+    return undefined;
+  }
+
+  const kind = match[1] as InferredHelperKind;
+  const openParenIndex = match[0].length - 1;
+  const argsSource = readCallArguments(returnedExpression, openParenIndex);
+
+  if (argsSource === undefined) {
+    return undefined;
+  }
+
+  return {
+    kind,
+    args: splitTopLevelArguments(argsSource),
+  };
+}
+
+function buildResponsesFromHandler(
+  handler: RouteHandler,
+): Record<string, OpenAPIResponse> | undefined {
+  const helperCall = extractDirectCtxHelperCall(handler);
+  if (!helperCall) {
+    return undefined;
+  }
+
+  if (helperCall.kind === "redirect") {
+    const statusCode = String(parseNumericLiteral(helperCall.args[1]) ?? 302);
+    return {
+      [statusCode]: {
+        description: "Redirect",
+      },
+    };
+  }
+
+  let contentType: string;
+  let schema: OpenAPISchema | undefined;
+  let statusCode = 200;
+
+  switch (helperCall.kind) {
+    case "text":
+      contentType = "text/plain";
+      schema = { type: "string" };
+      statusCode = parseNumericLiteral(helperCall.args[1]) ?? 200;
+      break;
+    case "html":
+      contentType = "text/html";
+      schema = { type: "string" };
+      statusCode = parseNumericLiteral(helperCall.args[1]) ?? 200;
+      break;
+    case "json":
+      contentType = "application/json";
+      schema = inferLiteralSchema(helperCall.args[0]) ?? { type: "object" };
+      statusCode = parseNumericLiteral(helperCall.args[1]) ?? 200;
+      break;
+    case "stream": {
+      const inferredContentType = extractQuotedString(helperCall.args[1]) ?? "application/octet-stream";
+      contentType = inferredContentType;
+      schema = inferredContentType.startsWith("text/")
+        ? { type: "string" }
+        : { type: "string", format: "binary" };
+      break;
+    }
+  }
+
+  return {
+    [String(statusCode)]: {
+      description: getStatusDescription(String(statusCode)),
+      content: {
+        [contentType]: {
+          schema: schema!,
+        },
+      },
+    },
+  };
 }
 
 // ---- 路由同步 ----
@@ -296,15 +966,26 @@ function getStatusDescription(statusCode: string): string {
  * 2. 路由 schemaConfig 中定义的 query / body / responses 自动生成
  * 3. 默认 200 响应作为兜底
  */
-export function syncRouterToOpenAPI(router: Router, generator: OpenAPIGenerator): void {
+export function syncRouterToOpenAPI(
+  router: Router,
+  generator: OpenAPIGenerator,
+  options: SyncRouterToOpenAPIOptions = {},
+): void {
+  const excludedPaths = new Set(options.excludePaths ?? []);
+
   for (const route of router.routes()) {
+    if (excludedPaths.has(route.path)) {
+      continue;
+    }
+
     const openapiMeta = route.metadata?.openapi as Partial<OpenAPIOperation> | undefined;
     const schemaConfig = route.schemaConfig as RouteSchemaConfig | undefined;
 
-    // 响应：openapiMeta > schemaConfig > default
+    // 响应：openapiMeta > schemaConfig > 简单 handler 推断 > default
     const autoResponses = buildResponsesFromSchemaConfig(schemaConfig);
+    const inferredResponses = autoResponses === undefined ? buildResponsesFromHandler(route.handler) : undefined;
     const operation: OpenAPIOperation = {
-      responses: openapiMeta?.responses ?? autoResponses ?? {
+      responses: openapiMeta?.responses ?? autoResponses ?? inferredResponses ?? {
         "200": { description: "Success" },
       },
     };

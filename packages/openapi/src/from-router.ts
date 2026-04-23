@@ -4,7 +4,8 @@
 
 import type { OpenAPIParameter, OpenAPIRequestBody, OpenAPIOperation, OpenAPIResponse } from "./generator";
 import type { OpenAPISchema } from "./schema-builder";
-import type { RouteSchemaConfig, SchemaField, SchemaFieldType } from "@ventostack/core";
+import { isRouteResponseConfig } from "@ventostack/core";
+import type { RouteResponseDefinition, RouteSchemaConfig, SchemaField, SchemaFieldType } from "@ventostack/core";
 
 /**
  * 将 SchemaFieldType 映射为 OpenAPI 类型
@@ -176,11 +177,16 @@ export function formDataSchemaToRequestBody(formDataSchema: Record<string, Schem
  * @returns Record<string, OpenAPIResponse>
  */
 export function responsesSchemaToResponses(
-  responsesSchema: Record<number | string, Record<string, SchemaField> | SchemaField>,
+  responsesSchema: Record<number | string, RouteResponseDefinition>,
 ): Record<string, OpenAPIResponse> {
   const responses: Record<string, OpenAPIResponse> = {};
 
-  for (const [statusCode, schema] of Object.entries(responsesSchema)) {
+  for (const [statusCode, responseDef] of Object.entries(responsesSchema)) {
+    const isConfiguredResponse = isRouteResponseConfig(responseDef);
+    const contentType = isConfiguredResponse ? responseDef.contentType : "application/json";
+    const description = isConfiguredResponse ? responseDef.description : undefined;
+    const schema = isConfiguredResponse ? responseDef.schema : responseDef;
+
     let openApiSchema: OpenAPISchema;
     if (schema.type !== undefined) {
       // 单个 SchemaField
@@ -191,9 +197,9 @@ export function responsesSchemaToResponses(
     }
 
     responses[String(statusCode)] = {
-      description: `Response ${statusCode}`,
+      description: description ?? `Response ${statusCode}`,
       content: {
-        "application/json": { schema: openApiSchema },
+        [contentType]: { schema: openApiSchema },
       },
     };
   }

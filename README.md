@@ -122,6 +122,59 @@ await cache.set("key", { data: "value" }, { ttl: 300 });
 const result = await cache.get("key");
 ```
 
+## 路由 Schema 与响应声明
+
+```typescript
+import { createRouter, defineRouteConfig } from "@ventostack/core";
+
+const router = createRouter();
+
+router.get("/things", defineRouteConfig({
+  query: {
+    page: { type: "int", default: 1 },
+  },
+  responses: {
+    200: {
+      page: { type: "int" },
+    },
+  },
+}), (ctx) => {
+  return ctx.json({ page: ctx.query.page });
+});
+
+router.get("/health", defineRouteConfig({
+  responses: {
+    200: {
+      contentType: "text/plain",
+      schema: { type: "string" },
+      description: "Plain text health check",
+    },
+  },
+}), (ctx) => ctx.text("ok"));
+
+const stream = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode("data: hello\n\n"));
+    controller.close();
+  },
+});
+
+router.get("/events", defineRouteConfig({
+  responses: {
+    200: {
+      contentType: "text/event-stream",
+      schema: { type: "string" },
+      description: "Server-Sent Events stream",
+    },
+  },
+}), (ctx) => ctx.stream(stream, "text/event-stream"));
+```
+
+- `responses: { 200: { id: { type: "int" } } }` 是 JSON 响应的简写。
+- 非 JSON 响应用 `contentType + schema` 形式声明，例如 `text/plain`、`text/html`、`text/event-stream`。
+- 已声明的响应 schema 会在运行时校验非流式 `application/json` 和 `text/*` 响应；不匹配时返回 `RESPONSE_VALIDATION_ERROR`。
+- 如果 VS Code 在 `router.get()` 的第二个参数上提示不稳定，优先用 `defineRouteConfig(...)`，它会保留类型推导并提供更稳定的属性补全。
+
 ## 目录结构
 
 ```
@@ -164,6 +217,14 @@ bun test --coverage
 # 类型检查
 bun run typecheck
 ```
+
+## 发布流程
+
+- `packages/` 下的可发布包通过 GitHub Actions 自动发布到 npm
+- 任何触及 `packages/**` 的 PR 都需要同时提交 `.changeset/*.md`
+- 合并到 `main` 后，`Changesets` 会先生成版本变更，然后自动发布
+- 发布使用 npm Trusted Publishing / OIDC，不再需要 `NPM_TOKEN`
+- 需要在 npmjs.com 上把该仓库的 GitHub Actions workflow 注册为 trusted publisher
 
 ## 测试
 

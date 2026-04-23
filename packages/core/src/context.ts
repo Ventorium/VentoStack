@@ -26,6 +26,7 @@ export interface Context<
   TQuery extends Record<string, unknown> = Record<string, string>,
   TBody extends Record<string, unknown> = Record<string, unknown>,
   TFormData extends Record<string, unknown> = Record<string, unknown>,
+  TResponse = unknown,
 > {
   /** 原始 Request 对象 */
   readonly request: Request;
@@ -63,7 +64,7 @@ export interface Context<
    * @param status - HTTP 状态码，默认 200
    * @returns Response 对象
    */
-  json<T>(data: T, status?: number, headers?: Record<string, string>): TypedResponse<T>;
+  json(data: TResponse, status?: number, headers?: Record<string, string>): TypedResponse<TResponse>;
   /**
    * 返回纯文本响应
    * @param data - 文本内容

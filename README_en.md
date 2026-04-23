@@ -120,6 +120,67 @@ await cache.set("key", { data: "value" }, { ttl: 300 });
 const result = await cache.get("key");
 ```
 
+## Route Schemas and Response Declarations
+
+```typescript
+import { createRouter, defineRouteConfig } from "@ventostack/core";
+
+const router = createRouter();
+
+router.get("/things", defineRouteConfig({
+  query: {
+    page: { type: "int", default: 1 },
+  },
+  responses: {
+    200: {
+      page: { type: "int" },
+    },
+  },
+}), (ctx) => {
+  return ctx.json({ page: ctx.query.page });
+});
+
+router.get("/health", defineRouteConfig({
+  responses: {
+    200: {
+      contentType: "text/plain",
+      schema: { type: "string" },
+      description: "Plain text health check",
+    },
+  },
+}), (ctx) => ctx.text("ok"));
+
+const stream = new ReadableStream({
+  start(controller) {
+    controller.enqueue(new TextEncoder().encode("data: hello\n\n"));
+    controller.close();
+  },
+});
+
+router.get("/events", defineRouteConfig({
+  responses: {
+    200: {
+      contentType: "text/event-stream",
+      schema: { type: "string" },
+      description: "Server-Sent Events stream",
+    },
+  },
+}), (ctx) => ctx.stream(stream, "text/event-stream"));
+```
+
+- `responses: { 200: { id: { type: "int" } } }` is the shorthand for JSON responses.
+- For non-JSON responses, use the wrapped form with `contentType + schema`, for example `text/plain`, `text/html`, or `text/event-stream`.
+- Declared response schemas are runtime-validated for non-streaming `application/json` and `text/*` responses. Mismatches return `RESPONSE_VALIDATION_ERROR`.
+- If VS Code gives weak completions for the second `router.get()` argument, prefer `defineRouteConfig(...)` for more stable contextual hints without losing inference.
+
+## Release Flow
+
+- Publishable packages under `packages/` are automatically published to npm through GitHub Actions
+- Any PR that changes `packages/**` must include a `.changeset/*.md` file
+- After merging to `main`, Changesets creates the version update and the workflow publishes the packages
+- Publishing uses npm Trusted Publishing / OIDC, so no long-lived `NPM_TOKEN` is required
+- You still need to register this repository's GitHub Actions workflow as a trusted publisher on npmjs.com
+
 ## Project Structure
 
 ```

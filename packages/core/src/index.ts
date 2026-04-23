@@ -6,7 +6,7 @@ export { createApp } from "./app";
 export type { VentoStackApp, AppConfig, AppUrl } from "./app";
 
 // ========== 路由系统 ==========
-export { createRouter, parseRoutePath } from "./router";
+export { createRouter, defineRouteConfig, parseRoutePath } from "./router";
 export type {
   Router,
   RouteDefinition,
@@ -143,13 +143,18 @@ export {
   coerceAndValidateJSONBody,
   coerceAndValidateFormBody,
   coerceAndValidateFormDataBody,
+  isRouteResponseConfig,
+  isSchemaField,
 } from "./schema-types";
 export type {
   SchemaFieldType,
   SchemaField,
+  RouteResponseConfig,
+  RouteResponseDefinition,
   RouteSchemaConfig,
   InferFieldType,
   InferSchema,
+  InferResponseType,
 } from "./schema-types";
 
 // ========== 参数类型约束 ==========

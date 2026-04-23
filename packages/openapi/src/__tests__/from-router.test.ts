@@ -158,6 +158,20 @@ describe("routeConfigToOpenAPIOperation", () => {
     expect(operation.responses["201"]).toBeDefined();
   });
 
+  test("generates operation with non-json response content type", () => {
+    const operation = routeConfigToOpenAPIOperation({
+      responses: {
+        200: {
+          contentType: "text/plain",
+          schema: { type: "string" },
+        },
+      },
+    });
+
+    expect(operation.responses["200"]?.content?.["text/plain"]?.schema.type).toBe("string");
+    expect(operation.responses["200"]?.content?.["application/json"]).toBeUndefined();
+  });
+
   test("includes default 200 response when no responses config", () => {
     const operation = routeConfigToOpenAPIOperation({
       query: { page: { type: "int" } },

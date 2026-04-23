@@ -4,16 +4,22 @@ import { type Context, createContext, type TypedResponse } from "./context";
 import { type Middleware, compose } from "./middleware";
 import { ValidationError } from "./errors";
 import { type ParamType, type ParamTypeMap, isValidParamType, paramTypes } from "./param-constraint";
-import type { RouteSchemaConfig, InferSchema, InferResponseType, SchemaField } from "./schema-types";
+import type { RouteSchemaConfig, InferSchema, InferResponseType, RouteResponseDefinition, SchemaField } from "./schema-types";
 import {
   coerceAndValidate,
   coerceAndValidateJSONBody,
   coerceAndValidateFormBody,
   coerceAndValidateFormDataBody,
+  resolveRouteResponseDefinition,
+  validateResponseData,
 } from "./schema-types";
 
 /** 路由配置（声明式接口契约） */
 export interface RouteConfig extends RouteSchemaConfig {}
+
+export function defineRouteConfig<const TConfig extends RouteConfig>(config: RouteConfig & TConfig): TConfig {
+  return config;
+}
 
 /** 路由处理器类型 */
 export type RouteHandler<
@@ -23,7 +29,7 @@ export type RouteHandler<
   TFormData extends Record<string, unknown> = Record<string, unknown>,
   TResponse = unknown,
 > = (
-  ctx: Context<TParams, TQuery, TBody, TFormData>,
+  ctx: Context<TParams, TQuery, TBody, TFormData, TResponse>,
 ) => Promise<TypedResponse<TResponse> | Response> | TypedResponse<TResponse> | Response;
 
 type BunRouteHandler = (req: Request) => Response | Promise<Response>;
@@ -255,10 +261,65 @@ type _InferQuery<T> = T extends Record<string, SchemaField> ? InferSchema<T> : R
 type _InferBody<T> = T extends Record<string, SchemaField> ? InferSchema<T> : Record<string, unknown>;
 type _InferFormData<T> = T extends Record<string, SchemaField> ? InferSchema<T> : Record<string, unknown>;
 type _InferResponse<T> = T extends Record<number | string, infer R>
-  ? R extends Record<string, SchemaField> | SchemaField
-    ? InferResponseType<R>
-    : Record<string, unknown>
+  ? InferResponseType<R>
   : Record<string, unknown>;
+
+function normalizeContentType(contentType: string | null): string | undefined {
+  const normalized = contentType?.split(";")[0]?.trim().toLowerCase();
+  return normalized && normalized.length > 0 ? normalized : undefined;
+}
+
+function createResponseValidationError(errors: string[]): Response {
+  return new Response(
+    JSON.stringify({ error: "RESPONSE_VALIDATION_ERROR", errors }),
+    { status: 500, headers: { "Content-Type": "application/json" } },
+  );
+}
+
+async function validateRouteResponse(
+  response: Response,
+  responses: Record<number | string, RouteResponseDefinition>,
+): Promise<Response> {
+  const responseDef = responses[response.status] ?? responses[String(response.status)];
+  if (!responseDef) {
+    return response;
+  }
+
+  const resolved = resolveRouteResponseDefinition(responseDef);
+  const expectedContentType = normalizeContentType(resolved.contentType) ?? "application/json";
+
+  // 流式响应在这里无法安全消费 clone() 做完整校验，跳过严格校验。
+  if (expectedContentType === "text/event-stream") {
+    return response;
+  }
+
+  const actualContentType = normalizeContentType(response.headers.get("content-type"));
+  if (actualContentType !== undefined && actualContentType !== expectedContentType) {
+    return createResponseValidationError([
+      `response content-type must be ${expectedContentType}, received ${actualContentType}`,
+    ]);
+  }
+
+  let rawBody: unknown;
+  if (expectedContentType === "application/json") {
+    try {
+      rawBody = await response.clone().json();
+    } catch {
+      return createResponseValidationError(["response body is not valid JSON"]);
+    }
+  } else if (expectedContentType.startsWith("text/")) {
+    rawBody = await response.clone().text();
+  } else {
+    return response;
+  }
+
+  const errors = validateResponseData(rawBody, resolved.schema);
+  if (errors.length > 0) {
+    return createResponseValidationError(errors);
+  }
+
+  return response;
+}
 
 /** 路由器接口 */
 export interface Router {
@@ -278,7 +339,7 @@ export interface Router {
    */
   get<const Path extends string, const TConfig extends RouteConfig>(
     path: Path,
-    config: TConfig,
+    config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
       _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
@@ -304,7 +365,7 @@ export interface Router {
    */
   post<const Path extends string, const TConfig extends RouteConfig>(
     path: Path,
-    config: TConfig,
+    config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
       _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
@@ -330,7 +391,7 @@ export interface Router {
    */
   put<const Path extends string, const TConfig extends RouteConfig>(
     path: Path,
-    config: TConfig,
+    config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
       _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
@@ -356,7 +417,7 @@ export interface Router {
    */
   patch<const Path extends string, const TConfig extends RouteConfig>(
     path: Path,
-    config: TConfig,
+    config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
       _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
@@ -382,7 +443,7 @@ export interface Router {
    */
   delete<const Path extends string, const TConfig extends RouteConfig>(
     path: Path,
-    config: TConfig,
+    config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
       _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
@@ -753,11 +814,15 @@ export function createRouter(): Router {
             formData: coercedFormData,
           };
 
-          if (allMiddleware.length === 0) {
-            return route.handler(ctx as Context);
+          const response = allMiddleware.length === 0
+            ? await route.handler(ctx as Context)
+            : await compose(allMiddleware)(ctx as Context, () => Promise.resolve(route.handler(ctx as Context)));
+
+          if (schema?.responses) {
+            return validateRouteResponse(response, schema.responses);
           }
 
-          return compose(allMiddleware)(ctx as Context, () => Promise.resolve(route.handler(ctx as Context)));
+          return response;
         };
       }
 

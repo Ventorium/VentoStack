@@ -21,7 +21,7 @@ type _RegexPostId = Assert<IsEqual<RegexParams["postId"], string>>;
 type _NoParams = Assert<IsEqual<NoParams, Record<string, never>>>;
 
 import type { InferFieldType, InferSchema } from "../schema-types";
-import { createRouter } from "../router";
+import { createRouter, defineRouteConfig } from "../router";
 
 // ---------- InferFieldType 测试 ----------
 
@@ -138,6 +138,24 @@ router.post("/users/:id<int>", {
   const force: boolean | undefined = ctx.query.force;
   const name: string = ctx.body.name;
   return new Response();
+});
+
+// defineRouteConfig 保留 schema 推导
+const hintedConfig = defineRouteConfig({
+  query: {
+    page: { type: "int", default: 1 },
+  },
+  responses: {
+    200: {
+      contentType: "text/plain",
+      schema: { type: "string" },
+    },
+  },
+});
+
+router.get("/hinted", hintedConfig, (ctx) => {
+  const page: number = ctx.query.page;
+  return new Response(String(page));
 });
 
 export {};

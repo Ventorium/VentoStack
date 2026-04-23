@@ -805,6 +805,61 @@ describe("Router - headers schema", () => {
   });
 });
 
+describe("Router - response schema", () => {
+  test("returns 500 when JSON response body does not match declared schema", async () => {
+    const router = createRouter();
+    router.get("/things", {
+      query: {
+        page: { type: "int", required: true, default: 1 },
+        limit: { type: "int", default: 10 },
+      },
+      responses: {
+        200: {
+          page: { type: "int" },
+          limit: { type: "string" },
+        },
+      },
+    }, (ctx) =>
+      ctx.json({
+        page: ctx.query.page,
+        // @ts-ignore 已知问题，故意这么测试的
+        limit: ctx.query.limit,
+      }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/things"] as Record<string, RouteHandler>).GET!;
+    const req = new Request("http://localhost:3000/things?page=2");
+    const res = await handler(req);
+
+    expect(res.status).toBe(500);
+    const body = await res.json();
+    expect(body.error).toBe("RESPONSE_VALIDATION_ERROR");
+    expect(body.errors).toContain("response.limit must be a string");
+  });
+
+  test("supports declared non-json text responses", async () => {
+    const router = createRouter();
+    router.get("/health", {
+      responses: {
+        200: {
+          contentType: "text/plain",
+          schema: { type: "string" },
+        },
+      },
+    }, (ctx) => ctx.text("ok"));
+
+    const compiled = router.compile();
+    const handler = (compiled["/health"] as Record<string, RouteHandler>).GET!;
+    const req = new Request("http://localhost:3000/health");
+    const res = await handler(req);
+
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("text/plain; charset=utf-8");
+    expect(await res.text()).toBe("ok");
+  });
+});
+
 describe("Router - merge preserves schemaConfig", () => {
   test("merged router keeps query schema validation", async () => {
     const sub = createRouter();

@@ -2,6 +2,13 @@
   "name": "@ventostack/cache",
   "version": "0.1.0",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ventorium/VentoStack.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "src/index.ts",
   "types": "src/index.ts",
   "exports": {

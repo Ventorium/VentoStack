@@ -160,6 +160,22 @@ describe("Context response methods", () => {
     expect(res.headers.get("Content-Type")).toBe("text/event-stream");
   });
 
+  test("stream() preserves asynchronously enqueued chunks", async () => {
+    const ctx = createContext(makeRequest("http://localhost:3000/"));
+    const readable = new ReadableStream({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("data: hello\n\n"));
+        setTimeout(() => {
+          controller.enqueue(new TextEncoder().encode("data: world\n\n"));
+          controller.close();
+        }, 10);
+      },
+    });
+
+    const res = ctx.stream(readable, "text/event-stream");
+    expect(await res.text()).toBe("data: hello\n\ndata: world\n\n");
+  });
+
   test("method reflects request method", () => {
     const ctx = createContext(makeRequest("http://localhost:3000/", "POST"));
     expect(ctx.method).toBe("POST");

@@ -32,6 +32,24 @@ describe("createLifecycle", () => {
     expect(calls).toEqual([1, 2]);
   });
 
+  test("runs beforeRouteCompile hooks by priority", async () => {
+    const lifecycle = createLifecycle();
+    const calls: string[] = [];
+
+    lifecycle.onBeforeRouteCompile(() => {
+      calls.push("default");
+    });
+    lifecycle.onBeforeRouteCompile(() => {
+      calls.push("late");
+    }, 100);
+    lifecycle.onBeforeRouteCompile(() => {
+      calls.push("early");
+    }, -100);
+
+    await lifecycle.runBeforeRouteCompile();
+    expect(calls).toEqual(["early", "default", "late"]);
+  });
+
   test("runs beforeStop hooks in order", async () => {
     const lifecycle = createLifecycle();
     const calls: number[] = [];
@@ -88,6 +106,7 @@ describe("createLifecycle", () => {
     const lifecycle = createLifecycle();
 
     await lifecycle.runBeforeStart();
+    await lifecycle.runBeforeRouteCompile();
     await lifecycle.runAfterStart();
     await lifecycle.runBeforeStop();
   });
@@ -97,17 +116,21 @@ describe("createLifecycle", () => {
     const calls: string[] = [];
 
     lifecycle.onBeforeStart(() => calls.push("beforeStart"));
+    lifecycle.onBeforeRouteCompile(() => calls.push("beforeRouteCompile"));
     lifecycle.onAfterStart(() => calls.push("afterStart"));
     lifecycle.onBeforeStop(() => calls.push("beforeStop"));
 
     await lifecycle.runBeforeStart();
     expect(calls).toEqual(["beforeStart"]);
 
+    await lifecycle.runBeforeRouteCompile();
+    expect(calls).toEqual(["beforeStart", "beforeRouteCompile"]);
+
     await lifecycle.runAfterStart();
-    expect(calls).toEqual(["beforeStart", "afterStart"]);
+    expect(calls).toEqual(["beforeStart", "beforeRouteCompile", "afterStart"]);
 
     await lifecycle.runBeforeStop();
-    expect(calls).toEqual(["beforeStart", "afterStart", "beforeStop"]);
+    expect(calls).toEqual(["beforeStart", "beforeRouteCompile", "afterStart", "beforeStop"]);
   });
 
   test("sync hooks work alongside async hooks", async () => {

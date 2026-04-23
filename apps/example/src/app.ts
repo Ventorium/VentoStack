@@ -1,14 +1,13 @@
 import { createApp, rateLimit, createMemoryRateLimitStore } from "@ventostack/core";
 import { createEventBus } from "@ventostack/events";
 import { createHealthCheck, createLogger, createMetrics } from "@ventostack/observability";
-import { createScalarUIPlugin } from "@ventostack/openapi";
 import type { Database } from "@ventostack/database";
 import { config as defaultConfig, type AppConfig } from "./config";
 import { createUserService } from "./services/user-service";
 import { createAuthService } from "./services/auth-service";
 import { requestLogger, errorHandler } from "./middleware/common";
 import { registerRoutes } from "./routes";
-import { setupOpenAPI } from "./openapi";
+import { setupExampleOpenAPI } from "./openapi";
 import { userLoggedIn } from "./events/user-events";
 
 export interface CreateAppOptions {
@@ -83,9 +82,7 @@ export async function createExampleApp(options: CreateAppOptions) {
 
   registerRoutes({ router: app.router, health, userService, authService, jwtSecret: config.jwtSecret });
 
-  const openAPIGen = setupOpenAPI(app.router);
-  app.use(createScalarUIPlugin({ specUrl: "/openapi.json", title: "VentoStack Example API Docs" }));
-  app.router.get("/openapi.json", async (ctx) => ctx.json(openAPIGen.generate()));
+  setupExampleOpenAPI(app);
 
   app.router.get("/metrics", async (_ctx) => {
     return new Response(metrics.render(), {
