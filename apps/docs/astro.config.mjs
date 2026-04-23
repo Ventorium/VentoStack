@@ -15,9 +15,9 @@ export default defineConfig({
           lang: 'zh-CN'
         }
       },
-      social: {
-        github: 'https://github.com/Ventorium/VentoStack'
-      },
+      social: [
+        { icon: 'github', label: 'GitHub', href: 'https://github.com/Ventorium/VentoStack' }
+      ],
       editLink: {
         baseUrl: 'https://github.com/Ventorium/VentoStack/edit/main/apps/docs/'
       },
