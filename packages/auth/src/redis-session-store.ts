@@ -64,10 +64,12 @@ export function createRedisSessionStore(options: RedisSessionStoreOptions): Sess
     async set(session: Session): Promise<void> {
       const key = prefixed(session.id);
       const ttlSeconds = Math.ceil((session.expiresAt - Date.now()) / 1000);
-      await client.set(key, JSON.stringify(session));
-      if (ttlSeconds > 0) {
-        await client.expire(key, ttlSeconds);
+      if (ttlSeconds <= 0) {
+        await client.del(key);
+        return;
       }
+      await client.set(key, JSON.stringify(session));
+      await client.expire(key, ttlSeconds);
     },
 
     async delete(id: string): Promise<void> {
