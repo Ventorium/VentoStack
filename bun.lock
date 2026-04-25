@@ -130,6 +130,16 @@
         "bun-types": "latest",
       },
     },
+    "packages/integration": {
+      "name": "@ventostack/integration",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ventostack/webhook": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+      },
+    },
     "packages/observability": {
       "name": "@ventostack/observability",
       "version": "0.1.0",
@@ -150,8 +160,33 @@
         "@types/bun": "latest",
       },
     },
+    "packages/platform/system": {
+      "name": "@ventostack/system",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ventostack/auth": "workspace:*",
+        "@ventostack/cache": "workspace:*",
+        "@ventostack/core": "workspace:*",
+        "@ventostack/database": "workspace:*",
+        "@ventostack/events": "workspace:*",
+        "@ventostack/observability": "workspace:*",
+      },
+      "devDependencies": {
+        "@ventostack/testing": "workspace:*",
+      },
+    },
     "packages/testing": {
       "name": "@ventostack/testing",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ventostack/core": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+      },
+    },
+    "packages/webhook": {
+      "name": "@ventostack/webhook",
       "version": "0.1.0",
       "dependencies": {
         "@ventostack/core": "workspace:*",
@@ -542,11 +577,17 @@
 
     "@ventostack/events": ["@ventostack/events@workspace:packages/events"],
 
+    "@ventostack/integration": ["@ventostack/integration@workspace:packages/integration"],
+
     "@ventostack/observability": ["@ventostack/observability@workspace:packages/observability"],
 
     "@ventostack/openapi": ["@ventostack/openapi@workspace:packages/openapi"],
 
+    "@ventostack/system": ["@ventostack/system@workspace:packages/platform/system"],
+
     "@ventostack/testing": ["@ventostack/testing@workspace:packages/testing"],
+
+    "@ventostack/webhook": ["@ventostack/webhook@workspace:packages/webhook"],
 
     "acorn": ["acorn@8.16.0", "", { "bin": { "acorn": "bin/acorn" } }, "sha512-UVJyE9MttOsBQIDKw1skb9nAwQuR5wuGD3+82K6JgJlm/Y+KI92oNsMNGZCYdDsVtRHSak0pcV5Dno5+4jh9sw=="],
 

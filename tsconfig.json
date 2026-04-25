@@ -36,7 +36,13 @@
       "@ventostack/openapi": ["./packages/openapi/src/index.ts"],
       "@ventostack/openapi/*": ["./packages/openapi/src/*"],
       "@ventostack/ai": ["./packages/ai/src/index.ts"],
-      "@ventostack/ai/*": ["./packages/ai/src/*"]
+      "@ventostack/ai/*": ["./packages/ai/src/*"],
+      "@ventostack/webhook": ["./packages/webhook/src/index.ts"],
+      "@ventostack/webhook/*": ["./packages/webhook/src/*"],
+      "@ventostack/integration": ["./packages/integration/src/index.ts"],
+      "@ventostack/integration/*": ["./packages/integration/src/*"],
+      "@ventostack/system": ["./packages/platform/system/src/index.ts"],
+      "@ventostack/system/*": ["./packages/platform/system/src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "**/*.test.ts", "apps/docs"]
