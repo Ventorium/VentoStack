@@ -1,0 +1,27 @@
+.claude
+.gitea
+.env*
+
+logs/
+dist/
+docs/
+node_modules/
+ui/
+Dockerfile
+public/_info
+
+README.md
+*.md
+*.log
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
