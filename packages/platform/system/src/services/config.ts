@@ -83,7 +83,7 @@ export function createConfigService(deps: { executor: SqlExecutor; cache: Cache 
   async function create(params: CreateConfigParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await executor(
-      `INSERT INTO sys_config (id, name, key, value, type, \`group\`, remark) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      `INSERT INTO sys_config (id, name, key, value, type, "group", remark) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
       [
         id,
         params.name,
@@ -115,7 +115,7 @@ export function createConfigService(deps: { executor: SqlExecutor; cache: Cache 
       values.push(params.type);
     }
     if (params.group !== undefined) {
-      sets.push("`group` = $${idx++}");
+      sets.push(`"group" = $${idx++}`);
       values.push(params.group);
     }
     if (params.remark !== undefined) {
@@ -150,7 +150,7 @@ export function createConfigService(deps: { executor: SqlExecutor; cache: Cache 
     let idx = 1;
 
     if (params?.group !== undefined) {
-      conditions.push("`group` = $${idx++}");
+      conditions.push(`"group" = $${idx++}`);
       values.push(params.group);
     }
 
@@ -163,7 +163,7 @@ export function createConfigService(deps: { executor: SqlExecutor; cache: Cache 
     const total = Number(countRows[0]?.total ?? 0);
 
     const rows = await executor(
-      `SELECT id, name, key, value, type, COALESCE(\`group\`, '') AS \`group\`, COALESCE(remark, '') AS remark FROM sys_config ${where} ORDER BY id ASC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT id, name, key, value, type, COALESCE("group", '') AS "group", COALESCE(remark, '') AS remark FROM sys_config ${where} ORDER BY id ASC LIMIT $${idx++} OFFSET $${idx++}`,
       [...values, pageSize, offset],
     ) as Array<Record<string, unknown>>;
 

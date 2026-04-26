@@ -1,5 +1,8 @@
 /**
  * @ventostack/system - 认证路由
+ *
+ * 公开端点（login/register/forgot-password/reset-password）直接在 router 上注册。
+ * 需认证端点（logout/MFA）在子 router 上通过 use(authMiddleware) 保护。
  */
 
 import { createRouter } from "@ventostack/core";
@@ -13,6 +16,7 @@ export function createAuthRoutes(
 ): Router {
   const router = createRouter();
 
+  // ---- 公开端点 ----
   router.post("/api/auth/login", async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
@@ -26,25 +30,6 @@ export function createAuthRoutes(
       return ok(result);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Login failed";
-      return fail(msg, 401, 401);
-    }
-  });
-
-  router.post("/api/auth/logout", authMiddleware, async (ctx) => {
-    const user = ctx.user as { id: string } | undefined;
-    if (user) {
-      await authService.logout(user.id, "");
-    }
-    return ok(null);
-  });
-
-  router.post("/api/auth/refresh", async (ctx) => {
-    try {
-      const body = await parseBody(ctx.request);
-      const result = await authService.refreshToken(body.refreshToken as string);
-      return ok(result);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Refresh failed";
       return fail(msg, 401, 401);
     }
   });
@@ -67,7 +52,6 @@ export function createAuthRoutes(
 
   router.post("/api/auth/forgot-password", async (ctx) => {
     const body = await parseBody(ctx.request);
-    // placeholder: send reset email
     return ok({ email: body.email });
   });
 
@@ -82,37 +66,51 @@ export function createAuthRoutes(
     }
   });
 
-  // MFA endpoints
-  router.post("/api/auth/mfa/enable", authMiddleware, async (ctx) => {
+  router.post("/api/auth/refresh", async (ctx) => {
+    try {
+      const body = await parseBody(ctx.request);
+      const result = await authService.refreshToken(body.refreshToken as string);
+      return ok(result);
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Refresh failed";
+      return fail(msg, 401, 401);
+    }
+  });
+
+  // ---- 需认证端点 ----
+  const protectedRouter = createRouter();
+  protectedRouter.use(authMiddleware);
+
+  protectedRouter.post("/api/auth/logout", async (ctx) => {
+    const user = ctx.user as { id: string } | undefined;
+    if (user) {
+      await authService.logout(user.id, "");
+    }
+    return ok(null);
+  });
+
+  // MFA
+  protectedRouter.post("/api/auth/mfa/enable", async (ctx) => {
     const user = ctx.user as { id: string };
     const result = await authService.enableMFA(user.id);
     return ok(result);
   });
 
-  router.post("/api/auth/mfa/verify", authMiddleware, async (ctx) => {
+  protectedRouter.post("/api/auth/mfa/verify", async (ctx) => {
     const user = ctx.user as { id: string };
     const body = await parseBody(ctx.request);
     const valid = await authService.verifyMFA(user.id, body.code as string);
     return ok({ valid });
   });
 
-  router.post("/api/auth/mfa/disable", authMiddleware, async (ctx) => {
+  protectedRouter.post("/api/auth/mfa/disable", async (ctx) => {
     const user = ctx.user as { id: string };
     const body = await parseBody(ctx.request);
     await authService.disableMFA(user.id, body.code as string);
     return ok(null);
   });
 
-  router.post("/api/auth/mfa/recover", async (ctx) => {
-    try {
-      const body = await parseBody(ctx.request);
-      const result = await authService.recoverMFA(body.userId as string, body.recoveryCode as string);
-      return ok(result);
-    } catch (e) {
-      const msg = e instanceof Error ? e.message : "Recovery failed";
-      return fail(msg, 401, 401);
-    }
-  });
+  router.merge(protectedRouter);
 
   return router;
 }

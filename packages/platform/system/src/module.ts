@@ -68,7 +68,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const { executor, cache, jwt, jwtSecret, passwordHasher, totp, rbac, rowFilter, auditLog, authSessionManager, eventBus } = deps;
 
   // Services
-  const authService = createAuthService({ executor, cache, jwt, jwtSecret, passwordHasher, totp, authSessionManager, auditLog, eventBus });
+  const authService = createAuthService({ executor, cache, jwt, jwtSecret, passwordHasher, totp, authSessionManager, auditStore: auditLog, eventBus });
   const userService = createUserService({ executor, passwordHasher, cache });
   const roleService = createRoleService({ executor, cache });
   const menuService = createMenuService({ executor });
@@ -87,106 +87,130 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   // Routes
   const router = createRouter();
-  router.use(createAuthRoutes(authService, authMiddleware).routes());
-  router.use(createUserRoutes(userService, authMiddleware, perm).routes());
+  router.merge(createAuthRoutes(authService, authMiddleware));
+  router.merge(createUserRoutes(userService, authMiddleware, perm));
 
   // CRUD routes for other entities
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/roles",
     resource: "system:role",
     service: roleService,
     authMiddleware,
     perm,
-  }).routes());
+  }));
 
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/menus",
     resource: "system:menu",
-    service: { ...menuService, update: (id: string, body: any) => menuService.update(id, body) },
+    service: {
+      ...menuService,
+      list: async () => {
+        const tree = await menuService.getTree();
+        return { items: tree, total: tree.length, page: 1, pageSize: tree.length };
+      },
+      update: (id: string, body: any) => menuService.update(id, body),
+    },
     authMiddleware,
     perm,
     extraRoutes: (r) => {
-      r.get("/api/system/menus/tree", authMiddleware, perm("system", "menu:list"), async () => {
+      r.get("/api/system/menus/tree", perm("system", "menu:list"), async () => {
         const tree = await menuService.getTree();
-        return new Response(JSON.stringify({ code: 0, data: tree }), { headers: { "Content-Type": "application/json" } });
+        return ok(tree);
       });
     },
-  }).routes());
+  }));
 
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/depts",
     resource: "system:dept",
-    service: deptService,
+    service: {
+      ...deptService,
+      list: async () => {
+        const tree = await deptService.getTree();
+        return { items: tree, total: tree.length, page: 1, pageSize: tree.length };
+      },
+    },
     authMiddleware,
     perm,
     extraRoutes: (r) => {
-      r.get("/api/system/depts/tree", authMiddleware, perm("system", "dept:list"), async () => {
+      r.get("/api/system/depts/tree", perm("system", "dept:list"), async () => {
         const tree = await deptService.getTree();
-        return new Response(JSON.stringify({ code: 0, data: tree }), { headers: { "Content-Type": "application/json" } });
+        return ok(tree);
       });
     },
-  }).routes());
+  }));
 
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/posts",
     resource: "system:post",
     service: postService,
     authMiddleware,
     perm,
-  }).routes());
+  }));
 
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/dict/types",
     resource: "system:dict",
-    service: dictService,
+    service: {
+      ...dictService,
+      list: (params: any) => dictService.listTypes(params),
+      create: (body: any) => dictService.createType(body),
+      update: (idOrCode: string, body: any) => dictService.updateType(idOrCode, body),
+      delete: (idOrCode: string) => dictService.deleteType(idOrCode),
+      getById: (code: string) => dictService.listTypes({ page: 1, pageSize: 1 }).then(r => r.items[0] ?? null),
+    },
     authMiddleware,
     perm,
     extraRoutes: (r) => {
-      r.get("/api/system/dict/types/:code/data", authMiddleware, async (ctx) => {
+      r.get("/api/system/dict/types/:code/data", async (ctx) => {
         const code = (ctx.params as Record<string, string>).code;
         const data = await dictService.listDataByType(code);
-        return new Response(JSON.stringify({ code: 0, data }), { headers: { "Content-Type": "application/json" } });
+        return ok(data);
       });
     },
-  }).routes());
+  }));
 
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/configs",
     resource: "system:config",
     service: { ...configService, update: (key: string, body: any) => configService.update(key, body) },
     authMiddleware,
     perm,
-  }).routes());
+  }));
 
-  router.use(createCrudRoutes({
+  router.merge(createCrudRoutes({
     basePath: "/api/system/notices",
     resource: "system:notice",
     service: noticeService,
     authMiddleware,
     perm,
     extraRoutes: (r) => {
-      r.put("/api/system/notices/:id/publish", authMiddleware, perm("system", "notice:update"), async (ctx) => {
+      r.put("/api/system/notices/:id/publish", perm("system", "notice:update"), async (ctx) => {
         const id = (ctx.params as Record<string, string>).id;
         const user = ctx.user as { id: string };
         await noticeService.publish(id, user.id);
-        return new Response(JSON.stringify({ code: 0, data: null }), { headers: { "Content-Type": "application/json" } });
+        return ok(null);
       });
-      r.put("/api/system/notices/:id/read", authMiddleware, async (ctx) => {
+      r.put("/api/system/notices/:id/read", async (ctx) => {
         const id = (ctx.params as Record<string, string>).id;
         const user = ctx.user as { id: string };
         await noticeService.markRead(user.id, id);
-        return new Response(JSON.stringify({ code: 0, data: null }), { headers: { "Content-Type": "application/json" } });
+        return ok(null);
       });
     },
-  }).routes());
+  }));
 
-  // User self-service routes
-  router.get("/api/system/user/profile", authMiddleware, async (ctx) => {
-    const user = ctx.user as { id: string };
+  // User self-service routes (use sub-router with group auth middleware)
+  const userRouter = createRouter();
+  userRouter.use(authMiddleware);
+
+  userRouter.get("/api/system/user/profile", async (ctx) => {
+    const user = ctx.user as { id: string } | undefined;
+    if (!user?.id) return fail("Not authenticated", 401, 401);
     const detail = await userService.getById(user.id);
     if (!detail) return ok(null);
     const permissions = await menuTreeBuilder.buildPermissionsForUser(user.id);
-    const roles = (detail as Record<string, unknown>).roles as Array<{ code: string }> ?? [];
+    const roles = ((detail as Record<string, unknown>).roles as Array<{ code: string }>) ?? [];
     return ok({
       ...detail,
       roles: roles.map((r: { code: string }) => r.code),
@@ -194,38 +218,40 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     });
   });
 
-  router.get("/api/system/user/routes", authMiddleware, async (ctx) => {
-    const user = ctx.user as { id: string };
-    const routes = await menuTreeBuilder.buildRoutesForUser(user.id);
-    return new Response(JSON.stringify({ code: 0, data: routes }), { headers: { "Content-Type": "application/json" } });
+  userRouter.get("/api/system/user/routes", async (ctx) => {
+    const user = ctx.user as { id: string } | undefined;
+    if (!user?.id) return fail("Not authenticated", 401, 401);
+    const tree = await menuTreeBuilder.buildRoutesForUser(user.id);
+    return ok(tree);
   });
 
-  router.get("/api/system/user/permissions", authMiddleware, async (ctx) => {
-    const user = ctx.user as { id: string };
+  userRouter.get("/api/system/user/permissions", async (ctx) => {
+    const user = ctx.user as { id: string } | undefined;
+    if (!user?.id) return fail("Not authenticated", 401, 401);
     const permissions = await menuTreeBuilder.buildPermissionsForUser(user.id);
-    return new Response(JSON.stringify({ code: 0, data: permissions }), { headers: { "Content-Type": "application/json" } });
+    return ok(permissions);
   });
 
-  // === Dict data CRUD (separate from dict type CRUD) ===
-  router.post("/api/system/dict/data", authMiddleware, perm("system", "dict:create"), async (ctx) => {
+  // === Dict data CRUD ===
+  userRouter.post("/api/system/dict/data", perm("system", "dict:create"), async (ctx) => {
     const body = await parseBody(ctx.request);
     const result = await dictService.createData(body as any);
     return ok(result);
   });
-  router.put("/api/system/dict/data/:id", authMiddleware, perm("system", "dict:update"), async (ctx) => {
+  userRouter.put("/api/system/dict/data/:id", perm("system", "dict:update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     const body = await parseBody(ctx.request);
     await dictService.updateData(id, body as any);
     return ok(null);
   });
-  router.delete("/api/system/dict/data/:id", authMiddleware, perm("system", "dict:delete"), async (ctx) => {
+  userRouter.delete("/api/system/dict/data/:id", perm("system", "dict:delete"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     await dictService.deleteData(id);
     return ok(null);
   });
 
   // === Notice revoke ===
-  router.put("/api/system/notices/:id/revoke", authMiddleware, perm("system", "notice:update"), async (ctx) => {
+  userRouter.put("/api/system/notices/:id/revoke", perm("system", "notice:update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     await noticeService.revoke(id);
     return ok(null);
@@ -233,7 +259,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   // === Operation logs (read-only) ===
   const opLogPerm = perm("system", "log:list");
-  router.get("/api/system/operation-logs", authMiddleware, opLogPerm, async (ctx) => {
+  userRouter.get("/api/system/operation-logs", opLogPerm, async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const q = ctx.query as Record<string, string>;
     const conditions: string[] = [];
@@ -258,7 +284,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   });
 
   // === Login logs (read-only) ===
-  router.get("/api/system/login-logs", authMiddleware, opLogPerm, async (ctx) => {
+  userRouter.get("/api/system/login-logs", opLogPerm, async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const q = ctx.query as Record<string, string>;
     const conditions: string[] = [];
@@ -280,6 +306,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
     return okPage(rows as any[], total, page, pageSize);
   });
+
+  // Merge userRouter into main router
+  router.merge(userRouter);
 
   return {
     services: {
