@@ -12,6 +12,7 @@
     "moduleDetection": "force",
     "noEmit": true,
     "erasableSyntaxOnly": true,
+    "types": ["bun-types"],
     "skipLibCheck": true,
     "noFallthroughCasesInSwitch": true
   },
