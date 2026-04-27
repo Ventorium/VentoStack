@@ -47,12 +47,20 @@ async function callWorkersAI(
   return result.response ?? result.text ?? "";
 }
 
+function getEnv(key: string): string | undefined {
+  // Astro/Vite 的 import.meta.env 在服务端可能不读取 process.env
+  // 所以同时检查两者
+  const viteEnv = (import.meta.env as Record<string, string | undefined>)[key];
+  if (viteEnv !== undefined) return viteEnv;
+  return (process.env as Record<string, string | undefined>)[key];
+}
+
 async function callExternalLLM(
   messages: Array<{ role: string; content: string }>,
 ): Promise<string> {
-  const apiKey = import.meta.env.OPENAI_API_KEY;
-  const baseURL = import.meta.env.OPENAI_BASE_URL ?? "https://api.openai.com/v1";
-  const model = import.meta.env.OPENAI_MODEL ?? "gpt-4.1-nano";
+  const apiKey = getEnv("OPENAI_API_KEY");
+  const baseURL = getEnv("OPENAI_BASE_URL") ?? "https://api.openai.com/v1";
+  const model = getEnv("OPENAI_MODEL") ?? "gpt-4.1-nano";
 
   if (!apiKey) {
     throw new Error("LLM not configured: set OPENAI_API_KEY for local development");
@@ -124,14 +132,12 @@ export const POST: APIRoute = async ({ request, locals }) => {
   ];
 
   try {
-    // Astro v6 + @astrojs/cloudflare v13+: locals 直接是 Cloudflare env
-    // 旧版: locals.runtime.env
-    const localsRecord = locals as Record<string, unknown>;
-    const runtime = localsRecord.runtime as Record<string, unknown> | undefined;
-    const env = (runtime?.env as Record<string, unknown> | undefined) ?? localsRecord;
+    // Astro v6 + @astrojs/cloudflare v13+: locals 直接就是 Cloudflare env/bindings
+    // 不要访问 locals.runtime，Astro v6 Proxy 会拦截并报错
+    const env = locals as Record<string, unknown>;
 
     let answer: string;
-    if (env.AI) {
+    if (env.AI && typeof env.AI === "object") {
       answer = await callWorkersAI(env, messages);
     } else {
       answer = await callExternalLLM(messages);
