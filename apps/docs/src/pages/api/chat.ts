@@ -124,13 +124,14 @@ export const POST: APIRoute = async ({ request, locals }) => {
   ];
 
   try {
-    const runtime = (locals as Record<string, unknown>).runtime as
-      | Record<string, unknown>
-      | undefined;
-    const env = runtime?.env as Record<string, unknown> | undefined;
+    // Astro v6 + @astrojs/cloudflare v13+: locals 直接是 Cloudflare env
+    // 旧版: locals.runtime.env
+    const localsRecord = locals as Record<string, unknown>;
+    const runtime = localsRecord.runtime as Record<string, unknown> | undefined;
+    const env = (runtime?.env as Record<string, unknown> | undefined) ?? localsRecord;
 
     let answer: string;
-    if (env?.AI) {
+    if (env.AI) {
       answer = await callWorkersAI(env, messages);
     } else {
       answer = await callExternalLLM(messages);
