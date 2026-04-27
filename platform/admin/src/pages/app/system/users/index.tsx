@@ -1,10 +1,8 @@
 import { useEffect, useState, useCallback } from 'react'
-import {
-  Card, Table, Button, Input, Select, Form, Modal, Space, Tag, message, Popconfirm,
-} from 'antd'
+import { Card, Table, Button, Input, Select, Form, Modal, Space, Tag, message, Popconfirm } from 'antd'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
-import { userApi } from '@/api/system'
-import type { UserItem, CreateUserBody, UpdateUserBody } from '@/api/types'
+import { client } from '@/api'
+import type { PaginatedData, UserItem } from '@/api/types'
 
 const UserPage = () => {
   const [loading, setLoading] = useState(false)
@@ -13,8 +11,6 @@ const UserPage = () => {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(10)
   const [searchForm] = Form.useForm()
-
-  // modal state
   const [modalOpen, setModalOpen] = useState(false)
   const [editingUser, setEditingUser] = useState<UserItem | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
@@ -24,57 +20,21 @@ const UserPage = () => {
     setLoading(true)
     try {
       const values = await searchForm.validateFields().catch(() => ({}))
-      const { error, data: result } = await userApi.list({
-        page: p,
-        pageSize: ps,
-        ...values,
-      })
-      if (!error && result) {
-        setData(result.list)
-        setTotal(result.total)
-        setPage(result.page)
-        setPageSize(result.pageSize)
-      }
-    } finally {
-      setLoading(false)
-    }
+      const { error, data: result } = await client.get<PaginatedData<UserItem>>('/api/system/users', { query: { page: p, pageSize: ps, ...values } })
+      if (!error && result) { setData(result.list); setTotal(result.total); setPage(result.page); setPageSize(result.pageSize) }
+    } finally { setLoading(false) }
   }, [page, pageSize, searchForm])
 
-  useEffect(() => {
-    fetchData(1, pageSize)
-  }, [])
+  useEffect(() => { fetchData(1, pageSize) }, [])
 
-  const onSearch = () => {
-    fetchData(1, pageSize)
-  }
+  const onSearch = () => fetchData(1, pageSize)
+  const onReset = () => { searchForm.resetFields(); fetchData(1, pageSize) }
+  const onPageChange = (p: number, ps: number) => fetchData(p, ps)
 
-  const onReset = () => {
-    searchForm.resetFields()
-    fetchData(1, pageSize)
-  }
-
-  const onPageChange = (p: number, ps: number) => {
-    fetchData(p, ps)
-  }
-
-  // create / edit
-  const openCreate = () => {
-    setEditingUser(null)
-    form.resetFields()
-    setModalOpen(true)
-  }
-
-  const openEdit = (record: UserItem) => {
-    setEditingUser(record)
-    form.setFieldsValue({
-      username: record.username,
-      nickname: record.nickname,
-      email: record.email,
-      phone: record.phone,
-      status: record.status,
-      deptId: record.deptId,
-      remark: '',
-    })
+  const openCreate = () => { setEditingUser(null); form.resetFields(); setModalOpen(true) }
+  const openEdit = (r: UserItem) => {
+    setEditingUser(r)
+    form.setFieldsValue({ username: r.username, nickname: r.nickname, email: r.email, phone: r.phone, status: r.status, deptId: r.deptId, remark: '' })
     setModalOpen(true)
   }
 
@@ -83,62 +43,29 @@ const UserPage = () => {
     setModalLoading(true)
     try {
       if (editingUser) {
-        const body: UpdateUserBody = {
-          nickname: values.nickname,
-          email: values.email,
-          phone: values.phone,
-          status: values.status,
-          deptId: values.deptId,
-        }
-        const { error } = await userApi.update(editingUser.id, body)
-        if (!error) {
-          message.success('更新成功')
-          setModalOpen(false)
-          fetchData(page, pageSize)
-        }
+        const { error } = await client.put(`/api/system/users/${editingUser.id}`, { body: { nickname: values.nickname, email: values.email, phone: values.phone, status: values.status, deptId: values.deptId } })
+        if (!error) { message.success('更新成功'); setModalOpen(false); fetchData(page, pageSize) }
       } else {
-        const body: CreateUserBody = {
-          username: values.username,
-          password: values.password,
-          nickname: values.nickname,
-          email: values.email,
-          phone: values.phone,
-          status: values.status,
-        }
-        const { error } = await userApi.create(body)
-        if (!error) {
-          message.success('创建成功')
-          setModalOpen(false)
-          fetchData(page, pageSize)
-        }
+        const { error } = await client.post('/api/system/users', { body: { username: values.username, password: values.password, nickname: values.nickname, email: values.email, phone: values.phone, status: values.status } })
+        if (!error) { message.success('创建成功'); setModalOpen(false); fetchData(page, pageSize) }
       }
-    } finally {
-      setModalLoading(false)
-    }
+    } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await userApi.delete(id)
-    if (!error) {
-      message.success('删除成功')
-      fetchData(page, pageSize)
-    }
+    const { error } = await client.delete(`/api/system/users/${id}`)
+    if (!error) { message.success('删除成功'); fetchData(page, pageSize) }
   }
 
   const handleStatus = async (id: string, status: number) => {
     const newStatus = status === 1 ? 0 : 1
-    const { error } = await userApi.updateStatus(id, newStatus)
-    if (!error) {
-      message.success(newStatus === 1 ? '已启用' : '已禁用')
-      fetchData(page, pageSize)
-    }
+    const { error } = await client.put(`/api/system/users/${id}/status`, { body: { status: newStatus } })
+    if (!error) { message.success(newStatus === 1 ? '已启用' : '已禁用'); fetchData(page, pageSize) }
   }
 
   const handleResetPwd = async (id: string) => {
-    const { error } = await userApi.resetPassword(id, '123456')
-    if (!error) {
-      message.success('密码已重置为 123456')
-    }
+    const { error } = await client.put(`/api/system/users/${id}/reset-pwd`, { body: { newPassword: '123456' } })
+    if (!error) message.success('密码已重置为 123456')
   }
 
   const columns = [
@@ -146,40 +73,28 @@ const UserPage = () => {
     { title: '昵称', dataIndex: 'nickname', key: 'nickname', width: 140 },
     { title: '邮箱', dataIndex: 'email', key: 'email', width: 200 },
     { title: '手机号', dataIndex: 'phone', key: 'phone', width: 140 },
-    {
-      title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (_: unknown, r: UserItem) => (
-        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
-      ),
-    },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80,
+      render: (_: unknown, r: UserItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag> },
     { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
-    {
-      title: '操作', key: 'action', width: 280,
+    { title: '操作', key: 'action', width: 280,
       render: (_: unknown, r: UserItem) => (
         <Space>
           <Button type="link" size="small" onClick={() => openEdit(r)}>编辑</Button>
           <Button type="link" size="small" onClick={() => handleResetPwd(r.id)}>重置密码</Button>
-          <Button type="link" size="small" onClick={() => handleStatus(r.id, r.status)}>
-            {r.status === 1 ? '禁用' : '启用'}
-          </Button>
+          <Button type="link" size="small" onClick={() => handleStatus(r.id, r.status)}>{r.status === 1 ? '禁用' : '启用'}</Button>
           <Popconfirm title="确定删除该用户？" onConfirm={() => handleDelete(r.id)}>
             <Button type="link" size="small" danger>删除</Button>
           </Popconfirm>
         </Space>
-      ),
-    },
+      ) },
   ]
 
   return (
     <div>
       <h3 className="text-lg font-semibold mb-4">用户管理</h3>
-
-      {/* Search */}
       <Card className="mb-4">
         <Form form={searchForm} layout="inline">
-          <Form.Item name="username">
-            <Input placeholder="用户名" prefix={<SearchOutlined />} />
-          </Form.Item>
+          <Form.Item name="username"><Input placeholder="用户名" prefix={<SearchOutlined />} /></Form.Item>
           <Form.Item name="status">
             <Select placeholder="状态" allowClear style={{ width: 120 }}>
               <Select.Option value={1}>正常</Select.Option>
@@ -192,65 +107,21 @@ const UserPage = () => {
           </Space>
         </Form>
       </Card>
-
-      {/* Table */}
-      <Card
-        title={`用户列表（${total}）`}
-        extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新增用户
-          </Button>
-        }
-      >
-        <Table
-          rowKey="id"
-          columns={columns}
-          dataSource={data}
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize,
-            total,
-            showSizeChanger: true,
-            showTotal: t => `共 ${t} 条`,
-            onChange: onPageChange,
-          }}
-          scroll={{ x: 1000 }}
-        />
+      <Card title={`用户列表（${total}）`}
+        extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增用户</Button>}>
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading}
+          pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
+          scroll={{ x: 1000 }} />
       </Card>
-
-      {/* Create/Edit Modal */}
-      <Modal
-        title={editingUser ? '编辑用户' : '新增用户'}
-        open={modalOpen}
-        onOk={handleOk}
-        onCancel={() => setModalOpen(false)}
-        confirmLoading={modalLoading}
-        destroyOnClose
-      >
+      <Modal title={editingUser ? '编辑用户' : '新增用户'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnClose>
         <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}>
-            <Input disabled={!!editingUser} />
-          </Form.Item>
-          {!editingUser && (
-            <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
-              <Input.Password />
-            </Form.Item>
-          )}
-          <Form.Item name="nickname" label="昵称">
-            <Input />
-          </Form.Item>
-          <Form.Item name="email" label="邮箱" rules={[{ type: 'email', message: '邮箱格式不正确' }]}>
-            <Input />
-          </Form.Item>
-          <Form.Item name="phone" label="手机号">
-            <Input />
-          </Form.Item>
+          <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}><Input disabled={!!editingUser} /></Form.Item>
+          {!editingUser && <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}><Input.Password /></Form.Item>}
+          <Form.Item name="nickname" label="昵称"><Input /></Form.Item>
+          <Form.Item name="email" label="邮箱" rules={[{ type: 'email', message: '邮箱格式不正确' }]}><Input /></Form.Item>
+          <Form.Item name="phone" label="手机号"><Input /></Form.Item>
           <Form.Item name="status" label="状态" initialValue={1}>
-            <Select>
-              <Select.Option value={1}>正常</Select.Option>
-              <Select.Option value={0}>禁用</Select.Option>
-            </Select>
+            <Select><Select.Option value={1}>正常</Select.Option><Select.Option value={0}>禁用</Select.Option></Select>
           </Form.Item>
         </Form>
       </Modal>

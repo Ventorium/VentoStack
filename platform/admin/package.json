@@ -9,7 +9,8 @@
     "format": "biome check --write .",
     "postinstall": "igit install 2>/dev/null || true",
     "lint:all": "npm run format",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "gen:sdk": "o2t generate typescript"
   },
   "devDependencies": {
     "@types/file-saver": "^2.0.7",

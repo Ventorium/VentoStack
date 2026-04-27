@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { menuApi } from '@/api/system'
+import { client } from '@/api'
 import type { FrontendRoute } from '@/api/types'
 
 export interface MenuState {
@@ -7,7 +7,6 @@ export interface MenuState {
   permissions: string[]
   ready: boolean
   collapsed: boolean
-
   fetchRoutes: () => Promise<void>
   toggleCollapsed: () => void
   hasPermission: (perm: string) => boolean
@@ -20,20 +19,14 @@ export const useMenu = create<MenuState>((set, get) => ({
   collapsed: false,
 
   async fetchRoutes() {
-    const { data: routes, error: routesErr } = await menuApi.getRoutes()
-    const { data: permissions, error: permsErr } = await menuApi.getPermissions()
-    if (!routesErr) {
-      set({ routes: routes ?? [] })
-    }
-    if (!permsErr) {
-      set({ permissions: permissions ?? [] })
-    }
+    const { data: routes, error: routesErr } = await client.get<FrontendRoute[]>('/api/system/user/routes')
+    const { data: permissions, error: permsErr } = await client.get<string[]>('/api/system/user/permissions')
+    if (!routesErr) set({ routes: routes ?? [] })
+    if (!permsErr) set({ permissions: permissions ?? [] })
     set({ ready: true })
   },
 
-  toggleCollapsed() {
-    set(s => ({ collapsed: !s.collapsed }))
-  },
+  toggleCollapsed() { set(s => ({ collapsed: !s.collapsed })) },
 
   hasPermission(perm: string) {
     const { permissions } = get()
@@ -43,8 +36,5 @@ export const useMenu = create<MenuState>((set, get) => ({
 }))
 
 export function usePermission() {
-  return useMenu(s => ({
-    permissions: s.permissions,
-    hasPermission: s.hasPermission,
-  }))
+  return useMenu(s => ({ permissions: s.permissions, hasPermission: s.hasPermission }))
 }
