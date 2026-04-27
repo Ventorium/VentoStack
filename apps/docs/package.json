@@ -6,13 +6,16 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "build": "bun run scripts/build-kb.ts && astro build",
+    "build:kb": "bun run scripts/build-kb.ts",
     "preview": "astro preview",
     "astro": "astro"
   },
   "dependencies": {
     "@astrojs/cloudflare": "^13.2.0",
     "@astrojs/starlight": "^0.38.3",
+    "@pagefind/default-ui": "^1.3.0",
+    "@ventostack/ai": "workspace:*",
     "astro": "^6.0.0",
     "sharp": "^0.32.5",
     "wrangler": "^4.84.1"

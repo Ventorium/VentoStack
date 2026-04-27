@@ -1,15 +1,18 @@
 {
 	"name": "vento-stack-docs",
-  "compatibility_date": "2026-04-23",
-  "compatibility_flags": [
-    "nodejs_compat",
-    "global_fetch_strictly_public"
-  ],
+	"compatibility_date": "2026-04-23",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
 	"assets": {
 		"binding": "ASSETS",
 		"directory": "./dist"
 	},
+	"ai": {
+		"binding": "AI"
+	},
 	"observability": {
-    "enabled": true
-  }
+		"enabled": true
+	}
 }

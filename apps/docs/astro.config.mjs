@@ -24,6 +24,7 @@ export default defineConfig({
       components: {
         Header: './src/components/Header.astro',
         Sidebar: './src/components/Sidebar.astro',
+        Search: './src/components/SearchDialog.astro',
       },
       sidebar: [
         // ===== 框架层 =====
