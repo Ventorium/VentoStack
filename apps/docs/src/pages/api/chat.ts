@@ -7,14 +7,17 @@
 
 import type { APIRoute } from "astro";
 import { createKnowledgeBase } from "@ventostack/ai";
-import kbData from "./kb-data.json";
+import kbDataRaw from "./kb-data.json";
 
 export const prerender = false;
 
 /** Cloudflare Workers AI 模型 */
 const WORKERS_AI_MODEL = "@cf/meta/llama-3-8b-instruct";
 
-// 重建知识库
+// 重建知识库（防御性处理：某些打包器可能将 JSON 包装为 { default: [...] }）
+const kbData = Array.isArray(kbDataRaw)
+  ? kbDataRaw
+  : (kbDataRaw as unknown as { default?: unknown[] }).default ?? [];
 const kb = createKnowledgeBase();
 for (const doc of kbData) {
   kb.add(doc);

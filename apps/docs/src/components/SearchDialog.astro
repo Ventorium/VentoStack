@@ -203,6 +203,7 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 					msg.textContent = content;
 					aiMessages.appendChild(msg);
 					aiMessages.scrollTop = aiMessages.scrollHeight;
+					return msg;
 				};
 
 				const sendMessage = async () => {
@@ -215,6 +216,8 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 					if (aiStatus) aiStatus.textContent = '';
 
 					let assistantMsg: HTMLDivElement | null = null;
+					const thinkingMsg = addMessage('assistant', '思考中...');
+					thinkingMsg.classList.add('ai-message--thinking');
 
 					try {
 						const response = await fetch('/api/chat', {
@@ -224,16 +227,19 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 						});
 
 						if (!response.ok) {
+							thinkingMsg.remove();
 							const err = await response.json().catch(() => ({ error: 'Request failed' }));
 							addMessage('assistant', `错误：${err.error ?? '未知错误'}`);
 							return;
 						}
 
 						if (!response.body) {
+							thinkingMsg.remove();
 							addMessage('assistant', '错误：响应流为空');
 							return;
 						}
 
+						thinkingMsg.remove();
 						assistantMsg = addMessage('assistant', '');
 						const reader = response.body.getReader();
 						const decoder = new TextDecoder();
@@ -254,7 +260,8 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 								if (data === '[DONE]') continue;
 								try {
 									const parsed = JSON.parse(data);
-									const chunk = parsed.choices?.[0]?.delta?.content;
+									const delta = parsed.choices?.[0]?.delta;
+									const chunk = delta?.content ?? delta?.reasoning ?? '';
 									if (chunk && assistantMsg) {
 										assistantMsg.textContent += chunk;
 										aiMessages.scrollTop = aiMessages.scrollHeight;
@@ -271,7 +278,8 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 							if (data !== '[DONE]') {
 								try {
 									const parsed = JSON.parse(data);
-									const chunk = parsed.choices?.[0]?.delta?.content;
+									const delta = parsed.choices?.[0]?.delta;
+									const chunk = delta?.content ?? delta?.reasoning ?? '';
 									if (chunk && assistantMsg) {
 										assistantMsg.textContent += chunk;
 									}
@@ -281,6 +289,7 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 							}
 						}
 					} catch (err) {
+						thinkingMsg.remove();
 						const errorText = `错误：${err instanceof Error ? err.message : String(err)}`;
 						if (assistantMsg) {
 							assistantMsg.textContent += '\n' + errorText;
@@ -510,6 +519,12 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 			align-self: flex-start;
 			background-color: var(--sl-color-gray-5);
 			color: var(--sl-color-gray-1);
+		}
+		.ai-message--thinking {
+			align-self: flex-start;
+			background-color: var(--sl-color-gray-5);
+			color: var(--sl-color-gray-2);
+			font-style: italic;
 		}
 		.ai-input-area {
 			display: flex;

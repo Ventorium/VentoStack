@@ -81,10 +81,17 @@ export interface KnowledgeBase {
  * @returns 词频映射表
  */
 function computeTermFrequency(text: string): Map<string, number> {
-  const terms = text
-    .toLowerCase()
-    .split(/\W+/)
-    .filter((t) => t.length > 1);
+  const terms: string[] = [];
+  const lower = text.toLowerCase();
+
+  // 提取英文单词 / 数字标识符
+  const words = lower.match(/[a-z0-9_]+/g) ?? [];
+  terms.push(...words.filter((t) => t.length > 1));
+
+  // 提取中文字符（按单字切分，确保短查询也能命中）
+  const chineseChars = lower.match(/[\u4e00-\u9fa5]/g) ?? [];
+  terms.push(...chineseChars);
+
   const freq = new Map<string, number>();
   for (const term of terms) {
     freq.set(term, (freq.get(term) ?? 0) + 1);
