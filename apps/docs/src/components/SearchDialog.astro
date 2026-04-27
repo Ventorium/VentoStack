@@ -212,7 +212,9 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 					addMessage('user', text);
 					aiInput.value = '';
 					aiSend.disabled = true;
-					if (aiStatus) aiStatus.textContent = '思考中...';
+					if (aiStatus) aiStatus.textContent = '';
+
+					let assistantMsg: HTMLDivElement | null = null;
 
 					try {
 						const response = await fetch('/api/chat', {
@@ -227,13 +229,66 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 							return;
 						}
 
-						const data = await response.json();
-						addMessage('assistant', data.answer ?? '无回答');
+						if (!response.body) {
+							addMessage('assistant', '错误：响应流为空');
+							return;
+						}
+
+						assistantMsg = addMessage('assistant', '');
+						const reader = response.body.getReader();
+						const decoder = new TextDecoder();
+						let buffer = '';
+
+						while (true) {
+							const { done, value } = await reader.read();
+							if (done) break;
+							buffer += decoder.decode(value, { stream: true });
+
+							const lines = buffer.split('\n');
+							buffer = lines.pop() || '';
+
+							for (const line of lines) {
+								const trimmed = line.trim();
+								if (!trimmed.startsWith('data: ')) continue;
+								const data = trimmed.slice(6);
+								if (data === '[DONE]') continue;
+								try {
+									const parsed = JSON.parse(data);
+									const chunk = parsed.choices?.[0]?.delta?.content;
+									if (chunk && assistantMsg) {
+										assistantMsg.textContent += chunk;
+										aiMessages.scrollTop = aiMessages.scrollHeight;
+									}
+								} catch {
+									// ignore malformed SSE lines
+								}
+							}
+						}
+
+						// flush remaining buffer
+						if (buffer.trim().startsWith('data: ')) {
+							const data = buffer.trim().slice(6);
+							if (data !== '[DONE]') {
+								try {
+									const parsed = JSON.parse(data);
+									const chunk = parsed.choices?.[0]?.delta?.content;
+									if (chunk && assistantMsg) {
+										assistantMsg.textContent += chunk;
+									}
+								} catch {
+									// ignore
+								}
+							}
+						}
 					} catch (err) {
-						addMessage('assistant', `错误：${err instanceof Error ? err.message : String(err)}`);
+						const errorText = `错误：${err instanceof Error ? err.message : String(err)}`;
+						if (assistantMsg) {
+							assistantMsg.textContent += '\n' + errorText;
+						} else {
+							addMessage('assistant', errorText);
+						}
 					} finally {
 						aiSend.disabled = false;
-						if (aiStatus) aiStatus.textContent = '';
 						aiInput.focus();
 					}
 				};

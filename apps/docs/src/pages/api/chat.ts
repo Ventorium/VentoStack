@@ -1,5 +1,5 @@
 /**
- * RAG 问答 API Endpoint
+ * RAG 问答 API Endpoint（支持 SSE 流式响应）
  *
  * 部署到 Cloudflare Workers 时使用 Workers AI（免费）。
  * 本地开发时回退到 OPENAI_API_KEY 配置的外部 LLM。
@@ -24,46 +24,50 @@ interface ChatRequest {
   message: string;
 }
 
-interface ChatResponse {
-  answer: string;
-  sources: Array<{
-    id: string;
-    title: string;
-    excerpt: string;
-  }>;
-}
-
-async function callWorkersAI(
-  env: Record<string, unknown>,
-  messages: Array<{ role: string; content: string }>,
-): Promise<string> {
-  const ai = env.AI as {
-    run(model: string, params: { messages: Array<{ role: string; content: string }> }): Promise<
-      { response?: string; text?: string }
-    >;
-  };
-
-  const result = await ai.run(WORKERS_AI_MODEL, { messages });
-  return result.response ?? result.text ?? "";
-}
-
 function getEnv(key: string): string | undefined {
-  // Astro/Vite 的 import.meta.env 在服务端可能不读取 process.env
-  // 所以同时检查两者
   const viteEnv = (import.meta.env as Record<string, string | undefined>)[key];
   if (viteEnv !== undefined) return viteEnv;
   return (process.env as Record<string, string | undefined>)[key];
 }
 
-async function callExternalLLM(
+/** 创建 SSE 流（模拟打字效果） */
+function createSSEStream(text: string): ReadableStream {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      const chunkSize = 8;
+      let i = 0;
+      function send() {
+        if (i >= text.length) {
+          controller.enqueue(encoder.encode("data: [DONE]\n\n"));
+          controller.close();
+          return;
+        }
+        const chunk = text.slice(i, i + chunkSize);
+        const data = JSON.stringify({
+          choices: [{ delta: { content: chunk } }],
+        });
+        controller.enqueue(encoder.encode(`data: ${data}\n\n`));
+        i += chunkSize;
+        setTimeout(send, 30);
+      }
+      send();
+    },
+  });
+}
+
+/** 调用本地/外部 LLM，返回 SSE 流 */
+async function callExternalLLMStream(
   messages: Array<{ role: string; content: string }>,
-): Promise<string> {
+): Promise<ReadableStream> {
   const apiKey = getEnv("OPENAI_API_KEY");
   const baseURL = getEnv("OPENAI_BASE_URL") ?? "https://api.openai.com/v1";
   const model = getEnv("OPENAI_MODEL") ?? "gpt-4.1-nano";
 
   if (!apiKey) {
-    throw new Error("LLM not configured: set OPENAI_API_KEY for local development");
+    return createSSEStream(
+      "LLM 未配置：本地开发请设置 OPENAI_API_KEY 环境变量。",
+    );
   }
 
   const response = await fetch(`${baseURL}/chat/completions`, {
@@ -76,19 +80,34 @@ async function callExternalLLM(
       model,
       messages,
       temperature: 0.3,
+      stream: true,
     }),
   });
 
   if (!response.ok) {
     const text = await response.text().catch(() => "unknown");
-    throw new Error(`LLM API error ${response.status}: ${text.slice(0, 200)}`);
+    return createSSEStream(`LLM API error ${response.status}: ${text.slice(0, 200)}`);
   }
 
-  const data = (await response.json()) as {
-    choices?: Array<{ message?: { content?: string } }>;
+  // 透传 LLM 的 SSE 流
+  return response.body ?? createSSEStream("");
+}
+
+/** 调用 Cloudflare Workers AI，包装为 SSE 流 */
+async function callWorkersAIStream(
+  env: Record<string, unknown>,
+  messages: Array<{ role: string; content: string }>,
+): Promise<ReadableStream> {
+  const ai = env.AI as {
+    run(
+      model: string,
+      params: { messages: Array<{ role: string; content: string }> },
+    ): Promise<{ response?: string; text?: string }>;
   };
 
-  return data.choices?.[0]?.message?.content ?? "";
+  const result = await ai.run(WORKERS_AI_MODEL, { messages });
+  const text = result.response ?? result.text ?? "";
+  return createSSEStream(text);
 }
 
 export const POST: APIRoute = async ({ request, locals }) => {
@@ -96,63 +115,64 @@ export const POST: APIRoute = async ({ request, locals }) => {
   try {
     body = (await request.json()) as ChatRequest;
   } catch {
-    return new Response(JSON.stringify({ error: "Invalid JSON body" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      createSSEStream("错误：请求体必须是有效的 JSON。"),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
   }
 
   const { message } = body;
   if (!message || typeof message !== "string") {
-    return new Response(JSON.stringify({ error: "message is required" }), {
-      status: 400,
-      headers: { "Content-Type": "application/json" },
-    });
+    return new Response(
+      createSSEStream("错误：message 字段必填且为字符串。"),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
   }
 
   // 检索相关文档
   const results = kb.search(message, 5);
   const context = results.map((r) => r.document.content).join("\n\n");
-  const sources = results.map((r) => ({
-    id: r.document.id,
-    title: String(r.document.metadata?.title ?? "未命名文档"),
-    excerpt: r.document.content.slice(0, 200),
-  }));
 
+  // context 为空直接返回，不浪费 LLM 调用
+  if (!context.trim()) {
+    return new Response(
+      createSSEStream("未检索到相关文档，请尝试使用其他关键词。"),
+      { headers: { "Content-Type": "text/event-stream" } },
+    );
+  }
+
+  // 将上下文放入 system prompt，确保 LLM 能看到
   const systemPrompt =
-    "你是 VentoStack 框架的技术文档助手。基于提供的文档片段回答用户问题。" +
-    "如果文档中没有相关信息，明确告知用户。不要编造信息。回答应简洁、准确，使用中文。";
+    "你是 VentoStack 框架的技术文档助手。请严格基于下方提供的文档片段回答用户问题。" +
+    "如果文档中没有相关信息，明确告知用户。不要编造信息。回答应简洁、准确，使用中文。\n\n" +
+    "=== 文档片段 ===\n" +
+    context +
+    "\n=== 文档片段结束 ===";
 
   const messages = [
     { role: "system", content: systemPrompt },
-    {
-      role: "user",
-      content: `基于以下文档片段回答问题：\n\n${context}\n\n问题：${message}`,
-    },
+    { role: "user", content: message },
   ];
 
   try {
-    // Astro v6 + @astrojs/cloudflare v13+: locals 直接就是 Cloudflare env/bindings
-    // 不要访问 locals.runtime，Astro v6 Proxy 会拦截并报错
     const env = locals as Record<string, unknown>;
 
-    let answer: string;
-    if (env.AI && typeof env.AI === "object") {
-      answer = await callWorkersAI(env, messages);
-    } else {
-      answer = await callExternalLLM(messages);
-    }
+    const stream =
+      env.AI && typeof env.AI === "object"
+        ? await callWorkersAIStream(env, messages)
+        : await callExternalLLMStream(messages);
 
-    const response: ChatResponse = { answer, sources };
-
-    return new Response(JSON.stringify(response), {
-      headers: { "Content-Type": "application/json" },
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   } catch (err) {
     const errorMsg = err instanceof Error ? err.message : String(err);
-    return new Response(JSON.stringify({ error: errorMsg }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
+    return new Response(createSSEStream(`错误：${errorMsg}`), {
+      headers: { "Content-Type": "text/event-stream" },
     });
   }
 };
