@@ -338,6 +338,26 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 									const parsed = JSON.parse(data);
 									const delta = parsed.choices?.[0]?.delta;
 
+													// reasoning（思考过程）→ 可折叠面板
+													if (delta?.reasoning) {
+														reasoningText += delta.reasoning;
+														if (!reasoningEl && assistantMsg) {
+															reasoningEl = document.createElement('details');
+															reasoningEl.className = 'ai-reasoning';
+															const summary = document.createElement('summary');
+															summary.textContent = '思考过程';
+															reasoningEl.appendChild(summary);
+															const rc = document.createElement('div');
+															rc.className = 'ai-reasoning-text';
+															reasoningEl.appendChild(rc);
+															assistantMsg.appendChild(reasoningEl);
+														}
+														if (reasoningEl) {
+															const rc = reasoningEl.querySelector('.ai-reasoning-text') as HTMLDivElement;
+															if (rc) rc.textContent = reasoningText;
+														}
+													}
+
 									// content（正式回答）→ Markdown 渲染
 									if (delta?.content) {
 										contentText += delta.content;
@@ -380,12 +400,24 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 								try {
 									const parsed = JSON.parse(data);
 									const delta = parsed.choices?.[0]?.delta;
-									if (delta?.reasoning) {
-										if (reasoningEl) {
-											const rc = reasoningEl.querySelector('.ai-reasoning-text') as HTMLDivElement;
-											if (rc) rc.textContent = reasoningText;
-										}
-									}
+															if (delta?.reasoning) {
+																reasoningText += delta.reasoning;
+																if (!reasoningEl && assistantMsg) {
+																	reasoningEl = document.createElement('details');
+																	reasoningEl.className = 'ai-reasoning';
+																	const summary = document.createElement('summary');
+																	summary.textContent = '思考过程';
+																	reasoningEl.appendChild(summary);
+																	const rc = document.createElement('div');
+																	rc.className = 'ai-reasoning-text';
+																	reasoningEl.appendChild(rc);
+																	assistantMsg.appendChild(reasoningEl);
+																}
+																if (reasoningEl) {
+																	const rc = reasoningEl.querySelector('.ai-reasoning-text') as HTMLDivElement;
+																	if (rc) rc.textContent = reasoningText;
+																}
+															}
 									if (delta?.content) {
 										contentText += delta.content;
 										if (!contentEl && assistantMsg) {
@@ -753,7 +785,7 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 			font-size: var(--sl-text-sm);
 			font-family: inherit;
 			resize: none;
-			min-height: 2.5rem;
+			min-height: 4rem;
 			max-height: 120px;
 			line-height: 1.5;
 			border-radius: 0.375rem;
@@ -765,8 +797,8 @@ const dataAttributes: DOMStringMap = { 'data-translations': JSON.stringify(pagef
 		}
 		.ai-send {
 			position: absolute;
-			right: 0.5rem;
-			bottom: 0.5rem;
+			right: 0.75rem;
+			bottom: 0.75rem;
 			display: flex;
 			align-items: center;
 			justify-content: center;

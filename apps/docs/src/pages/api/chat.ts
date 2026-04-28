@@ -27,6 +27,14 @@ interface ChatRequest {
   message: string;
 }
 
+interface Chapter {
+  source: string;
+  title: string;
+  url: string;
+  preview: string;
+  fullContent: string;
+}
+
 /** 将文档文件路径转换为站点相对 URL */
 function docPathToUrl(source?: string): string {
   if (!source) return "#";
@@ -37,6 +45,27 @@ function docPathToUrl(source?: string): string {
   if (!path.endsWith("/")) path += "/";
   return path;
 }
+
+/** 从知识库构建章节索引（按 source 分组，保留完整内容） */
+function buildChapterIndex(): Chapter[] {
+  const bySource = new Map<string, (typeof kbData)[0][]>();
+  for (const doc of kbData) {
+    const source = doc.metadata?.source as string;
+    if (!source) continue;
+    if (!bySource.has(source)) bySource.set(source, []);
+    bySource.get(source)!.push(doc);
+  }
+
+  return Array.from(bySource.entries()).map(([source, docs]) => {
+    const title = (docs[0].metadata?.title as string) || "无标题";
+    const url = docPathToUrl(source);
+    const fullContent = docs.map((d) => d.content).join("\n\n");
+    const preview = fullContent.replace(/\s+/g, " ").trim().slice(0, 300);
+    return { source, title, url, preview, fullContent };
+  });
+}
+
+const chapters = buildChapterIndex();
 
 /** 调用本地/外部 LLM（非流式），返回文本 */
 async function callExternalLLM(
@@ -83,18 +112,26 @@ async function callWorkersAI(
   return result.response ?? result.text ?? "";
 }
 
-/** 使用 LLM 提取关键词 */
-async function extractKeywordsWithLLM(
+/** 使用 LLM 选择最相关的章节（最多 5 个） */
+async function selectChaptersWithLLM(
   env: Record<string, unknown> | null,
   message: string,
-): Promise<string> {
+  chapters: Chapter[],
+): Promise<Chapter[]> {
+  const list = chapters
+    .map((c, i) => `${i + 1}. ${c.title}\n   ${c.preview}`)
+    .join("\n");
+
   const prompt = [
     {
       role: "system",
       content:
-        "你是关键词提取助手。请从用户问题中提取最重要的 3-5 个关键词，用于技术文档检索。只输出关键词，用空格分隔，不要有任何解释。",
+        "你是文档路由助手。请从下方章节列表中，选择最多5个与用户问题最相关的章节。只返回章节编号（例如：1,3,5），用逗号分隔，不要有任何解释。",
     },
-    { role: "user", content: message },
+    {
+      role: "user",
+      content: `用户问题：${message}\n\n可选章节：\n${list}`,
+    },
   ];
 
   const text =
@@ -102,7 +139,12 @@ async function extractKeywordsWithLLM(
       ? await callWorkersAI(env, prompt)
       : await callExternalLLM(prompt);
 
-  return text.trim().replace(/[\n,，]/g, " ").replace(/\s+/g, " ").trim();
+  const indices =
+    text
+      .match(/\d+/g)
+      ?.map((n) => parseInt(n, 10) - 1)
+      .filter((i) => i >= 0 && i < chapters.length) ?? [];
+  return [...new Set(indices)].slice(0, 5).map((i) => chapters[i]);
 }
 
 function getEnv(key: string): string | undefined {
@@ -312,41 +354,17 @@ export const POST: APIRoute = async ({ request, locals }) => {
   const env = locals as unknown as Record<string, unknown>;
   const hasWorkersAI = env.AI && typeof env.AI === "object";
 
-  // 使用 LLM 提取关键词，替代简单的正则过滤
-  const keywords = await extractKeywordsWithLLM(
+  // 使用 LLM 选择相关章节（最多5个），替代 TF-IDF 关键词检索
+  const selected = await selectChaptersWithLLM(
     hasWorkersAI ? env : null,
     message,
+    chapters,
   );
-  const rawResults = kb.search(keywords || message, 10);
 
-  // 按文档 URL 去重，每个文档只保留相似度最高的 chunk，并过滤低质量结果
-  const bestByUrl = new Map<string, (typeof rawResults)[0]>();
-  for (const r of rawResults) {
-    const url = docPathToUrl(r.document.metadata?.source as string | undefined);
-    const existing = bestByUrl.get(url);
-    if (!existing || r.score > existing.score) {
-      bestByUrl.set(url, r);
-    }
-  }
-  const results = Array.from(bestByUrl.values())
-    .filter((r) => r.score > 0.05)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, 5);
-
-  const sourceMap = new Map<string, { title: string; url: string }>();
-
-  const contextParts = results.map((r, i) => {
-    const source = r.document.metadata?.source as string | undefined;
-    const title = (r.document.metadata?.title as string) || "文档";
-    const url = docPathToUrl(source);
-    if (source && !sourceMap.has(url)) {
-      sourceMap.set(url, { title, url });
-    }
-    return `[${i + 1}] ${title}\n来源：${url}\n${r.document.content}`;
-  });
-
-  const context = contextParts.join("\n\n");
-  const sources = Array.from(sourceMap.values());
+  const sources = selected.map((c) => ({ title: c.title, url: c.url }));
+  const context = selected
+    .map((c, i) => `[${i + 1}] ${c.title}\n来源：${c.url}\n${c.fullContent}`)
+    .join("\n\n");
 
   // context 为空直接返回，不浪费 LLM 调用
   if (!context.trim()) {
@@ -359,7 +377,6 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 将上下文放入 system prompt，确保 LLM 能看到
   const systemPrompt =
     "你是 VentoStack 框架的技术文档助手。请严格基于下方提供的文档片段回答用户问题。" +
-    "不要输出思考过程，直接给出最终答案。" +
     "如果文档中没有相关信息，明确告知用户。不要编造信息。回答应简洁、准确，使用中文。\n\n" +
     "引用规范：当信息来自某个文档片段时，请在回答中使用 Markdown 链接格式标注来源，例如：[文件存储概述](/platform/oss/overview/)。\n\n" +
     "代码规范：当问题涉及 API 使用、配置或实现时，尽量直接给出可运行的参考代码示例，而不仅仅是文字描述。\n\n" +
@@ -375,23 +392,15 @@ export const POST: APIRoute = async ({ request, locals }) => {
   // 调试输出：打印完整请求上下文
   console.log("====== Ask AI Debug ======");
   console.log("用户问题:", message);
-  console.log("提取关键词:", keywords || "(使用原句)");
-  console.log("原始检索结果数:", rawResults.length);
   console.log(
-    "原始检索来源:",
-    rawResults.map((r) => `${r.document.metadata?.title ?? "无标题"}(score:${r.score.toFixed(3)})`),
-  );
-  console.log("去重后结果数:", results.length);
-  console.log(
-    "去重后来源:",
-    results.map((r) => `${r.document.metadata?.title ?? "无标题"}(score:${r.score.toFixed(3)})`),
+    "LLM 选中章节:",
+    selected.map((c) => c.title),
   );
   console.log("完整 Prompt:");
   console.log(JSON.stringify(messages, null, 2));
   console.log("==========================");
 
   try {
-
     const stream =
       env.AI && typeof env.AI === "object"
         ? await callWorkersAIStream(env, messages, sources)
