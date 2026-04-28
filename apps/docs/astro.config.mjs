@@ -107,6 +107,7 @@ export default defineConfig({
   adapter: useCloudflare
     ? cloudflare({
         prerenderEnvironment: 'node',
+        remoteBindings: false,
       })
     : node({ mode: 'standalone' })
 })
