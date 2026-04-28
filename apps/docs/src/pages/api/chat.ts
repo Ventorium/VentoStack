@@ -12,7 +12,7 @@ import kbDataRaw from "./kb-data.json";
 export const prerender = false;
 
 /** Cloudflare Workers AI 模型 */
-const WORKERS_AI_MODEL = "@cf/meta/llama-3-8b-instruct";
+const WORKERS_AI_MODEL = "@cf/zai-org/glm-4.7-flash";
 
 // 重建知识库，并在 content 中融入标题和描述以提升 TF-IDF 召回质量
 const kbData = Array.isArray(kbDataRaw)
@@ -74,7 +74,7 @@ async function callWorkersAI(
     ): Promise<{ response?: string; text?: string }>;
   };
 
-  const result = await ai.run(WORKERS_AI_MODEL, { messages });
+  const result = await ai.run(env.WORKER_AI_MODEL as string || WORKERS_AI_MODEL, { messages });
   return result.response ?? result.text ?? "";
 }
 
