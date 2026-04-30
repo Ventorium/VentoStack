@@ -1,31 +1,34 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Card, Table, Button, Input, Form, Modal, Space, Tag, message, Popconfirm, Select } from 'antd'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
 import type { PaginatedData, DictTypeItem, DictDataItem } from '@/api/types'
+import { useTable } from '@/hooks/useTable'
+
+const typeFetcher = (params: Record<string, unknown>) =>
+  client.get<PaginatedData<DictTypeItem>>('/api/system/dict/types', { query: params })
 
 const DictPage = () => {
-  const [typeLoading, setTypeLoading] = useState(false); const [typeData, setTypeData] = useState<DictTypeItem[]>([])
-  const [total, setTotal] = useState(0); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(10)
-  const [searchForm] = Form.useForm(); const [typeModalOpen, setTypeModalOpen] = useState(false)
-  const [editingType, setEditingType] = useState<DictTypeItem | null>(null); const [typeModalLoading, setTypeModalLoading] = useState(false)
+  const { loading: typeLoading, data: typeData, total, page, pageSize, refresh, onSearch, onReset, onPageChange } =
+    useTable<DictTypeItem>(typeFetcher)
+  const [searchForm] = Form.useForm()
+  const [typeModalOpen, setTypeModalOpen] = useState(false)
+  const [editingType, setEditingType] = useState<DictTypeItem | null>(null)
+  const [typeModalLoading, setTypeModalLoading] = useState(false)
   const [typeForm] = Form.useForm()
-  const [currentTypeCode, setCurrentTypeCode] = useState(''); const [dictData, setDictData] = useState<DictDataItem[]>([])
-  const [dataLoading, setDataLoading] = useState(false); const [dataEditOpen, setDataEditOpen] = useState(false)
-  const [editingData, setEditingData] = useState<DictDataItem | null>(null); const [dataModalLoading, setDataModalLoading] = useState(false)
+  const [currentTypeCode, setCurrentTypeCode] = useState('')
+  const [dictData, setDictData] = useState<DictDataItem[]>([])
+  const [dataLoading, setDataLoading] = useState(false)
+  const [dataEditOpen, setDataEditOpen] = useState(false)
+  const [editingData, setEditingData] = useState<DictDataItem | null>(null)
+  const [dataModalLoading, setDataModalLoading] = useState(false)
   const [dataForm] = Form.useForm()
 
-  const fetchTypes = useCallback(async (p = page, ps = pageSize) => {
-    setTypeLoading(true)
-    try {
-      const values = await searchForm.validateFields().catch(() => ({}))
-      const { error, data: result } = await client.get<PaginatedData<DictTypeItem>>('/api/system/dict/types', { query: { page: p, pageSize: ps, ...values } })
-      if (!error && result) { setTypeData(result.list); setTotal(result.total); setPage(result.page); setPageSize(result.pageSize) }
-    } finally { setTypeLoading(false) }
-  }, [page, pageSize, searchForm])
-
-  useEffect(() => { fetchTypes(1, pageSize) }, [])
-  const onSearch = () => fetchTypes(1, pageSize); const onReset = () => { searchForm.resetFields(); fetchTypes(1, pageSize) }; const onPageChange = (p: number, ps: number) => fetchTypes(p, ps)
+  const handleSearch = async () => {
+    const values = await searchForm.validateFields().catch(() => ({}))
+    onSearch(values)
+  }
+  const handleReset = () => { searchForm.resetFields(); onReset() }
 
   const openCreateType = () => { setEditingType(null); typeForm.resetFields(); setTypeModalOpen(true) }
   const openEditType = (r: DictTypeItem) => { setEditingType(r); typeForm.setFieldsValue({ name: r.name, code: r.code, remark: r.remark, status: r.status }); setTypeModalOpen(true) }
@@ -36,16 +39,16 @@ const DictPage = () => {
     try {
       if (editingType) {
         const { error } = await client.put(`/api/system/dict/types/${editingType.code}`, { body: values })
-        if (!error) { message.success('更新成功'); setTypeModalOpen(false); fetchTypes(page, pageSize) }
+        if (!error) { message.success('更新成功'); setTypeModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/dict/types', { body: values })
-        if (!error) { message.success('创建成功'); setTypeModalOpen(false); fetchTypes(page, pageSize) }
+        if (!error) { message.success('创建成功'); setTypeModalOpen(false); refresh() }
       }
     } finally { setTypeModalLoading(false) }
   }
   const handleDeleteType = async (code: string) => {
     const { error } = await client.delete(`/api/system/dict/types/${code}`)
-    if (!error) { message.success('删除成功'); fetchTypes(page, pageSize) }
+    if (!error) { message.success('删除成功'); refresh() }
   }
 
   const openDictData = async (typeCode: string) => {
@@ -111,7 +114,7 @@ const DictPage = () => {
         <Form form={searchForm} layout="inline">
           <Form.Item name="name"><Input placeholder="字典名称" prefix={<SearchOutlined />} /></Form.Item>
           <Form.Item name="code"><Input placeholder="字典标识" /></Form.Item>
-          <Space><Button type="primary" onClick={onSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={onReset}>重置</Button></Space>
+          <Space><Button type="primary" onClick={handleSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button></Space>
         </Form>
       </Card>
       <Card title={`字典类型（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreateType}>新增字典</Button>}>

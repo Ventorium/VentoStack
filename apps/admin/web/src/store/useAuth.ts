@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import { client } from '@/api'
+import { client, setOnUnauthorized } from '@/api'
 import { globalNavigate } from '@/components/GlobalHistory'
 import { getAccessToken, setAccessToken, clearToken } from './token'
 
@@ -65,3 +65,9 @@ export const useAuth = create<AuthState>((set, get) => ({
     onExpired()
   },
 }))
+
+// 注册 401 全局处理 — API 返回 401 时自动跳转登录页
+setOnUnauthorized(() => {
+  useAuth.setState({ user: null })
+  globalNavigate('/auth/login', { replace: true })
+})

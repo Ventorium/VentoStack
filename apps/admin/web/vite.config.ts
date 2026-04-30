@@ -2,14 +2,32 @@ import { resolve } from 'node:path'
 import react from '@vitejs/plugin-react-swc'
 import UnoCSS from 'unocss/vite'
 import { defineConfig, loadEnv } from 'vite'
+import type { Plugin } from 'vite'
 import pages from 'vite-plugin-pages'
 import svgr from 'vite-plugin-svgr'
+
+const guiRoot = resolve(__dirname, '../../../packages/gui/src')
+
+/** Resolve bare imports from gui package source using the app's node_modules */
+function guiResolvePlugin(appNodeModules: string): Plugin {
+  return {
+    name: 'gui-resolve',
+    enforce: 'pre',
+    resolveId(source, importer) {
+      if (importer?.startsWith(guiRoot) && !source.startsWith('.') && !source.startsWith('/')) {
+        // Bare import from gui source — resolve from app's node_modules
+        return this.resolve(source, resolve(appNodeModules, '__placeholder__.js'), { skipSelf: true })
+      }
+    },
+  }
+}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
   return {
     plugins: [
+      guiResolvePlugin(resolve(__dirname, 'node_modules')),
       react(),
       UnoCSS(),
       svgr(),
@@ -35,19 +53,21 @@ export default defineConfig(({ mode }) => {
       }
     ],
     resolve: {
-      alias: {
-        '@': resolve(__dirname, './src')
-      }
+      alias: [
+        { find: '@', replacement: resolve(__dirname, './src') },
+        { find: '@ventostack/gui/styles', replacement: resolve(__dirname, '../../../packages/gui/src/styles') },
+        { find: '@ventostack/gui', replacement: resolve(__dirname, '../../../packages/gui/src/index.ts') },
+      ],
     },
     server: {
       port: 5173,
       proxy: {
         '/api': {
-          target: 'http://127.0.0.1:8080',
+          target: 'http://127.0.0.1:9320',
           changeOrigin: true,
         },
         '/ws': {
-          target: 'ws://127.0.0.1:8080',
+          target: 'ws://127.0.0.1:9320',
           ws: true,
         },
       },

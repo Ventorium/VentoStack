@@ -2,6 +2,7 @@ import { Button, Form, Input, message } from 'antd'
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth, type LoginForm } from '@/store/useAuth'
+import loginBg from '@/assets/images/login-bg.webp'
 
 const LoginPage = () => {
   const navigate = useNavigate()
@@ -22,6 +23,10 @@ const LoginPage = () => {
   }
 
   return (
+    <div
+      className="min-h-screen flex items-center justify-center bg-cover bg-center"
+      style={{ backgroundImage: `url(${loginBg})` }}
+    >
     <div className="w-120 bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-8">
       <div className="text-center mb-8">
         <h1 className="text-2xl font-bold text-dark">VentoStack 管理后台</h1>
@@ -50,6 +55,7 @@ const LoginPage = () => {
           </Button>
         </Form.Item>
       </Form>
+    </div>
     </div>
   )
 }

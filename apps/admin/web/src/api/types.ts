@@ -1,18 +1,6 @@
 /* 业务类型定义 — 纯类型，不含 API 调用 */
 
-export interface PaginatedData<T> {
-  list: T[]
-  total: number
-  page: number
-  pageSize: number
-  totalPages?: number
-}
-
-export interface PaginatedParams {
-  page?: number
-  pageSize?: number
-  [key: string]: unknown
-}
+export type { PaginatedData, PaginatedParams } from '@ventostack/gui'
 
 export type CreateNoticeBody = { title: string; content: string; type?: number }
 export type UpdateNoticeBody = { title?: string; content?: string; type?: number }

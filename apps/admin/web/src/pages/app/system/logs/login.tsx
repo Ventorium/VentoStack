@@ -1,34 +1,22 @@
-import { useEffect, useState, useCallback } from 'react'
 import { Card, Table, Input, Select, Form, Button, Tag, Space } from 'antd'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
-import { logApi } from '@/api/system'
-import type { LoginLogItem } from '@/api/types'
+import { client } from '@/api'
+import type { PaginatedData, LoginLogItem } from '@/api/types'
+import { useTable } from '@/hooks/useTable'
+
+const fetcher = (params: Record<string, unknown>) =>
+  client.get<PaginatedData<LoginLogItem>>('/api/system/login-logs', { query: params })
 
 const LoginLogPage = () => {
-  const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<LoginLogItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const { loading, data, total, page, pageSize, onSearch, onReset, onPageChange } =
+    useTable<LoginLogItem>(fetcher)
   const [searchForm] = Form.useForm()
 
-  const fetchData = useCallback(async (p = page, ps = pageSize) => {
-    setLoading(true)
-    try {
-      const values = await searchForm.validateFields().catch(() => ({}))
-      const { error, data: result } = await logApi.listLoginLogs({ page: p, pageSize: ps, ...values })
-      if (!error && result) {
-        setData(result.list); setTotal(result.total)
-        setPage(result.page); setPageSize(result.pageSize)
-      }
-    } finally { setLoading(false) }
-  }, [page, pageSize, searchForm])
-
-  useEffect(() => { fetchData(1, pageSize) }, [])
-
-  const onSearch = () => fetchData(1, pageSize)
-  const onReset = () => { searchForm.resetFields(); fetchData(1, pageSize) }
-  const onPageChange = (p: number, ps: number) => fetchData(p, ps)
+  const handleSearch = async () => {
+    const values = await searchForm.validateFields().catch(() => ({}))
+    onSearch(values)
+  }
+  const handleReset = () => { searchForm.resetFields(); onReset() }
 
   const columns = [
     { title: '用户', dataIndex: 'username', key: 'username', width: 120 },
@@ -36,12 +24,8 @@ const LoginLogPage = () => {
     { title: '位置', dataIndex: 'location', key: 'location', width: 160, ellipsis: true },
     { title: '浏览器', dataIndex: 'browser', key: 'browser', width: 160, ellipsis: true },
     { title: '操作系统', dataIndex: 'os', key: 'os', width: 120, ellipsis: true },
-    {
-      title: '状态', dataIndex: 'status', key: 'status', width: 80,
-      render: (_: unknown, r: LoginLogItem) => (
-        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '成功' : '失败'}</Tag>
-      ),
-    },
+    { title: '状态', dataIndex: 'status', key: 'status', width: 80,
+      render: (_: unknown, r: LoginLogItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '成功' : '失败'}</Tag> },
     { title: '信息', dataIndex: 'message', key: 'message', ellipsis: true },
     { title: '登录时间', dataIndex: 'loginAt', key: 'loginAt', width: 180 },
   ]
@@ -49,12 +33,9 @@ const LoginLogPage = () => {
   return (
     <div>
       <h3 className="text-lg font-semibold mb-4">登录日志</h3>
-
       <Card className="mb-4">
         <Form form={searchForm} layout="inline">
-          <Form.Item name="username">
-            <Input placeholder="用户名" prefix={<SearchOutlined />} />
-          </Form.Item>
+          <Form.Item name="username"><Input placeholder="用户名" prefix={<SearchOutlined />} /></Form.Item>
           <Form.Item name="status">
             <Select placeholder="状态" allowClear style={{ width: 120 }}>
               <Select.Option value={1}>成功</Select.Option>
@@ -62,19 +43,15 @@ const LoginLogPage = () => {
             </Select>
           </Form.Item>
           <Space>
-            <Button type="primary" onClick={onSearch}>搜索</Button>
-            <Button icon={<ReloadOutlined />} onClick={onReset}>重置</Button>
+            <Button type="primary" onClick={handleSearch}>搜索</Button>
+            <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
           </Space>
         </Form>
       </Card>
-
       <Card title={`登录日志（${total}）`}>
-        <Table
-          rowKey="id" columns={columns} dataSource={data} loading={loading}
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading}
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
-          scroll={{ x: 1100 }}
-          size="small"
-        />
+          scroll={{ x: 1100 }} size="small" />
       </Card>
     </div>
   )

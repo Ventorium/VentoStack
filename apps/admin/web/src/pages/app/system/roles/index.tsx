@@ -1,15 +1,16 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState, useCallback } from 'react'
 import { Card, Table, Button, Input, Select, Form, Modal, Space, Tag, message, Popconfirm } from 'antd'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
 import type { PaginatedData, RoleItem, MenuItem } from '@/api/types'
+import { useTable } from '@/hooks/useTable'
+
+const fetcher = (params: Record<string, unknown>) =>
+  client.get<PaginatedData<RoleItem>>('/api/system/roles', { query: params })
 
 const RolePage = () => {
-  const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<RoleItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
+  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange } =
+    useTable<RoleItem>(fetcher)
   const [searchForm] = Form.useForm()
   const [modalOpen, setModalOpen] = useState(false)
   const [editingRole, setEditingRole] = useState<RoleItem | null>(null)
@@ -20,20 +21,11 @@ const RolePage = () => {
   const [selectedMenus, setSelectedMenus] = useState<string[]>([])
   const [assignRoleId, setAssignRoleId] = useState('')
 
-  const fetchData = useCallback(async (p = page, ps = pageSize) => {
-    setLoading(true)
-    try {
-      const values = await searchForm.validateFields().catch(() => ({}))
-      const { error, data: result } = await client.get<PaginatedData<RoleItem>>('/api/system/roles', { query: { page: p, pageSize: ps, ...values } })
-      if (!error && result) { setData(result.list); setTotal(result.total); setPage(result.page); setPageSize(result.pageSize) }
-    } finally { setLoading(false) }
-  }, [page, pageSize, searchForm])
-
-  useEffect(() => { fetchData(1, pageSize) }, [])
-
-  const onSearch = () => fetchData(1, pageSize)
-  const onReset = () => { searchForm.resetFields(); fetchData(1, pageSize) }
-  const onPageChange = (p: number, ps: number) => fetchData(p, ps)
+  const handleSearch = async () => {
+    const values = await searchForm.validateFields().catch(() => ({}))
+    onSearch(values)
+  }
+  const handleReset = () => { searchForm.resetFields(); onReset() }
 
   const openCreate = () => { setEditingRole(null); form.resetFields(); setModalOpen(true) }
   const openEdit = (r: RoleItem) => {
@@ -48,17 +40,17 @@ const RolePage = () => {
     try {
       if (editingRole) {
         const { error } = await client.put(`/api/system/roles/${editingRole.id}`, { body: { name: values.name, sort: values.sort, remark: values.remark, status: values.status } })
-        if (!error) { message.success('更新成功'); setModalOpen(false); fetchData(page, pageSize) }
+        if (!error) { message.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/roles', { body: { name: values.name, code: values.code, sort: values.sort, remark: values.remark } })
-        if (!error) { message.success('创建成功'); setModalOpen(false); fetchData(page, pageSize) }
+        if (!error) { message.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete(`/api/system/roles/${id}`)
-    if (!error) { message.success('删除成功'); fetchData(page, pageSize) }
+    if (!error) { message.success('删除成功'); refresh() }
   }
 
   const openAssignMenus = async (r: RoleItem) => {
@@ -104,7 +96,7 @@ const RolePage = () => {
               <Select.Option value={0}>禁用</Select.Option>
             </Select>
           </Form.Item>
-          <Space><Button type="primary" onClick={onSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={onReset}>重置</Button></Space>
+          <Space><Button type="primary" onClick={handleSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button></Space>
         </Form>
       </Card>
       <Card title={`角色列表（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增角色</Button>}>

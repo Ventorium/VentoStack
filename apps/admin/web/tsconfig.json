@@ -16,7 +16,9 @@
     /* Path aliases */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@ventostack/gui": ["../../packages/gui/src/index.ts"],
+      "@ventostack/gui/*": ["../../packages/gui/src/*"]
     },
 
     /* Linting */

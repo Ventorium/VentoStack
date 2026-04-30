@@ -1,27 +1,27 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useState } from 'react'
 import { Card, Table, Button, Input, Select, Form, Modal, Space, message, Popconfirm } from 'antd'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
 import type { PaginatedData, ConfigItem } from '@/api/types'
+import { useTable } from '@/hooks/useTable'
+
+const fetcher = (params: Record<string, unknown>) =>
+  client.get<PaginatedData<ConfigItem>>('/api/system/configs', { query: params })
 
 const ConfigPage = () => {
-  const [loading, setLoading] = useState(false); const [data, setData] = useState<ConfigItem[]>([])
-  const [total, setTotal] = useState(0); const [page, setPage] = useState(1); const [pageSize, setPageSize] = useState(10)
-  const [searchForm] = Form.useForm(); const [modalOpen, setModalOpen] = useState(false)
-  const [editingConfig, setEditingConfig] = useState<ConfigItem | null>(null); const [modalLoading, setModalLoading] = useState(false)
+  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange } =
+    useTable<ConfigItem>(fetcher)
+  const [searchForm] = Form.useForm()
+  const [modalOpen, setModalOpen] = useState(false)
+  const [editingConfig, setEditingConfig] = useState<ConfigItem | null>(null)
+  const [modalLoading, setModalLoading] = useState(false)
   const [form] = Form.useForm()
 
-  const fetchData = useCallback(async (p = page, ps = pageSize) => {
-    setLoading(true)
-    try {
-      const values = await searchForm.validateFields().catch(() => ({}))
-      const { error, data: result } = await client.get<PaginatedData<ConfigItem>>('/api/system/configs', { query: { page: p, pageSize: ps, ...values } })
-      if (!error && result) { setData(result.list); setTotal(result.total); setPage(result.page); setPageSize(result.pageSize) }
-    } finally { setLoading(false) }
-  }, [page, pageSize, searchForm])
-
-  useEffect(() => { fetchData(1, pageSize) }, [])
-  const onSearch = () => fetchData(1, pageSize); const onReset = () => { searchForm.resetFields(); fetchData(1, pageSize) }; const onPageChange = (p: number, ps: number) => fetchData(p, ps)
+  const handleSearch = async () => {
+    const values = await searchForm.validateFields().catch(() => ({}))
+    onSearch(values)
+  }
+  const handleReset = () => { searchForm.resetFields(); onReset() }
 
   const openCreate = () => { setEditingConfig(null); form.resetFields(); form.setFieldsValue({ type: 0 }); setModalOpen(true) }
   const openEdit = (r: ConfigItem) => { setEditingConfig(r); form.setFieldsValue(r); setModalOpen(true) }
@@ -31,16 +31,16 @@ const ConfigPage = () => {
     try {
       if (editingConfig) {
         const { error } = await client.put(`/api/system/configs/${editingConfig.key}`, { body: values })
-        if (!error) { message.success('更新成功'); setModalOpen(false); fetchData(page, pageSize) }
+        if (!error) { message.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/configs', { body: values })
-        if (!error) { message.success('创建成功'); setModalOpen(false); fetchData(page, pageSize) }
+        if (!error) { message.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
   }
   const handleDelete = async (key: string) => {
     const { error } = await client.delete(`/api/system/configs/${key}`)
-    if (!error) { message.success('删除成功'); fetchData(page, pageSize) }
+    if (!error) { message.success('删除成功'); refresh() }
   }
 
   const typeMap: Record<number, string> = { 0: '字符串', 1: '数字', 2: '布尔', 3: 'JSON' }
@@ -68,7 +68,7 @@ const ConfigPage = () => {
         <Form form={searchForm} layout="inline">
           <Form.Item name="name"><Input placeholder="参数名称" prefix={<SearchOutlined />} /></Form.Item>
           <Form.Item name="key"><Input placeholder="参数键名" /></Form.Item>
-          <Space><Button type="primary" onClick={onSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={onReset}>重置</Button></Space>
+          <Space><Button type="primary" onClick={handleSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button></Space>
         </Form>
       </Card>
       <Card title={`参数列表（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增参数</Button>}>
