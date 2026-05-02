@@ -35,6 +35,7 @@ export interface MenuTreeNode {
   sort: number;
   visible: boolean;
   status: number;
+  createdAt: string;
   children: MenuTreeNode[];
 }
 
@@ -44,6 +45,7 @@ export interface MenuService {
   update(id: string, params: Partial<CreateMenuParams>): Promise<void>;
   delete(id: string): Promise<void>;
   getTree(): Promise<MenuTreeNode[]>;
+  getAllTree(): Promise<MenuTreeNode[]>;
   getById(id: string): Promise<MenuTreeNode | null>;
 }
 
@@ -71,6 +73,7 @@ function buildTree(rows: Array<Record<string, unknown>>): MenuTreeNode[] {
       sort: row.sort as number,
       visible: (row.visible as boolean) ?? true,
       status: (row.status as number) ?? 1,
+      createdAt: (row.created_at as string) ?? "",
       children: [],
     };
     nodeMap.set(node.id, node);
@@ -225,8 +228,18 @@ export function createMenuService(deps: {
 
     async getTree() {
       const rows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status
+        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
          FROM sys_menu WHERE status = 1
+         ORDER BY sort ASC`,
+      );
+
+      return buildTree(rows as Array<Record<string, unknown>>);
+    },
+
+    async getAllTree() {
+      const rows = await executor(
+        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
+         FROM sys_menu
          ORDER BY sort ASC`,
       );
 
@@ -235,7 +248,7 @@ export function createMenuService(deps: {
 
     async getById(id) {
       const rows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status
+        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
          FROM sys_menu WHERE id = $1`,
         [id],
       );
@@ -245,7 +258,7 @@ export function createMenuService(deps: {
 
       // 获取所有菜单来构建树（因为需要返回含 children 的节点）
       const allRows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status
+        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
          FROM sys_menu WHERE status = 1
          ORDER BY sort ASC`,
       );

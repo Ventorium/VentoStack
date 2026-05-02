@@ -11,6 +11,8 @@ import GlobalMessage from '@/components/GlobalMessage'
 import { AppTheme } from '@/theme'
 import routes from '~react-pages'
 
+console.log('routes', routes)
+
 const AppRoutes = () => {
   return (
     <Suspense fallback={<Spin size="large" fullscreen />}>

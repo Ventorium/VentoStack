@@ -21,12 +21,12 @@ export interface RoleItem {
 export interface MenuItem {
   id: string; parentId: string | null; name: string; path: string; component: string
   redirect: string; type: number; permission: string; icon: string; sort: number
-  visible: boolean; status: number; children: MenuItem[]
+  visible: boolean; status: number; createdAt: string; children: MenuItem[]
 }
 
 export interface DeptItem {
   id: string; parentId: string | null; name: string; sort: number
-  leader: string; phone: string; email: string; status: number; children: DeptItem[]
+  leader: string; phone: string; email: string; status: number; createdAt: string; children: DeptItem[]
 }
 
 export interface PostItem {

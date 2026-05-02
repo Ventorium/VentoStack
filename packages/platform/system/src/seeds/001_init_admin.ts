@@ -61,7 +61,7 @@ export const initAdminSeed: Seed = {
     await executor(
       `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
        VALUES ($1, NULL, $2, $3, $4, $5, $6, NULL, $7, $8, TRUE, 1, NOW(), NOW())`,
-      [systemDirId, '系统管理', '/system', 'LAYOUT', '/system/user', 1, 'setting', 1],
+      [systemDirId, '系统管理', '/system', 'LAYOUT', '/system/users', 1, 'SettingOutlined', 1],
     );
 
     // Level 2: Menus
@@ -73,15 +73,15 @@ export const initAdminSeed: Seed = {
       icon: string;
       sort: number;
     }> = [
-      { id: generateId(), name: '用户管理', path: '/system/user', component: 'system/user/index', icon: 'user', sort: 1 },
-      { id: generateId(), name: '角色管理', path: '/system/role', component: 'system/role/index', icon: 'peoples', sort: 2 },
-      { id: generateId(), name: '菜单管理', path: '/system/menu', component: 'system/menu/index', icon: 'tree-table', sort: 3 },
-      { id: generateId(), name: '部门管理', path: '/system/dept', component: 'system/dept/index', icon: 'tree', sort: 4 },
-      { id: generateId(), name: '岗位管理', path: '/system/post', component: 'system/post/index', icon: 'post', sort: 5 },
-      { id: generateId(), name: '字典管理', path: '/system/dict', component: 'system/dict/index', icon: 'dict', sort: 6 },
-      { id: generateId(), name: '参数设置', path: '/system/config', component: 'system/config/index', icon: 'edit', sort: 7 },
-      { id: generateId(), name: '通知公告', path: '/system/notice', component: 'system/notice/index', icon: 'message', sort: 8 },
-      { id: generateId(), name: '日志管理', path: '/system/log', component: 'LAYOUT', icon: 'log', sort: 9 },
+      { id: generateId(), name: '用户管理', path: '/system/users', component: 'system/users/index', icon: 'UserOutlined', sort: 1 },
+      { id: generateId(), name: '角色管理', path: '/system/roles', component: 'system/roles/index', icon: 'TeamOutlined', sort: 2 },
+      { id: generateId(), name: '菜单管理', path: '/system/menus', component: 'system/menus/index', icon: 'MenuOutlined', sort: 3 },
+      { id: generateId(), name: '部门管理', path: '/system/depts', component: 'system/depts/index', icon: 'ApartmentOutlined', sort: 4 },
+      { id: generateId(), name: '岗位管理', path: '/system/posts', component: 'system/posts/index', icon: 'SolutionOutlined', sort: 5 },
+      { id: generateId(), name: '字典管理', path: '/system/dict', component: 'system/dict/index', icon: 'BookOutlined', sort: 6 },
+      { id: generateId(), name: '参数设置', path: '/system/configs', component: 'system/configs/index', icon: 'ToolOutlined', sort: 7 },
+      { id: generateId(), name: '通知公告', path: '/system/notices', component: 'system/notices/index', icon: 'BellOutlined', sort: 8 },
+      { id: generateId(), name: '日志管理', path: '/system/logs', component: 'LAYOUT', icon: 'FileTextOutlined', sort: 9 },
     ];
 
     // Level 3: Buttons (permissions) per menu

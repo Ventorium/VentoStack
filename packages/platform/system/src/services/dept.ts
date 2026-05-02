@@ -36,6 +36,7 @@ export interface DeptTreeNode {
   phone: string;
   email: string;
   status: number;
+  createdAt: string;
   children: DeptTreeNode[];
 }
 
@@ -129,7 +130,7 @@ export function createDeptService(deps: { executor: SqlExecutor }): DeptService 
 
   async function getTree(): Promise<DeptTreeNode[]> {
     const rows = await executor(
-      `SELECT id, parent_id, name, sort, leader, phone, email, status FROM sys_dept WHERE deleted_at IS NULL ORDER BY sort ASC, id ASC`,
+      `SELECT id, parent_id, name, sort, leader, phone, email, status, created_at FROM sys_dept WHERE deleted_at IS NULL ORDER BY sort ASC, id ASC`,
     ) as Array<Record<string, unknown>>;
 
     const nodes: DeptTreeNode[] = rows.map((row) => ({
@@ -141,6 +142,7 @@ export function createDeptService(deps: { executor: SqlExecutor }): DeptService 
       phone: (row.phone as string) ?? "",
       email: (row.email as string) ?? "",
       status: (row.status as number) ?? 1,
+      createdAt: (row.created_at as string) ?? "",
       children: [],
     }));
 

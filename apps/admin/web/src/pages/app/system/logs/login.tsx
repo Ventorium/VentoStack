@@ -1,24 +1,31 @@
 import { Card, Table, Input, Select, Form, Button, Tag, Space } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { PaginatedData, LoginLogItem } from '@/api/types'
 import { useTable } from '@/hooks/useTable'
 
+const cleanParams = (params: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== null))
+
 const fetcher = (params: Record<string, unknown>) =>
-  client.get<PaginatedData<LoginLogItem>>('/api/system/login-logs', { query: params })
+  client.get('/api/system/login-logs', { query: cleanParams(params) }) as Promise<{ error?: unknown; data?: PaginatedData<LoginLogItem> }>
+
+const fmtDate = (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-'
 
 const LoginLogPage = () => {
   const { loading, data, total, page, pageSize, onSearch, onReset, onPageChange } =
     useTable<LoginLogItem>(fetcher)
   const [searchForm] = Form.useForm()
 
-  const handleSearch = async () => {
-    const values = await searchForm.validateFields().catch(() => ({}))
-    onSearch(values)
+  const handleSearch = () => {
+    const values = searchForm.getFieldsValue()
+    onSearch(cleanParams(values))
   }
   const handleReset = () => { searchForm.resetFields(); onReset() }
 
-  const columns = [
+  const columns: ColumnsType<LoginLogItem> = [
     { title: '用户', dataIndex: 'username', key: 'username', width: 120 },
     { title: 'IP', dataIndex: 'ip', key: 'ip', width: 140 },
     { title: '位置', dataIndex: 'location', key: 'location', width: 160, ellipsis: true },
@@ -27,7 +34,7 @@ const LoginLogPage = () => {
     { title: '状态', dataIndex: 'status', key: 'status', width: 80,
       render: (_: unknown, r: LoginLogItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '成功' : '失败'}</Tag> },
     { title: '信息', dataIndex: 'message', key: 'message', ellipsis: true },
-    { title: '登录时间', dataIndex: 'loginAt', key: 'loginAt', width: 180 },
+    { title: '登录时间', dataIndex: 'loginAt', key: 'loginAt', width: 180, render: (_: unknown, r: LoginLogItem) => fmtDate(r.loginAt) },
   ]
 
   return (

@@ -105,6 +105,35 @@ export function createAuthService(deps: {
     eventBus,
   } = deps;
 
+  /** 解析 User-Agent 中的浏览器和 OS */
+  function parseUA(ua: string): { browser: string; os: string } {
+    let browser = "Unknown";
+    let os = "Unknown";
+    if (/Edg\//.test(ua)) browser = "Edge";
+    else if (/Chrome\//.test(ua)) browser = "Chrome";
+    else if (/Firefox\//.test(ua)) browser = "Firefox";
+    else if (/Safari\//.test(ua)) browser = "Safari";
+    if (/Windows NT/.test(ua)) os = "Windows";
+    else if (/Mac OS X/.test(ua)) os = "macOS";
+    else if (/Linux/.test(ua)) os = "Linux";
+    else if (/Android/.test(ua)) os = "Android";
+    else if (/iPhone|iPad/.test(ua)) os = "iOS";
+    return { browser, os };
+  }
+
+  /** 写入登录日志 */
+  async function recordLoginLog(params: {
+    userId?: string; username: string; ip: string; userAgent: string;
+    status: number; message: string;
+  }) {
+    const { browser, os } = parseUA(params.userAgent);
+    await executor(
+      `INSERT INTO sys_login_log (id, user_id, username, ip, browser, os, status, message, login_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
+      [crypto.randomUUID(), params.userId ?? null, params.username, params.ip, browser, os, params.status, params.message],
+    );
+  }
+
   return {
     async login(params) {
       const { username, password, ip, userAgent, deviceType } = params;
@@ -120,6 +149,7 @@ export function createAuthService(deps: {
           result: "denied",
           metadata: { ip, reason: "account_locked" },
         });
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: "账号已锁定" });
         throw new Error("Account locked due to too many failed attempts");
       }
 
@@ -134,6 +164,7 @@ export function createAuthService(deps: {
           result: "denied",
           metadata: { ip, reason: "ip_rate_limited" },
         });
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: "请求过于频繁" });
         throw new Error("Too many requests from this IP");
       }
 
@@ -165,6 +196,7 @@ export function createAuthService(deps: {
           result: "failure",
           metadata: { ip, reason: "user_not_found" },
         });
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: "用户不存在" });
         throw new Error("Invalid credentials");
       }
 
@@ -179,6 +211,7 @@ export function createAuthService(deps: {
           result: "denied",
           metadata: { ip, userId: user.id, reason: "account_disabled" },
         });
+        await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "账号已禁用" });
         throw new Error("Account is disabled");
       }
 
@@ -196,6 +229,7 @@ export function createAuthService(deps: {
           result: "failure",
           metadata: { ip, userId: user.id, reason: "wrong_password", failCount: newFailCount },
         });
+        await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "密码错误" });
 
         throw new Error("Invalid credentials");
       }
@@ -218,6 +252,7 @@ export function createAuthService(deps: {
           result: "success",
           metadata: { ip, userId: user.id },
         });
+        await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 1, message: "需要MFA验证" });
 
         return {
           accessToken: "",
@@ -252,6 +287,7 @@ export function createAuthService(deps: {
         result: "success",
         metadata: { ip, userId: user.id, sessionId: sessionResult.sessionId },
       });
+      await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 1, message: "登录成功" });
 
       return {
         accessToken: sessionResult.accessToken,

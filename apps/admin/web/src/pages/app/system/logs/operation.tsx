@@ -1,20 +1,27 @@
 import { Card, Table, Input, Select, Form, Button, Tag, Space } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { PaginatedData, OperationLogItem } from '@/api/types'
 import { useTable } from '@/hooks/useTable'
 
+const cleanParams = (params: Record<string, unknown>) =>
+  Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== null))
+
 const fetcher = (params: Record<string, unknown>) =>
-  client.get<PaginatedData<OperationLogItem>>('/api/system/operation-logs', { query: params })
+  client.get('/api/system/operation-logs', { query: cleanParams(params) }) as Promise<{ error?: unknown; data?: PaginatedData<OperationLogItem> }>
+
+const fmtDate = (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-'
 
 const OperationLogPage = () => {
   const { loading, data, total, page, pageSize, onSearch, onReset, onPageChange } =
     useTable<OperationLogItem>(fetcher)
   const [searchForm] = Form.useForm()
 
-  const handleSearch = async () => {
-    const values = await searchForm.validateFields().catch(() => ({}))
-    onSearch(values)
+  const handleSearch = () => {
+    const values = searchForm.getFieldsValue()
+    onSearch(cleanParams(values))
   }
   const handleReset = () => { searchForm.resetFields(); onReset() }
 
@@ -23,7 +30,7 @@ const OperationLogPage = () => {
     1: { label: '成功', color: 'green' },
   }
 
-  const columns = [
+  const columns: ColumnsType<OperationLogItem> = [
     { title: 'ID', dataIndex: 'id', key: 'id', width: 100, ellipsis: true },
     { title: '用户', dataIndex: 'username', key: 'username', width: 100 },
     { title: '模块', dataIndex: 'module', key: 'module', width: 100 },
@@ -35,7 +42,7 @@ const OperationLogPage = () => {
     { title: '结果', dataIndex: 'result', key: 'result', width: 80,
       render: (_: unknown, r: OperationLogItem) => { const s = resultMap[r.result]; return <Tag color={s?.color}>{s?.label ?? r.result}</Tag> } },
     { title: '耗时(ms)', dataIndex: 'duration', key: 'duration', width: 80 },
-    { title: '操作时间', dataIndex: 'createdAt', key: 'createdAt', width: 180 },
+    { title: '操作时间', dataIndex: 'createdAt', key: 'createdAt', width: 180, render: (_: unknown, r: OperationLogItem) => fmtDate(r.createdAt) },
   ]
 
   return (

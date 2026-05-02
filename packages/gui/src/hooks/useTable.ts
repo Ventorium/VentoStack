@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 
 export interface PaginatedData<T> {
   list: T[]
@@ -91,6 +91,11 @@ export function useTable<T, P extends PaginatedParams = PaginatedParams>(
     const newParams = { ...params, ...p } as P
     setParamsState(newParams)
   }, [params])
+
+  // 初始加载
+  useEffect(() => {
+    fetchData(params)
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   return {
     loading, data, total, page, pageSize, params,

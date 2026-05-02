@@ -1,8 +1,21 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Table, Button, Form, Input, InputNumber, Modal, Space, Tag, message, Popconfirm } from 'antd'
+import { Card, Table, Button, Form, Input, InputNumber, Select, Modal, Tag, message, Row, Col, TreeSelect } from 'antd'
+import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { DeptItem } from '@/api/types'
+import ActionColumn from '@/components/ActionColumn'
+
+const fmtDate = (v: string) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-'
+
+function toTreeSelectData(items: DeptItem[]): any[] {
+  return items.map(item => ({
+    value: item.id,
+    title: item.name,
+    children: item.children?.length ? toTreeSelectData(item.children) : undefined,
+  }))
+}
 
 const DeptPage = () => {
   const [loading, setLoading] = useState(false)
@@ -15,8 +28,8 @@ const DeptPage = () => {
   const fetchData = useCallback(async () => {
     setLoading(true)
     try {
-      const { error, data: tree } = await client.get<DeptItem[]>('/api/system/depts')
-      if (!error) setData(tree ?? [])
+      const res = await client.get('/api/system/depts/tree' as '/api/system/depts/tree') as { data?: DeptItem[] }
+      setData(res.data ?? [])
     } finally { setLoading(false) }
   }, [])
 
@@ -38,36 +51,35 @@ const DeptPage = () => {
     setModalLoading(true)
     try {
       if (editingDept) {
-        const { error } = await client.put(`/api/system/depts/${editingDept.id}`, { body: values })
-        if (!error) { message.success('更新成功'); setModalOpen(false); fetchData() }
+        await client.put(`/api/system/depts/${editingDept.id}` as '/api/system/depts/:id', { body: values })
+        message.success('更新成功'); setModalOpen(false); fetchData()
       } else {
-        const { error } = await client.post('/api/system/depts', { body: values })
-        if (!error) { message.success('创建成功'); setModalOpen(false); fetchData() }
+        await client.post('/api/system/depts', { body: values })
+        message.success('创建成功'); setModalOpen(false); fetchData()
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete(`/api/system/depts/${id}`)
-    if (!error) { message.success('删除成功'); fetchData() }
+    await client.delete(`/api/system/depts/${id}` as '/api/system/depts/:id')
+    message.success('删除成功'); fetchData()
   }
 
-  const columns = [
+  const columns: ColumnsType<DeptItem> = [
     { title: '部门名称', dataIndex: 'name', key: 'name' },
     { title: '负责人', dataIndex: 'leader', key: 'leader', width: 120 },
     { title: '电话', dataIndex: 'phone', key: 'phone', width: 140 },
     { title: '邮箱', dataIndex: 'email', key: 'email', width: 200 },
-    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (_: unknown, r: DeptItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag> },
-    { title: '操作', key: 'action', width: 220,
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
+    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180, render: (_: unknown, r: DeptItem) => fmtDate(r.createdAt) },
+    { title: '操作', key: 'action', width: 180, fixed: 'right' as const,
       render: (_: unknown, r: DeptItem) => (
-        <Space>
-          <Button type="link" size="small" onClick={() => openCreate(r)}>新增子部门</Button>
-          <Button type="link" size="small" onClick={() => openEdit(r)}>编辑</Button>
-          <Popconfirm title="确定删除该部门？" onConfirm={() => handleDelete(r.id)}>
-            <Button type="link" size="small" danger>删除</Button>
-          </Popconfirm>
-        </Space>
+        <ActionColumn items={[
+          { label: '编辑', onClick: () => openEdit(r) },
+          { label: '新增子部门', onClick: () => openCreate(r) },
+          { label: '删除', onClick: () => handleDelete(r.id), danger: true, confirm: '确定删除该部门？' },
+        ]} />
       ) },
   ]
 
@@ -75,17 +87,39 @@ const DeptPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">部门管理</h3>
       <Card title="部门列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增部门</Button>}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 900 }} defaultExpandAllRows />
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 1100 }} defaultExpandAllRows />
       </Card>
-      <Modal title={editingDept ? '编辑部门' : '新增部门'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnClose>
+      <Modal title={editingDept ? '编辑部门' : '新增部门'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={640}>
         <Form form={form} layout="vertical" preserve={false}>
-          <Form.Item name="parentId" label="上级部门"><Input placeholder="留空为顶级部门" /></Form.Item>
-          <Form.Item name="name" label="部门名称" rules={[{ required: true }]}><Input /></Form.Item>
-          <Form.Item name="sort" label="排序" initialValue={0}><InputNumber className="w-full" /></Form.Item>
-          <Form.Item name="leader" label="负责人"><Input /></Form.Item>
-          <Form.Item name="phone" label="电话"><Input /></Form.Item>
-          <Form.Item name="email" label="邮箱"><Input /></Form.Item>
-          <Form.Item name="status" label="状态" initialValue={1}><Input placeholder="1=正常 0=禁用" /></Form.Item>
+          <Form.Item name="parentId" label="上级部门">
+            <TreeSelect allowClear treeDefaultExpandAll placeholder="留空为顶级部门" treeData={toTreeSelectData(data)} />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="name" label="部门名称" rules={[{ required: true }]}><Input /></Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="leader" label="负责人"><Input /></Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="phone" label="电话"><Input /></Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="email" label="邮箱"><Input /></Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="status" label="状态" initialValue={1}>
+                <Select><Select.Option value={1}>正常</Select.Option><Select.Option value={0}>禁用</Select.Option></Select>
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="sort" label="排序" initialValue={0}><InputNumber className="w-full" /></Form.Item>
+            </Col>
+          </Row>
         </Form>
       </Modal>
     </div>

@@ -120,7 +120,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     service: {
       ...menuService,
       list: async () => {
-        const tree = await menuService.getTree();
+        const tree = await menuService.getAllTree();
         return { items: tree, total: tree.length, page: 1, pageSize: tree.length };
       },
       update: (id: string, body: any) => menuService.update(id, body),
@@ -328,6 +328,21 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     );
 
     return okPage(rows as any[], total, page, pageSize);
+  });
+
+  // === Dashboard stats ===
+  userRouter.get("/api/system/dashboard/stats", async (ctx) => {
+    const user = ctx.user as { id: string } | undefined;
+    const userId = user?.id ?? "";
+
+    const [userCount, roleCount, todayLogs, unreadNotices] = await Promise.all([
+      executor("SELECT COUNT(*) AS cnt FROM sys_user WHERE deleted_at IS NULL").then(r => Number((r as Array<Record<string, unknown>>)[0]?.cnt ?? 0)),
+      executor("SELECT COUNT(*) AS cnt FROM sys_role").then(r => Number((r as Array<Record<string, unknown>>)[0]?.cnt ?? 0)),
+      executor("SELECT COUNT(*) AS cnt FROM sys_operation_log WHERE created_at >= CURRENT_DATE").then(r => Number((r as Array<Record<string, unknown>>)[0]?.cnt ?? 0)),
+      noticeService.getUnreadCount(userId),
+    ]);
+
+    return ok({ userCount, roleCount, todayLogs, unreadNotices });
   });
 
   // Merge userRouter into main router

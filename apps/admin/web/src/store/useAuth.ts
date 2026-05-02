@@ -38,7 +38,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ loading: true })
     const accessToken = getAccessToken()
     if (accessToken) {
-      const { data: user, error } = await client.get<UserProfile>('/api/system/user/profile')
+      const { data: user, error } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
       if (!error && user) {
         set({ user })
       } else {
@@ -48,10 +48,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ loading: false, ready: true })
   },
   async login(args) {
-    const { error, data } = await client.post<{ accessToken: string; refreshToken: string; expiresIn: number; sessionId: string; mfaRequired: boolean }>('/api/auth/login', { body: args })
+    const { error, data } = await client.post('/api/auth/login', { body: args }) as { data?: { accessToken: string; refreshToken: string; expiresIn: number; sessionId: string; mfaRequired: boolean }; error?: unknown }
     if (!error && data) {
       setAccessToken(data.accessToken)
-      const { data: user } = await client.get<UserProfile>('/api/system/user/profile')
+      const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
       if (user) {
         set({ user })
         return user

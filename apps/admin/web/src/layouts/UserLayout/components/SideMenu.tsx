@@ -1,40 +1,13 @@
 import { useMemo } from 'react'
 import { useNavigate, useLocation } from 'react-router'
 import { Menu } from 'antd'
-import {
-  SettingOutlined,
-  TeamOutlined,
-  SafetyCertificateOutlined,
-  MenuOutlined,
-  ApartmentOutlined,
-  ProfileOutlined,
-  BookOutlined,
-  BellOutlined,
-  FileTextOutlined,
-  DashboardOutlined,
-  type AntDesignOutlined,
-} from '@ant-design/icons'
 import { useMenu } from '@/store/useMenu'
+import { resolveIcon } from '@/utils/icon'
 
-const iconMap: Record<string, typeof AntDesignOutlined> = {
-  setting: SettingOutlined,
-  team: TeamOutlined,
-  safety: SafetyCertificateOutlined,
-  menu: MenuOutlined,
-  apartment: ApartmentOutlined,
-  profile: ProfileOutlined,
-  book: BookOutlined,
-  bell: BellOutlined,
-  fileText: FileTextOutlined,
-  dashboard: DashboardOutlined,
-}
-
-function resolveIcon(icon?: string) {
-  if (!icon) return null
-  const Icon = iconMap[icon]
-  if (Icon) return <Icon />
-  // try rendering as a custom icon string
-  return null
+/** 将后端路由路径补全为前端完整路径（/app 前缀） */
+function normalizePath(path: string): string {
+  if (path.startsWith('/app')) return path
+  return `/app${path.startsWith('/') ? '' : '/'}${path}`
 }
 
 function convertRoutesToMenuItems(routes: import('@/api/types').FrontendRoute[]): any[] {
@@ -42,9 +15,9 @@ function convertRoutesToMenuItems(routes: import('@/api/types').FrontendRoute[])
     .filter(r => !r.meta?.hidden)
     .map(r => {
       const item: any = {
-        key: r.path,
+        key: normalizePath(r.path),
         label: r.meta?.title ?? r.name,
-        icon: resolveIcon(r.meta?.icon),
+        icon: (() => { const Icon = resolveIcon(r.meta?.icon); return Icon ? <Icon /> : null })(),
       }
       if (r.children?.length) {
         item.children = convertRoutesToMenuItems(r.children)
