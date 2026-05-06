@@ -19,6 +19,7 @@ export const initConfigSeed: Seed = {
       { name: '系统名称', key: 'sys_site_name', value: 'VentoStack', type: 0, group: 'ui', remark: '浏览器标签页和登录页显示的系统名称' },
       { name: '启用MFA多因素认证', key: 'sys_mfa_enabled', value: 'false', type: 2, group: 'mfa', remark: '全局MFA开关，关闭后所有用户仅用密码登录' },
       { name: '强制要求MFA', key: 'sys_mfa_force', value: 'false', type: 2, group: 'mfa', remark: '开启后未配置MFA的用户首次登录后必须设置MFA' },
+      { name: '启用Passkey通行密钥', key: 'sys_passkey_enabled', value: 'true', type: 2, group: 'passkey', remark: '全局Passkey开关，开启后用户可使用通行密钥登录' },
     ];
 
     for (const cfg of configs) {
@@ -31,6 +32,6 @@ export const initConfigSeed: Seed = {
       );
     }
 
-    log.info('Config seed created — 12 system configs');
+    log.info('Config seed created — 13 system configs');
   },
 };

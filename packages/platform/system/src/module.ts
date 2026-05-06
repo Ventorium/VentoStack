@@ -29,10 +29,12 @@ import { createNoticeService } from "./services/notice";
 import type { CreateNoticeParams, UpdateNoticeParams } from "./services/notice";
 import { createPermissionLoader } from "./services/permission-loader";
 import { createMenuTreeBuilder } from "./services/menu-tree-builder";
+import { createPasskeyService } from "./services/passkey";
 
 import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
 import { createOperationLogMiddleware } from "./middlewares/operation-log";
 import { createAuthRoutes } from "./routes/auth";
+import { createPasskeyRoutes } from "./routes/passkey";
 import { createUserRoutes } from "./routes/user";
 import { createCrudRoutes } from "./routes/crud";
 import { ok, okPage, fail, parseBody, pageOf } from "./routes/common";
@@ -51,6 +53,7 @@ export interface SystemModule {
     notice: ReturnType<typeof createNoticeService>;
     permissionLoader: ReturnType<typeof createPermissionLoader>;
     menuTreeBuilder: ReturnType<typeof createMenuTreeBuilder>;
+    passkey: ReturnType<typeof createPasskeyService>;
   };
   router: Router;
   init(): Promise<void>;
@@ -71,6 +74,9 @@ export interface SystemModuleDeps {
   authSessionManager: AuthSessionManager;
   auditLog: AuditStore;
   eventBus: EventBus;
+  rpID?: string;
+  rpName?: string;
+  rpOrigins?: string[];
 }
 
 export function createSystemModule(deps: SystemModuleDeps): SystemModule {
@@ -88,6 +94,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const noticeService = createNoticeService({ executor });
   const permissionLoader = createPermissionLoader({ executor, rbac, rowFilter });
   const menuTreeBuilder = createMenuTreeBuilder({ executor });
+  const passkeyService = createPasskeyService({
+    executor, cache,
+    rpID: deps.rpID ?? "localhost",
+    rpName: deps.rpName ?? "VentoStack Admin",
+    rpOrigins: deps.rpOrigins ?? ["http://localhost:5173"],
+    auditStore: auditLog,
+  });
 
   // Middlewares
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
@@ -99,12 +112,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   // ---- 公开配置接口（无需认证） ----
   router.get("/api/system/configs/public", async () => {
-    const [siteName, theme, deptEnabled, mfaEnabled, mfaForce] = await Promise.all([
+    const [siteName, theme, deptEnabled, mfaEnabled, mfaForce, passkeyEnabled] = await Promise.all([
       configService.getValue("sys_site_name"),
       configService.getValue("sys_theme"),
       configService.getValue("sys_dept_enabled"),
       configService.getValue("sys_mfa_enabled"),
       configService.getValue("sys_mfa_force"),
+      configService.getValue("sys_passkey_enabled"),
     ]);
     return ok({
       siteName: siteName ?? "VentoStack",
@@ -112,10 +126,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       deptEnabled: deptEnabled !== "false",
       mfaEnabled: mfaEnabled === "true",
       mfaForce: mfaForce === "true",
+      passkeyEnabled: passkeyEnabled !== "false",
     });
   });
 
   router.merge(createAuthRoutes(authService, authMiddleware));
+  router.merge(createPasskeyRoutes(passkeyService, authService, authMiddleware, cache));
   router.merge(createUserRoutes(userService, authMiddleware, perm));
 
   // CRUD routes for other entities
@@ -510,7 +526,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     services: {
       auth: authService, user: userService, role: roleService, menu: menuService,
       dept: deptService, post: postService, dict: dictService, config: configService,
-      notice: noticeService, permissionLoader, menuTreeBuilder,
+      notice: noticeService, permissionLoader, menuTreeBuilder, passkey: passkeyService,
     },
     router,
     async init() {

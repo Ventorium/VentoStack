@@ -27,6 +27,7 @@ export * from './middlewares/index';
 export { createAuthRoutes } from './routes/auth';
 export { createUserRoutes } from './routes/user';
 export { createCrudRoutes } from './routes/crud';
+export { createPasskeyRoutes } from './routes/passkey';
 
 // Module
 export { createSystemModule } from './module';

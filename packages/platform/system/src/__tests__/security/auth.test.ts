@@ -15,9 +15,10 @@ import {
   createMockAuthSessionManager,
   createMockAuditStore,
   createMockEventBus,
+  createMockConfigService,
 } from "../helpers";
 
-function setup() {
+function setup(configOverrides: Record<string, string> = {}) {
   const { executor, calls, results } = createMockExecutor();
   const cache = createTestCache();
   const jwt = createMockJWTManager();
@@ -26,6 +27,7 @@ function setup() {
   const authSessionManager = createMockAuthSessionManager();
   const auditLog = createMockAuditStore();
   const eventBus = createMockEventBus();
+  const configService = createMockConfigService(configOverrides);
 
   const authService = createAuthService({
     executor,
@@ -37,19 +39,26 @@ function setup() {
     authSessionManager,
     auditStore: auditLog,
     eventBus,
+    configService,
   });
 
-  return { authService, executor, calls, results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus };
+  return { authService, executor, calls, results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus, configService };
+}
+
+function loginResult(overrides: Record<string, unknown> = {}) {
+  return [{
+    id: "u1", username: "admin", password_hash: "hashed_admin123",
+    status: 1, mfa_enabled: false, mfa_secret: null, blacklisted: false,
+    locked_until: null, login_attempts: 0, password_changed_at: null,
+    ...overrides,
+  }];
 }
 
 describe("Security: Auth", () => {
   describe("暴力破解防护", () => {
     test("连续 5 次登录失败后账户被锁定", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(false as any);
 
       // 连续失败 5 次
@@ -71,10 +80,7 @@ describe("Security: Auth", () => {
 
     test("不同 IP 的失败计数互相独立", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(false as any);
 
       // IP-A 失败 4 次
@@ -98,10 +104,7 @@ describe("Security: Auth", () => {
       }
 
       // IP-A 第 5 次应触发锁定
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(false as any);
 
       for (let i = 0; i < 5; i++) {
@@ -136,10 +139,7 @@ describe("Security: Auth", () => {
   describe("IP 速率限制", () => {
     test("同一 IP 超过 20 次/分钟被限流", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(true as any);
 
       // 成功登录 20 次
@@ -159,10 +159,7 @@ describe("Security: Auth", () => {
   describe("密码校验安全", () => {
     test("密码错误时返回通用错误消息（不泄露具体原因）", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(false as any);
 
       try {
@@ -237,6 +234,17 @@ describe("Security: Auth", () => {
       await s.authService.disableMFA("u1", "123456");
       expect(s.totp.verify).toHaveBeenCalled();
     });
+
+    test("completeMFALogin 使用 verifyAndConsume（防重放）", async () => {
+      const s = setup();
+      s.jwt.verify.mockResolvedValue({ sub: "u1", iss: "mfa-pending", username: "admin" } as any);
+      s.results.set("SELECT", [{
+        mfa_secret: "JBSWY3DPEHPK3PXP", mfa_enabled: true,
+      }]);
+
+      await s.authService.completeMFALogin("valid-token", "123456", "1.2.3.4", "test");
+      expect(s.totp.verifyAndConsume).toHaveBeenCalled();
+    });
   });
 
   describe("找回密码安全", () => {
@@ -274,10 +282,7 @@ describe("Security: Auth", () => {
   describe("审计日志", () => {
     test("登录成功记录审计日志", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(true as any);
 
       await s.authService.login({
@@ -292,10 +297,7 @@ describe("Security: Auth", () => {
 
     test("登录失败记录审计日志", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", password_hash: "hashed_admin123",
-        status: 1, mfa_enabled: false,
-      }]);
+      s.results.set("SELECT", loginResult());
       s.passwordHasher.verify.mockResolvedValue(false as any);
 
       try {

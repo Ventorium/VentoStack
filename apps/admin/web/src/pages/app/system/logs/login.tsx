@@ -34,6 +34,16 @@ const LoginLogPage = () => {
     { title: '操作系统', dataIndex: 'os', key: 'os', width: 120, ellipsis: true },
     { title: '状态', dataIndex: 'status', key: 'status', width: 80,
       render: (_: unknown, r: LoginLogItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '成功' : '失败'}</Tag> },
+    { title: '登录方式', dataIndex: 'loginMethod', key: 'loginMethod', width: 100,
+      render: (v: string) => {
+        const map: Record<string, { label: string; color: string }> = {
+          password: { label: '密码', color: 'default' },
+          mfa: { label: 'MFA', color: 'blue' },
+          passkey: { label: 'Passkey', color: 'green' },
+        }
+        const info = map[v] || { label: v || '密码', color: 'default' }
+        return <Tag color={info.color}>{info.label}</Tag>
+      } },
     { title: '信息', dataIndex: 'message', key: 'message', ellipsis: true, render: (v: string) => <>
       {v}
       {(v?.includes('锁定') || v?.includes('拉黑')) && <Tag color="orange" className="ml-2">账户异常</Tag>}

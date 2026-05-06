@@ -60,6 +60,7 @@ export interface OperationLogItem {
 export interface LoginLogItem {
   id: string; userId?: string; username: string; ip: string; location: string
   browser: string; os: string; status: number; message: string; loginAt: string
+  loginMethod: string
 }
 
 export interface FrontendRoute {

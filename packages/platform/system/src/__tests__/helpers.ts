@@ -146,3 +146,26 @@ export function createMockEventBus() {
     removeAll: mock(() => {}),
   };
 }
+
+/** 创建 Mock ConfigService */
+export function createMockConfigService(overrides: Record<string, string> = {}) {
+  const defaults: Record<string, string> = {
+    sys_login_max_attempts: "5",
+    sys_login_lock_minutes: "15",
+    sys_password_expire_days: "-1",
+    sys_mfa_enabled: "false",
+    sys_mfa_force: "false",
+    sys_password_min_length: "6",
+    sys_password_complexity: "low",
+    ...overrides,
+  };
+  return {
+    getValue: mock(async (key: string) => defaults[key] ?? null),
+    setValue: mock(async (key: string, value: string) => { defaults[key] = value; }),
+    create: mock(async () => {}),
+    update: mock(async () => {}),
+    delete: mock(async () => {}),
+    list: mock(async () => []),
+    _defaults: defaults,
+  };
+}

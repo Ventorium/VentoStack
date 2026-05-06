@@ -6,6 +6,7 @@ import { createTagLogger } from "@ventostack/core";
 import { createMigrationRunner, type SqlExecutor } from "@ventostack/database";
 import { createSysTables } from "./migrations/001_create_sys_tables";
 import { addPasswordChangedAt } from "./migrations/003_password_changed_at";
+import { addPasskeySupport } from "./migrations/004_passkey_support";
 
 const log = createTagLogger("migrations");
 
@@ -17,6 +18,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
 
   runner.addMigration(createSysTables);
   runner.addMigration(addPasswordChangedAt);
+  runner.addMigration(addPasskeySupport);
 
   const executed = await runner.up();
 

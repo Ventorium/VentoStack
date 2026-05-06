@@ -12,6 +12,7 @@ import type { SqlExecutor } from "@ventostack/database";
 import type { AuditStore } from "@ventostack/observability";
 import { createEventBus } from "@ventostack/events";
 import type { AuthEngines } from "../auth";
+import { env } from "../config";
 
 export interface SystemModuleOptions {
   executor: SqlExecutor;
@@ -42,5 +43,8 @@ export function assembleSystemModule(options: SystemModuleOptions): SystemModule
     authSessionManager: auth.authSessionManager,
     auditLog,
     eventBus,
+    rpID: env.WEBAUTHN_RP_ID,
+    rpName: env.WEBAUTHN_RP_NAME,
+    rpOrigins: env.ALLOWED_ORIGINS,
   });
 }

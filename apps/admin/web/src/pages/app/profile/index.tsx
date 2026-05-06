@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, message, Radio, Typography, List, Alert } from 'antd'
-import { UserOutlined, LockOutlined, SafetyOutlined, HistoryOutlined, CopyOutlined, UploadOutlined } from '@ant-design/icons'
+import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, Popconfirm, Modal, message, Radio, Typography, List, Alert } from 'antd'
+import { UserOutlined, LockOutlined, SafetyOutlined, HistoryOutlined, CopyOutlined, UploadOutlined, KeyOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import { startRegistration } from '@simplewebauthn/browser'
 import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { LoginLogItem } from '@/api/types'
@@ -32,6 +33,12 @@ export default function ProfilePage() {
   const [mfaEnabled, setMfaEnabled] = useState(false)
   const [mfaSetupData, setMfaSetupData] = useState<MFASetupData | null>(null)
   const [mfaStep, setMfaStep] = useState<'idle' | 'setup' | 'verify'>('idle')
+
+  // Passkey state
+  const [passkeys, setPasskeys] = useState<Array<{ id: string; name: string; deviceType: string; backedUp: boolean; createdAt: string; lastUsedAt: string | null }>>([])
+  const [passkeyLoading, setPasskeyLoading] = useState(false)
+  const [addPasskeyOpen, setAddPasskeyOpen] = useState(false)
+  const [newPasskeyName, setNewPasskeyName] = useState('')
 
   const mfaGloballyEnabled = usePublicConfig(s => s.config.mfaEnabled)
   const mfaForce = usePublicConfig(s => s.config.mfaForce)
@@ -66,11 +73,19 @@ export default function ProfilePage() {
     }
   }
 
+  const fetchPasskeys = async () => {
+    const { error, data } = await client.get('/api/auth/passkey/list' as unknown as '/api/system/users')
+    if (!error && data) {
+      setPasskeys(data as typeof passkeys)
+    }
+  }
+
   useEffect(() => {
     fetchProfile()
     if (mfaGloballyEnabled) {
       fetchMFAStatus()
     }
+    fetchPasskeys()
     refresh()
   }, [])
 
@@ -179,6 +194,47 @@ export default function ProfilePage() {
   const copyRecoveryCode = (code: string) => {
     navigator.clipboard.writeText(code)
     message.success('已复制到剪贴板')
+  }
+
+  const handleAddPasskey = async () => {
+    if (!newPasskeyName.trim()) {
+      message.warning('请输入通行密钥名称')
+      return
+    }
+    setPasskeyLoading(true)
+    try {
+      const { error: beginError, data: beginData } = await client.post('/api/auth/passkey/register-begin' as unknown as '/api/system/users', { body: {} } as any)
+      if (beginError || !beginData) {
+        message.error('获取注册信息失败')
+        return
+      }
+      const credential = await startRegistration({ optionsJSON: beginData.options as any })
+      const { error: finishError } = await client.post('/api/auth/passkey/register-finish' as unknown as '/api/system/users', {
+        body: { name: newPasskeyName, challengeId: beginData.challengeId, credential },
+      } as any)
+      if (!finishError) {
+        message.success('通行密钥添加成功')
+        setAddPasskeyOpen(false)
+        setNewPasskeyName('')
+        fetchPasskeys()
+      } else {
+        message.error('通行密钥注册失败')
+      }
+    } catch {
+      message.error('通行密钥注册已取消或失败')
+    } finally {
+      setPasskeyLoading(false)
+    }
+  }
+
+  const handleDeletePasskey = async (id: string) => {
+    const { error } = await client.delete(`/api/auth/passkey/${id}` as unknown as '/api/system/users/:id')
+    if (!error) {
+      message.success('通行密钥已删除')
+      fetchPasskeys()
+    } else {
+      message.error('删除失败')
+    }
   }
 
   const basicInfoTab = (
@@ -445,12 +501,111 @@ export default function ProfilePage() {
       )
     },
     {
+      title: '登录方式',
+      dataIndex: 'loginMethod',
+      key: 'loginMethod',
+      render: (method: string) => {
+        const map: Record<string, { label: string; color: string }> = {
+          password: { label: '密码', color: 'default' },
+          mfa: { label: 'MFA', color: 'blue' },
+          passkey: { label: 'Passkey', color: 'green' },
+        }
+        const info = map[method] || { label: method, color: 'default' }
+        return <Tag color={info.color}>{info.label}</Tag>
+      }
+    },
+    {
       title: '登录时间',
       dataIndex: 'loginAt',
       key: 'loginAt',
       render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm:ss')
     }
   ]
+
+  const passkeyTab = (
+    <Card>
+      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <Text strong>通行密钥管理</Text>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            disabled={passkeys.length >= 3}
+            onClick={() => setAddPasskeyOpen(true)}
+          >
+            添加通行密钥
+          </Button>
+        </div>
+
+        {passkeys.length >= 3 && (
+          <Alert message="已达到通行密钥上限（3个）" type="info" showIcon />
+        )}
+
+        <Table
+          dataSource={passkeys}
+          rowKey="id"
+          size="small"
+          pagination={false}
+          columns={[
+            { title: '名称', dataIndex: 'name', key: 'name' },
+            { title: '设备类型', dataIndex: 'deviceType', key: 'deviceType' },
+            {
+              title: '云端同步',
+              dataIndex: 'backedUp',
+              key: 'backedUp',
+              render: (v: boolean) => <Tag color={v ? 'blue' : 'default'}>{v ? '是' : '否'}</Tag>,
+            },
+            {
+              title: '创建时间',
+              dataIndex: 'createdAt',
+              key: 'createdAt',
+              width: 180,
+              render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss'),
+            },
+            {
+              title: '最近使用',
+              dataIndex: 'lastUsedAt',
+              key: 'lastUsedAt',
+              width: 180,
+              render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-',
+            },
+            {
+              title: '操作',
+              key: 'action',
+              width: 80,
+              fixed: 'right' as const,
+              render: (_: unknown, record: typeof passkeys[number]) => (
+                <Popconfirm title="确定删除此通行密钥？" onConfirm={() => handleDeletePasskey(record.id)}>
+                  <Button type="link" danger icon={<DeleteOutlined />} size="small">删除</Button>
+                </Popconfirm>
+              ),
+            },
+          ]}
+        />
+
+        {passkeys.length === 0 && (
+          <Alert message="暂无通行密钥，点击上方按钮添加" type="info" showIcon />
+        )}
+      </Space>
+
+      <Modal
+        title="添加通行密钥"
+        open={addPasskeyOpen}
+        onOk={handleAddPasskey}
+        onCancel={() => { setAddPasskeyOpen(false); setNewPasskeyName('') }}
+        confirmLoading={passkeyLoading}
+        okText="添加"
+        destroyOnHidden
+      >
+        <Input
+          placeholder="请输入通行密钥名称，如：MacBook、iPhone"
+          value={newPasskeyName}
+          onChange={(e) => setNewPasskeyName(e.target.value)}
+          onPressEnter={handleAddPasskey}
+        />
+      </Modal>
+    </Card>
+  )
 
   const loginHistoryTab = (
     <Card>
@@ -487,6 +642,11 @@ export default function ProfilePage() {
       label: (<span><SafetyOutlined />MFA设置</span>),
       children: mfaTab
     }] : []),
+    {
+      key: 'passkey',
+      label: (<span><KeyOutlined />通行密钥</span>),
+      children: passkeyTab
+    },
     {
       key: 'history',
       label: (<span><HistoryOutlined />登录记录</span>),

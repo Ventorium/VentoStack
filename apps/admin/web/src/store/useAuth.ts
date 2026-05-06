@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { startAuthentication } from '@simplewebauthn/browser'
 import { client, setOnUnauthorized } from '@/api'
 import { globalNavigate } from '@/components/GlobalHistory'
 import { getAccessToken, setAccessToken, clearToken } from './token'
@@ -25,6 +26,7 @@ export type AuthState = {
   init: () => Promise<void>
   login: (args: LoginForm) => Promise<LoginResult>
   completeMFALogin: (mfaToken: string, code: string) => Promise<LoginResult>
+  passkeyLogin: (username: string) => Promise<LoginResult>
   logout: () => void
 }
 
@@ -88,6 +90,29 @@ export const useAuth = create<AuthState>((set, get) => ({
         set({ user })
         return user
       }
+    }
+    return null
+  },
+  async passkeyLogin(username) {
+    try {
+      const { error: beginError, data: beginData } = await client.post('/api/auth/passkey/login-begin', { body: { username } } as any) as { data?: { challengeId: string; options: unknown }; error?: unknown }
+      if (beginError || !beginData) return null
+
+      const assertion = await startAuthentication({ optionsJSON: beginData.options as any })
+      const { error: finishError, data: finishData } = await client.post('/api/auth/passkey/login-finish', {
+        body: { challengeId: beginData.challengeId, assertion },
+      } as any) as { data?: { accessToken: string; refreshToken: string; expiresIn: number; sessionId: string }; error?: unknown }
+
+      if (finishError || !finishData) return null
+
+      setAccessToken(finishData.accessToken)
+      const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
+      if (user) {
+        set({ user })
+        return user
+      }
+    } catch {
+      // NotAllowedError: user cancelled browser dialog
     }
     return null
   },

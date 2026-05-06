@@ -1,4 +1,4 @@
-import { Button, Form, Input, Modal, message } from 'antd'
+import { Button, Divider, Form, Input, Modal, message } from 'antd'
 import type { OTPRef } from 'antd/es/input/Otp'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -8,10 +8,12 @@ import { client } from '@/api'
 
 const LoginPage = () => {
   const navigate = useNavigate()
-  const { login, completeMFALogin } = useAuth()
+  const { login, completeMFALogin, passkeyLogin } = useAuth()
   const siteName = usePublicConfig(s => s.config.siteName)
+  const passkeyEnabled = usePublicConfig(s => s.config.passkeyEnabled)
   const [form] = Form.useForm<LoginForm>()
   const [loading, setLoading] = useState(false)
+  const [passkeyLoading, setPasskeyLoading] = useState(false)
   const [expiredInfo, setExpiredInfo] = useState<PasswordExpiredInfo | null>(null)
   const [pwdForm] = Form.useForm()
   const [pwdLoading, setPwdLoading] = useState(false)
@@ -84,6 +86,21 @@ const LoginPage = () => {
     }
   }
 
+  const handlePasskeyLogin = async () => {
+    const username = form.getFieldValue('username')
+    if (!username) {
+      message.warning('请先输入账号')
+      return
+    }
+    setPasskeyLoading(true)
+    const result = await passkeyLogin(username)
+    setPasskeyLoading(false)
+    if (result && 'id' in result) {
+      message.success('登录成功')
+      navigate('/app', { replace: true })
+    }
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center">
       <div className="w-120 bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-8">
@@ -113,6 +130,20 @@ const LoginPage = () => {
               登 录
             </Button>
           </Form.Item>
+
+          {passkeyEnabled && (
+            <>
+              <Divider plain>其他登录方式</Divider>
+              <Button
+                size="large"
+                className="w-full"
+                loading={passkeyLoading}
+                onClick={handlePasskeyLogin}
+              >
+                Passkey 登录
+              </Button>
+            </>
+          )}
         </Form>
       </div>
 

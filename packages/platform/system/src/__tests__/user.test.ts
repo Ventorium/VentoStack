@@ -4,14 +4,15 @@
 
 import { describe, expect, test } from "bun:test";
 import { createUserService } from "../services/user";
-import { createMockExecutor, createTestCache, createMockPasswordHasher } from "./helpers";
+import { createMockExecutor, createTestCache, createMockPasswordHasher, createMockConfigService } from "./helpers";
 
 function setup() {
   const { executor, calls, results } = createMockExecutor();
   const cache = createTestCache();
   const passwordHasher = createMockPasswordHasher();
-  const userService = createUserService({ executor, passwordHasher, cache });
-  return { userService, executor, calls, results, passwordHasher };
+  const configService = createMockConfigService();
+  const userService = createUserService({ executor, passwordHasher, cache, configService });
+  return { userService, executor, calls, results, passwordHasher, configService };
 }
 
 describe("UserService", () => {
@@ -26,6 +27,16 @@ describe("UserService", () => {
     expect(s.passwordHasher.hash).toHaveBeenCalledWith("pass123");
     expect(s.calls.length).toBeGreaterThan(0);
     expect(s.calls[0]!.text).toContain("INSERT");
+  });
+
+  test("create user uses default password from config when not provided", async () => {
+    const s = setup();
+    s.results.set("INSERT", [{ id: "u-new" }]);
+    await s.userService.create({
+      username: "alice", password: "",
+    });
+    // Should have used config default "123456"
+    expect(s.passwordHasher.hash).toHaveBeenCalledWith("123456");
   });
 
   test("update user executes UPDATE", async () => {
@@ -72,6 +83,12 @@ describe("UserService", () => {
     const s = setup();
     await s.userService.resetPassword("u1", "newpass");
     expect(s.passwordHasher.hash).toHaveBeenCalledWith("newpass");
+  });
+
+  test("resetPassword rejects weak password based on config", async () => {
+    const s = setup({ sys_password_min_length: "8" });
+    await expect(s.userService.resetPassword("u1", "short"))
+      .rejects.toThrow();
   });
 
   test("updateStatus changes user status", async () => {

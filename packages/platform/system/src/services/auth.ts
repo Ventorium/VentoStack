@@ -69,6 +69,13 @@ export interface AuthService {
   disableMFA(userId: string, code: string): Promise<void>;
   recoverMFA(userId: string, recoveryCode: string): Promise<{ tempToken: string }>;
   completeMFALogin(mfaToken: string, code: string, ip: string, userAgent: string, deviceType?: string): Promise<LoginResult>;
+  completePasskeyLogin(params: {
+    userId: string;
+    username: string;
+    ip: string;
+    userAgent: string;
+    deviceType?: string;
+  }): Promise<LoginResult>;
 }
 
 /** 登录失败最大次数（默认值，实际从 sys_config 读取） */
@@ -134,12 +141,14 @@ export function createAuthService(deps: {
   async function recordLoginLog(params: {
     userId?: string; username: string; ip: string; userAgent: string;
     status: number; message: string;
+    loginMethod?: string;
   }) {
     const { browser, os } = parseUA(params.userAgent);
+    const method = params.loginMethod ?? "password";
     await executor(
-      `INSERT INTO sys_login_log (id, user_id, username, ip, browser, os, status, message, login_at, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())`,
-      [crypto.randomUUID(), params.userId ?? null, params.username, params.ip, browser, os, params.status, params.message],
+      `INSERT INTO sys_login_log (id, user_id, username, ip, browser, os, status, message, login_method, login_at, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
+      [crypto.randomUUID(), params.userId ?? null, params.username, params.ip, browser, os, params.status, params.message, method],
     );
   }
 
@@ -356,7 +365,7 @@ export function createAuthService(deps: {
         result: "success",
         metadata: { ip, userId: user.id, sessionId: sessionResult.sessionId },
       });
-      await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 1, message: "登录成功" });
+      await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 1, message: "登录成功", loginMethod: "password" });
 
       // 检查是否需要提示用户设置 MFA（全局启用 + 强制 + 用户未配置）
       const mfaForce = (await configService.getValue('sys_mfa_force')) === 'true';
@@ -745,6 +754,52 @@ export function createAuthService(deps: {
       await auditStore.append({
         actor: username,
         action: "login.mfa_success",
+        resource: "auth",
+        result: "success",
+        metadata: { ip, userId, sessionId: sessionResult.sessionId },
+      });
+
+      return {
+        accessToken: sessionResult.accessToken,
+        refreshToken: sessionResult.refreshToken,
+        expiresIn: sessionResult.expiresIn,
+        refreshExpiresIn: sessionResult.refreshExpiresIn,
+        sessionId: sessionResult.sessionId,
+        mfaRequired: false,
+      };
+    },
+
+    async completePasskeyLogin(params) {
+      const { userId, username, ip, userAgent, deviceType } = params;
+
+      // 校验用户状态
+      const rows = await executor(
+        "SELECT status, blacklisted, locked_until FROM sys_user WHERE id = $1 AND deleted_at IS NULL",
+        [userId],
+      );
+      const users = rows as Array<{ status: number; blacklisted: boolean; locked_until: string | null }>;
+      if (users.length === 0) throw new Error("用户不存在");
+      const user = users[0]!;
+      if (user.status !== 1) throw new Error("账号已禁用");
+      if (user.blacklisted) throw new Error("账号已被拉黑");
+      if (user.locked_until && new Date(user.locked_until) > new Date()) throw new Error("账号已被锁定");
+
+      const sessionResult = await authSessionManager.login({
+        userId,
+        device: {
+          sessionId: "",
+          userId,
+          deviceType: deviceType ?? "web",
+          deviceName: userAgent,
+        },
+        tokenPayload: { username },
+      });
+
+      await recordLoginLog({ userId, username, ip, userAgent, status: 1, message: "通行密钥登录成功", loginMethod: "passkey" });
+
+      await auditStore.append({
+        actor: username,
+        action: "login.passkey_success",
         resource: "auth",
         result: "success",
         metadata: { ip, userId, sessionId: sessionResult.sessionId },

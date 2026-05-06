@@ -115,6 +115,10 @@ export type {
   MenuTreeBuilder,
 } from "./menu-tree-builder";
 
+// PasskeyService
+export { createPasskeyService } from "./passkey";
+export type { PasskeyService } from "./passkey";
+
 // PasswordPolicy
 export { validatePassword } from "./password-policy";
 export type { PasswordComplexity, PasswordPolicyOptions, PasswordValidationResult } from "./password-policy";

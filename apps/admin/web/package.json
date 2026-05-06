@@ -30,11 +30,12 @@
     "node": ">=10.0.0"
   },
   "dependencies": {
-    "@ventostack/gui": "workspace:*",
     "@ant-design/icons": "^6.1.1",
     "@ant-design/x": "^2.5.0",
     "@ant-design/x-markdown": "^2.5.0",
     "@doremijs/o2t": "^0.1.11",
+    "@simplewebauthn/browser": "^13.3.0",
+    "@ventostack/gui": "workspace:*",
     "ahooks": "^3.9.7",
     "antd": "^6.3.6",
     "clsx": "^2.1.1",

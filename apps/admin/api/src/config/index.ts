@@ -57,6 +57,8 @@ const rawConfig = createConfig({
     default: 5,
   },
   BCRYPT_COST: { type: "number", env: "BCRYPT_COST", default: 10 },
+  WEBAUTHN_RP_ID: { type: "string", env: "WEBAUTHN_RP_ID", default: "localhost" },
+  WEBAUTHN_RP_NAME: { type: "string", env: "WEBAUTHN_RP_NAME", default: "VentoStack Admin" },
 }, process.env);
 
 // 跨字段校验

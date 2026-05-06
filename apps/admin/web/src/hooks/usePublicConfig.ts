@@ -6,6 +6,7 @@ export interface PublicConfig {
   deptEnabled: boolean
   mfaEnabled: boolean
   mfaForce: boolean
+  passkeyEnabled: boolean
 }
 
 interface PublicConfigState {
@@ -20,6 +21,7 @@ const defaultConfig: PublicConfig = {
   deptEnabled: true,
   mfaEnabled: false,
   mfaForce: false,
+  passkeyEnabled: true,
 }
 
 export const usePublicConfig = create<PublicConfigState>((set) => ({
@@ -37,6 +39,7 @@ export const usePublicConfig = create<PublicConfigState>((set) => ({
             deptEnabled: data.data.deptEnabled ?? defaultConfig.deptEnabled,
             mfaEnabled: data.data.mfaEnabled ?? defaultConfig.mfaEnabled,
             mfaForce: data.data.mfaForce ?? defaultConfig.mfaForce,
+            passkeyEnabled: data.data.passkeyEnabled ?? defaultConfig.passkeyEnabled,
           },
           loaded: true,
         })
