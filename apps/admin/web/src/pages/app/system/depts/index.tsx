@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Table, Button, Form, Input, InputNumber, Modal, Tag, message, Row, Col, TreeSelect } from 'antd'
+import { Card, Table, Button, Form, Input, InputNumber, Modal, Tag, Row, Col, TreeSelect } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -51,17 +52,17 @@ const DeptPage = () => {
     try {
       if (editingDept) {
         const { error } = await client.put('/api/system/depts/:id', { params: { id: editingDept.id }, body: values })
-        if (!error) { message.success('更新成功'); setModalOpen(false); fetchData() }
+        if (!error) { msg.success('更新成功'); setModalOpen(false); fetchData() }
       } else {
         const { error } = await client.post('/api/system/depts', { body: values })
-        if (!error) { message.success('创建成功'); setModalOpen(false); fetchData() }
+        if (!error) { msg.success('创建成功'); setModalOpen(false); fetchData() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/depts/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); fetchData() }
+    if (!error) { msg.success('删除成功'); fetchData() }
   }
 
   const columns: ColumnsType<DeptItem> = [

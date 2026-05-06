@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, Form, Modal, Space, Tag, message, Row, Col } from 'antd'
+import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -40,28 +41,28 @@ const NoticePage = () => {
       if (editingNotice) {
         const body: UpdateNoticeBody = { title: values.title, content: values.content, type: values.type }
         const { error } = await client.put('/api/system/notices/:id', { params: { id: editingNotice.id }, body })
-        if (!error) { message.success('更新成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const body: CreateNoticeBody = { title: values.title, content: values.content, type: values.type }
         const { error } = await client.post('/api/system/notices', { body })
-        if (!error) { message.success('创建成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/notices/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); refresh() }
+    if (!error) { msg.success('删除成功'); refresh() }
   }
 
   const handlePublish = async (id: string) => {
     const { error } = await client.put('/api/system/notices/:id/publish', { params: { id } })
-    if (!error) { message.success('已发布'); refresh() }
+    if (!error) { msg.success('已发布'); refresh() }
   }
 
   const handleRevoke = async (id: string) => {
     const { error } = await client.put('/api/system/notices/:id/revoke', { params: { id } })
-    if (!error) { message.success('已撤回'); refresh() }
+    if (!error) { msg.success('已撤回'); refresh() }
   }
 
   const typeMap: Record<number, string> = { 1: '通知', 2: '公告' }

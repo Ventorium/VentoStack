@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, InputNumber, Form, Modal, Space, Tag, message, Row, Col } from 'antd'
+import { Card, Table, Button, Input, InputNumber, Form, Modal, Space, Tag, Row, Col } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -35,17 +36,17 @@ const PostPage = () => {
     try {
       if (editingPost) {
         const { error } = await client.put('/api/system/posts/:id', { params: { id: editingPost.id }, body: values })
-        if (!error) { message.success('更新成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/posts', { body: values })
-        if (!error) { message.success('创建成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/posts/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); refresh() }
+    if (!error) { msg.success('删除成功'); refresh() }
   }
 
   const columns: ColumnsType<PostItem> = [

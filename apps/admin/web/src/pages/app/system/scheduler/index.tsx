@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, Select, Form, Modal, Space, Tag, message, Row, Col } from 'antd'
+import { Card, Table, Button, Input, Select, Form, Modal, Space, Tag, Row, Col } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router'
@@ -35,14 +36,14 @@ const SchedulerPage = () => {
       if (editingJob) {
         const { error } = await client.put('/api/system/scheduler/jobs/:id', { params: { id: editingJob.id }, body: values })
         if (!error) {
-          message.success('更新成功')
+          msg.success('更新成功')
           setModalOpen(false)
           refresh()
         }
       } else {
         const { error } = await client.post('/api/system/scheduler/jobs', { body: values })
         if (!error) {
-          message.success('创建成功')
+          msg.success('创建成功')
           setModalOpen(false)
           refresh()
         }
@@ -52,21 +53,21 @@ const SchedulerPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/scheduler/jobs/:id', { params: { id } })
     if (!error) {
-      message.success('删除成功')
+      msg.success('删除成功')
       refresh()
     }
   }
   const handleToggle = async (id: string) => {
     const { error } = await client.put('/api/system/scheduler/jobs/:id/toggle', { params: { id } })
     if (!error) {
-      message.success('状态切换成功')
+      msg.success('状态切换成功')
       refresh()
     }
   }
   const handleExecute = async (id: string) => {
     const { error } = await client.post('/api/system/scheduler/jobs/:id/execute', { params: { id } })
     if (!error) {
-      message.success('执行成功')
+      msg.success('执行成功')
       refresh()
     }
   }

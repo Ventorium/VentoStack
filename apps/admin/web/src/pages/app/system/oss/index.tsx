@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, Form, Space, Modal, message, Upload, Image, Tag } from 'antd'
+import { Card, Table, Button, Input, Form, Space, Modal, Upload, Image, Tag } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined, ReloadOutlined, UploadOutlined, DownloadOutlined, EyeOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -35,17 +36,17 @@ const OSSPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/oss/files/:id', { params: { id } })
     if (!error) {
-      message.success('删除成功')
+      msg.success('删除成功')
       refresh()
     }
   }
 
   const handleUploadChange = (info: any) => {
     if (info.file.status === 'done') {
-      message.success('上传成功')
+      msg.success('上传成功')
       refresh()
     } else if (info.file.status === 'error') {
-      message.error('上传失败')
+      msg.error('上传失败')
     }
   }
 

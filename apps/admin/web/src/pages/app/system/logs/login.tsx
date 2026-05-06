@@ -1,4 +1,5 @@
-import { Card, Table, Input, Select, Form, Button, Tag, Space, message } from 'antd'
+import { Card, Table, Input, Select, Form, Button, Tag, Space } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -54,7 +55,7 @@ const LoginLogPage = () => {
         <ActionColumn items={[
           ...(r.status === 0 && r.userId ? [{ label: '解锁用户', onClick: async () => {
             const { error } = await client.put('/api/system/users/:id/unlock', { params: { id: r.userId } })
-            if (!error) { message.success('已解锁') }
+            if (!error) { msg.success('已解锁') }
           } }] : []),
         ]} maxInline={1} />
       )
@@ -76,7 +77,7 @@ const LoginLogPage = () => {
           <Space>
             <Button type="primary" onClick={handleSearch}>搜索</Button>
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>
-            <Button danger onClick={async () => { const { error } = await client.delete('/api/system/login-logs'); if (!error) { message.success('日志已清空'); handleReset() } }}>清空日志</Button>
+            <Button danger onClick={async () => { const { error } = await client.delete('/api/system/login-logs'); if (!error) { msg.success('日志已清空'); handleReset() } }}>清空日志</Button>
           </Space>
         </Form>
       </Card>

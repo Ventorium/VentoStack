@@ -136,14 +136,29 @@ export async function buildApp(): Promise<AppContext> {
   app.use(monitor.router);
 
   // 4e. 注册优雅关停回调（框架收到 SIGTERM/SIGINT 时自动调用）
+  let shutdownStarted = false;
   app.lifecycle.onBeforeStop(async () => {
-    logger.info("[shutdown] Closing Redis/cache...");
-    await cacheInstance.close();
-    logger.info("[shutdown] Redis/cache closed");
+    if (shutdownStarted) return;
+    shutdownStarted = true;
 
-    logger.info("[shutdown] Closing database...");
-    await database.close();
-    logger.info("[shutdown] Database closed");
+    // 安全超时：5 秒后强制退出，防止连接未关闭导致进程挂起
+    const forceExit = setTimeout(() => {
+      logger.info("[shutdown] Force exit (timeout)");
+      process.exit(0);
+    }, 5000);
+    forceExit.unref();
+
+    try {
+      logger.info("[shutdown] Closing Redis/cache...");
+      await cacheInstance.close();
+      logger.info("[shutdown] Redis/cache closed");
+
+      logger.info("[shutdown] Closing database...");
+      await database.close();
+      logger.info("[shutdown] Database closed");
+    } catch (err) {
+      logger.info(`[shutdown] Error during shutdown: ${err instanceof Error ? err.message : String(err)}`);
+    }
   });
 
   // 4f. 错误处理（必须最后注册）

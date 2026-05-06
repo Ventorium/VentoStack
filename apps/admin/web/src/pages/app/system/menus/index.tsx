@@ -1,5 +1,6 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Table, Button, Form, Input, InputNumber, Select, Modal, Tag, message, Row, Col } from 'antd'
+import { Card, Table, Button, Form, Input, InputNumber, Select, Modal, Tag, Row, Col } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -63,17 +64,17 @@ const MenuPage = () => {
     try {
       if (editingMenu) {
         const { error } = await client.put('/api/system/menus/:id', { params: { id: editingMenu.id }, body: values })
-        if (!error) { message.success('更新成功'); setModalOpen(false); fetchData() }
+        if (!error) { msg.success('更新成功'); setModalOpen(false); fetchData() }
       } else {
         const { error } = await client.post('/api/system/menus', { body: values })
-        if (!error) { message.success('创建成功'); setModalOpen(false); fetchData() }
+        if (!error) { msg.success('创建成功'); setModalOpen(false); fetchData() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/menus/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); fetchData() }
+    if (!error) { msg.success('删除成功'); fetchData() }
   }
 
   const typeMap: Record<number, string> = { 1: '目录', 2: '菜单', 3: '按钮' }

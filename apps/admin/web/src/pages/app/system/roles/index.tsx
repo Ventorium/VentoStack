@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, Form, Modal, Space, Tag, message, Row, Col, Tree } from 'antd'
+import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col, Tree } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -77,17 +78,17 @@ const RolePage = () => {
     try {
       if (editingRole) {
         const { error } = await client.put('/api/system/roles/:id', { params: { id: editingRole.id }, body: { name: values.name, sort: values.sort, remark: values.remark, status: values.status } })
-        if (!error) { message.success('更新成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/roles', { body: { name: values.name, code: values.code, sort: values.sort, remark: values.remark } })
-        if (!error) { message.success('创建成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/roles/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); refresh() }
+    if (!error) { msg.success('删除成功'); refresh() }
   }
 
   const openAssignMenus = async (r: RoleItem) => {
@@ -118,7 +119,7 @@ const RolePage = () => {
 
   const handleAssignMenus = async () => {
     const { error } = await client.put('/api/system/roles/:id/menus', { params: { id: assignRoleId }, body: { menuIds: checkedKeys } })
-    if (!error) { message.success('菜单权限分配成功'); setMenuModalOpen(false) }
+    if (!error) { msg.success('菜单权限分配成功'); setMenuModalOpen(false) }
   }
 
   const isBuiltInRole = (code: string) => code === 'admin'

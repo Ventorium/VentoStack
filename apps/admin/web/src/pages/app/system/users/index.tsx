@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Table, Button, Input, Form, Modal, Space, Tag, message, Row, Col, Tree, Spin } from 'antd'
+import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col, Tree, Spin } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined, ApartmentOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -91,23 +92,23 @@ const UserPage = () => {
     try {
       if (editingUser) {
         const { error } = await client.put('/api/system/users/:id', { params: { id: editingUser.id }, body: { nickname: values.nickname, email: values.email, phone: values.phone, status: values.status, deptId: values.deptId } })
-        if (!error) { message.success('更新成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/users', { body: { username: values.username, password: values.password, nickname: values.nickname, email: values.email, phone: values.phone, status: values.status } })
-        if (!error) { message.success('创建成功'); setModalOpen(false); refresh() }
+        if (!error) { msg.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/users/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); refresh() }
+    if (!error) { msg.success('删除成功'); refresh() }
   }
 
   const handleStatus = async (id: string, status: number) => {
     const newStatus = status === 1 ? 0 : 1
     const { error } = await client.put('/api/system/users/:id/status', { params: { id }, body: { status: newStatus } })
-    if (!error) { message.success(newStatus === 1 ? '已启用' : '已禁用'); refresh() }
+    if (!error) { msg.success(newStatus === 1 ? '已启用' : '已禁用'); refresh() }
   }
 
   const openResetPwd = (id: string) => {
@@ -121,7 +122,7 @@ const UserPage = () => {
     setResetPwdLoading(true)
     try {
       const { error } = await client.put('/api/system/users/:id/reset-pwd', { params: { id: resetPwdUserId }, body: { newPassword: values.newPassword } })
-      if (!error) { message.success('密码重置成功'); setResetPwdOpen(false) }
+      if (!error) { msg.success('密码重置成功'); setResetPwdOpen(false) }
     } finally { setResetPwdLoading(false) }
   }
 

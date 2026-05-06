@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Button, Form, Input, Select, Table, message, Space, Spin } from 'antd'
+import { Card, Button, Form, Input, Select, Table, Space, Spin } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { useNavigate, useParams } from 'react-router-dom'
 import { client } from '@/api'
@@ -49,7 +50,7 @@ const GenEditPage = () => {
         },
       })
       if (!error) {
-        message.success('保存成功')
+        msg.success('保存成功')
       }
     } finally {
       setSaving(false)

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, Popconfirm, Modal, message, Radio, Typography, List, Alert } from 'antd'
+import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, Popconfirm, Modal, Radio, Typography, List, Alert } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import { UserOutlined, LockOutlined, SafetyOutlined, HistoryOutlined, CopyOutlined, UploadOutlined, KeyOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
 import { startRegistration } from '@simplewebauthn/browser'
 import dayjs from 'dayjs'
@@ -60,7 +61,7 @@ export default function ProfilePage() {
       setAvatarUrl(data.avatar || '')
       profileForm.setFieldsValue(data)
     } else {
-      message.error('获取用户信息失败')
+      msg.error('获取用户信息失败')
     }
   }
 
@@ -69,7 +70,7 @@ export default function ProfilePage() {
     if (!error && data) {
       setMfaEnabled(data.enabled)
     } else {
-      message.error('获取MFA状态失败')
+      msg.error('获取MFA状态失败')
     }
   }
 
@@ -101,10 +102,10 @@ export default function ProfilePage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     if (!error) {
-      message.success('保存成功')
+      msg.success('保存成功')
       fetchProfile()
     } else {
-      message.error('保存失败')
+      msg.error('保存失败')
     }
     setLoading(false)
   }
@@ -118,10 +119,10 @@ export default function ProfilePage() {
     if (!result.error) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       setAvatarUrl((result as any)?.url || (result as any)?.data?.url)
-      message.success('头像上传成功')
+      msg.success('头像上传成功')
       fetchProfile()
     } else {
-      message.error('头像上传失败')
+      msg.error('头像上传失败')
     }
   }
 
@@ -135,10 +136,10 @@ export default function ProfilePage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     if (!error) {
-      message.success('密码修改成功')
+      msg.success('密码修改成功')
       passwordForm.resetFields()
     } else {
-      message.error('密码修改失败')
+      msg.error('密码修改失败')
     }
     setLoading(false)
   }
@@ -149,24 +150,24 @@ export default function ProfilePage() {
       setMfaSetupData(data)
       setMfaStep('setup')
     } else {
-      message.error('启用MFA失败')
+      msg.error('启用MFA失败')
     }
   }
 
   const handleMFADisable = async () => {
     const password = mfaForm.getFieldValue('password')
     if (!password) {
-      message.warning('请输入密码确认')
+      msg.warning('请输入密码确认')
       return
     }
     setLoading(true)
     const { error } = await client.post('/api/auth/mfa/disable', { body: { code: password } })
     if (!error) {
-      message.success('MFA已禁用')
+      msg.success('MFA已禁用')
       setMfaEnabled(false)
       mfaForm.resetFields()
     } else {
-      message.error('禁用MFA失败')
+      msg.error('禁用MFA失败')
     }
     setLoading(false)
   }
@@ -180,32 +181,32 @@ export default function ProfilePage() {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     if (!error) {
-      message.success('MFA启用成功')
+      msg.success('MFA启用成功')
       setMfaEnabled(true)
       setMfaStep('idle')
       setMfaSetupData(null)
       mfaForm.resetFields()
     } else {
-      message.error('验证码错误')
+      msg.error('验证码错误')
     }
     setLoading(false)
   }
 
   const copyRecoveryCode = (code: string) => {
     navigator.clipboard.writeText(code)
-    message.success('已复制到剪贴板')
+    msg.success('已复制到剪贴板')
   }
 
   const handleAddPasskey = async () => {
     if (!newPasskeyName.trim()) {
-      message.warning('请输入通行密钥名称')
+      msg.warning('请输入通行密钥名称')
       return
     }
     setPasskeyLoading(true)
     try {
       const { error: beginError, data: beginData } = await client.post('/api/auth/passkey/register-begin' as unknown as '/api/system/users', { body: {} } as any)
       if (beginError || !beginData) {
-        message.error('获取注册信息失败')
+        msg.error('获取注册信息失败')
         return
       }
       const credential = await startRegistration({ optionsJSON: beginData.options as any })
@@ -213,15 +214,15 @@ export default function ProfilePage() {
         body: { name: newPasskeyName, challengeId: beginData.challengeId, credential },
       } as any)
       if (!finishError) {
-        message.success('通行密钥添加成功')
+        msg.success('通行密钥添加成功')
         setAddPasskeyOpen(false)
         setNewPasskeyName('')
         fetchPasskeys()
       } else {
-        message.error('通行密钥注册失败')
+        msg.error('通行密钥注册失败')
       }
     } catch {
-      message.error('通行密钥注册已取消或失败')
+      msg.error('通行密钥注册已取消或失败')
     } finally {
       setPasskeyLoading(false)
     }
@@ -230,10 +231,10 @@ export default function ProfilePage() {
   const handleDeletePasskey = async (id: string) => {
     const { error } = await client.delete(`/api/auth/passkey/${id}` as unknown as '/api/system/users/:id')
     if (!error) {
-      message.success('通行密钥已删除')
+      msg.success('通行密钥已删除')
       fetchPasskeys()
     } else {
-      message.error('删除失败')
+      msg.error('删除失败')
     }
   }
 

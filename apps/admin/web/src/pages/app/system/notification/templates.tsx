@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, Form, Modal, Space, Tag, message, Select, Row, Col, Switch } from 'antd'
+import { Card, Table, Button, Input, Form, Modal, Space, Tag, Select, Row, Col, Switch } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -53,7 +54,7 @@ const NotifyTemplatesPage = () => {
           body: { type: values.type, channel: values.channel, titleTemplate: values.titleTemplate, contentTemplate: values.contentTemplate, variables: values.variables, status: values.status ? 1 : 0 },
         })
         if (!error) {
-          message.success('更新成功')
+          msg.success('更新成功')
           setModalOpen(false)
           refresh()
         }
@@ -62,7 +63,7 @@ const NotifyTemplatesPage = () => {
           body: { type: values.type, channel: values.channel, titleTemplate: values.titleTemplate, contentTemplate: values.contentTemplate, variables: values.variables, status: values.status ? 1 : 0 },
         })
         if (!error) {
-          message.success('创建成功')
+          msg.success('创建成功')
           setModalOpen(false)
           refresh()
         }
@@ -73,7 +74,7 @@ const NotifyTemplatesPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/notification/templates/:id', { params: { id } })
     if (!error) {
-      message.success('删除成功')
+      msg.success('删除成功')
       refresh()
     }
   }

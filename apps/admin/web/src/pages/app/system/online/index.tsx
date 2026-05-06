@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
-import { Card, Table, Button, Space, Modal, message } from 'antd'
+import { Card, Table, Button, Space, Modal } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, LogoutOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -34,7 +35,7 @@ const OnlinePage = () => {
   const handleForceLogout = async (sessionId: string) => {
     const { error } = await client.delete('/api/system/monitor/online/:sessionId', { params: { sessionId } })
     if (!error) {
-      message.success('已强制下线')
+      msg.success('已强制下线')
       fetchData()
     }
   }

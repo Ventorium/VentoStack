@@ -31,6 +31,7 @@ const Header = () => {
     ],
     onClick: ({ key }: { key: string }) => {
       if (key === 'logout') onLogout()
+      if (key === 'profile') navigate('/app/profile')
     },
   }
 

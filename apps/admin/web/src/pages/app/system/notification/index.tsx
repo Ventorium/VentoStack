@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, Form, Modal, Space, Tag, message, Badge, Select } from 'antd'
+import { Card, Table, Button, Input, Form, Modal, Space, Tag, Badge, Select } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -45,19 +46,19 @@ const NotificationPage = () => {
   const handleMarkAsRead = async (id: string) => {
     const { error } = await client.put('/api/system/notification/messages/:id/read', { params: { id } })
     if (!error) {
-      message.success('已标记为已读')
+      msg.success('已标记为已读')
       refresh()
     }
   }
 
   const handleBatchMarkAsRead = async () => {
     if (selectedRowKeys.length === 0) {
-      message.warning('请先选择消息')
+      msg.warning('请先选择消息')
       return
     }
     const { error } = await client.put('/api/system/notification/messages/read-batch', { body: { ids: selectedRowKeys as string[] } })
     if (!error) {
-      message.success('批量标记成功')
+      msg.success('批量标记成功')
       clearSelection()
       refresh()
     }
@@ -66,7 +67,7 @@ const NotificationPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/notification/messages/:id', { params: { id } })
     if (!error) {
-      message.success('删除成功')
+      msg.success('删除成功')
       refresh()
     }
   }

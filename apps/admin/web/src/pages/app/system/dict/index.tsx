@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Input, InputNumber, Form, Modal, Drawer, Space, Tag, message, Row, Col } from 'antd'
+import { Card, Table, Button, Input, InputNumber, Form, Modal, Drawer, Space, Tag, Row, Col } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
@@ -44,16 +45,16 @@ const DictPage = () => {
     try {
       if (editingType) {
         const { error } = await client.put('/api/system/dict/types/:id', { params: { id: editingType.code }, body: values })
-        if (!error) { message.success('更新成功'); setTypeModalOpen(false); refresh() }
+        if (!error) { msg.success('更新成功'); setTypeModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/dict/types', { body: values })
-        if (!error) { message.success('创建成功'); setTypeModalOpen(false); refresh() }
+        if (!error) { msg.success('创建成功'); setTypeModalOpen(false); refresh() }
       }
     } finally { setTypeModalLoading(false) }
   }
   const handleDeleteType = async (code: string) => {
     const { error } = await client.delete('/api/system/dict/types/:id', { params: { id: code } })
-    if (!error) { message.success('删除成功'); refresh() }
+    if (!error) { msg.success('删除成功'); refresh() }
   }
 
   const openDictData = async (typeCode: string, typeName: string) => {
@@ -72,17 +73,17 @@ const DictPage = () => {
     try {
       if (editingData) {
         const { error } = await client.put('/api/system/dict/data/:id', { params: { id: editingData.id }, body: values })
-        if (!error) { message.success('更新成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
+        if (!error) { msg.success('更新成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
       } else {
         const { error } = await client.post('/api/system/dict/data', { body: { ...values, typeCode: currentTypeCode } })
-        if (!error) { message.success('创建成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
+        if (!error) { msg.success('创建成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
       }
     } finally { setDataModalLoading(false) }
   }
 
   const handleDeleteData = async (id: string) => {
     const { error } = await client.delete('/api/system/dict/data/:id', { params: { id } })
-    if (!error) { message.success('删除成功'); openDictData(currentTypeCode, currentTypeName) }
+    if (!error) { msg.success('删除成功'); openDictData(currentTypeCode, currentTypeName) }
   }
 
   const typeColumns: ColumnsType<DictTypeItem> = [

@@ -1,4 +1,5 @@
-import { Button, Divider, Form, Input, Modal, message } from 'antd'
+import { Button, Divider, Form, Input, Modal } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { OTPRef } from 'antd/es/input/Otp'
 import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
@@ -35,10 +36,10 @@ const LoginPage = () => {
     const result = await login(values)
     setLoading(false)
     if (result && 'id' in result) {
-      message.success('登录成功')
+      msg.success('登录成功')
       const user = result as { id: string; mfaSetupRequired?: boolean }
       if (user.mfaSetupRequired) {
-        message.warning('请尽快在个人中心设置多因素认证')
+        msg.warning('请尽快在个人中心设置多因素认证')
       }
       navigate('/app', { replace: true })
     } else if (result && 'code' in result && result.code === 'mfa_required') {
@@ -46,7 +47,7 @@ const LoginPage = () => {
     } else if (result && 'code' in result && result.code === 'password_expired') {
       setExpiredInfo(result as PasswordExpiredInfo)
     } else {
-      message.error('用户名或密码错误')
+      msg.error('用户名或密码错误')
     }
   }
 
@@ -56,12 +57,12 @@ const LoginPage = () => {
     const result = await completeMFALogin(mfaInfo.mfaToken, mfaCode)
     setMfaLoading(false)
     if (result && 'id' in result) {
-      message.success('登录成功')
+      msg.success('登录成功')
       setMfaInfo(null)
       setMfaCode('')
       navigate('/app', { replace: true })
     } else {
-      message.error('验证码错误，请重试')
+      msg.error('验证码错误，请重试')
       setMfaCode('')
       inputRef.current?.focus()
     }
@@ -70,7 +71,7 @@ const LoginPage = () => {
   const handlePasswordChange = async () => {
     const values = await pwdForm.validateFields()
     if (values.newPassword !== values.confirmPassword) {
-      message.error('两次密码不一致')
+      msg.error('两次密码不一致')
       return
     }
     setPwdLoading(true)
@@ -80,7 +81,7 @@ const LoginPage = () => {
     } as any) as { error?: unknown }
     setPwdLoading(false)
     if (!error) {
-      message.success('密码修改成功，请重新登录')
+      msg.success('密码修改成功，请重新登录')
       setExpiredInfo(null)
       pwdForm.resetFields()
     }
@@ -89,14 +90,14 @@ const LoginPage = () => {
   const handlePasskeyLogin = async () => {
     const username = form.getFieldValue('username')
     if (!username) {
-      message.warning('请先输入账号')
+      msg.warning('请先输入账号')
       return
     }
     setPasskeyLoading(true)
     const result = await passkeyLogin(username)
     setPasskeyLoading(false)
     if (result && 'id' in result) {
-      message.success('登录成功')
+      msg.success('登录成功')
       navigate('/app', { replace: true })
     }
   }

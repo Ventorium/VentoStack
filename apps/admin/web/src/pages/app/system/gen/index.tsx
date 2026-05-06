@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Card, Table, Button, Modal, Space, Tag, message, Tabs } from 'antd'
+import { Card, Table, Button, Modal, Space, Tag, Tabs } from 'antd'
+import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
@@ -36,7 +37,7 @@ const GenPage = () => {
   const handleImport = async (tableName: string) => {
     const { error } = await client.post('/api/system/gen/import', { body: { tableName } })
     if (!error) {
-      message.success('导入成功')
+      msg.success('导入成功')
       refresh()
     }
   }
@@ -57,14 +58,14 @@ const GenPage = () => {
   const handleGenerate = async (id: string) => {
     const { error } = await client.post('/api/system/gen/tables/:id/generate', { params: { id } })
     if (!error) {
-      message.success('代码生成成功')
+      msg.success('代码生成成功')
     }
   }
 
   const handleDelete = async (id: string) => {
     const { error } = await client.delete('/api/system/gen/tables/:id', { params: { id } })
     if (!error) {
-      message.success('删除成功')
+      msg.success('删除成功')
       refresh()
     }
   }
