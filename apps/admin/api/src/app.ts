@@ -10,17 +10,20 @@
  * 依赖方向：infra → auth → system → app → entry
  */
 
+import { resolve } from "node:path";
 import { createApp, createRouter, requestId, requestLogger, errorHandler, cors, createTagLogger } from "@ventostack/core";
 import type { VentoStackApp } from "@ventostack/core";
 import { setupOpenAPI } from "@ventostack/openapi";
 import { getDefaultLogger } from "@ventostack/observability";
 import type { Logger } from "@ventostack/observability";
 import { createAuditLog, createDefaultHealthCheck } from "@ventostack/observability";
+import { createOSSModule } from "@ventostack/oss";
 
 import { env } from "./config";
 import { createDatabaseConnection, runMigrations, runSeeds } from "./database";
 import type { DatabaseContext } from "./database";
 import { createCacheInstance, type CacheInstance } from "./cache";
+import { createStorageAdapter } from "./storage";
 import { assembleAuthEngines } from "./auth";
 import { assembleSystemModule } from "./system";
 import { createMonitorModule } from "@ventostack/monitor";
@@ -60,10 +63,13 @@ export async function buildApp(): Promise<AppContext> {
   // 1d. 缓存
   const cacheInstance = await createCacheInstance();
 
-  // 1e. 审计日志
+  // 1e. 存储 + OSS
+  const storage = createStorageAdapter();
+
+  // 1f. 审计日志
   const auditLog = createAuditLog();
 
-  // 1f. 健康检查
+  // 1g. 健康检查
   const healthCheck = createDefaultHealthCheck({
     sql: executor,
     ...(cacheInstance.redisClient ? { redis: cacheInstance.redisClient } : {}),
@@ -79,12 +85,28 @@ export async function buildApp(): Promise<AppContext> {
   // 3. 系统模块层
   // =============================================
 
-  const system = assembleSystemModule({ executor, cache: cacheInstance.cache, auth, auditLog });
+  // 3a. OSS 模块
+  const ossModule = createOSSModule({
+    executor,
+    storage,
+    jwt: auth.jwt,
+    jwtSecret: auth.jwtSecret,
+    rbac: auth.rbac,
+  });
+
+  // 3b. 系统模块（注入 ossService 用于头像上传）
+  const system = assembleSystemModule({
+    executor,
+    cache: cacheInstance.cache,
+    auth,
+    auditLog,
+    ossService: ossModule.services.oss,
+  });
 
   // 3a. 加载权限
   await system.init();
 
-  // 3b. 监控模块
+  // 3c. 监控模块
   const monitor = createMonitorModule({
     healthCheck,
     jwt: auth.jwt,
@@ -129,13 +151,38 @@ export async function buildApp(): Promise<AppContext> {
     },
   });
 
-  // 4d. 系统模块路由
+  // 4d. 静态文件服务（仅本地存储模式）
+  if (env.STORAGE_DRIVER === "local") {
+    const staticRouter = createRouter();
+    staticRouter.get("/uploads/*", async (ctx) => {
+      const url = new URL(ctx.request.url);
+      const relativePath = url.pathname.replace(/^\/uploads\/?/, "");
+      // Prevent path traversal
+      const sanitized = relativePath.replace(/\.\./g, "").replace(/^\/+/, "");
+      const basePath = resolve(env.STORAGE_LOCAL_PATH);
+      const filePath = resolve(basePath, sanitized);
+      if (!filePath.startsWith(basePath)) {
+        return new Response("Forbidden", { status: 403 });
+      }
+      const file = Bun.file(filePath);
+      if (await file.exists()) {
+        return new Response(file);
+      }
+      return new Response("Not Found", { status: 404 });
+    });
+    app.use(staticRouter);
+  }
+
+  // 4e. 系统模块路由
   app.use(system.router);
 
-  // 4e. 监控模块路由
+  // 4f. OSS 模块路由
+  app.use(ossModule.router);
+
+  // 4g. 监控模块路由
   app.use(monitor.router);
 
-  // 4e. 注册优雅关停回调（框架收到 SIGTERM/SIGINT 时自动调用）
+  // 4h. 注册优雅关停回调（框架收到 SIGTERM/SIGINT 时自动调用）
   let shutdownStarted = false;
   app.lifecycle.onBeforeStop(async () => {
     if (shutdownStarted) return;
@@ -161,7 +208,7 @@ export async function buildApp(): Promise<AppContext> {
     }
   });
 
-  // 4f. 错误处理（必须最后注册）
+  // 4i. 错误处理（必须最后注册）
   app.use(errorHandler({ logger }));
 
   // =============================================

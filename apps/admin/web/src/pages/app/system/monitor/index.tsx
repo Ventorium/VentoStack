@@ -62,7 +62,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="服务器状态" size="small">
               {serverStatus ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <div>
                     <div className="text-sm text-gray-500 mb-1">CPU使用率</div>
                     <Progress percent={Math.round(serverStatus.cpuUsage * 100)} size="small" />
@@ -93,7 +93,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="缓存状态" size="small">
               {cacheStatus ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <Statistic title="键数量" value={cacheStatus.keyCount} />
                   <div>
                     <div className="text-sm text-gray-500 mb-1">命中率</div>
@@ -110,7 +110,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="数据源状态" size="small">
               {dataSourceStatus ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <div>
                     <div className="text-sm text-gray-500 mb-1">连接状态</div>
                     <Tag color={dataSourceStatus.status === 'UP' ? 'green' : 'red'}>{dataSourceStatus.status}</Tag>
@@ -128,7 +128,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="健康检查" size="small">
               {healthStatus ? (
-                <Space direction="vertical" style={{ width: '100%' }}>
+                <Space orientation="vertical" style={{ width: '100%' }}>
                   <div>
                     <div className="text-sm text-gray-500 mb-1">总体状态</div>
                     <Tag color={healthStatus.status === 'UP' ? 'green' : 'red'}>{healthStatus.status}</Tag>

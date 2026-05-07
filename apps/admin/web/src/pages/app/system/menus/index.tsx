@@ -8,7 +8,7 @@ import type { MenuItem } from '@/api/types'
 import ActionColumn from '@/components/ActionColumn'
 import { resolveIcon } from '@/utils/icon'
 import DictSelect from '@/components/DictSelect'
-import { fmtDate } from '@ventostack/gui'
+import { fmtDate } from '@/utils/fmtDate'
 
 /** 常用图标列表（使用 @ant-design/icons 完整名称） */
 const iconOptions = [

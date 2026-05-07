@@ -64,10 +64,12 @@ export function errorHandler(options?: ErrorHandlerOptions): Middleware {
         return ctx.json(body, error.code);
       }
 
+      const stack = error instanceof Error ? error.stack : undefined;
       logger.error("unhandled error", {
         method: ctx.method,
         path: ctx.path,
         error: message,
+        ...(stack ? { stack } : {}),
       });
 
       return ctx.json({ error: "INTERNAL_ERROR", message: fallbackMessage }, 500);

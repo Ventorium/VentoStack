@@ -1,5 +1,5 @@
 import { describe, test, expect } from 'bun:test'
-import { cleanParams } from '@ventostack/gui'
+import { cleanParams } from '@/utils/cleanParams'
 
 describe('定时任务管理页', () => {
   test('cleanParams 过滤空值', () => {

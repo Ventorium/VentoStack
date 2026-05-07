@@ -6,7 +6,9 @@ import { PlusOutlined, SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router'
 import { client } from '@/api'
 import type { ScheduleJob } from '@/api/types'
-import { useTable, cleanParams, fmtDate } from '@ventostack/gui'
+import { useTable } from '@/hooks/useTable'
+import { cleanParams } from '@/utils/cleanParams'
+import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
 
 const fetcher = (params: Record<string, unknown>) =>

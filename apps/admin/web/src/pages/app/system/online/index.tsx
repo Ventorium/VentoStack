@@ -5,7 +5,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { ReloadOutlined, LogoutOutlined } from '@ant-design/icons'
 import { client } from '@/api'
 import type { OnlineUser } from '@/api/types'
-import { fmtDate } from '@ventostack/gui'
+import { fmtDate } from '@/utils/fmtDate'
 
 const OnlinePage = () => {
   const [loading, setLoading] = useState(false)

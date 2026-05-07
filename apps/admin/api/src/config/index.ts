@@ -64,11 +64,47 @@ const rawConfig = createConfig({
   BCRYPT_COST: { type: "number", env: "BCRYPT_COST", default: 10 },
   WEBAUTHN_RP_ID: { type: "string", env: "WEBAUTHN_RP_ID", default: "localhost" },
   WEBAUTHN_RP_NAME: { type: "string", env: "WEBAUTHN_RP_NAME", default: "VentoStack Admin" },
+  // ---- Storage ----
+  STORAGE_DRIVER: {
+    type: "string",
+    env: "STORAGE_DRIVER",
+    default: "local",
+    options: ["local", "s3"],
+  },
+  STORAGE_LOCAL_PATH: {
+    type: "string",
+    env: "STORAGE_LOCAL_PATH",
+    default: "./uploads",
+  },
+  STORAGE_LOCAL_BASE_URL: {
+    type: "string",
+    env: "STORAGE_LOCAL_BASE_URL",
+    default: "/uploads",
+  },
+  S3_ENDPOINT: { type: "string", env: "S3_ENDPOINT" },
+  S3_BUCKET: { type: "string", env: "S3_BUCKET" },
+  S3_ACCESS_KEY_ID: {
+    type: "string",
+    env: "S3_ACCESS_KEY_ID",
+    sensitive: true,
+  },
+  S3_SECRET_ACCESS_KEY: {
+    type: "string",
+    env: "S3_SECRET_ACCESS_KEY",
+    sensitive: true,
+  },
+  S3_REGION: { type: "string", env: "S3_REGION", default: "auto" },
+  S3_PUBLIC_BASE_URL: { type: "string", env: "S3_PUBLIC_BASE_URL" },
 }, process.env);
 
 // 跨字段校验
 if (rawConfig.CACHE_DRIVER === "redis" && !rawConfig.REDIS_URL) {
   throw new Error("REDIS_URL is required when CACHE_DRIVER=redis");
+}
+if (rawConfig.STORAGE_DRIVER === "s3") {
+  if (!rawConfig.S3_BUCKET) throw new Error("S3_BUCKET is required when STORAGE_DRIVER=s3");
+  if (!rawConfig.S3_ACCESS_KEY_ID) throw new Error("S3_ACCESS_KEY_ID is required when STORAGE_DRIVER=s3");
+  if (!rawConfig.S3_SECRET_ACCESS_KEY) throw new Error("S3_SECRET_ACCESS_KEY is required when STORAGE_DRIVER=s3");
 }
 
 // ALLOWED_ORIGINS: 逗号分隔 → string[]

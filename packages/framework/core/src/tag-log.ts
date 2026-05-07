@@ -12,9 +12,18 @@
  */
 
 export interface TagLogger {
-  info(message: string): void;
-  warn(message: string): void;
-  error(message: string): void;
+  info(message: string, meta?: Record<string, unknown>): void;
+  warn(message: string, meta?: Record<string, unknown>): void;
+  error(message: string, meta?: Record<string, unknown>): void;
+}
+
+function formatMeta(meta?: Record<string, unknown>): string {
+  if (!meta || Object.keys(meta).length === 0) return "";
+  try {
+    return " " + JSON.stringify(meta);
+  } catch {
+    return "";
+  }
 }
 
 /**
@@ -23,14 +32,14 @@ export interface TagLogger {
  */
 export function createTagLogger(tag: string): TagLogger {
   return {
-    info(message: string): void {
-      console.log(`[${tag}] ${message}`);
+    info(message: string, meta?: Record<string, unknown>): void {
+      console.log(`[${tag}] ${message}${formatMeta(meta)}`);
     },
-    warn(message: string): void {
-      console.warn(`[${tag}] ${message}`);
+    warn(message: string, meta?: Record<string, unknown>): void {
+      console.warn(`[${tag}] ${message}${formatMeta(meta)}`);
     },
-    error(message: string): void {
-      console.error(`[${tag}] ${message}`);
+    error(message: string, meta?: Record<string, unknown>): void {
+      console.error(`[${tag}] ${message}${formatMeta(meta)}`);
     },
   };
 }

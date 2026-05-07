@@ -59,6 +59,10 @@ export interface SystemModule {
   init(): Promise<void>;
 }
 
+export interface FileUploader {
+  upload(filename: string, data: Buffer, contentType: string, bucket: string, uploaderId: string): Promise<string>;
+}
+
 export interface SystemModuleDeps {
   executor: (text: string, params?: unknown[]) => Promise<unknown[]>;
   cache: Cache;
@@ -77,10 +81,11 @@ export interface SystemModuleDeps {
   rpID?: string;
   rpName?: string;
   rpOrigins?: string[];
+  fileUploader?: FileUploader;
 }
 
 export function createSystemModule(deps: SystemModuleDeps): SystemModule {
-  const { executor, cache, jwt, jwtSecret, passwordHasher, totp, rbac, rowFilter, auditLog, authSessionManager, eventBus } = deps;
+  const { executor, cache, jwt, jwtSecret, passwordHasher, totp, rbac, rowFilter, auditLog, authSessionManager, eventBus, fileUploader } = deps;
 
   // Services
   const configService = createConfigService({ executor, cache });
@@ -324,12 +329,17 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     const user = ctx.user as { id: string } | undefined;
     if (!user?.id) return fail("Not authenticated", 401, 401);
     const body = await parseBody(ctx.request);
-    const { nickname, email, phone, gender } = body as { nickname?: string; email?: string; phone?: string; gender?: number };
+    const { nickname, email, phone, gender } = body as { nickname?: string; email?: string; phone?: string; gender?: number | string };
     const updates: Record<string, unknown> = {};
     if (nickname !== undefined) updates.nickname = nickname;
     if (email !== undefined) updates.email = email;
     if (phone !== undefined) updates.phone = phone;
-    if (gender !== undefined) updates.gender = gender;
+    if (gender !== undefined) {
+      // 兼容前端字符串和数字：male/female/unknown → 1/2/0
+      const genderMap: Record<string, number> = { unknown: 0, male: 1, female: 2 };
+      const genderVal = typeof gender === "string" ? (genderMap[gender] ?? Number(gender)) : gender;
+      if (!Number.isNaN(genderVal)) updates.gender = genderVal;
+    }
     await userService.update(user.id, updates as UpdateUserParams);
     return ok(null);
   });
@@ -362,6 +372,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       "UPDATE sys_user SET password_hash = $1, password_changed_at = NOW(), updated_at = NOW() WHERE id = $2",
       [hash, user.id],
     );
+    await cache.del(`user:detail:${user.id}`);
     return ok(null);
   });
 
@@ -386,15 +397,24 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     if (!allowedTypes.includes(file.type)) return fail("仅支持 PNG/JPG/GIF/WEBP 格式", 400, 400);
 
     const arrayBuffer = await file.arrayBuffer();
+    const data = Buffer.from(arrayBuffer);
 
-    // TODO: 上传到 OSS 后替换为公开 URL，当前存为 base64 占位
-    const base64 = `data:${file.type};base64,${Buffer.from(arrayBuffer).toString("base64")}`;
+    let avatarUrl: string;
+
+    if (fileUploader) {
+      // 使用文件存储服务（本地 / S3）
+      avatarUrl = await fileUploader.upload(file.name, data, file.type, "avatars", user.id);
+    } else {
+      // 兜底：base64 存入数据库
+      avatarUrl = `data:${file.type};base64,${data.toString("base64")}`;
+    }
 
     await executor(
       "UPDATE sys_user SET avatar = $1, updated_at = NOW() WHERE id = $2",
-      [base64, user.id],
+      [avatarUrl, user.id],
     );
-    return ok({ avatar: base64 });
+    await cache.del(`user:detail:${user.id}`);
+    return ok({ avatar: avatarUrl });
   });
 
   // === MFA status ===
@@ -438,6 +458,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   userRouter.put("/api/system/users/:id/unlock", async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     await executor(`UPDATE sys_user SET locked_until = NULL, login_attempts = 0 WHERE id = $1`, [id]);
+    await cache.del(`user:detail:${id}`);
     return ok(null);
   }, perm("system", "user:update"));
 
@@ -446,6 +467,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     const body = await parseBody(ctx.request);
     const blacklisted = body.blacklisted as boolean;
     await executor(`UPDATE sys_user SET blacklisted = $1 WHERE id = $2`, [blacklisted, id]);
+    await cache.del(`user:detail:${id}`);
     return ok(null);
   }, perm("system", "user:update"));
 

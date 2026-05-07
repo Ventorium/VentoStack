@@ -157,7 +157,7 @@ const GenEditPage = () => {
   return (
     <div>
       <h3 className="text-lg font-semibold mb-4">编辑代码生成配置</h3>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         <Card title="基本信息">
           <Form form={form} layout="vertical">
             <Form.Item name="moduleName" label="模块名称" rules={[{ required: true, message: '请输入模块名称' }]}>

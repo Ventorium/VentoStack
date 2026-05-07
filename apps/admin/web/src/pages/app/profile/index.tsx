@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, Popconfirm, Modal, Radio, Typography, List, Alert } from 'antd'
+import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, Popconfirm, Modal, Typography, List, Alert } from 'antd'
 import { msg } from '@/components/GlobalMessage'
 import { UserOutlined, LockOutlined, SafetyOutlined, HistoryOutlined, CopyOutlined, UploadOutlined, KeyOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
+import DictRadio from '@/components/DictRadio'
+import AvatarCropper from '@/components/AvatarCropper'
 import { startRegistration } from '@simplewebauthn/browser'
 import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { LoginLogItem } from '@/api/types'
-import { useTable } from '@ventostack/gui'
+import { useTable } from '@/hooks/useTable'
 import { usePublicConfig } from '@/hooks/usePublicConfig'
 
 const { Title, Text, Paragraph } = Typography
@@ -16,7 +18,7 @@ interface UserProfile {
   nickname: string
   email: string
   phone: string
-  gender: 'unknown' | 'male' | 'female'
+  gender: string
 }
 
 interface MFASetupData {
@@ -31,6 +33,7 @@ export default function ProfilePage() {
   const [mfaForm] = Form.useForm()
   const [avatarUrl, setAvatarUrl] = useState<string>('')
   const [loading, setLoading] = useState(false)
+  const [cropperFile, setCropperFile] = useState<File | null>(null)
   const [mfaEnabled, setMfaEnabled] = useState(false)
   const [mfaSetupData, setMfaSetupData] = useState<MFASetupData | null>(null)
   const [mfaStep, setMfaStep] = useState<'idle' | 'setup' | 'verify'>('idle')
@@ -59,7 +62,11 @@ export default function ProfilePage() {
     const { error, data } = await client.get('/api/system/user/profile')
     if (!error && data) {
       setAvatarUrl(data.avatar || '')
-      profileForm.setFieldsValue(data)
+      // gender 从数字转字符串，匹配字典值
+      profileForm.setFieldsValue({
+        ...data,
+        gender: data.gender != null ? String(data.gender) : '0',
+      })
     } else {
       msg.error('获取用户信息失败')
     }
@@ -97,32 +104,31 @@ export default function ProfilePage() {
         nickname: values.nickname,
         email: values.email,
         phone: values.phone,
-        gender: values.gender
+        gender: Number(values.gender),
       }
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     } as any)
     if (!error) {
       msg.success('保存成功')
       fetchProfile()
-    } else {
-      msg.error('保存失败')
     }
     setLoading(false)
   }
 
-  const handleAvatarUpload = async (options: any) => {
-    const { file } = options
+  const handleAvatarUpload = (options: any) => {
+    setCropperFile(options.file as File)
+  }
+
+  const handleCropConfirm = async (blob: Blob) => {
+    setCropperFile(null)
+    const file = new File([blob], 'avatar.png', { type: 'image/png' })
     const formData = new FormData()
     formData.append('file', file)
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await client.post('/api/system/user/profile/avatar', { body: formData } as any)
     if (!result.error) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      setAvatarUrl((result as any)?.url || (result as any)?.data?.url)
       msg.success('头像上传成功')
       fetchProfile()
-    } else {
-      msg.error('头像上传失败')
     }
   }
 
@@ -138,8 +144,6 @@ export default function ProfilePage() {
     if (!error) {
       msg.success('密码修改成功')
       passwordForm.resetFields()
-    } else {
-      msg.error('密码修改失败')
     }
     setLoading(false)
   }
@@ -149,8 +153,6 @@ export default function ProfilePage() {
     if (!error && data) {
       setMfaSetupData(data)
       setMfaStep('setup')
-    } else {
-      msg.error('启用MFA失败')
     }
   }
 
@@ -166,8 +168,6 @@ export default function ProfilePage() {
       msg.success('MFA已禁用')
       setMfaEnabled(false)
       mfaForm.resetFields()
-    } else {
-      msg.error('禁用MFA失败')
     }
     setLoading(false)
   }
@@ -186,8 +186,6 @@ export default function ProfilePage() {
       setMfaStep('idle')
       setMfaSetupData(null)
       mfaForm.resetFields()
-    } else {
-      msg.error('验证码错误')
     }
     setLoading(false)
   }
@@ -233,8 +231,6 @@ export default function ProfilePage() {
     if (!error) {
       msg.success('通行密钥已删除')
       fetchPasskeys()
-    } else {
-      msg.error('删除失败')
     }
   }
 
@@ -244,11 +240,11 @@ export default function ProfilePage() {
         form={profileForm}
         layout="vertical"
         onFinish={handleProfileSubmit}
-        initialValues={{ gender: 'unknown' }}
+        initialValues={{ gender: '0' }}
       >
         <Form.Item label="头像">
-          <Space direction="vertical" size="middle">
-            <Avatar size={100} src={avatarUrl} icon={<UserOutlined />} />
+          <Space orientation="vertical" size="middle">
+            <Avatar size={100} src={avatarUrl || undefined} icon={<UserOutlined />} />
             <Upload
               customRequest={handleAvatarUpload}
               accept="image/*"
@@ -287,11 +283,7 @@ export default function ProfilePage() {
           name="gender"
           rules={[{ required: true, message: '请选择性别' }]}
         >
-          <Radio.Group>
-            <Radio value="unknown">未知</Radio>
-            <Radio value="male">男</Radio>
-            <Radio value="female">女</Radio>
-          </Radio.Group>
+          <DictRadio typeCode="sys_gender" />
         </Form.Item>
         <Form.Item>
           <Button type="primary" htmlType="submit" loading={loading}>
@@ -355,7 +347,7 @@ export default function ProfilePage() {
 
   const mfaTab = (
     <Card>
-      <Space direction="vertical" size="large" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
         {mfaForce && !mfaEnabled && mfaStep === 'idle' && (
           <Alert
             message="安全要求"
@@ -525,7 +517,7 @@ export default function ProfilePage() {
 
   const passkeyTab = (
     <Card>
-      <Space direction="vertical" size="middle" style={{ width: '100%' }}>
+      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <Text strong>通行密钥管理</Text>
           <Button
@@ -630,27 +622,27 @@ export default function ProfilePage() {
   const tabItems = [
     {
       key: 'basic',
-      label: (<span><UserOutlined />基本信息</span>),
+      label: (<span className='flex-inline gap-1'><UserOutlined />基本信息</span>),
       children: basicInfoTab
     },
     {
       key: 'password',
-      label: (<span><LockOutlined />修改密码</span>),
+      label: (<span className='flex-inline gap-1'><LockOutlined />修改密码</span>),
       children: passwordTab
     },
     ...(mfaGloballyEnabled ? [{
       key: 'mfa',
-      label: (<span><SafetyOutlined />MFA设置</span>),
+      label: (<span className='flex-inline gap-1'><SafetyOutlined />MFA设置</span>),
       children: mfaTab
     }] : []),
     {
       key: 'passkey',
-      label: (<span><KeyOutlined />通行密钥</span>),
+      label: (<span className='flex-inline gap-1'><KeyOutlined />通行密钥</span>),
       children: passkeyTab
     },
     {
       key: 'history',
-      label: (<span><HistoryOutlined />登录记录</span>),
+      label: (<span className='flex-inline gap-1'><HistoryOutlined />登录记录</span>),
       children: loginHistoryTab
     },
   ]
@@ -659,6 +651,14 @@ export default function ProfilePage() {
     <div style={{ padding: 24 }}>
       <Title level={2}>个人中心</Title>
       <Tabs defaultActiveKey="basic" items={tabItems} />
+      {cropperFile && (
+        <AvatarCropper
+          file={cropperFile}
+          open
+          onConfirm={handleCropConfirm}
+          onCancel={() => setCropperFile(null)}
+        />
+      )}
     </div>
   )
 }

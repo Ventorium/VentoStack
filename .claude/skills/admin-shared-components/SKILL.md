@@ -105,7 +105,7 @@ invalidateDict()               // 清空全部缓存
 
 ## useTable — 分页表格 Hook
 
-路径：`@ventostack/gui` → re-export at `src/hooks/useTable.ts`
+路径：`@/hooks/useTable`
 
 一站式分页表格状态管理：加载、分页、搜索、行选择。
 

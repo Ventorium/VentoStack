@@ -6,7 +6,9 @@ import { ReloadOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { client } from '@/api'
 import type { GenTable, DbTable } from '@/api/types'
-import { useTable, cleanParams, fmtDate } from '@ventostack/gui'
+import { useTable } from '@/hooks/useTable'
+import { cleanParams } from '@/utils/cleanParams'
+import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
 
 const fetcher = (params: Record<string, unknown>) =>

@@ -5,7 +5,8 @@ import { ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons'
 import { useNavigate, useSearchParams } from 'react-router'
 import { client } from '@/api'
 import type { ScheduleJobLog } from '@/api/types'
-import { cleanParams, fmtDate } from '@ventostack/gui'
+import { cleanParams } from '@/utils/cleanParams'
+import { fmtDate } from '@/utils/fmtDate'
 
 const SchedulerLogsPage = () => {
   const navigate = useNavigate()

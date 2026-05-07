@@ -5,7 +5,9 @@ import type { ColumnsType } from 'antd/es/table'
 import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import { client } from '@/api'
 import type { NotifyMessage } from '@/api/types'
-import { useTable, cleanParams, fmtDate } from '@ventostack/gui'
+import { useTable } from '@/hooks/useTable'
+import { cleanParams } from '@/utils/cleanParams'
+import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
 
 const fetcher = (params: Record<string, unknown>) =>

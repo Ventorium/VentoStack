@@ -1,6 +1,6 @@
 import '@unocss/reset/tailwind-compat.css'
 import 'virtual:uno.css'
-import '@ventostack/gui/styles/global.css'
+import '@/assets/styles/global.css'
 
 import { createRoot } from 'react-dom/client'
 import App from './App'

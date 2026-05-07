@@ -6,11 +6,12 @@
  */
 
 import { createSystemModule } from "@ventostack/system";
-import type { SystemModule } from "@ventostack/system";
+import type { SystemModule, FileUploader } from "@ventostack/system";
 import type { Cache } from "@ventostack/cache";
 import type { SqlExecutor } from "@ventostack/database";
 import type { AuditStore } from "@ventostack/observability";
 import { createEventBus } from "@ventostack/events";
+import type { OSSService } from "@ventostack/oss";
 import type { AuthEngines } from "../auth";
 import { env } from "../config";
 
@@ -19,13 +20,28 @@ export interface SystemModuleOptions {
   cache: Cache;
   auth: AuthEngines;
   auditLog: AuditStore;
+  ossService?: OSSService;
+}
+
+/**
+ * 将 OSSService 适配为 FileUploader 接口
+ */
+function createOSSFileUploader(ossService: OSSService): FileUploader {
+  return {
+    async upload(filename, data, contentType, bucket, uploaderId) {
+      const result = await ossService.upload({ filename, data, contentType, bucket }, uploaderId);
+      const url = await ossService.getSignedUrl(result.id);
+      if (!url) throw new Error("Failed to get signed URL");
+      return url;
+    },
+  };
 }
 
 /**
  * 装配系统模块
  */
 export function assembleSystemModule(options: SystemModuleOptions): SystemModule {
-  const { executor, cache, auth, auditLog } = options;
+  const { executor, cache, auth, auditLog, ossService } = options;
   const eventBus = createEventBus();
 
   return createSystemModule({
@@ -46,5 +62,6 @@ export function assembleSystemModule(options: SystemModuleOptions): SystemModule
     rpID: env.WEBAUTHN_RP_ID,
     rpName: env.WEBAUTHN_RP_NAME,
     rpOrigins: env.ALLOWED_ORIGINS,
+    ...(ossService ? { fileUploader: createOSSFileUploader(ossService) } : {}),
   });
 }

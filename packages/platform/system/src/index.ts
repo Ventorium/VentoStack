@@ -31,4 +31,4 @@ export { createPasskeyRoutes } from './routes/passkey';
 
 // Module
 export { createSystemModule } from './module';
-export type { SystemModule, SystemModuleDeps } from './module';
+export type { SystemModule, SystemModuleDeps, FileUploader } from './module';

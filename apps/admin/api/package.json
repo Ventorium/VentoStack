@@ -18,6 +18,7 @@
     "@ventostack/events": "workspace:*",
     "@ventostack/monitor": "workspace:*",
     "@ventostack/observability": "workspace:*",
+    "@ventostack/oss": "workspace:*",
     "@ventostack/openapi": "workspace:*",
     "@ventostack/system": "workspace:*"
   },

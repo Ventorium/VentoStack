@@ -54,7 +54,7 @@ const Header = () => {
 
       <Dropdown menu={dropdownItems} placement="bottomRight">
         <Space className="cursor-pointer hover:opacity-80">
-          <Avatar size={32} icon={<UserOutlined />} />
+          <Avatar size={32} src={user?.avatar || undefined} icon={<UserOutlined />} />
           <span>{user?.nickname ?? user?.username ?? '用户'}</span>
         </Space>
       </Dropdown>

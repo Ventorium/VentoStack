@@ -15,11 +15,7 @@ const DictSelect = ({ typeCode, autoload = true, ...rest }: DictSelectProps) => 
     value: item.value,
   }))
 
-  if (loading) {
-    return <Select {...rest} loading options={[]} suffixIcon={<Spin size="small" />} />
-  }
-
-  return <Select {...rest} options={selectOptions} />
+  return <Select {...rest} loading={loading} options={loading ? [] : selectOptions} suffixIcon={loading ? <Spin size="small" /> : null} />
 }
 
 export default DictSelect

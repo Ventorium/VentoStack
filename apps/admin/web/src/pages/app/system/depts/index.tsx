@@ -7,7 +7,7 @@ import { client } from '@/api'
 import type { DeptItem } from '@/api/types'
 import ActionColumn from '@/components/ActionColumn'
 import DictSelect from '@/components/DictSelect'
-import { fmtDate } from '@ventostack/gui'
+import { fmtDate } from '@/utils/fmtDate'
 
 function toTreeSelectData(items: DeptItem[]): any[] {
   return items.map(item => ({

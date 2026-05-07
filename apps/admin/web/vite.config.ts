@@ -55,12 +55,10 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: [
         { find: '@', replacement: resolve(__dirname, './src') },
-        { find: '@ventostack/gui/styles', replacement: resolve(__dirname, '../../../packages/gui/src/styles') },
-        { find: '@ventostack/gui', replacement: resolve(__dirname, '../../../packages/gui/src/index.ts') },
       ],
     },
     server: {
-      port: 5173,
+      port: 9321,
       proxy: {
         '/api': {
           target: 'http://127.0.0.1:9320',
@@ -69,6 +67,10 @@ export default defineConfig(({ mode }) => {
         '/ws': {
           target: 'ws://127.0.0.1:9320',
           ws: true,
+        },
+        '/uploads': {
+          target: 'http://127.0.0.1:9320',
+          changeOrigin: true,
         },
       },
     },

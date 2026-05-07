@@ -24,6 +24,7 @@ export type AuthState = {
   loading: boolean
   computed: { logged: boolean }
   init: () => Promise<void>
+  refreshProfile: () => Promise<void>
   login: (args: LoginForm) => Promise<LoginResult>
   completeMFALogin: (mfaToken: string, code: string) => Promise<LoginResult>
   passkeyLogin: (username: string) => Promise<LoginResult>
@@ -42,6 +43,10 @@ export const useAuth = create<AuthState>((set, get) => ({
   computed: {
     get logged() { return !!get().user },
   },
+  async refreshProfile() {
+    const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
+    if (user) set({ user })
+  },
   async init() {
     if (get().loading) return
     set({ loading: true })
@@ -57,7 +62,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ loading: false, ready: true })
   },
   async login(args) {
-    const { error, data } = await client.post('/api/auth/login', { body: args }) as { data?: { accessToken: string; refreshToken: string; expiresIn: number; sessionId: string; mfaRequired: boolean; mfaToken?: string; mfaSetupRequired?: boolean }; error?: { code?: string; tempToken?: string } }
+    const { error, data } = await client.post('/api/auth/login', { body: args })
     if (!error && data) {
       // MFA required — return mfaToken for second step
       if (data.mfaRequired && data.mfaToken) {

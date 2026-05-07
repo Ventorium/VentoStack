@@ -114,9 +114,9 @@ export function createPasskeyService(deps: {
         },
       });
 
-      // 存储 challenge
+      // 存储 challenge（字符串，不需要 JSON.stringify）
       const challengeId = crypto.randomUUID();
-      await cache.set(`passkey_reg:${challengeId}`, JSON.stringify(options.challenge), { ttl: CHALLENGE_TTL });
+      await cache.set(`passkey_reg:${challengeId}`, options.challenge, { ttl: CHALLENGE_TTL });
 
       return { options, challengeId };
     },

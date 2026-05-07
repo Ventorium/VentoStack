@@ -62,7 +62,8 @@ export const initDictSeed: Seed = {
         const dataId = generateUUID();
         await executor(
           `INSERT INTO sys_dict_data (id, type_code, label, value, sort, css_class, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 1, NOW(), NOW())`,
+           VALUES ($1, $2, $3, $4, $5, $6, 1, NOW(), NOW())
+           ON CONFLICT (type_code, value) DO NOTHING`,
           [dataId, type.code, item.label, item.value, item.sort, item.cssClass ?? ''],
         );
       }
