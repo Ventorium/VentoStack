@@ -5,7 +5,7 @@ import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { PaginatedData, LoginLogItem } from '@/api/types'
-import { useTable } from '@ventostack/gui'
+import { useTable } from '@/hooks/useTable'
 import ActionColumn from '@/components/ActionColumn'
 
 const cleanParams = (params: Record<string, unknown>) =>

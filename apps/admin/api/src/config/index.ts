@@ -31,7 +31,7 @@ const rawConfig = createConfig({
   ALLOWED_ORIGINS: {
     type: "string",
     env: "ALLOWED_ORIGINS",
-    default: "http://localhost:5173",
+    default: "http://localhost:9321",
   },
   LOG_LEVEL: {
     type: "string",

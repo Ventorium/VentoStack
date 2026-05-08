@@ -62,7 +62,6 @@ const LoginPage = () => {
       setMfaCode('')
       navigate('/app', { replace: true })
     } else {
-      msg.error('验证码错误，请重试')
       setMfaCode('')
       inputRef.current?.focus()
     }
@@ -141,7 +140,7 @@ const LoginPage = () => {
                 loading={passkeyLoading}
                 onClick={handlePasskeyLogin}
               >
-                Passkey 登录
+                通行密钥登录
               </Button>
             </>
           )}

@@ -112,6 +112,7 @@ export default function ProfilePage() {
     if (!error) {
       msg.success('保存成功')
       fetchProfile()
+      useAuth.getState().refreshProfile()
     }
     setLoading(false)
   }

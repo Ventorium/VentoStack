@@ -4,7 +4,7 @@ import { SearchOutlined, ReloadOutlined } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { PaginatedData, OperationLogItem } from '@/api/types'
-import { useTable } from '@ventostack/gui'
+import { useTable } from '@/hooks/useTable'
 
 const cleanParams = (params: Record<string, unknown>) =>
   Object.fromEntries(Object.entries(params).filter(([, v]) => v !== undefined && v !== '' && v !== null))

@@ -1,6 +1,6 @@
 /* 业务类型定义 — 纯类型，不含 API 调用 */
 
-export type { PaginatedData, PaginatedParams } from '@ventostack/gui'
+export type { PaginatedData, PaginatedParams } from '../hooks/useTable'
 
 export type CreateNoticeBody = { title: string; content: string; type?: number }
 export type UpdateNoticeBody = { title?: string; content?: string; type?: number }
