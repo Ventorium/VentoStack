@@ -1,274 +1,143 @@
 ---
 title: 消息中心概述
-description: '消息中心模块提供站内消息、邮件和短信通知能力，通过频道适配器和 EventBus 实现灵活的消息分发。'
+description: '消息中心模块提供统一的通知发送能力，支持 SMTP 邮件、短信和 Webhook 三种通知渠道。'
 ---
 
 ## 概述
 
-消息中心是 VentoStack 平台层的统一消息管理模块，支持站内消息、邮件和短信三种通知渠道。通过频道适配器模式，可以灵活扩展新的消息通道。
+`@ventostack/notification` 是 VentoStack 平台层的统一消息管理模块，支持通过频道适配器模式灵活扩展消息通道。内置 SMTP 邮件、短信和 Webhook 三种渠道。
 
 ## 架构
 
 ```
 ┌──────────────────────────────────────────┐
-│              消息中心 API                  │
+│         @ventostack/notification          │
 ├──────────────────────────────────────────┤
 │           消息分发器 (Dispatcher)          │
 │  ┌──────────┬──────────┬──────────────┐  │
-│  │ 站内消息  │   邮件   │    短信      │  │
-│  │ Adapter  │ Adapter  │   Adapter    │  │
+│  │   SMTP   │   SMS    │   Webhook    │  │
+│  │ Channel  │ Channel  │   Channel    │  │
 │  └──────────┴──────────┴──────────────┘  │
 ├──────────────────────────────────────────┤
-│          EventBus (事件驱动)              │
-├──────────────────────────────────────────┤
-│    @ventostack/events                    │
+│  @ventostack/database (消息持久化)        │
+│  @ventostack/auth (认证鉴权)              │
 └──────────────────────────────────────────┘
 ```
 
-## 站内消息
+## 快速开始
 
-### 发送站内消息
-
-```typescript
-POST /api/system/notification/message
-{
-  "title": "审批通知",
-  "content": "您有一条新的审批待处理",
-  "type": "info",                   // info | warning | success | error
-  "targetType": "user",             // all | dept | user
-  "targetIds": ["user-001"],
-  "priority": "normal",             // low | normal | high | urgent
-  "link": "/approval/detail/123"    // 关联链接（可选）
-}
-```
-
-### 查询站内消息
+### 创建通知模块
 
 ```typescript
-// 用户端查询自己的消息
-GET /api/system/notification/message?page=1&pageSize=10&type=info&isRead=false
+import { createNotificationModule } from '@ventostack/notification';
+import { createSMTPChannel, createSMSChannel, createWebhookChannel } from '@ventostack/notification';
 
-// 响应
-{
-  "total": 30,
-  "rows": [
-    {
-      "id": "msg-001",
-      "title": "审批通知",
-      "content": "您有一条新的审批待处理",
-      "type": "info",
-      "priority": "normal",
-      "isRead": false,
-      "link": "/approval/detail/123",
-      "createdAt": "2024-06-01T12:00:00Z"
-    }
-  ]
-}
-```
+// 创建频道
+const smtpChannel = createSMTPChannel({
+  host: 'smtp.example.com',
+  port: 465,
+  secure: true,
+  auth: { user: 'noreply@example.com', pass: process.env.SMTP_PASSWORD },
+});
 
-### 标记已读
-
-```typescript
-// 标记单条已读
-PUT /api/system/notification/message/{id}/read
-
-// 全部标记已读
-PUT /api/system/notification/message/read-all
-```
-
-### 未读数量
-
-```typescript
-GET /api/system/notification/message/unread-count
-
-// 响应
-{ "count": 5 }
-```
-
-## 邮件通知
-
-### 邮件模板管理
-
-```typescript
-// 创建模板
-POST /api/system/notification/email/template
-{
-  "name": "welcome",
-  "subject": "欢迎加入 {{appName}}",
-  "body": "<h1>欢迎，{{username}}！</h1><p>您的账号已创建成功。</p>",
-  "params": ["appName", "username"]    // 模板变量声明
-}
-```
-
-### 发送邮件
-
-```typescript
-POST /api/system/notification/email/send
-{
-  "templateName": "welcome",
-  "to": ["user@example.com"],
-  "params": {
-    "appName": "VentoStack",
-    "username": "张三"
-  }
-}
-```
-
-### SMTP 配置
-
-通过系统参数配置 SMTP：
-
-```typescript
-// sys.mail.smtp 参数值（JSON）
-{
-  "host": "smtp.example.com",
-  "port": 465,
-  "ssl": true,
-  "username": "noreply@example.com",
-  "password": "encrypted:..."        // 加密存储
-}
-```
-
-## 短信通知
-
-### 短信模板管理
-
-```typescript
-// 创建模板
-POST /api/system/notification/sms/template
-{
-  "name": "verify_code",
-  "content": "您的验证码是 ${code}，${expireMinutes} 分钟内有效。",
-  "params": ["code", "expireMinutes"],
-  "signName": "VentoStack"
-}
-```
-
-### 发送短信
-
-```typescript
-POST /api/system/notification/sms/send
-{
-  "templateName": "verify_code",
-  "phoneNumbers": ["13800138000"],
-  "params": {
-    "code": "123456",
-    "expireMinutes": "5"
-  }
-}
-```
-
-### 短信渠道适配
-
-短信发送通过适配器模式支持不同服务商：
-
-```typescript
-const smsAdapter = createAliyunSmsAdapter({
+const smsChannel = createSMSChannel({
+  provider: 'aliyun',
   accessKeyId: process.env.SMS_ACCESS_KEY,
   accessKeySecret: process.env.SMS_SECRET_KEY,
-  signName: 'VentoStack',
 });
 
-// 或使用腾讯云
-const smsAdapter = createTencentSmsAdapter({ /* config */ });
+// 注册频道到 Map
+const channels = new Map<string, NotifyChannel>();
+channels.set('smtp', smtpChannel);
+channels.set('sms', smsChannel);
 
-const notification = createNotificationCenter({
-  smsAdapter,
-  // ...
+// 创建模块
+const notification = createNotificationModule({
+  db, jwt, jwtSecret, rbac,
+  channels,
 });
+
+// 注册路由
+app.use(notification.router);
 ```
 
-## EventBus 集成
+## 频道接口
 
-消息中心通过 `@ventostack/events` 的 EventBus 实现事件驱动的消息发送：
-
-```typescript
-import { createNotificationCenter } from '@ventostack/system';
-import { createEventBus } from '@ventostack/events';
-
-const eventBus = createEventBus({ /* config */ });
-
-const notificationCenter = createNotificationCenter({
-  db,
-  cache,
-  eventBus,
-  logger,
-  channels: {
-    email: createEmailChannel({ smtpConfig }),
-    sms: createSmsChannel({ adapter: smsAdapter }),
-  },
-});
-
-// 订阅业务事件，自动发送通知
-eventBus.on('user.created', async (event) => {
-  await notificationCenter.send({
-    channel: 'email',
-    template: 'welcome',
-    to: [event.data.email],
-    params: { username: event.data.username },
-  });
-});
-
-eventBus.on('order.approved', async (event) => {
-  await notificationCenter.send({
-    channel: 'in-app',
-    title: '订单审批通过',
-    content: `订单 ${event.data.orderNo} 已审批通过`,
-    targetType: 'user',
-    targetIds: [event.data.createBy],
-  });
-});
-```
-
-## 频道适配器接口
+所有频道实现 `NotifyChannel` 接口：
 
 ```typescript
-interface NotificationChannel {
-  /** 频道名称 */
+interface NotifyChannel {
   name: string;
-
-  /** 发送通知 */
-  send(message: ChannelMessage): Promise<ChannelResult>;
-
-  /** 检查频道是否可用 */
-  healthCheck(): Promise<boolean>;
-}
-
-interface ChannelMessage {
-  to: string[];
-  title?: string;
-  content: string;
-  template?: string;
-  params?: Record<string, string>;
-}
-
-interface ChannelResult {
-  success: boolean;
-  messageId?: string;
-  error?: string;
+  send(params: {
+    to: string;
+    title: string;
+    content: string;
+  }): Promise<{ success: boolean; error?: string }>;
 }
 ```
 
-实现自定义频道只需实现此接口：
+### 内置频道
+
+| 频道 | 工厂函数 | 说明 |
+|------|----------|------|
+| SMTP 邮件 | `createSMTPChannel` | 支持标准 SMTP 协议 |
+| 短信 | `createSMSChannel` | 支持多种短信服务商 |
+| Webhook | `createWebhookChannel` | HTTP 回调通知 |
+
+### 自定义频道
+
+实现 `NotifyChannel` 接口即可注册自定义频道：
 
 ```typescript
-const webhookChannel: NotificationChannel = {
-  name: 'webhook',
-  async send(message) {
-    const response = await fetch(process.env.NOTIFICATION_WEBHOOK_URL, {
+const customChannel: NotifyChannel = {
+  name: 'dingtalk',
+  async send({ to, title, content }) {
+    const res = await fetch(process.env.DINGTALK_WEBHOOK_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(message),
+      body: JSON.stringify({ msgtype: 'text', text: { content: `${title}: ${content}` } }),
     });
-    return { success: response.ok };
-  },
-  async healthCheck() {
-    try {
-      await fetch(process.env.NOTIFICATION_WEBHOOK_URL, { method: 'HEAD' });
-      return true;
-    } catch {
-      return false;
-    }
+    return { success: res.ok };
   },
 };
+
+channels.set('dingtalk', customChannel);
+```
+
+## API 路由
+
+所有路由前缀 `/api/notification`，需要认证：
+
+| 方法 | 路径 | 说明 |
+|------|------|------|
+| POST | `/api/notification/send` | 发送通知 |
+| GET | `/api/notification/messages` | 查询消息列表 |
+| GET | `/api/notification/messages/unread-count` | 未读数量 |
+| PUT | `/api/notification/messages/:id/read` | 标记已读 |
+| PUT | `/api/notification/messages/read-all` | 全部已读 |
+| GET | `/api/notification/templates` | 模板列表 |
+| POST | `/api/notification/templates` | 创建模板 |
+| PUT | `/api/notification/templates/:id` | 更新模板 |
+| DELETE | `/api/notification/templates/:id` | 删除模板 |
+
+## 服务接口
+
+通过 `notification.services.notification` 访问通知服务：
+
+```typescript
+// 发送通知
+await notification.services.notification.send({
+  templateId: 'tpl-001',
+  receiverId: 'user-001',
+  channel: 'smtp',
+  variables: { username: '张三', appName: 'VentoStack' },
+});
+
+// 直接发送（不使用模板）
+await notification.services.notification.send({
+  receiverId: 'user-001',
+  channel: 'smtp',
+  title: '系统通知',
+  content: '您的密码将在 7 天后过期',
+});
 ```

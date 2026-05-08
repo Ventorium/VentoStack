@@ -176,7 +176,7 @@ function createQueryExecutor<T>(
         return wrap<S>(nextBuilder.offset(n));
       },
       select<K extends keyof T>(...fields: K[]): QueryExecutor<T, K> {
-        return wrap<K>(nextBuilder.select(...(fields as string[])));
+        return wrap<K>(nextBuilder.select(...fields));
       },
       groupBy(...fields: (keyof T)[]): QueryExecutor<T, S> {
         return wrap<S>(nextBuilder.groupBy(...fields));
@@ -202,7 +202,7 @@ function createQueryExecutor<T>(
       },
 
       async count(): Promise<number> {
-        const countBuilder = nextBuilder.select("COUNT(*) as count").clearLimit().clearOffset();
+        const countBuilder = nextBuilder.select("COUNT(*) as count" as keyof T).clearLimit().clearOffset();
         const { text, params } = countBuilder.toSQL();
         const rows = await executor(text, params);
         const first = (rows as Array<{ count: number }>)[0];
@@ -210,7 +210,7 @@ function createQueryExecutor<T>(
       },
 
       async sum(field: keyof T): Promise<number> {
-        const aggBuilder = nextBuilder.select(`SUM(${field as string}) as result`);
+        const aggBuilder = nextBuilder.select(`SUM(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
         const first = (rows as Array<{ result: number | null }>)[0];
@@ -218,7 +218,7 @@ function createQueryExecutor<T>(
       },
 
       async avg(field: keyof T): Promise<number> {
-        const aggBuilder = nextBuilder.select(`AVG(${field as string}) as result`);
+        const aggBuilder = nextBuilder.select(`AVG(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
         const first = (rows as Array<{ result: number | null }>)[0];
@@ -226,7 +226,7 @@ function createQueryExecutor<T>(
       },
 
       async min(field: keyof T): Promise<number> {
-        const aggBuilder = nextBuilder.select(`MIN(${field as string}) as result`);
+        const aggBuilder = nextBuilder.select(`MIN(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
         const first = (rows as Array<{ result: number | null }>)[0];
@@ -234,7 +234,7 @@ function createQueryExecutor<T>(
       },
 
       async max(field: keyof T): Promise<number> {
-        const aggBuilder = nextBuilder.select(`MAX(${field as string}) as result`);
+        const aggBuilder = nextBuilder.select(`MAX(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
         const first = (rows as Array<{ result: number | null }>)[0];
@@ -307,15 +307,28 @@ function createQueryExecutor<T>(
 }
 
 /**
+ * SQL 执行器连接选项
+ */
+export interface SqlExecutorOptions {
+  /** 最大连接数（连接池大小） */
+  max?: number;
+  /** 空闲超时（毫秒） */
+  idle?: number;
+  /** 连接超时（毫秒） */
+  timeout?: number;
+}
+
+/**
  * 基于 Bun.SQL 创建原生 SQL 执行器。
  * Bun 1.2+ 的 SQL 类同时支持 PostgreSQL 与 SQLite URL。
  * @param url — 数据库连接 URL（如 "postgres://..." 或 "sqlite://..."）
- * @returns SQL 执行器
+ * @param options — 连接选项（max、idle、timeout）
+ * @returns SQL 执行器与底层 SQL 实例（用于关闭连接）
  */
-function createBunSqlExecutor(url: string): SqlExecutor {
+export function createSqlExecutor(url: string, options?: SqlExecutorOptions): { executor: SqlExecutor; close: () => Promise<void> } {
   // Bun 1.2+ 将 SQL 暴露为全局类（Bun.SQL 或 globalThis.SQL）
   // @ts-ignore - Bun.SQL is only available in Bun 1.2+ runtime
-  const SQLClass: new (url: string) => { unsafe: (text: string, params?: unknown[]) => Promise<unknown> } =
+  const SQLClass: new (options: { url: string; max?: number; idle?: number; timeout?: number }) => { unsafe: (text: string, params?: unknown[]) => Promise<unknown>; close: () => void } =
     (globalThis as any).SQL ?? (globalThis as any).Bun?.SQL;
 
   if (typeof SQLClass !== "function") {
@@ -325,9 +338,14 @@ function createBunSqlExecutor(url: string): SqlExecutor {
     );
   }
 
-  const sql = new SQLClass(url);
+  const sql = new SQLClass({
+    url,
+    ...(options?.max != null ? { max: options.max } : {}),
+    ...(options?.idle != null ? { idle: options.idle } : {}),
+    ...(options?.timeout != null ? { timeout: options.timeout } : {}),
+  });
 
-  return async (text, params) => {
+  const executor: SqlExecutor = async (text, params) => {
     const result =
       params && params.length > 0
         ? await sql.unsafe(text, params as any[])
@@ -335,6 +353,22 @@ function createBunSqlExecutor(url: string): SqlExecutor {
 
     return Array.isArray(result) ? result : [];
   };
+
+  return {
+    executor,
+    async close() {
+      sql.close();
+    },
+  };
+}
+
+/**
+ * 基于 Bun.SQL 创建原生 SQL 执行器（内部使用，不含 close）。
+ * @deprecated 使用 createSqlExecutor 代替
+ */
+function createBunSqlExecutor(url: string): SqlExecutor {
+  const { executor } = createSqlExecutor(url);
+  return executor;
 }
 
 /**
@@ -344,13 +378,24 @@ function createBunSqlExecutor(url: string): SqlExecutor {
  * @returns 数据库实例
  */
 export function createDatabase(config: DatabaseConfig): Database {
+  let sqlClose: (() => Promise<void>) | undefined;
+
   const executor: SqlExecutor =
     config.executor ??
-    (config.url ? createBunSqlExecutor(config.url) : (() => {
-      throw new Error(
-        "No SQL executor configured. Provide config.url for auto Bun.sql connection or config.executor.",
-      );
-    }));
+    (() => {
+      if (!config.url) {
+        throw new Error(
+          "No SQL executor configured. Provide config.url for auto Bun.sql connection or config.executor.",
+        );
+      }
+      const options: SqlExecutorOptions = {};
+      if (config.max !== undefined) options.max = config.max;
+      if (config.idle !== undefined) options.idle = config.idle;
+      if (config.timeout !== undefined) options.timeout = config.timeout;
+      const result = createSqlExecutor(config.url, options);
+      sqlClose = result.close;
+      return result.executor;
+    })();
 
   let closed = false;
 
@@ -382,6 +427,7 @@ export function createDatabase(config: DatabaseConfig): Database {
 
     async close(): Promise<void> {
       closed = true;
+      await sqlClose?.();
     },
   };
 

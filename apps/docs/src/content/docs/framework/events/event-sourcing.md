@@ -1,4 +1,5 @@
 ---
+order: 5
 title: 事件溯源
 description: 使用 createMemoryEventStore 实现事件溯源架构
 ---

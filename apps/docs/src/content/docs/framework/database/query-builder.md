@@ -1,4 +1,5 @@
 ---
+order: 2
 title: 查询构建器
 description: 使用 defineModel 和 db.query 构建完全类型安全的 SQL 查询
 ---

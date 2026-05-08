@@ -260,23 +260,23 @@ export function createJWT(config?: JWTConfig): JWTManager {
       try {
         header = JSON.parse(base64urlDecodeString(headerPart));
       } catch {
-        throw new UnauthorizedError("Invalid token header");
+        throw new UnauthorizedError("无效的令牌头");
       }
 
       if (!header.alg || !ALGORITHM_WHITELIST.has(header.alg)) {
-        throw new UnauthorizedError(`Unsupported algorithm: ${header.alg ?? "none"}`);
+        throw new UnauthorizedError(`不支持的算法：${header.alg ?? "none"}`);
       }
 
       // Validate typ header: if present, must be "JWT"
       if (header.typ !== undefined && header.typ !== "JWT") {
-        throw new UnauthorizedError("Invalid token type");
+        throw new UnauthorizedError("无效的令牌类型");
       }
 
       const algorithm = header.alg as JWTAlgorithm;
       const expectedAlgorithm = merged.algorithm ?? algorithm;
       if (algorithm !== expectedAlgorithm) {
         throw new UnauthorizedError(
-          `Algorithm mismatch: expected ${expectedAlgorithm}, got ${algorithm}`,
+          `算法不匹配：期望 ${expectedAlgorithm}，实际 ${algorithm}`,
         );
       }
 

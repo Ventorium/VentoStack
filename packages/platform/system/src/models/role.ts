@@ -5,12 +5,12 @@ export const RoleModel = defineModel('sys_role', {
   name: column.varchar({ length: 64 }),
   code: column.varchar({ length: 64, unique: true }),
   sort: column.int({ default: 0 }),
-  dataScope: column.int({ nullable: true }),
+  data_scope: column.int({ nullable: true }),
   status: column.int({ default: 1 }),
   remark: column.varchar({ length: 512, nullable: true }),
 }, { softDelete: true, timestamps: true });
 
 export const UserRoleModel = defineModel('sys_user_role', {
-  userId: column.varchar({ length: 36 }),
-  roleId: column.varchar({ length: 36 }),
+  user_id: column.varchar({ length: 36 }),
+  role_id: column.varchar({ length: 36 }),
 }, { timestamps: false });

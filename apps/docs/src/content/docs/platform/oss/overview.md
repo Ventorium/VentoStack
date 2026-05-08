@@ -5,7 +5,7 @@ description: '文件存储模块提供统一的文件上传、下载和管理能
 
 ## 概述
 
-`@ventostack/system` 的文件存储模块提供统一的文件管理能力，通过存储适配器模式支持本地文件系统和 S3 兼容对象存储（如 AWS S3、MinIO、Cloudflare R2）。
+`@ventostack/oss` 的文件存储模块提供统一的文件管理能力，通过存储适配器模式支持本地文件系统和 S3 兼容对象存储（如 AWS S3、MinIO、Cloudflare R2）。
 
 ## 存储适配器
 

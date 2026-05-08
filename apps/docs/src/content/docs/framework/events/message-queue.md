@@ -1,4 +1,5 @@
 ---
+order: 4
 title: 消息队列
 description: 使用 createMemoryQueue 和 MQ 适配器集成消息队列
 ---

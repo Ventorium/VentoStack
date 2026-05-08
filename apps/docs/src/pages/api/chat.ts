@@ -311,8 +311,10 @@ export const POST: APIRoute = async ({ request }) => {
   // 需通过 cloudflare:workers 获取；本地开发（Node adapter）时回退到外部 LLM。
   let cfEnv: Record<string, unknown> = {};
   try {
-    // @ts-expect-error cloudflare:workers 只在 Workers 运行时存在
-    const mod = await import("cloudflare:workers");
+    const importRuntimeModule = new Function("specifier", "return import(specifier)") as (
+      specifier: string,
+    ) => Promise<{ env?: unknown }>;
+    const mod = await importRuntimeModule("cloudflare:workers");
     cfEnv = (mod.env ?? {}) as Record<string, unknown>;
   } catch {
     /* 本地开发或非 Workers 环境 */

@@ -112,7 +112,12 @@ export default function ProfilePage() {
     if (!error) {
       msg.success('保存成功')
       fetchProfile()
-      useAuth.getState().refreshProfile()
+      useAuth.getState().patchUser({
+        nickname: values.nickname,
+        email: values.email,
+        phone: values.phone,
+        gender: Number(values.gender),
+      })
     }
     setLoading(false)
   }
@@ -131,7 +136,9 @@ export default function ProfilePage() {
     if (!result.error) {
       msg.success('头像上传成功')
       fetchProfile()
-      useAuth.getState().refreshProfile()
+      if (result.data?.avatar) {
+        useAuth.getState().patchUser({ avatar: result.data.avatar })
+      }
     }
   }
 

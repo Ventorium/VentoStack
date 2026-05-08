@@ -136,11 +136,11 @@ export function createTokenRefresh(
       const decoded = await jwt.verify(refreshToken, refreshSecret ?? secret);
 
       if (decoded.iss !== "refresh") {
-        throw new Error("Invalid token type: expected refresh token");
+        throw new Error("无效的令牌类型：需要刷新令牌");
       }
 
       if (decoded.jti && await revocationStore.has(decoded.jti)) {
-        throw new Error("Token has been revoked");
+        throw new Error("令牌已被撤销");
       }
 
       // Revoke the old refresh token

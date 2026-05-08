@@ -1,4 +1,5 @@
 ---
+order: 3
 title: Redis 适配器
 description: 基于 Redis 的持久化缓存适配器
 ---
@@ -8,11 +9,10 @@ description: 基于 Redis 的持久化缓存适配器
 ## 基本用法
 
 ```typescript
-import { RedisClient } from "bun";
-import { createCache, createRedisAdapter } from "@ventostack/cache";
+import { createCache, createRedisAdapter, createRedisClient } from "@ventostack/cache";
 
 // 使用 Bun 原生 Redis
-const redis = new RedisClient("redis://localhost:6379");
+const redis = createRedisClient({ url: "redis://localhost:6379" });
 const cache = createCache(createRedisAdapter({ client: redis }));
 ```
 

@@ -27,7 +27,7 @@ export interface ErrorHandlerOptions {
   logger?: LoggerLike;
   /** 是否静默 */
   silent?: boolean;
-  /** 生产环境返回的固定错误消息，默认 "Internal Server Error" */
+  /** 生产环境返回的固定错误消息，默认 "服务器内部错误" */
   fallbackMessage?: string;
 }
 
@@ -42,7 +42,7 @@ export function errorHandler(options?: ErrorHandlerOptions): Middleware {
   const logger = options?.silent
     ? noopLogger
     : (options?.logger ?? consoleLogger);
-  const fallbackMessage = options?.fallbackMessage ?? "Internal Server Error";
+  const fallbackMessage = options?.fallbackMessage ?? "服务器内部错误";
 
   return async (ctx: Context, next) => {
     try {

@@ -4,13 +4,16 @@
 
 import { describe, expect, test } from "bun:test";
 import { createDictService } from "../services/dict";
-import { createMockExecutor, createTestCache } from "./helpers";
+import { createMockExecutor, createMockDatabase, createTestCache } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_dict_type", "sys_dict_type", true);
+  registerModel("sys_dict_data", "sys_dict_data", true);
   const cache = createTestCache();
-  const dictService = createDictService({ executor, cache });
-  return { dictService, executor, calls, results, cache };
+  const dictService = createDictService({ db, cache });
+  return { dictService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
 
 describe("DictService", () => {

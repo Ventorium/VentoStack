@@ -18,8 +18,8 @@
  */
 
 // 数据库核心：配置、创建、执行器与查询入口
-export { createDatabase } from "./database";
-export type { Database, DatabaseConfig, QueryExecutor, SqlExecutor } from "./database";
+export { createDatabase, createSqlExecutor } from "./database";
+export type { Database, DatabaseConfig, QueryExecutor, SqlExecutor, SqlExecutorOptions } from "./database";
 
 // 模型定义：列类型、模型工厂与类型推导
 export { defineModel, column } from "./model";
@@ -77,6 +77,7 @@ export { createConnectionPool } from "./connection-pool";
 export type { ConnectionPool, ConnectionPoolOptions, PoolStats } from "./connection-pool";
 
 // Schema 差异：表/列的增删改检测与迁移 SQL 生成
+export { diffSchemas, generateMigrationSQL } from "./schema-diff";
 export type { SchemaDiff, TableDiff, ColumnSchema, TableSchema, ColumnDiff } from "./schema-diff";
 
 // Schema Reader：数据库表结构读取

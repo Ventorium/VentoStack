@@ -1,4 +1,5 @@
 ---
+order: 2
 title: 指标收集
 description: 使用 createMetrics 收集应用性能指标
 ---

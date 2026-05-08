@@ -40,27 +40,27 @@ export const paramTypes: {
   int: {
     pattern: /^-?\d+$/,
     coerce: (v) => parseInt(v, 10),
-    message: "Must be an integer",
+    message: "必须为整数",
   },
   float: {
     pattern: /^-?\d+(\.\d+)?$/,
     coerce: (v) => parseFloat(v),
-    message: "Must be a number",
+    message: "必须为数字",
   },
   bool: {
     pattern: /^(true|false|1|0)$/i,
     coerce: (v) => /^(true|1)$/i.test(v),
-    message: "Must be a boolean",
+    message: "必须为布尔值",
   },
   uuid: {
     pattern: /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i,
     coerce: (v) => v,
-    message: "Must be a valid UUID",
+    message: "必须为有效的 UUID",
   },
   date: {
     pattern: /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/,
     coerce: (v) => new Date(v),
-    message: "Must be a valid ISO 8601 date",
+    message: "必须为有效的 ISO 8601 日期",
   },
 };
 

@@ -26,11 +26,11 @@ export class VentoStackError extends Error {
 export class ClientError extends VentoStackError {
   /**
    * 构造 ClientError
-   * @param message - 错误描述，默认 "Client Error"
+   * @param message - 错误描述，默认 "客户端错误"
    * @param code - HTTP 状态码，默认 400
    * @param errorCode - 业务错误码，默认 "CLIENT_ERROR"
    */
-  constructor(message = "Client Error", code = 400, errorCode = "CLIENT_ERROR") {
+  constructor(message = "客户端错误", code = 400, errorCode = "CLIENT_ERROR") {
     super(message, code, errorCode);
     this.name = "ClientError";
   }
@@ -40,11 +40,11 @@ export class ClientError extends VentoStackError {
 export class ServerError extends VentoStackError {
   /**
    * 构造 ServerError
-   * @param message - 错误描述，默认 "Internal Server Error"
+   * @param message - 错误描述，默认 "服务器内部错误"
    * @param code - HTTP 状态码，默认 500
    * @param errorCode - 业务错误码，默认 "SERVER_ERROR"
    */
-  constructor(message = "Internal Server Error", code = 500, errorCode = "SERVER_ERROR") {
+  constructor(message = "服务器内部错误", code = 500, errorCode = "SERVER_ERROR") {
     super(message, code, errorCode);
     this.name = "ServerError";
   }
@@ -54,9 +54,9 @@ export class ServerError extends VentoStackError {
 export class NotFoundError extends ClientError {
   /**
    * 构造 NotFoundError
-   * @param message - 错误描述，默认 "Not Found"
+   * @param message - 错误描述，默认 "资源不存在"
    */
-  constructor(message = "Not Found") {
+  constructor(message = "资源不存在") {
     super(message, 404, "NOT_FOUND");
     this.name = "NotFoundError";
   }
@@ -69,10 +69,10 @@ export class ValidationError extends ClientError {
 
   /**
    * 构造 ValidationError
-   * @param message - 错误描述，默认 "Validation Failed"
+   * @param message - 错误描述，默认 "校验失败"
    * @param details - 可选的校验详情，例如字段级错误信息
    */
-  constructor(message = "Validation Failed", details?: Record<string, unknown>) {
+  constructor(message = "校验失败", details?: Record<string, unknown>) {
     super(message, 400, "VALIDATION_ERROR");
     this.name = "ValidationError";
     if (details !== undefined) {
@@ -85,9 +85,9 @@ export class ValidationError extends ClientError {
 export class UnauthorizedError extends ClientError {
   /**
    * 构造 UnauthorizedError
-   * @param message - 错误描述，默认 "Unauthorized"
+   * @param message - 错误描述，默认 "未授权"
    */
-  constructor(message = "Unauthorized") {
+  constructor(message = "未授权") {
     super(message, 401, "UNAUTHORIZED");
     this.name = "UnauthorizedError";
   }
@@ -97,9 +97,9 @@ export class UnauthorizedError extends ClientError {
 export class ForbiddenError extends ClientError {
   /**
    * 构造 ForbiddenError
-   * @param message - 错误描述，默认 "Forbidden"
+   * @param message - 错误描述，默认 "禁止访问"
    */
-  constructor(message = "Forbidden") {
+  constructor(message = "禁止访问") {
     super(message, 403, "FORBIDDEN");
     this.name = "ForbiddenError";
   }

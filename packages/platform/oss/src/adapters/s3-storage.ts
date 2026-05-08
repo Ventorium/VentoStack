@@ -35,10 +35,10 @@ export function createS3Storage(options: S3StorageOptions): StorageAdapter {
       // Buffer 是 ArrayBufferView 的子类，可直接传入
       // ReadableStream 需要包装为 Response
       const opts = contentType ? { type: contentType } : undefined;
-      if (data instanceof Buffer) {
-        await client.file(key).write(data, opts);
+      if (Buffer.isBuffer(data)) {
+        await client.file(key).write(new Uint8Array(data), opts);
       } else {
-        await client.file(key).write(new Response(data), opts);
+        await client.file(key).write(new Response(data as ReadableStream), opts);
       }
     },
 

@@ -1,4 +1,5 @@
 ---
+order: 4
 title: 迁移系统
 description: 使用 createMigrationRunner 管理数据库 schema 变更
 ---
@@ -81,10 +82,12 @@ status.forEach(({ name, executedAt }) => {
 
 ## 在应用启动时运行
 
+`VentoStackApp` 通过 `app.lifecycle` 暴露生命周期钩子，使用 `onBeforeStart` 在应用开始监听前运行迁移：
+
 ```typescript
 const app = createApp({ port: 3000 });
 
-app.onStart(async () => {
+app.lifecycle.onBeforeStart(async () => {
   const runner = createMigrationRunner(db.raw);
   for (const m of migrations) {
     runner.addMigration(m);

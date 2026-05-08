@@ -12,7 +12,7 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
     const authHeader = ctx.request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
-        JSON.stringify({ code: 401, message: "Missing token" }),
+        JSON.stringify({ code: 401, message: "缺少认证令牌" }),
         { status: 401, headers: JSON_HEADERS },
       );
     }
@@ -28,7 +28,7 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
       return next();
     } catch {
       return new Response(
-        JSON.stringify({ code: 401, message: "Invalid token" }),
+        JSON.stringify({ code: 401, message: "无效的认证令牌" }),
         { status: 401, headers: JSON_HEADERS },
       );
     }

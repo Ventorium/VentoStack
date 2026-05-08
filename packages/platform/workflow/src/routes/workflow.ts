@@ -27,7 +27,7 @@ export function createWorkflowRoutes(
       });
       return ok(result);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Create failed", 400);
+      return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
   });
 
@@ -43,21 +43,21 @@ export function createWorkflowRoutes(
   });
 
   router.get("/api/workflow/definitions/:id", perm("workflow", "definition:query"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const def = await workflowService.getDefinition(id);
-    if (!def) return fail("Definition not found", 404, 404);
+    if (!def) return fail("流程定义不存在", 404, 404);
     return ok(def);
   });
 
   router.put("/api/workflow/definitions/:id", perm("workflow", "definition:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await workflowService.updateDefinition(id, body);
     return ok(null);
   });
 
   router.delete("/api/workflow/definitions/:id", perm("workflow", "definition:delete"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     await workflowService.deleteDefinition(id);
     return ok(null);
   });
@@ -65,18 +65,18 @@ export function createWorkflowRoutes(
   // === Node management ===
 
   router.put("/api/workflow/definitions/:id/nodes", perm("workflow", "definition:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     try {
       await workflowService.setNodes(id, body.nodes as any[]);
       return ok(null);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Set nodes failed", 400);
+      return fail(e instanceof Error ? e.message : "设置节点失败", 400);
     }
   });
 
   router.get("/api/workflow/definitions/:id/nodes", perm("workflow", "definition:query"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const nodes = await workflowService.getNodes(id);
     return ok(nodes);
   });
@@ -95,14 +95,14 @@ export function createWorkflowRoutes(
       });
       return ok(result);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Start instance failed", 400);
+      return fail(e instanceof Error ? e.message : "启动流程失败", 400);
     }
   });
 
   router.get("/api/workflow/instances/:id", perm("workflow", "instance:query"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const detail = await workflowService.getInstanceDetail(id);
-    if (!detail) return fail("Instance not found", 404, 404);
+    if (!detail) return fail("流程实例不存在", 404, 404);
     return ok(detail);
   });
 
@@ -122,25 +122,25 @@ export function createWorkflowRoutes(
 
   router.put("/api/workflow/tasks/:id/approve", perm("workflow", "task:approve"), async (ctx) => {
     const user = ctx.user as { id: string };
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     try {
       await workflowService.approveTask(id, user.id, body.comment as string | undefined);
       return ok(null);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Approve failed", 400);
+      return fail(e instanceof Error ? e.message : "审批失败", 400);
     }
   });
 
   router.put("/api/workflow/tasks/:id/reject", perm("workflow", "task:reject"), async (ctx) => {
     const user = ctx.user as { id: string };
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     try {
       await workflowService.rejectTask(id, user.id, body.comment as string | undefined);
       return ok(null);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Reject failed", 400);
+      return fail(e instanceof Error ? e.message : "驳回失败", 400);
     }
   });
 

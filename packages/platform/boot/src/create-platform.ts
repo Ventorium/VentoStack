@@ -5,7 +5,8 @@
  */
 
 import type { Router } from "@ventostack/core";
-import type { SqlExecutor, TableSchemaInfo } from "@ventostack/database";
+import type { SqlExecutor, TableSchemaInfo, Database } from "@ventostack/database";
+import { createDatabase } from "@ventostack/database";
 import type { Cache } from "@ventostack/cache";
 import type { JWTManager, PasswordHasher, TOTPManager, RBAC, RowFilter, AuthSessionManager, TokenRefreshManager, SessionManager, MultiDeviceManager } from "@ventostack/auth";
 import type { EventBus } from "@ventostack/events";
@@ -33,6 +34,8 @@ import type { Scheduler } from "@ventostack/events";
 export interface PlatformConfig {
   /** 数据库 executor */
   executor: SqlExecutor;
+  /** 数据库实例（可选，若未提供则自动从 executor 创建） */
+  db?: Database;
   /** 数据库表结构读取 */
   readTableSchema: (executor: SqlExecutor, tableName: string) => Promise<TableSchemaInfo>;
   /** 数据库表列表 */
@@ -86,6 +89,12 @@ export interface PlatformConfig {
   notifyChannels?: Map<string, NotifyChannel>;
   /** 定时任务处理器 */
   jobHandlers?: JobHandlerMap;
+  /** WebAuthn RP ID */
+  rpID?: string;
+  /** WebAuthn RP 名称 */
+  rpName?: string;
+  /** WebAuthn 允许来源 */
+  rpOrigins?: string[];
 }
 
 /** 平台实例 */
@@ -118,12 +127,15 @@ export interface Platform {
 export async function createPlatform(config: PlatformConfig): Promise<Platform> {
   const {
     executor, readTableSchema, listTables, cache,
+    db: providedDb,
     jwt, jwtSecret, passwordHasher, totpManager, rbac, rowFilter,
     authSessionManager, tokenRefreshManager, sessionManager, multiDeviceManager,
     auditStore, eventBus, healthCheck, scheduler,
     modules: moduleFlags,
-    storageAdapter, notifyChannels, jobHandlers,
+    storageAdapter, notifyChannels, jobHandlers, rpID, rpName, rpOrigins,
   } = config;
+
+  const db = providedDb ?? createDatabase({ executor });
 
   const enabled = {
     system: moduleFlags?.system !== false,
@@ -137,38 +149,42 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   };
 
   // Create modules
-  const system = enabled.system ? createSystemModule({
-    executor, cache, jwt, jwtSecret, passwordHasher, totpManager,
-    rbac, rowFilter, authSessionManager, tokenRefreshManager,
-    sessionManager, multiDeviceManager, auditStore, eventBus,
-  }) : undefined;
+  const systemDeps = {
+    db, cache, jwt, jwtSecret, passwordHasher, totp: totpManager,
+    rbac, rowFilter, authSessionManager, tokenRefresh: tokenRefreshManager,
+    sessionManager, deviceManager: multiDeviceManager, auditLog: auditStore, eventBus,
+    ...(rpID !== undefined ? { rpID } : {}),
+    ...(rpName !== undefined ? { rpName } : {}),
+    ...(rpOrigins !== undefined ? { rpOrigins } : {}),
+  };
+  const system = enabled.system ? createSystemModule(systemDeps) : undefined;
 
   const gen = enabled.gen ? createGenModule({
-    executor, readTableSchema, jwt, jwtSecret, rbac,
+    db, executor, readTableSchema, jwt, jwtSecret, rbac,
   }) : undefined;
 
   const monitor = enabled.monitor ? createMonitorModule({
-    healthCheck, jwt, jwtSecret, rbac,
+    healthCheck, jwt, jwtSecret, rbac, db,
   }) : undefined;
 
   const notification = enabled.notification && notifyChannels ? createNotificationModule({
-    executor, jwt, jwtSecret, rbac, channels: notifyChannels,
+    db, jwt, jwtSecret, rbac, channels: notifyChannels,
   }) : undefined;
 
   const i18n = enabled.i18n ? createI18nModule({
-    executor, jwt, jwtSecret, rbac,
+    db, jwt, jwtSecret, rbac,
   }) : undefined;
 
   const workflow = enabled.workflow ? createWorkflowModule({
-    executor, jwt, jwtSecret, rbac,
+    db, jwt, jwtSecret, rbac,
   }) : undefined;
 
   const oss = enabled.oss && storageAdapter ? createOSSModule({
-    executor, storage: storageAdapter, jwt, jwtSecret, rbac,
+    db, storage: storageAdapter, jwt, jwtSecret, rbac,
   }) : undefined;
 
   const schedulerMod = enabled.scheduler ? createSchedulerModule({
-    executor, scheduler, jwt, jwtSecret, rbac, handlers: jobHandlers,
+    db, scheduler, jwt, jwtSecret, rbac, handlers: jobHandlers ?? {},
   }) : undefined;
 
   // Aggregate routers
@@ -176,24 +192,24 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   const router = createRouter();
 
   // Mount module routers
-  if (system) router.use(system.router);
-  if (gen) router.use(gen.router);
-  if (monitor) router.use(monitor.router);
-  if (notification) router.use(notification.router);
-  if (i18n) router.use(i18n.router);
-  if (workflow) router.use(workflow.router);
-  if (oss) router.use(oss.router);
-  if (schedulerMod) router.use(schedulerMod.router);
+  if (system) router.merge(system.router);
+  if (gen) router.merge(gen.router);
+  if (monitor) router.merge(monitor.router);
+  if (notification) router.merge(notification.router);
+  if (i18n) router.merge(i18n.router);
+  if (workflow) router.merge(workflow.router);
+  if (oss) router.merge(oss.router);
+  if (schedulerMod) router.merge(schedulerMod.router);
 
   return {
-    system,
-    gen,
-    monitor,
-    notification,
-    i18n,
-    workflow,
-    oss,
-    scheduler: schedulerMod,
+    ...(system !== undefined ? { system } : {}),
+    ...(gen !== undefined ? { gen } : {}),
+    ...(monitor !== undefined ? { monitor } : {}),
+    ...(notification !== undefined ? { notification } : {}),
+    ...(i18n !== undefined ? { i18n } : {}),
+    ...(workflow !== undefined ? { workflow } : {}),
+    ...(oss !== undefined ? { oss } : {}),
+    ...(schedulerMod !== undefined ? { scheduler: schedulerMod } : {}),
     router,
     async init() {
       if (system) await system.init();

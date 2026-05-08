@@ -4,8 +4,9 @@
  * 对接 @ventostack/events 的 Scheduler，提供 DB 持久化、任务 CRUD、执行日志。
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { Scheduler } from "@ventostack/events";
+import { ScheduleJobModel, ScheduleJobLogModel } from "../models";
 
 /** 任务状态枚举 */
 export const JobStatus = { PAUSED: 0, RUNNING: 1 } as const;
@@ -73,21 +74,45 @@ export interface SchedulerService {
 }
 
 export function createSchedulerService(deps: {
-  executor: SqlExecutor;
+  db: Database;
   scheduler: Scheduler;
   handlers: JobHandlerMap;
 }): SchedulerService {
-  const { executor, scheduler, handlers } = deps;
+  const { db, scheduler, handlers } = deps;
 
   /** In-memory map of running scheduled tasks: jobId -> ScheduledTask */
   const runningTasks = new Map<string, { stop: () => void }>();
 
   async function writeLog(jobId: string, status: number, result?: string, error?: string, durationMs?: number) {
-    await executor(
-      `INSERT INTO sys_schedule_job_log (id, job_id, start_at, end_at, status, result, error, duration_ms)
-       VALUES ($1, $2, NOW(), NOW(), $3, $4, $5, $6)`,
-      [crypto.randomUUID(), jobId, status, result ?? null, error ?? null, durationMs ?? null],
-    );
+    await db.query(ScheduleJobLogModel).insert({
+      id: crypto.randomUUID(),
+      job_id: jobId,
+      start_at: new Date(),
+      end_at: new Date(),
+      status,
+      result: result ?? null,
+      error: error ?? null,
+      duration_ms: durationMs ?? null,
+    });
+  }
+
+  async function getByIdInternal(id: string): Promise<ScheduleJob | null> {
+    const row = await db.query(ScheduleJobModel)
+      .where("id", "=", id)
+      .select("id", "name", "handler_id", "cron", "params", "status", "description", "created_at", "updated_at")
+      .get();
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      handlerId: row.handler_id,
+      cron: row.cron ?? null,
+      params: row.params ? JSON.parse(row.params as string) : null,
+      status: row.status,
+      description: row.description ?? null,
+      createdAt: row.created_at.toISOString(),
+      updatedAt: row.updated_at.toISOString(),
+    };
   }
 
   function getInterval(cron: string | undefined): number {
@@ -122,15 +147,15 @@ export function createSchedulerService(deps: {
           await writeLog(job.id, LogStatus.RUNNING);
         },
         onAfterExecute: async ({ duration }) => {
-          // Update last log entry
-          await executor(
+          // Update last log entry — UPDATE...ORDER BY...LIMIT, keep as db.raw
+          await db.raw(
             `UPDATE sys_schedule_job_log SET end_at = NOW(), status = $1, duration_ms = $2
              WHERE job_id = $3 AND status = $4 ORDER BY start_at DESC LIMIT 1`,
             [LogStatus.SUCCESS, duration, job.id, LogStatus.RUNNING],
           );
         },
         onError: async ({ error, duration }) => {
-          await executor(
+          await db.raw(
             `UPDATE sys_schedule_job_log SET end_at = NOW(), status = $1, error = $2, duration_ms = $3
              WHERE job_id = $4 AND status = $5 ORDER BY start_at DESC LIMIT 1`,
             [LogStatus.FAILED, error.message, duration, job.id, LogStatus.RUNNING],
@@ -151,39 +176,36 @@ export function createSchedulerService(deps: {
       const id = crypto.randomUUID();
       const { name, handlerId, cron, params: jobParams, description } = params;
 
-      await executor(
-        `INSERT INTO sys_schedule_job (id, name, handler_id, cron, params, status, description, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 0, $6, NOW(), NOW())`,
-        [id, name, handlerId, cron ?? null, jobParams ? JSON.stringify(jobParams) : null, description ?? null],
-      );
+      await db.query(ScheduleJobModel).insert({
+        id,
+        name,
+        handler_id: handlerId,
+        cron: cron ?? null,
+        params: jobParams ? JSON.stringify(jobParams) : null,
+        status: 0,
+        description: description ?? null,
+      });
 
       return { id };
     },
 
     async update(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.name !== undefined) updates.name = params.name;
+      if (params.handlerId !== undefined) updates.handler_id = params.handlerId;
+      if (params.cron !== undefined) updates.cron = params.cron;
+      if (params.params !== undefined) updates.params = JSON.stringify(params.params);
+      if (params.description !== undefined) updates.description = params.description;
 
-      if (params.name !== undefined) { fields.push(`name = $${idx++}`); values.push(params.name); }
-      if (params.handlerId !== undefined) { fields.push(`handler_id = $${idx++}`); values.push(params.handlerId); }
-      if (params.cron !== undefined) { fields.push(`cron = $${idx++}`); values.push(params.cron); }
-      if (params.params !== undefined) { fields.push(`params = $${idx++}`); values.push(JSON.stringify(params.params)); }
-      if (params.description !== undefined) { fields.push(`description = $${idx++}`); values.push(params.description); }
-
-      if (fields.length === 0) return;
-
-      fields.push(`updated_at = NOW()`);
-      values.push(id);
-
-      await executor(`UPDATE sys_schedule_job SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+      if (Object.keys(updates).length === 0) return;
+      await db.query(ScheduleJobModel).where("id", "=", id).update(updates);
 
       // If running, restart with new config
       const existing = runningTasks.get(id);
       if (existing) {
         existing.stop();
         runningTasks.delete(id);
-        const job = await getByIdRaw(executor, id);
+        const job = await getByIdInternal(id);
         if (job && job.status === JobStatus.RUNNING) {
           await scheduleJob(job);
         }
@@ -196,49 +218,53 @@ export function createSchedulerService(deps: {
         existing.stop();
         runningTasks.delete(id);
       }
-      await executor(`DELETE FROM sys_schedule_job_log WHERE job_id = $1`, [id]);
-      await executor(`DELETE FROM sys_schedule_job WHERE id = $1`, [id]);
+      await db.query(ScheduleJobLogModel).where("job_id", "=", id).hardDelete();
+      await db.query(ScheduleJobModel).where("id", "=", id).hardDelete();
     },
 
     async getById(id) {
-      return getByIdRaw(executor, id);
+      return getByIdInternal(id);
     },
 
     async list(params) {
       const { status, page = 1, pageSize = 10 } = params ?? {};
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
 
-      if (status !== undefined) {
-        conditions.push(`status = $${idx++}`);
-        values.push(status);
-      }
+      let query = db.query(ScheduleJobModel);
+      if (status !== undefined) query = query.where("status", "=", status);
 
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const total = await query.count();
 
-      const countRows = await executor(`SELECT COUNT(*) as total FROM sys_schedule_job ${where}`, values);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
+      const rows = await query
+        .select("id", "name", "handler_id", "cron", "params", "status", "description", "created_at", "updated_at")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        `SELECT * FROM sys_schedule_job ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...values, pageSize, offset],
-      );
+      const items = rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        handlerId: row.handler_id,
+        cron: row.cron ?? null,
+        params: row.params ? JSON.parse(row.params as string) : null,
+        status: row.status,
+        description: row.description ?? null,
+        createdAt: row.created_at.toISOString(),
+        updatedAt: row.updated_at.toISOString(),
+      }));
 
-      const items = (rows as Array<Record<string, unknown>>).map(rowToJob);
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
     },
 
     async start(id) {
-      await executor(`UPDATE sys_schedule_job SET status = $1, updated_at = NOW() WHERE id = $2`, [JobStatus.RUNNING, id]);
+      await db.query(ScheduleJobModel).where("id", "=", id).update({ status: JobStatus.RUNNING });
 
-      const job = await getByIdRaw(executor, id);
+      const job = await getByIdInternal(id);
       if (job) await scheduleJob(job);
     },
 
     async stop(id) {
-      await executor(`UPDATE sys_schedule_job SET status = $1, updated_at = NOW() WHERE id = $2`, [JobStatus.PAUSED, id]);
+      await db.query(ScheduleJobModel).where("id", "=", id).update({ status: JobStatus.PAUSED });
 
       const existing = runningTasks.get(id);
       if (existing) {
@@ -248,8 +274,8 @@ export function createSchedulerService(deps: {
     },
 
     async executeNow(id) {
-      const job = await getByIdRaw(executor, id);
-      if (!job) throw new Error("Job not found");
+      const job = await getByIdInternal(id);
+      if (!job) throw new Error("任务不存在");
 
       const handler = handlers[job.handlerId];
       if (!handler) throw new Error(`Handler "${job.handlerId}" not registered`);
@@ -260,14 +286,15 @@ export function createSchedulerService(deps: {
         const params = job.params as Record<string, unknown> | null ?? undefined;
         await handler(params);
         const duration = Date.now() - startMs;
-        await executor(
+        // UPDATE...ORDER BY...LIMIT, keep as db.raw
+        await db.raw(
           `UPDATE sys_schedule_job_log SET end_at = NOW(), status = $1, duration_ms = $2
            WHERE job_id = $3 AND status = $4 ORDER BY start_at DESC LIMIT 1`,
           [LogStatus.SUCCESS, duration, id, LogStatus.RUNNING],
         );
       } catch (err) {
         const duration = Date.now() - startMs;
-        await executor(
+        await db.raw(
           `UPDATE sys_schedule_job_log SET end_at = NOW(), status = $1, error = $2, duration_ms = $3
            WHERE job_id = $4 AND status = $5 ORDER BY start_at DESC LIMIT 1`,
           [LogStatus.FAILED, (err as Error).message, duration, id, LogStatus.RUNNING],
@@ -278,61 +305,32 @@ export function createSchedulerService(deps: {
 
     async listLogs(params) {
       const { jobId, status, page = 1, pageSize = 10 } = params;
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
 
-      if (jobId) { conditions.push(`job_id = $${idx++}`); values.push(jobId); }
-      if (status !== undefined) { conditions.push(`status = $${idx++}`); values.push(status); }
+      let query = db.query(ScheduleJobLogModel);
+      if (jobId) query = query.where("job_id", "=", jobId);
+      if (status !== undefined) query = query.where("status", "=", status);
 
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const total = await query.count();
 
-      const countRows = await executor(`SELECT COUNT(*) as total FROM sys_schedule_job_log ${where}`, values);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
+      const rows = await query
+        .select("id", "job_id", "start_at", "end_at", "status", "result", "error", "duration_ms")
+        .orderBy("start_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        `SELECT * FROM sys_schedule_job_log ${where} ORDER BY start_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...values, pageSize, offset],
-      );
+      const items = rows.map((row) => ({
+        id: row.id,
+        jobId: row.job_id,
+        startAt: row.start_at.toISOString(),
+        endAt: row.end_at?.toISOString() ?? null,
+        status: row.status,
+        result: row.result ?? null,
+        error: row.error ?? null,
+        durationMs: row.duration_ms != null ? Number(row.duration_ms) : null,
+      }));
 
-      const items = (rows as Array<Record<string, unknown>>).map(rowToLog);
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
     },
-  };
-}
-
-/** Helper: fetch a job by ID from DB */
-async function getByIdRaw(executor: SqlExecutor, id: string): Promise<ScheduleJob | null> {
-  const rows = await executor(`SELECT * FROM sys_schedule_job WHERE id = $1`, [id]);
-  const jobs = rows as Array<Record<string, unknown>>;
-  if (jobs.length === 0) return null;
-  return rowToJob(jobs[0]!);
-}
-
-function rowToJob(row: Record<string, unknown>): ScheduleJob {
-  return {
-    id: row.id as string,
-    name: row.name as string,
-    handlerId: row.handler_id as string,
-    cron: (row.cron as string) ?? null,
-    params: row.params ? JSON.parse(row.params as string) : null,
-    status: row.status as number,
-    description: (row.description as string) ?? null,
-    createdAt: row.created_at as string,
-    updatedAt: row.updated_at as string,
-  };
-}
-
-function rowToLog(row: Record<string, unknown>): ScheduleJobLog {
-  return {
-    id: row.id as string,
-    jobId: row.job_id as string,
-    startAt: row.start_at as string,
-    endAt: (row.end_at as string) ?? null,
-    status: row.status as number,
-    result: (row.result as string) ?? null,
-    error: (row.error as string) ?? null,
-    durationMs: row.duration_ms != null ? Number(row.duration_ms) : null,
   };
 }

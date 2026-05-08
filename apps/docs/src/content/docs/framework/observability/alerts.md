@@ -1,4 +1,5 @@
 ---
+order: 4
 title: 错误上报
 description: 使用 createErrorReporter 配置多通道错误上报
 ---

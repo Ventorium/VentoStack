@@ -30,7 +30,7 @@ export function create${table.className}Routes(
   router.get("${basePath}/:id", perm("${permPrefix}", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     const item = await service.getById(id);
-    if (!item) return fail("Not found", 404, 404);
+    if (!item) return fail("资源不存在", 404, 404);
     return ok(item);
   });
 
@@ -40,7 +40,7 @@ export function create${table.className}Routes(
       const result = await service.create(body as any);
       return ok(result);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Create failed", 400);
+      return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
   });
 

@@ -2,9 +2,8 @@ export { createMonitorService } from "./monitor";
 export type {
   OnlineUser,
   ServerStatus,
-  CacheStats,
+  CacheStatus,
   DataSourceStatus,
-  PaginatedResult,
   MonitorService,
   MonitorServiceDeps,
 } from "./monitor";

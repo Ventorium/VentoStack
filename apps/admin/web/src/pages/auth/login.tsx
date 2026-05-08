@@ -15,6 +15,7 @@ const LoginPage = () => {
   const [form] = Form.useForm<LoginForm>()
   const [loading, setLoading] = useState(false)
   const [passkeyLoading, setPasskeyLoading] = useState(false)
+  const [loginMode, setLoginMode] = useState<'password' | 'passkey'>('password')
   const [expiredInfo, setExpiredInfo] = useState<PasswordExpiredInfo | null>(null)
   const [pwdForm] = Form.useForm()
   const [pwdLoading, setPwdLoading] = useState(false)
@@ -32,6 +33,10 @@ const LoginPage = () => {
   }, [mfaInfo])
 
   const onFinish = async (values: LoginForm) => {
+    if (loginMode === 'passkey') {
+      handlePasskeyLogin()
+      return
+    }
     setLoading(true)
     const result = await login(values)
     setLoading(false)
@@ -46,8 +51,6 @@ const LoginPage = () => {
       setMfaInfo(result as MfaRequiredInfo)
     } else if (result && 'code' in result && result.code === 'password_expired') {
       setExpiredInfo(result as PasswordExpiredInfo)
-    } else {
-      msg.error('用户名或密码错误')
     }
   }
 
@@ -87,11 +90,14 @@ const LoginPage = () => {
   }
 
   const handlePasskeyLogin = async () => {
-    const username = form.getFieldValue('username')
-    if (!username) {
-      msg.warning('请先输入账号')
+    setLoginMode('passkey')
+    try {
+      await form.validateFields(['username'])
+    } catch {
+      form.focusField('username')
       return
     }
+    const username = form.getFieldValue('username')
     setPasskeyLoading(true)
     const result = await passkeyLogin(username)
     setPasskeyLoading(false)
@@ -106,7 +112,9 @@ const LoginPage = () => {
       <div className="w-120 bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-8">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-dark">{siteName} 管理后台</h1>
-          <p className="text-gray-500 mt-2">请输入账号和密码登录</p>
+          <p className="text-gray-500 mt-2">
+            {loginMode === 'password' ? '请输入账号和密码登录' : '请输入账号后使用通行密钥登录'}
+          </p>
         </div>
 
         <Form
@@ -121,17 +129,31 @@ const LoginPage = () => {
             <Input placeholder="请输入账号" size="large" />
           </Form.Item>
 
-          <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
-            <Input.Password placeholder="请输入密码" size="large" />
-          </Form.Item>
+          {loginMode === 'password' && (
+            <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+              <Input.Password placeholder="请输入密码" size="large" />
+            </Form.Item>
+          )}
 
           <Form.Item>
-            <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
-              登 录
-            </Button>
+            {loginMode === 'password' ? (
+              <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
+                登 录
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                size="large"
+                className="w-full"
+                loading={passkeyLoading}
+                onClick={handlePasskeyLogin}
+              >
+                通行密钥登录
+              </Button>
+            )}
           </Form.Item>
 
-          {passkeyEnabled && (
+          {loginMode === 'password' && passkeyEnabled && (
             <>
               <Divider plain>其他登录方式</Divider>
               <Button
@@ -143,6 +165,12 @@ const LoginPage = () => {
                 通行密钥登录
               </Button>
             </>
+          )}
+
+          {loginMode === 'passkey' && (
+            <div className="text-center">
+              <a onClick={() => setLoginMode('password')}>返回密码登录</a>
+            </div>
           )}
         </Form>
       </div>

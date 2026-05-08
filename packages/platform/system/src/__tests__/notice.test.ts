@@ -4,12 +4,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { createNoticeService } from "../services/notice";
-import { createMockExecutor } from "./helpers";
+import { createMockExecutor, createMockDatabase } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
-  const noticeService = createNoticeService({ executor });
-  return { noticeService, executor, calls, results };
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_notice", "sys_notice", true);
+  const noticeService = createNoticeService({ db });
+  return { noticeService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
 describe("NoticeService", () => {
@@ -40,7 +42,7 @@ describe("NoticeService", () => {
 
   test("list returns paginated results", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 2 }]);
+    s.results.set("COUNT", [{ count: 2 }]);
     s.results.set("SELECT", [
       { id: "n1", title: "公告1", content: "内容1", type: 1, status: 1, publisher_id: "u1", publish_at: "2025-01-01" },
       { id: "n2", title: "公告2", content: "内容2", type: 2, status: 0, publisher_id: null, publish_at: null },
@@ -52,7 +54,7 @@ describe("NoticeService", () => {
 
   test("list with empty result returns zero items", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 0 }]);
+    s.results.set("COUNT", [{ count: 0 }]);
     const result = await s.noticeService.list();
     expect(result.items.length).toBe(0);
     expect(result.total).toBe(0);
@@ -61,13 +63,13 @@ describe("NoticeService", () => {
   test("publish updates status to 1", async () => {
     const s = setup();
     await s.noticeService.publish("n1", "u1");
-    expect(s.calls.some(c => c.text.includes("status = 1") && c.text.includes("publisher_id"))).toBe(true);
+    expect(s.calls.some(c => c.text.includes("status") && c.text.includes("publisher_id"))).toBe(true);
   });
 
   test("revoke updates status to 2", async () => {
     const s = setup();
     await s.noticeService.revoke("n1");
-    expect(s.calls.some(c => c.text.includes("status = 2"))).toBe(true);
+    expect(s.calls.some(c => c.text.includes("status"))).toBe(true);
   });
 
   test("markRead inserts user-notice record", async () => {

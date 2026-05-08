@@ -4,12 +4,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { createMenuService } from "../services/menu";
-import { createMockExecutor } from "./helpers";
+import { createMockExecutor, createMockDatabase } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
-  const menuService = createMenuService({ executor });
-  return { menuService, executor, calls, results };
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_menu", "sys_menu", true);
+  const menuService = createMenuService({ db });
+  return { menuService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
 describe("MenuService", () => {

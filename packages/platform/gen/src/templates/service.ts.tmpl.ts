@@ -1,5 +1,5 @@
 /**
- * Service 代码模板
+ * Service 代码模板 — 使用 ORM Query Builder
  */
 
 import type { GenTableInfo, GenColumnInfo } from "../services/gen";
@@ -22,11 +22,16 @@ export function renderService(table: GenTableInfo, columns: GenColumnInfo[]): st
     `  ${c.fieldName}?: ${mapTsType(c.typescriptType)};`
   ).join("\n");
 
-  const insertCols = insertableCols.map(c => c.columnName).join(", ");
-  const insertPlaceholders = insertableCols.map((_, i) => `$${i + 1}`).join(", ");
-  const insertValues = insertableCols.map(c => c.fieldName).join(", ");
+  const modelFields = columns.map(c =>
+    `  ${c.columnName}: column.${mapColumnType(c.typescriptType)}({${c.isPrimary ? " primary: true," : ""}${c.isNullable ? " nullable: true," : ""}}),`
+  ).join("\n");
 
-  return `import type { SqlExecutor } from "@ventostack/database";
+  return `import { defineModel, column } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+
+const ${table.className}Model = defineModel('${table.tableName}', {
+${modelFields}
+}, { softDelete: true, timestamps: true });
 
 export interface Create${table.className}Params {
 ${createParams}
@@ -62,64 +67,54 @@ export interface ${table.className}Service {
   list(params: ${table.className}ListParams): Promise<PaginatedResult<${table.className}ListItem>>;
 }
 
-export function create${table.className}Service(deps: { executor: SqlExecutor }): ${table.className}Service {
-  const { executor } = deps;
+export function create${table.className}Service(deps: { db: Database }): ${table.className}Service {
+  const { db } = deps;
 
   return {
     async create(params) {
       const id = crypto.randomUUID();
-      await executor(
-        \`INSERT INTO ${table.tableName} (id, ${insertCols}, created_at, updated_at) VALUES (\${[...Array(${insertableCols.length + 1})].map((_, i) => \`$\${i + 1}\`).join(", ")}, NOW(), NOW())\`,
-        [id, ${insertValues}],
-      );
+      await db.query(${table.className}Model).insert({
+        id,
+${insertableCols.map(c => `        ${c.fieldName}: params.${c.fieldName}${c.isNullable ? " ?? null" : ""},`).join("\n")}
+      });
       return { id };
     },
 
     async update(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
-
-${updatableCols.map(c => `      if (params.${c.fieldName} !== undefined) { fields.push(\`${c.columnName} = $\${idx++}\`); values.push(params.${c.fieldName}); }`).join("\n")}
-
-      if (fields.length === 0) return;
-      fields.push("updated_at = NOW()");
-      values.push(id);
-      await executor(\`UPDATE ${table.tableName} SET \${fields.join(", ")} WHERE id = $\${idx}\`, values);
+      const data: Record<string, unknown> = {};
+${updatableCols.map(c => `      if (params.${c.fieldName} !== undefined) data.${c.columnName} = params.${c.fieldName};`).join("\n")}
+      if (Object.keys(data).length === 0) return;
+      await db.query(${table.className}Model).where("id", "=", id).update(data);
     },
 
     async delete(id) {
-      await executor(\`DELETE FROM ${table.tableName} WHERE id = $1\`, [id]);
+      await db.query(${table.className}Model).where("id", "=", id).delete();
     },
 
     async getById(id) {
-      const rows = await executor(\`SELECT * FROM ${table.tableName} WHERE id = $1\`, [id]);
-      const items = rows as Array<Record<string, unknown>>;
-      if (items.length === 0) return null;
-      return items[0] as unknown as ${table.className}ListItem;
+      return db.query(${table.className}Model)
+        .where("id", "=", id)
+        .get() as Promise<${table.className}ListItem | null>;
     },
 
     async list(params) {
       const { page = 1, pageSize = 10${queryableCols.length > 0 ? ", " + queryableCols.map(c => c.fieldName).join(", ") : ""} } = params;
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
 
-${queryableCols.map(c => `      if (${c.fieldName} !== undefined) { conditions.push(\`${c.columnName} = $\${idx++}\`); values.push(${c.fieldName}); }`).join("\n")}
+      let query = db.query(${table.className}Model);
+${queryableCols.map(c => `      if (${c.fieldName} !== undefined) query = query.where("${c.columnName}", "=", ${c.fieldName});`).join("\n")}
 
-      const where = conditions.length > 0 ? \`WHERE \${conditions.join(" AND ")}\` : "";
-      const countRows = await executor(\`SELECT COUNT(*) as total FROM ${table.tableName} \${where}\`, values);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
-
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        \`SELECT * FROM ${table.tableName} \${where} ORDER BY created_at DESC LIMIT $\${idx++} OFFSET $\${idx++}\`,
-        [...values, pageSize, offset],
-      );
+      const total = await query.count();
+      const items = await query
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list() as ${table.className}ListItem[];
 
       return {
-        items: rows as unknown as ${table.className}ListItem[],
-        total, page, pageSize,
+        items,
+        total,
+        page,
+        pageSize,
         totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
       };
     },
@@ -133,9 +128,21 @@ function mapTsType(pgType: string): string {
     varchar: "string", text: "string", char: "string",
     int: "number", integer: "number", smallint: "number", bigint: "number", serial: "number",
     boolean: "bool", bool: "boolean",
-    timestamp: "string", timestamptz: "string", date: "string",
+    timestamp: "Date", timestamptz: "Date", date: "Date",
     json: "Record<string, unknown>", jsonb: "Record<string, unknown>",
     float: "number", double: "number", numeric: "number", decimal: "number",
   };
   return map[pgType.toLowerCase()] ?? "unknown";
+}
+
+function mapColumnType(pgType: string): string {
+  const map: Record<string, string> = {
+    varchar: "varchar", text: "text", char: "char",
+    int: "int", integer: "int", smallint: "int", bigint: "bigint", serial: "int",
+    boolean: "boolean", bool: "boolean",
+    timestamp: "timestamp", timestamptz: "timestamp", date: "timestamp",
+    json: "json", jsonb: "json",
+    float: "float", double: "double", numeric: "numeric", decimal: "decimal",
+  };
+  return map[pgType.toLowerCase()] ?? "varchar";
 }

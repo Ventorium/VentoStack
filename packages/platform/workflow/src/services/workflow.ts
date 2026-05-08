@@ -2,7 +2,8 @@
  * @ventostack/workflow - 工作流服务
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+import { WorkflowDefModel, WorkflowNodeModel, WorkflowInstanceModel, WorkflowTaskModel } from "../models";
 
 /** 定义状态 */
 export const DefStatus = {
@@ -130,321 +131,340 @@ export interface WorkflowService {
 }
 
 export interface WorkflowServiceDeps {
-  executor: SqlExecutor;
+  db: Database;
 }
 
 export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowService {
-  const { executor } = deps;
+  const { db } = deps;
+
+  async function getNodesByDefinition(definitionId: string): Promise<WorkflowNode[]> {
+    const rows = await db.query(WorkflowNodeModel)
+      .where("definition_id", "=", definitionId)
+      .select("id", "definition_id", "name", "type", "assignee_type", "assignee_id", "sort", "config")
+      .orderBy("sort", "asc")
+      .list();
+
+    return rows.map((row) => ({
+      id: row.id,
+      definitionId: row.definition_id,
+      name: row.name,
+      type: row.type,
+      assigneeType: row.assignee_type ?? null,
+      assigneeId: row.assignee_id ?? null,
+      sort: row.sort,
+      config: (row.config as Record<string, unknown>) ?? null,
+    }));
+  }
+
+  async function advanceInstance(instanceId: string, currentNodeId: string) {
+    // Get instance
+    const instance = await db.query(WorkflowInstanceModel)
+      .where("id", "=", instanceId)
+      .select("id", "definition_id", "status")
+      .get();
+    if (!instance) return;
+
+    // Get all nodes for this definition
+    const nodes = await getNodesByDefinition(instance.definition_id);
+
+    // Find current node index
+    const currentIdx = nodes.findIndex(n => n.id === currentNodeId);
+    if (currentIdx === -1) return;
+
+    const nextNode = nodes[currentIdx + 1];
+
+    if (!nextNode || nextNode.type === NodeType.END) {
+      // Workflow completed
+      await db.query(WorkflowInstanceModel).where("id", "=", instanceId).update({
+        status: InstanceStatus.COMPLETED,
+        current_node_id: nextNode?.id ?? null,
+      });
+      return;
+    }
+
+    // Update current node
+    await db.query(WorkflowInstanceModel).where("id", "=", instanceId).update({
+      current_node_id: nextNode.id,
+    });
+
+    // Create task for next approve node
+    if (nextNode.type === NodeType.APPROVE) {
+      await db.query(WorkflowTaskModel).insert({
+        id: crypto.randomUUID(),
+        instance_id: instanceId,
+        node_id: nextNode.id,
+        assignee_id: nextNode.assigneeId ?? "",
+        status: TaskStatus.PENDING,
+      });
+    }
+
+    // For notify nodes, just advance again
+    if (nextNode.type === NodeType.NOTIFY) {
+      await advanceInstance(instanceId, nextNode.id);
+    }
+  }
 
   return {
     async createDefinition(params) {
       const id = crypto.randomUUID();
-      await executor(
-        `INSERT INTO sys_workflow_definition (id, name, code, version, description, status, created_at, updated_at)
-         VALUES ($1, $2, $3, 1, $4, ${DefStatus.ACTIVE}, NOW(), NOW())`,
-        [id, params.name, params.code, params.description ?? null],
-      );
+      await db.query(WorkflowDefModel).insert({
+        id,
+        name: params.name,
+        code: params.code,
+        version: 1,
+        description: params.description ?? null,
+        status: DefStatus.ACTIVE,
+      });
       return { id };
     },
 
     async updateDefinition(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.name !== undefined) updates.name = params.name;
+      if (params.description !== undefined) updates.description = params.description;
+      if (params.status !== undefined) updates.status = params.status;
 
-      if (params.name !== undefined) { fields.push(`name = $${idx++}`); values.push(params.name); }
-      if (params.description !== undefined) { fields.push(`description = $${idx++}`); values.push(params.description); }
-      if (params.status !== undefined) { fields.push(`status = $${idx++}`); values.push(params.status); }
-
-      if (fields.length === 0) return;
-      fields.push("updated_at = NOW()");
-      values.push(id);
-      await executor(`UPDATE sys_workflow_definition SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+      if (Object.keys(updates).length === 0) return;
+      await db.query(WorkflowDefModel).where("id", "=", id).update(updates);
     },
 
     async deleteDefinition(id) {
-      // Delete nodes, instances, and tasks
-      await executor(`DELETE FROM sys_workflow_task WHERE instance_id IN (SELECT id FROM sys_workflow_instance WHERE definition_id = $1)`, [id]);
-      await executor(`DELETE FROM sys_workflow_instance WHERE definition_id = $1`, [id]);
-      await executor(`DELETE FROM sys_workflow_node WHERE definition_id = $1`, [id]);
-      await executor(`DELETE FROM sys_workflow_definition WHERE id = $1`, [id]);
+      // Cascade delete: tasks → instances → nodes → definition
+      const instances = await db.query(WorkflowInstanceModel)
+        .where("definition_id", "=", id)
+        .select("id")
+        .list();
+      if (instances.length > 0) {
+        const instanceIds = instances.map(i => i.id);
+        await db.query(WorkflowTaskModel).where("instance_id", "IN", instanceIds).hardDelete();
+        await db.query(WorkflowInstanceModel).where("definition_id", "=", id).hardDelete();
+      }
+      await db.query(WorkflowNodeModel).where("definition_id", "=", id).hardDelete();
+      await db.query(WorkflowDefModel).where("id", "=", id).hardDelete();
     },
 
     async getDefinition(id) {
-      const rows = await executor(`SELECT * FROM sys_workflow_definition WHERE id = $1`, [id]);
-      const defs = rows as Array<Record<string, unknown>>;
-      if (defs.length === 0) return null;
-      return rowToDefinition(defs[0]!);
+      const row = await db.query(WorkflowDefModel)
+        .where("id", "=", id)
+        .select("id", "name", "code", "version", "description", "status")
+        .get();
+      if (!row) return null;
+      return {
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        version: row.version,
+        description: row.description ?? null,
+        status: row.status,
+      };
     },
 
     async listDefinitions(params) {
       const { status, page = 1, pageSize = 10 } = params ?? {};
 
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      let query = db.query(WorkflowDefModel);
+      if (status !== undefined) query = query.where("status", "=", status);
 
-      if (status !== undefined) { conditions.push(`status = $${idx++}`); values.push(status); }
+      const total = await query.count();
 
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const rows = await query
+        .select("id", "name", "code", "version", "description", "status")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      const countRows = await executor(`SELECT COUNT(*) as total FROM sys_workflow_definition ${where}`, values);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
+      const items = rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        version: row.version,
+        description: row.description ?? null,
+        status: row.status,
+      }));
 
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        `SELECT * FROM sys_workflow_definition ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...values, pageSize, offset],
-      );
-
-      const items = (rows as Array<Record<string, unknown>>).map(rowToDefinition);
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
     },
 
     async setNodes(definitionId, nodes) {
       // Delete existing nodes
-      await executor(`DELETE FROM sys_workflow_node WHERE definition_id = $1`, [definitionId]);
+      await db.query(WorkflowNodeModel).where("definition_id", "=", definitionId).hardDelete();
 
       // Insert new nodes
       for (let i = 0; i < nodes.length; i++) {
         const node = nodes[i]!;
-        const id = crypto.randomUUID();
-        await executor(
-          `INSERT INTO sys_workflow_node (id, definition_id, name, type, assignee_type, assignee_id, sort, config, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-          [id, definitionId, node.name, node.type, node.assigneeType ?? null, node.assigneeId ?? null, node.sort ?? i, node.config ? JSON.stringify(node.config) : null],
-        );
+        await db.query(WorkflowNodeModel).insert({
+          id: crypto.randomUUID(),
+          definition_id: definitionId,
+          name: node.name,
+          type: node.type,
+          assignee_type: node.assigneeType ?? null,
+          assignee_id: node.assigneeId ?? null,
+          sort: node.sort ?? i,
+          config: node.config ? JSON.stringify(node.config) : null,
+        });
       }
     },
 
     async getNodes(definitionId) {
-      const rows = await executor(
-        `SELECT * FROM sys_workflow_node WHERE definition_id = $1 ORDER BY sort`,
-        [definitionId],
-      );
-      return (rows as Array<Record<string, unknown>>).map(rowToNode);
+      return getNodesByDefinition(definitionId);
     },
 
     async startInstance(params) {
       const instanceId = crypto.randomUUID();
 
       // Get nodes to find start node
-      const nodes = await this.getNodes(params.definitionId);
-      if (nodes.length === 0) throw new Error("No nodes defined");
+      const nodes = await getNodesByDefinition(params.definitionId);
+      if (nodes.length === 0) throw new Error("未定义节点");
 
       const startNode = nodes.find(n => n.type === NodeType.START);
-      if (!startNode) throw new Error("No start node found");
+      if (!startNode) throw new Error("未找到开始节点");
 
       // Find next node after start
       const startIdx = nodes.indexOf(startNode);
       const nextNode = nodes[startIdx + 1];
 
-      await executor(
-        `INSERT INTO sys_workflow_instance (id, definition_id, business_type, business_id, initiator_id, current_node_id, status, variables, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, ${InstanceStatus.RUNNING}, $7, NOW(), NOW())`,
-        [instanceId, params.definitionId, params.businessType ?? null, params.businessId ?? null, params.initiatorId, nextNode?.id ?? null, params.variables ? JSON.stringify(params.variables) : null],
-      );
+      await db.query(WorkflowInstanceModel).insert({
+        id: instanceId,
+        definition_id: params.definitionId,
+        business_type: params.businessType ?? null,
+        business_id: params.businessId ?? null,
+        initiator_id: params.initiatorId,
+        current_node_id: nextNode?.id ?? null,
+        status: InstanceStatus.RUNNING,
+        variables: params.variables ? JSON.stringify(params.variables) : null,
+      });
 
       // Create first task if there's an approve node
       if (nextNode && nextNode.type === NodeType.APPROVE) {
-        const taskId = crypto.randomUUID();
-        await executor(
-          `INSERT INTO sys_workflow_task (id, instance_id, node_id, assignee_id, status, created_at)
-           VALUES ($1, $2, $3, $4, ${TaskStatus.PENDING}, NOW())`,
-          [taskId, instanceId, nextNode.id, nextNode.assigneeId ?? ""],
-        );
+        await db.query(WorkflowTaskModel).insert({
+          id: crypto.randomUUID(),
+          instance_id: instanceId,
+          node_id: nextNode.id,
+          assignee_id: nextNode.assigneeId ?? "",
+          status: TaskStatus.PENDING,
+        });
       }
 
       return { instanceId };
     },
 
     async approveTask(taskId, userId, comment) {
-      // Get task
-      const taskRows = await executor(`SELECT * FROM sys_workflow_task WHERE id = $1`, [taskId]);
-      const tasks = taskRows as Array<Record<string, unknown>>;
-      if (tasks.length === 0) throw new Error("Task not found");
-      const task = tasks[0]!;
+      const task = await db.query(WorkflowTaskModel)
+        .where("id", "=", taskId)
+        .select("id", "instance_id", "node_id", "status")
+        .get();
+      if (!task) throw new Error("任务不存在");
 
       if (task.status !== TaskStatus.PENDING) {
-        throw new Error("Task already processed");
+        throw new Error("任务已处理");
       }
 
-      // Update task
-      await executor(
-        `UPDATE sys_workflow_task SET status = ${TaskStatus.APPROVED}, action = 'approve', comment = $1, acted_at = NOW() WHERE id = $2`,
-        [comment ?? null, taskId],
-      );
+      await db.query(WorkflowTaskModel).where("id", "=", taskId).update({
+        status: TaskStatus.APPROVED,
+        action: "approve",
+        comment: comment ?? null,
+        acted_at: new Date(),
+      });
 
       // Move to next node
-      await advanceInstance(executor, task.instance_id as string, task.node_id as string);
+      await advanceInstance(task.instance_id, task.node_id);
     },
 
     async rejectTask(taskId, userId, comment) {
-      const taskRows = await executor(`SELECT * FROM sys_workflow_task WHERE id = $1`, [taskId]);
-      const tasks = taskRows as Array<Record<string, unknown>>;
-      if (tasks.length === 0) throw new Error("Task not found");
-      const task = tasks[0]!;
+      const task = await db.query(WorkflowTaskModel)
+        .where("id", "=", taskId)
+        .select("id", "instance_id", "status")
+        .get();
+      if (!task) throw new Error("任务不存在");
 
       if (task.status !== TaskStatus.PENDING) {
-        throw new Error("Task already processed");
+        throw new Error("任务已处理");
       }
 
-      // Update task
-      await executor(
-        `UPDATE sys_workflow_task SET status = ${TaskStatus.REJECTED}, action = 'reject', comment = $1, acted_at = NOW() WHERE id = $2`,
-        [comment ?? null, taskId],
-      );
+      await db.query(WorkflowTaskModel).where("id", "=", taskId).update({
+        status: TaskStatus.REJECTED,
+        action: "reject",
+        comment: comment ?? null,
+        acted_at: new Date(),
+      });
 
       // Mark instance as rejected
-      await executor(
-        `UPDATE sys_workflow_instance SET status = ${InstanceStatus.REJECTED}, updated_at = NOW() WHERE id = $1`,
-        [task.instance_id],
-      );
+      await db.query(WorkflowInstanceModel).where("id", "=", task.instance_id).update({
+        status: InstanceStatus.REJECTED,
+      });
     },
 
     async getMyTasks(userId, params) {
       const { status, page = 1, pageSize = 10 } = params ?? {};
 
-      const conditions = [`assignee_id = $1`];
-      const values: unknown[] = [userId];
-      let idx = 2;
+      let query = db.query(WorkflowTaskModel).where("assignee_id", "=", userId);
+      if (status !== undefined) query = query.where("status", "=", status);
 
-      if (status !== undefined) { conditions.push(`status = $${idx++}`); values.push(status); }
+      const total = await query.count();
 
-      const where = `WHERE ${conditions.join(" AND ")}`;
+      const rows = await query
+        .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "acted_at", "created_at")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      const countRows = await executor(`SELECT COUNT(*) as total FROM sys_workflow_task ${where}`, values);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
+      const items = rows.map((row) => ({
+        id: row.id,
+        instanceId: row.instance_id,
+        nodeId: row.node_id,
+        assigneeId: row.assignee_id,
+        action: row.action ?? null,
+        comment: row.comment ?? null,
+        status: row.status,
+        actedAt: row.acted_at ? row.acted_at.toISOString() : null,
+        createdAt: row.created_at.toISOString(),
+      }));
 
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        `SELECT * FROM sys_workflow_task ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...values, pageSize, offset],
-      );
-
-      const items = (rows as Array<Record<string, unknown>>).map(rowToTask);
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
     },
 
     async getInstanceDetail(instanceId) {
-      const instanceRows = await executor(`SELECT * FROM sys_workflow_instance WHERE id = $1`, [instanceId]);
-      const instances = instanceRows as Array<Record<string, unknown>>;
-      if (instances.length === 0) return null;
+      const inst = await db.query(WorkflowInstanceModel)
+        .where("id", "=", instanceId)
+        .select("id", "definition_id", "business_type", "business_id", "initiator_id", "current_node_id", "status", "variables", "created_at")
+        .get();
+      if (!inst) return null;
 
-      const instance = rowToInstance(instances[0]!);
-      const nodes = await this.getNodes(instance.definitionId);
+      const instance: WorkflowInstance = {
+        id: inst.id,
+        definitionId: inst.definition_id,
+        businessType: inst.business_type ?? null,
+        businessId: inst.business_id ?? null,
+        initiatorId: inst.initiator_id,
+        currentNodeId: inst.current_node_id ?? null,
+        status: inst.status,
+        variables: (inst.variables as Record<string, unknown>) ?? null,
+        createdAt: inst.created_at.toISOString(),
+      };
 
-      const taskRows = await executor(
-        `SELECT * FROM sys_workflow_task WHERE instance_id = $1 ORDER BY created_at`,
-        [instanceId],
-      );
-      const tasks = (taskRows as Array<Record<string, unknown>>).map(rowToTask);
+      const nodes = await getNodesByDefinition(instance.definitionId);
+
+      const taskRows = await db.query(WorkflowTaskModel)
+        .where("instance_id", "=", instanceId)
+        .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "acted_at", "created_at")
+        .orderBy("created_at", "asc")
+        .list();
+
+      const tasks = taskRows.map((row) => ({
+        id: row.id,
+        instanceId: row.instance_id,
+        nodeId: row.node_id,
+        assigneeId: row.assignee_id,
+        action: row.action ?? null,
+        comment: row.comment ?? null,
+        status: row.status,
+        actedAt: row.acted_at ? row.acted_at.toISOString() : null,
+        createdAt: row.created_at.toISOString(),
+      }));
 
       return { instance, nodes, tasks };
     },
-  };
-}
-
-/** Advance to next node after approval */
-async function advanceInstance(executor: SqlExecutor, instanceId: string, currentNodeId: string) {
-  // Get instance
-  const instanceRows = await executor(`SELECT * FROM sys_workflow_instance WHERE id = $1`, [instanceId]);
-  const instances = instanceRows as Array<Record<string, unknown>>;
-  if (instances.length === 0) return;
-  const instance = instances[0]!;
-
-  // Get all nodes for this definition
-  const nodeRows = await executor(
-    `SELECT * FROM sys_workflow_node WHERE definition_id = $1 ORDER BY sort`,
-    [instance.definition_id],
-  );
-  const nodes = nodeRows as Array<Record<string, unknown>>;
-
-  // Find current node index
-  const currentIdx = nodes.findIndex(n => n.id === currentNodeId);
-  if (currentIdx === -1) return;
-
-  const nextNode = nodes[currentIdx + 1];
-
-  if (!nextNode || nextNode.type === NodeType.END) {
-    // Workflow completed
-    await executor(
-      `UPDATE sys_workflow_instance SET status = ${InstanceStatus.COMPLETED}, current_node_id = $1, updated_at = NOW() WHERE id = $2`,
-      [nextNode?.id ?? null, instanceId],
-    );
-    return;
-  }
-
-  // Update current node
-  await executor(
-    `UPDATE sys_workflow_instance SET current_node_id = $1, updated_at = NOW() WHERE id = $2`,
-    [nextNode.id, instanceId],
-  );
-
-  // Create task for next approve node
-  if (nextNode.type === NodeType.APPROVE) {
-    const taskId = crypto.randomUUID();
-    await executor(
-      `INSERT INTO sys_workflow_task (id, instance_id, node_id, assignee_id, status, created_at)
-       VALUES ($1, $2, $3, $4, ${TaskStatus.PENDING}, NOW())`,
-      [taskId, instanceId, nextNode.id, nextNode.assignee_id ?? ""],
-    );
-  }
-
-  // For notify nodes, just advance again
-  if (nextNode.type === NodeType.NOTIFY) {
-    await advanceInstance(executor, instanceId, nextNode.id as string);
-  }
-}
-
-function rowToDefinition(row: Record<string, unknown>): WorkflowDefinition {
-  return {
-    id: row.id as string,
-    name: row.name as string,
-    code: row.code as string,
-    version: row.version as number,
-    description: (row.description as string) ?? null,
-    status: row.status as number,
-  };
-}
-
-function rowToNode(row: Record<string, unknown>): WorkflowNode {
-  return {
-    id: row.id as string,
-    definitionId: row.definition_id as string,
-    name: row.name as string,
-    type: row.type as string,
-    assigneeType: (row.assignee_type as string) ?? null,
-    assigneeId: (row.assignee_id as string) ?? null,
-    sort: row.sort as number,
-    config: (row.config as Record<string, unknown>) ?? null,
-  };
-}
-
-function rowToInstance(row: Record<string, unknown>): WorkflowInstance {
-  return {
-    id: row.id as string,
-    definitionId: row.definition_id as string,
-    businessType: (row.business_type as string) ?? null,
-    businessId: (row.business_id as string) ?? null,
-    initiatorId: row.initiator_id as string,
-    currentNodeId: (row.current_node_id as string) ?? null,
-    status: row.status as number,
-    variables: (row.variables as Record<string, unknown>) ?? null,
-    createdAt: row.created_at as string,
-  };
-}
-
-function rowToTask(row: Record<string, unknown>): WorkflowTask {
-  return {
-    id: row.id as string,
-    instanceId: row.instance_id as string,
-    nodeId: row.node_id as string,
-    assigneeId: row.assignee_id as string,
-    action: (row.action as string) ?? null,
-    comment: (row.comment as string) ?? null,
-    status: row.status as number,
-    actedAt: (row.acted_at as string) ?? null,
-    createdAt: row.created_at as string,
   };
 }

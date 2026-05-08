@@ -1,4 +1,5 @@
 ---
+order: 8
 title: 系统参数
 description: '系统参数模块提供运行时配置的 CRUD 管理，支持缓存加速，与框架层配置 (app.yaml) 互补。'
 ---

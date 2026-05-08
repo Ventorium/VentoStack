@@ -1,4 +1,5 @@
 ---
+order: 5
 title: 中间件
 description: VentoStack 中间件机制，使用洋葱模型组合请求处理管道
 ---
@@ -161,17 +162,33 @@ const bodyLimit = (maxBytes: number): Middleware => async (ctx, next) => {
 app.use(bodyLimit(1024 * 1024)); // 1MB
 ```
 
+### 静态文件服务 — createStaticMiddleware
+
+提供安全的本地文件服务，内置路径遍历防护：
+
+```typescript
+import { createStaticMiddleware } from "@ventostack/core";
+
+app.use(createStaticMiddleware({
+  root: "/data/uploads",
+  prefix: "/uploads",
+}));
+```
+
+支持选项：`root`（文件根目录）、`prefix`（URL 前缀）、`allowedExtensions`（扩展名白名单）。
+
+
 ## 其他内置中间件
 
 `@ventostack/core` 还提供了以下中间件，详见各自文档页面：
 
-- **限流** — `rateLimit`（见 [限流](/docs/core/rate-limit)）
-- **超时** — `timeout`（见 [超时](/docs/core/timeout)）
-- **CSRF 防护** — `csrf`（见 [CSRF](/docs/core/csrf)）
-- **SSRF 防护** — `createSSRFGuard`（见 [SSRF](/docs/core/ssrf)）
-- **上传校验** — `createUploadValidator`（见 [上传](/docs/core/upload)）
-- **HMAC 签名校验** — `createHMACSigner`（见 [HMAC](/docs/core/hmac)）
-- **XSS 防护** — `xssProtection`（见 [XSS](/docs/core/xss)）
-- **IP 过滤** — `ipFilter`（见 [IP 过滤](/docs/core/ip-filter)）
-- **HTTPS 强制** — `httpsEnforce`（见 [HTTPS](/docs/core/https)）
-- **多租户** — `createTenantMiddleware`（见 [多租户](/docs/core/tenant)）
+- **限流** — `rateLimit`（见 [限流](/framework/core/rate-limit)）
+- **超时** — `timeout`（见 [超时](/framework/core/timeout)）
+- **CSRF 防护** — `csrf`（见 [CSRF](/framework/core/csrf)）
+- **SSRF 防护** — `createSSRFGuard`（见 [SSRF](/framework/core/ssrf)）
+- **上传校验** — `createUploadValidator`（见 [上传](/framework/core/upload)）
+- **HMAC 签名校验** — `createHMACSigner`（见 [HMAC](/framework/core/hmac)）
+- **XSS 防护** — `xssProtection`（见 [XSS](/framework/core/xss)）
+- **IP 过滤** — `ipFilter`（见 [IP 过滤](/framework/core/ip-filter)）
+- **HTTPS 强制** — `httpsEnforce`（见 [HTTPS](/framework/core/https)）
+- **多租户** — `createTenantMiddleware`（见 [多租户](/framework/core/tenant)）

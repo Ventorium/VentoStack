@@ -2,7 +2,7 @@
  * @ventostack/scheduler - 模块聚合
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Scheduler } from "@ventostack/events";
 import type { Router } from "@ventostack/core";
@@ -20,7 +20,7 @@ export interface SchedulerModule {
 }
 
 export interface SchedulerModuleDeps {
-  executor: SqlExecutor;
+  db: Database;
   scheduler: Scheduler;
   handlers: JobHandlerMap;
   jwt: JWTManager;
@@ -29,9 +29,9 @@ export interface SchedulerModuleDeps {
 }
 
 export function createSchedulerModule(deps: SchedulerModuleDeps): SchedulerModule {
-  const { executor, scheduler, handlers, jwt, jwtSecret, rbac } = deps;
+  const { db, scheduler, handlers, jwt, jwtSecret, rbac } = deps;
 
-  const schedulerService = createSchedulerService({ executor, scheduler, handlers });
+  const schedulerService = createSchedulerService({ db, scheduler, handlers });
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
 
   const perm = (resource: string, action: string) => {
@@ -39,7 +39,7 @@ export function createSchedulerModule(deps: SchedulerModuleDeps): SchedulerModul
       const user = ctx.user as { roles: string[] } | undefined;
       if (!user) {
         return new Response(
-          JSON.stringify({ code: 401, message: "Not authenticated" }),
+          JSON.stringify({ code: 401, message: "未登录" }),
           { status: 401, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -47,7 +47,7 @@ export function createSchedulerModule(deps: SchedulerModuleDeps): SchedulerModul
         const allowed = user.roles.some((r: string) => rbac.hasPermission(r, resource, action));
         if (!allowed) {
           return new Response(
-            JSON.stringify({ code: 403, message: `No permission: ${resource}:${action}` }),
+            JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),
             { status: 403, headers: { "Content-Type": "application/json" } },
           );
         }

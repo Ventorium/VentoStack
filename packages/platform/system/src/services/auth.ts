@@ -10,10 +10,13 @@ import type { PasswordHasher } from "@ventostack/auth";
 import type { TOTPManager } from "@ventostack/auth";
 import type { AuthSessionManager } from "@ventostack/auth";
 import type { AuditStore } from "@ventostack/observability";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { EventBus } from "@ventostack/events";
 import type { ConfigService } from "./config";
 import { validatePassword } from "./password-policy";
+import { UserModel } from "../models/user";
+import { UserRoleModel, RoleModel } from "../models/role";
+import { LoginLogModel } from "../models/log";
 
 /** 登录结果 */
 export interface LoginResult {
@@ -92,12 +95,19 @@ const MFA_TOKEN_TTL = 300;
 const RESET_TOKEN_TTL = 1800;
 
 /** 查询用户角色代码列表 */
-async function getUserRoleCodes(executor: SqlExecutor, userId: string): Promise<string[]> {
-  const rows = await executor(
-    `SELECT r.code FROM sys_user_role ur JOIN sys_role r ON ur.role_id = r.id WHERE ur.user_id = $1`,
-    [userId],
-  );
-  return (rows as Array<{ code: string }>).map(r => r.code);
+async function getUserRoleCodes(db: Database, userId: string): Promise<string[]> {
+  const userRoles = await db.query(UserRoleModel)
+    .where("user_id", "=", userId)
+    .select("role_id")
+    .list();
+  if (userRoles.length === 0) return [];
+  const roleIds = userRoles.map(r => r.role_id);
+  const roles = await db.query(RoleModel)
+    .where("id", "IN", roleIds)
+    .where("status", "=", 1)
+    .select("code")
+    .list();
+  return roles.map(r => r.code);
 }
 
 /**
@@ -106,7 +116,7 @@ async function getUserRoleCodes(executor: SqlExecutor, userId: string): Promise<
  * @returns 认证服务实例
  */
 export function createAuthService(deps: {
-  executor: SqlExecutor;
+  db: Database;
   cache: Cache;
   jwt: JWTManager;
   passwordHasher: PasswordHasher;
@@ -118,7 +128,7 @@ export function createAuthService(deps: {
   configService: ConfigService;
 }): AuthService {
   const {
-    executor,
+    db,
     cache,
     jwt,
     passwordHasher,
@@ -154,11 +164,19 @@ export function createAuthService(deps: {
   }) {
     const { browser, os } = parseUA(params.userAgent);
     const method = params.loginMethod ?? "password";
-    await executor(
-      `INSERT INTO sys_login_log (id, user_id, username, ip, browser, os, status, message, login_method, login_at, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
-      [crypto.randomUUID(), params.userId ?? null, params.username, params.ip, browser, os, params.status, params.message, method],
-    );
+    await db.query(LoginLogModel).insert({
+      id: crypto.randomUUID(),
+      user_id: params.userId ?? null,
+      username: params.username,
+      ip: params.ip,
+      browser,
+      os,
+      status: params.status,
+      message: params.message,
+      login_method: method,
+      login_at: new Date(),
+      created_at: new Date(),
+    });
   }
 
   return {
@@ -181,7 +199,7 @@ export function createAuthService(deps: {
           metadata: { ip, reason: "account_locked" },
         });
         await recordLoginLog({ username, ip, userAgent, status: 0, message: "账号已锁定" });
-        throw new Error("Account locked due to too many failed attempts");
+        throw new Error("账号登录失败次数过多，已锁定");
       }
 
       // 3. 检查 IP 速率限制
@@ -196,7 +214,7 @@ export function createAuthService(deps: {
           metadata: { ip, reason: "ip_rate_limited" },
         });
         await recordLoginLog({ username, ip, userAgent, status: 0, message: "请求过于频繁" });
-        throw new Error("Too many requests from this IP");
+        throw new Error("请求过于频繁");
       }
 
       // 递增 IP 计数
@@ -204,24 +222,13 @@ export function createAuthService(deps: {
       await cache.set(ipKey, currentIpCount, { ttl: IP_RATE_WINDOW });
 
       // 3. 查询用户
-      const rows = await executor(
-        "SELECT id, username, password_hash, status, mfa_enabled, mfa_secret, blacklisted, locked_until, login_attempts, password_changed_at FROM sys_user WHERE username = $1 AND deleted_at IS NULL",
-        [username],
-      );
-      const users = rows as Array<{
-        id: string;
-        username: string;
-        password_hash: string;
-        status: number;
-        mfa_enabled: boolean;
-        mfa_secret: string | null;
-        blacklisted: boolean;
-        locked_until: string | null;
-        login_attempts: number | null;
-        password_changed_at: string | null;
-      }>;
+      const user = await db.query(UserModel)
+        .where("username", "=", username)
+        .select("id", "username", "password_hash", "status", "mfa_enabled", "mfa_secret",
+                "blacklisted", "locked_until", "login_attempts", "password_changed_at")
+        .get();
 
-      if (users.length === 0) {
+      if (!user) {
         // 用户不存在，仍然递增失败计数防止枚举探测
         await cache.set(failKey, (failCount ?? 0) + 1, { ttl: 900 });
         await auditStore.append({
@@ -232,10 +239,8 @@ export function createAuthService(deps: {
           metadata: { ip, reason: "user_not_found" },
         });
         await recordLoginLog({ username, ip, userAgent, status: 0, message: "用户不存在" });
-        throw new Error("Invalid credentials");
+        throw new Error("用户名或密码错误");
       }
-
-      const user = users[0]!;
 
       // 4. 检查用户状态
       if (user.status !== 1) {
@@ -247,7 +252,7 @@ export function createAuthService(deps: {
           metadata: { ip, userId: user.id, reason: "account_disabled" },
         });
         await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "账号已禁用" });
-        throw new Error("Account is disabled");
+        throw new Error("账号已禁用");
       }
 
       // 5. 检查黑名单
@@ -260,11 +265,11 @@ export function createAuthService(deps: {
           metadata: { ip, userId: user.id, reason: "account_blacklisted" },
         });
         await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "账号已被拉黑" });
-        throw new Error("Account is blacklisted");
+        throw new Error("账号已被拉黑");
       }
 
       // 6. 检查 DB-based 锁定
-      if (user.locked_until && new Date(user.locked_until as string) > new Date()) {
+      if (user.locked_until && new Date(user.locked_until) > new Date()) {
         await auditStore.append({
           actor: username,
           action: "login.locked_db",
@@ -273,12 +278,12 @@ export function createAuthService(deps: {
           metadata: { ip, userId: user.id, reason: "account_locked_db", lockedUntil: user.locked_until },
         });
         await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "账号已被锁定" });
-        throw new Error("Account is locked");
+        throw new Error("账号已被锁定");
       }
 
       // 7. 清除过期锁定
-      if (user.locked_until && new Date(user.locked_until as string) <= new Date()) {
-        await executor(`UPDATE sys_user SET locked_until = NULL, login_attempts = 0 WHERE id = $1`, [user.id]);
+      if (user.locked_until && new Date(user.locked_until) <= new Date()) {
+        await db.query(UserModel).where("id", "=", user.id).update({ locked_until: null, login_attempts: 0 });
       }
 
       // 8. 校验密码
@@ -287,7 +292,7 @@ export function createAuthService(deps: {
         // 9. 密码错误：递增失败计数（缓存 + DB）
         const newFailCount = (failCount ?? 0) + 1;
         await cache.set(failKey, newFailCount, { ttl: lockMinutes * 60 });
-        await executor(`UPDATE sys_user SET login_attempts = COALESCE(login_attempts, 0) + 1 WHERE id = $1`, [user.id]);
+        await db.raw(`UPDATE sys_user SET login_attempts = COALESCE(login_attempts, 0) + 1 WHERE id = $1`, [user.id]);
 
         await auditStore.append({
           actor: username,
@@ -298,17 +303,17 @@ export function createAuthService(deps: {
         });
         await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "密码错误" });
 
-        throw new Error("Invalid credentials");
+        throw new Error("用户名或密码错误");
       }
 
       // 10. 登录成功：清除失败计数（缓存 + DB）
       await cache.del(failKey);
-      await executor(`UPDATE sys_user SET login_attempts = 0 WHERE id = $1`, [user.id]);
+      await db.query(UserModel).where("id", "=", user.id).update({ login_attempts: 0 });
 
       // 11. 检查密码是否过期
       const expireDays = Number(await configService.getValue('sys_password_expire_days')) ?? 30;
       if (expireDays !== -1 && user.password_changed_at) {
-        const expiredAt = new Date(user.password_changed_at as string);
+        const expiredAt = new Date(user.password_changed_at);
         expiredAt.setDate(expiredAt.getDate() + expireDays);
         if (expiredAt < new Date()) {
           const tempToken = await jwt.sign(
@@ -317,7 +322,7 @@ export function createAuthService(deps: {
             { expiresIn: 600 },
           );
           await recordLoginLog({ userId: user.id, username, ip, userAgent, status: 0, message: "密码已过期" });
-          const err = new Error("Password expired") as Error & { code: string; data: { tempToken: string } };
+          const err = new Error("密码已过期") as Error & { code: string; data: { tempToken: string } };
           err.code = "password_expired";
           err.data = { tempToken };
           throw err;
@@ -354,7 +359,7 @@ export function createAuthService(deps: {
       }
 
       // 13. 调用统一会话管理器完成登录
-      const roleCodes = await getUserRoleCodes(executor, user.id);
+      const roleCodes = await getUserRoleCodes(db, user.id);
       const sessionResult = await authSessionManager.login({
         userId: user.id,
         device: {
@@ -424,11 +429,15 @@ export function createAuthService(deps: {
       const id = crypto.randomUUID();
       const passwordHash = await passwordHasher.hash(password);
 
-      await executor(
-        `INSERT INTO sys_user (id, username, password_hash, email, phone, status, mfa_enabled, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 1, false, NOW(), NOW())`,
-        [id, username, passwordHash, email ?? null, phone ?? null],
-      );
+      await db.query(UserModel).insert({
+        id,
+        username,
+        password_hash: passwordHash,
+        email: email ?? null,
+        phone: phone ?? null,
+        status: 1,
+        mfa_enabled: false,
+      });
 
       await auditStore.append({
         actor: "system",
@@ -444,19 +453,19 @@ export function createAuthService(deps: {
 
     async forgotPassword(email) {
       // 按 email 查找用户
-      const rows = await executor(
-        "SELECT id, username, email FROM sys_user WHERE email = $1 AND deleted_at IS NULL AND status = 1",
-        [email],
-      );
-      const users = rows as Array<{ id: string; username: string; email: string }>;
+      const user = await db.query(UserModel)
+        .where("email", "=", email)
+        .where("status", "=", 1)
+        .select("id", "username", "email")
+        .get();
 
       // 即使找不到用户也返回成功，防止邮箱枚举
-      if (users.length === 0) {
+      if (!user) {
         await auditStore.append({
           actor: email,
           action: "password.forgot",
           resource: "auth",
-          result: "no_user",
+          result: "failure",
           metadata: { email },
         });
         // 返回一个无效 token，调用方无法区分
@@ -464,7 +473,6 @@ export function createAuthService(deps: {
         return { resetToken: dummyToken };
       }
 
-      const user = users[0]!;
       const resetToken = crypto.randomUUID();
       const cacheKey = `pwd_reset:${resetToken}`;
 
@@ -481,7 +489,7 @@ export function createAuthService(deps: {
       });
 
       // 触发事件，通知层可监听并发送邮件
-      await eventBus.emit("auth.password.reset_requested", {
+      await eventBus.emit("auth.password.reset_requested" as any, {
         userId: user.id,
         email,
         username: user.username,
@@ -497,7 +505,7 @@ export function createAuthService(deps: {
       const userId = await cache.get<string>(cacheKey);
 
       if (!userId) {
-        throw new Error("Invalid or expired reset token");
+        throw new Error("重置令牌无效或已过期");
       }
 
       // 密码策略校验
@@ -510,10 +518,10 @@ export function createAuthService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await executor(
-        "UPDATE sys_user SET password_hash = $1, password_changed_at = NOW(), updated_at = NOW() WHERE id = $2",
-        [passwordHash, userId],
-      );
+      await db.query(UserModel).where("id", "=", userId).update({
+        password_hash: passwordHash,
+        password_changed_at: new Date(),
+      });
 
       // 删除已使用的 token
       await cache.del(cacheKey);
@@ -538,10 +546,10 @@ export function createAuthService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await executor(
-        "UPDATE sys_user SET password_hash = $1, password_changed_at = NOW(), updated_at = NOW() WHERE id = $2",
-        [passwordHash, userId],
-      );
+      await db.query(UserModel).where("id", "=", userId).update({
+        password_hash: passwordHash,
+        password_changed_at: new Date(),
+      });
 
       await auditStore.append({
         actor: "system",
@@ -583,10 +591,7 @@ export function createAuthService(deps: {
       }
 
       // 先存储密钥，但暂不启用（需验证后才真正启用）
-      await executor(
-        "UPDATE sys_user SET mfa_secret = $1, updated_at = NOW() WHERE id = $2",
-        [secret, userId],
-      );
+      await db.query(UserModel).where("id", "=", userId).update({ mfa_secret: secret });
 
       await auditStore.append({
         actor: userId,
@@ -600,25 +605,20 @@ export function createAuthService(deps: {
     },
 
     async verifyMFA(userId, code) {
-      const rows = await executor(
-        "SELECT mfa_secret, mfa_enabled FROM sys_user WHERE id = $1",
-        [userId],
-      );
-      const users = rows as Array<{
-        mfa_secret: string | null;
-        mfa_enabled: boolean;
-      }>;
+      const mfaUser = await db.query(UserModel)
+        .where("id", "=", userId)
+        .select("mfa_secret", "mfa_enabled")
+        .get();
 
-      if (users.length === 0) {
-        throw new Error("User not found");
+      if (!mfaUser) {
+        throw new Error("用户不存在");
       }
 
-      const user = users[0]!;
-      if (!user.mfa_secret) {
-        throw new Error("MFA not configured");
+      if (!mfaUser.mfa_secret) {
+        throw new Error("未配置 MFA");
       }
 
-      const valid = await totp.verifyAndConsume(user.mfa_secret, code);
+      const valid = await totp.verifyAndConsume(mfaUser.mfa_secret, code);
       if (!valid) {
         await auditStore.append({
           actor: userId,
@@ -631,11 +631,8 @@ export function createAuthService(deps: {
       }
 
       // 如果是首次验证，正式启用 MFA
-      if (!user.mfa_enabled) {
-        await executor(
-          "UPDATE sys_user SET mfa_enabled = true, updated_at = NOW() WHERE id = $1",
-          [userId],
-        );
+      if (!mfaUser.mfa_enabled) {
+        await db.query(UserModel).where("id", "=", userId).update({ mfa_enabled: true });
       }
 
       await auditStore.append({
@@ -650,22 +647,20 @@ export function createAuthService(deps: {
     },
 
     async disableMFA(userId, code) {
-      const rows = await executor(
-        "SELECT mfa_secret FROM sys_user WHERE id = $1",
-        [userId],
-      );
-      const users = rows as Array<{ mfa_secret: string | null }>;
+      const mfaUser = await db.query(UserModel)
+        .where("id", "=", userId)
+        .select("mfa_secret")
+        .get();
 
-      if (users.length === 0) {
-        throw new Error("User not found");
+      if (!mfaUser) {
+        throw new Error("用户不存在");
       }
 
-      const user = users[0]!;
-      if (!user.mfa_secret) {
-        throw new Error("MFA not configured");
+      if (!mfaUser.mfa_secret) {
+        throw new Error("未配置 MFA");
       }
 
-      const valid = await totp.verify(user.mfa_secret, code);
+      const valid = await totp.verify(mfaUser.mfa_secret, code);
       if (!valid) {
         await auditStore.append({
           actor: userId,
@@ -674,13 +669,13 @@ export function createAuthService(deps: {
           resourceId: userId,
           result: "failure",
         });
-        throw new Error("Invalid MFA code");
+        throw new Error("MFA 验证码错误");
       }
 
-      await executor(
-        "UPDATE sys_user SET mfa_enabled = false, mfa_secret = NULL, updated_at = NOW() WHERE id = $1",
-        [userId],
-      );
+      await db.query(UserModel).where("id", "=", userId).update({
+        mfa_enabled: false,
+        mfa_secret: null,
+      });
 
       await auditStore.append({
         actor: userId,
@@ -701,10 +696,10 @@ export function createAuthService(deps: {
         { expiresIn: 600 },
       );
 
-      await executor(
-        "UPDATE sys_user SET mfa_enabled = false, mfa_secret = NULL, updated_at = NOW() WHERE id = $1",
-        [userId],
-      );
+      await db.query(UserModel).where("id", "=", userId).update({
+        mfa_enabled: false,
+        mfa_secret: null,
+      });
 
       await auditStore.append({
         actor: userId,
@@ -721,24 +716,23 @@ export function createAuthService(deps: {
       // 1. 验证 MFA 临时 token
       const payload = await jwt.verify(mfaToken, jwtSecret) as { sub?: string; iss?: string; username?: string };
       if (!payload.sub || payload.iss !== "mfa-pending") {
-        throw new Error("Invalid MFA token");
+        throw new Error("MFA 令牌无效");
       }
 
       const userId = payload.sub;
       const username = payload.username ?? "";
 
       // 2. 查询用户的 MFA 密钥
-      const rows = await executor(
-        "SELECT mfa_secret, mfa_enabled FROM sys_user WHERE id = $1 AND deleted_at IS NULL",
-        [userId],
-      );
-      const users = rows as Array<{ mfa_secret: string | null; mfa_enabled: boolean }>;
-      if (users.length === 0 || !users[0]!.mfa_secret) {
-        throw new Error("MFA not configured");
+      const mfaUser = await db.query(UserModel)
+        .where("id", "=", userId)
+        .select("mfa_secret", "mfa_enabled")
+        .get();
+      if (!mfaUser || !mfaUser.mfa_secret) {
+        throw new Error("未配置 MFA");
       }
 
       // 3. 验证 TOTP 码
-      const valid = await totp.verifyAndConsume(users[0]!.mfa_secret, code);
+      const valid = await totp.verifyAndConsume(mfaUser.mfa_secret, code);
       if (!valid) {
         await auditStore.append({
           actor: userId,
@@ -747,7 +741,7 @@ export function createAuthService(deps: {
           result: "failure",
           metadata: { ip },
         });
-        throw new Error("Invalid MFA code");
+        throw new Error("MFA 验证码错误");
       }
 
       // 4. 创建会话，颁发真实 token
@@ -759,7 +753,7 @@ export function createAuthService(deps: {
           deviceType: deviceType ?? "web",
           deviceName: userAgent,
         },
-        tokenPayload: { username, roles: await getUserRoleCodes(executor, userId) },
+        tokenPayload: { username, roles: await getUserRoleCodes(db, userId) },
       });
 
       await auditStore.append({
@@ -784,16 +778,14 @@ export function createAuthService(deps: {
       const { userId, username, ip, userAgent, deviceType } = params;
 
       // 校验用户状态
-      const rows = await executor(
-        "SELECT status, blacklisted, locked_until FROM sys_user WHERE id = $1 AND deleted_at IS NULL",
-        [userId],
-      );
-      const users = rows as Array<{ status: number; blacklisted: boolean; locked_until: string | null }>;
-      if (users.length === 0) throw new Error("用户不存在");
-      const user = users[0]!;
-      if (user.status !== 1) throw new Error("账号已禁用");
-      if (user.blacklisted) throw new Error("账号已被拉黑");
-      if (user.locked_until && new Date(user.locked_until) > new Date()) throw new Error("账号已被锁定");
+      const passkeyUser = await db.query(UserModel)
+        .where("id", "=", userId)
+        .select("status", "blacklisted", "locked_until")
+        .get();
+      if (!passkeyUser) throw new Error("用户不存在");
+      if (passkeyUser.status !== 1) throw new Error("账号已禁用");
+      if (passkeyUser.blacklisted) throw new Error("账号已被拉黑");
+      if (passkeyUser.locked_until && new Date(passkeyUser.locked_until) > new Date()) throw new Error("账号已被锁定");
 
       const sessionResult = await authSessionManager.login({
         userId,
@@ -803,7 +795,7 @@ export function createAuthService(deps: {
           deviceType: deviceType ?? "web",
           deviceName: userAgent,
         },
-        tokenPayload: { username, roles: await getUserRoleCodes(executor, userId) },
+        tokenPayload: { username, roles: await getUserRoleCodes(db, userId) },
       });
 
       await recordLoginLog({ userId, username, ip, userAgent, status: 1, message: "通行密钥登录成功", loginMethod: "passkey" });

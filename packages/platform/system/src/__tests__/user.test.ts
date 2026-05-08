@@ -4,15 +4,19 @@
 
 import { describe, expect, test } from "bun:test";
 import { createUserService } from "../services/user";
-import { createMockExecutor, createTestCache, createMockPasswordHasher, createMockConfigService } from "./helpers";
+import { createMockExecutor, createMockDatabase, createTestCache, createMockPasswordHasher, createMockConfigService } from "./helpers";
 
-function setup() {
-  const { executor, calls, results } = createMockExecutor();
+function setup(configOverrides: Record<string, string> = {}) {
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_user", "sys_user", true);
+  registerModel("sys_user_role", "sys_user_role", false);
+  registerModel("sys_role", "sys_role", true);
   const cache = createTestCache();
   const passwordHasher = createMockPasswordHasher();
-  const configService = createMockConfigService();
-  const userService = createUserService({ executor, passwordHasher, cache, configService });
-  return { userService, executor, calls, results, passwordHasher, configService };
+  const configService = createMockConfigService(configOverrides);
+  const userService = createUserService({ db, passwordHasher, cache, configService });
+  return { userService, executor: mockExec.executor, calls, results: mockExec.results, passwordHasher, configService };
 }
 
 describe("UserService", () => {
@@ -69,7 +73,7 @@ describe("UserService", () => {
 
   test("list returns paginated results", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 5 }]);
+    s.results.set("COUNT", [{ count: 5 }]);
     s.results.set("SELECT", [
       { id: "u1", username: "admin", status: 1 },
       { id: "u2", username: "user", status: 1 },

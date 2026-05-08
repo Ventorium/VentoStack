@@ -1,4 +1,5 @@
 ---
+order: 1
 title: 事件总线
 description: 使用 createEventBus 和 defineEvent 实现类型安全的事件驱动架构
 ---

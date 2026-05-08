@@ -4,12 +4,15 @@
 
 import { describe, expect, test } from "bun:test";
 import { createDeptService } from "../services/dept";
-import { createMockExecutor } from "./helpers";
+import { createMockExecutor, createMockDatabase } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
-  const deptService = createDeptService({ executor });
-  return { deptService, executor, calls, results };
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_dept", "sys_dept", true);
+  registerModel("sys_role_dept", "sys_role_dept", false);
+  const deptService = createDeptService({ db });
+  return { deptService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
 describe("DeptService", () => {

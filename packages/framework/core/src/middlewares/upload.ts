@@ -146,7 +146,7 @@ export function createUploadValidator(options: UploadOptions = {}): {
     try {
       formData = (await request.formData()) as FormData;
     } catch {
-      return { valid: false, errors: ["Failed to parse form data"], files: [] };
+      return { valid: false, errors: ["解析表单数据失败"], files: [] };
     }
 
     const fileEntries: File[] = [];
@@ -157,7 +157,7 @@ export function createUploadValidator(options: UploadOptions = {}): {
     }
 
     if (fileEntries.length > maxFiles) {
-      errors.push(`Too many files: ${fileEntries.length} (max: ${maxFiles})`);
+      errors.push(`文件数量过多：${fileEntries.length}（最大：${maxFiles}）`);
       return { valid: false, errors, files: [] };
     }
 
@@ -166,32 +166,32 @@ export function createUploadValidator(options: UploadOptions = {}): {
 
       // 空字节检查
       if (rejectNullBytes && originalName.includes("\0")) {
-        errors.push(`Null byte in filename: ${originalName}`);
+        errors.push(`文件名包含非法字符：${originalName}`);
         continue;
       }
 
       // 双扩展名检查
       if (rejectDoubleExtensions && hasDoubleExtension(originalName)) {
-        errors.push(`Double extension rejected: ${originalName}`);
+        errors.push(`不允许双扩展名文件：${originalName}`);
         continue;
       }
 
       // 大小检查
       if (file.size > maxFileSize) {
-        errors.push(`File too large: ${originalName} (${file.size} bytes, max: ${maxFileSize})`);
+        errors.push(`文件过大：${originalName}（最大 ${maxFileSize / 1024 / 1024}MB）`);
         continue;
       }
 
       // MIME 类型检查
       if (allowedMimeTypes && !allowedMimeTypes.has(file.type)) {
-        errors.push(`MIME type not allowed: ${file.type} for ${originalName}`);
+        errors.push(`不允许的文件类型：${file.type}（${originalName}）`);
         continue;
       }
 
       // 扩展名检查
       const ext = getExtension(originalName);
       if (allowedExtensions && ext && !allowedExtensions.has(ext)) {
-        errors.push(`Extension not allowed: .${ext} for ${originalName}`);
+        errors.push(`不允许的文件扩展名：.${ext}（${originalName}）`);
         continue;
       }
 

@@ -85,7 +85,7 @@ export function csrf(options: CSRFOptions = {}): Middleware {
 
     // 非安全方法：必须验证 token
     if (!cookieToken) {
-      return new Response(JSON.stringify({ error: "CSRF token missing" }), {
+      return new Response(JSON.stringify({ error: "缺少 CSRF 令牌" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
       });
@@ -93,7 +93,7 @@ export function csrf(options: CSRFOptions = {}): Middleware {
 
     const headerToken = ctx.headers.get(tokenHeader);
     if (!headerToken || !constantTimeEqual(cookieToken, headerToken)) {
-      return new Response(JSON.stringify({ error: "CSRF token mismatch" }), {
+      return new Response(JSON.stringify({ error: "CSRF 令牌不匹配" }), {
         status: 403,
         headers: { "Content-Type": "application/json" },
       });

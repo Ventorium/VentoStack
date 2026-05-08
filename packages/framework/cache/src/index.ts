@@ -38,3 +38,7 @@ export type { L2Cache, L2CacheOptions } from "./l2-cache";
 // 缓存击穿/雪崩防护（singleflight / XFetch）
 export { createStampedeProtection } from "./stampede";
 export type { StampedeProtection, StampedeProtectionOptions } from "./stampede";
+
+// Redis 客户端工厂
+export { createRedisClient } from "./redis-client";
+export type { RedisClientOptions, RedisClientInstance } from "./redis-client";

@@ -27,7 +27,7 @@ export function createI18nRoutes(
       });
       return ok(result);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Create failed", 400);
+      return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
   });
 
@@ -37,14 +37,14 @@ export function createI18nRoutes(
   });
 
   router.put("/api/i18n/locales/:id", perm("i18n", "locale:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await i18nService.updateLocale(id, body);
     return ok(null);
   });
 
   router.delete("/api/i18n/locales/:id", perm("i18n", "locale:delete"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     await i18nService.deleteLocale(id);
     return ok(null);
   });
@@ -64,7 +64,7 @@ export function createI18nRoutes(
   });
 
   router.get("/api/i18n/messages/:locale", perm("i18n", "message:query"), async (ctx) => {
-    const locale = (ctx.params as Record<string, string>).locale;
+    const locale = (ctx.params as Record<string, string>).locale!;
     const q = ctx.query as Record<string, unknown>;
     const messages = await i18nService.getLocaleMessages(locale, q.module as string | undefined);
     return ok(messages);
@@ -81,7 +81,7 @@ export function createI18nRoutes(
       );
       return ok(null);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Set failed", 400);
+      return fail(e instanceof Error ? e.message : "设置失败", 400);
     }
   });
 
@@ -95,12 +95,12 @@ export function createI18nRoutes(
       );
       return ok({ count });
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Import failed", 400);
+      return fail(e instanceof Error ? e.message : "导入失败", 400);
     }
   });
 
   router.delete("/api/i18n/messages/:id", perm("i18n", "message:delete"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     await i18nService.deleteMessage(id);
     return ok(null);
   });

@@ -1,4 +1,5 @@
 ---
+order: 7
 title: 配置管理
 description: 使用 createConfig 和 loadConfig 管理应用配置，支持环境变量、JSON 文件和 12-Factor 规范
 ---
@@ -311,8 +312,8 @@ import { safeConfig } from "@ventostack/core";
 
 const masked = safeConfig(config);
 
-console.log(safeConfig.jwtSecret); // "***"
-console.log(safeConfig.host); // 原值
+console.log(masked.jwtSecret); // "***"
+console.log(masked.host); // 原值
 ```
 
 `safeConfig(config)` 会返回一个新的安全快照，不会修改原始配置对象。
@@ -361,14 +362,14 @@ log.error("Connection lost");      // → [cache] Connection lost
 
 说明：
 - 用于应用启动阶段（`Logger` 尚未初始化时）、CLI 命令、迁移/种子脚本等场景
-- 业务运行时日志请使用 `createLogger`（见 [可观测性 — 日志](/docs/observability/logger)）
+- 业务运行时日志请使用 `createLogger`（见 [可观测性 — 日志](/framework/observability/logging)）
 - 同一个 tag 可在多个文件中复用，保持日志前缀一致
 
 ## 相关模块
 
 以下配置相关模块也存在于 `@ventostack/core` 中，但由独立文档页面覆盖：
 
-- **YAML 配置** — `parseYAML`、`stringifyYAML`、`loadYAMLConfig`（见 [YAML 配置](/docs/core/yaml-config)）
-- **配置热更新** — `createConfigWatcher`（见 [配置热重载](/docs/core/config-watch)）
-- **配置加密** — `createConfigEncryptor`（见 [配置加密](/docs/core/config-encryption)）
-- **12-Factor 配置** — `loadTwelveFactorConfig`、`validateEnvVars`（见 [12-Factor 配置](/docs/core/twelve-factor)）
+- **YAML 配置** — `parseYAML`、`stringifyYAML`、`loadYAMLConfig`（见 [YAML 配置](/framework/core/yaml-config)）
+- **配置热更新** — `createConfigWatcher`（见 [配置热重载](/framework/core/config-watch)）
+- **配置加密** — `createConfigEncryptor`（见 [配置加密](/framework/core/config-encryption)）
+- **12-Factor 配置** — `loadTwelveFactorConfig`、`validateEnvVars`（见 [12-Factor 配置](/framework/core/twelve-factor)）

@@ -81,6 +81,17 @@ describe("Router.use()", () => {
     // router middleware + route middleware
     expect(routes[0]!.middleware).toHaveLength(2);
   });
+
+  test("route middleware can be registered before handler", () => {
+    const routeMw: Middleware = async (_ctx, next) => await next();
+
+    const router = createRouter();
+    router.get("/a", routeMw, async (ctx) => ctx.text("a"));
+
+    const routes = router.routes();
+    expect(routes[0]!.handler).toBeFunction();
+    expect(routes[0]!.middleware).toEqual([routeMw]);
+  });
 });
 
 describe("Router.group()", () => {
@@ -836,6 +847,35 @@ describe("Router - response schema", () => {
     const body = await res.json();
     expect(body.error).toBe("RESPONSE_VALIDATION_ERROR");
     expect(body.errors).toContain("response.limit must be a string");
+  });
+
+  test("validates platform response envelope data against declared schema", async () => {
+    const router = createRouter();
+    router.get("/public-config", {
+      responses: {
+        200: {
+          siteName: { type: "string" },
+          mfaEnabled: { type: "boolean" },
+        },
+      },
+    }, (ctx) =>
+      ctx.json({
+        code: 200,
+        message: "ok",
+        data: { siteName: "VentoStack", mfaEnabled: true },
+      }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/public-config"] as Record<string, RouteHandler>).GET!;
+    const res = await handler(new Request("http://localhost:3000/public-config"));
+
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      code: 200,
+      message: "ok",
+      data: { siteName: "VentoStack", mfaEnabled: true },
+    });
   });
 
   test("supports declared non-json text responses", async () => {

@@ -41,12 +41,15 @@ describe("createRedisRevocationStore", () => {
   } {
     const store = new Map<string, string>();
     const client: RedisRevocationClientLike = {
-      async set(key: string, value: string, _px: number): Promise<"OK"> {
+      async set(key: string, value: string): Promise<"OK"> {
         store.set(key, value);
         return "OK";
       },
-      async exists(key: string): Promise<number> {
-        return store.has(key) ? 1 : 0;
+      async pexpire(_key: string, _milliseconds: number): Promise<number> {
+        return 1;
+      },
+      async exists(key: string): Promise<boolean> {
+        return store.has(key);
       },
     };
     return { client, store };

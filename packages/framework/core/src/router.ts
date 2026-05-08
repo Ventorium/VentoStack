@@ -246,7 +246,7 @@ function coerceParams(
 
     if (!pattern.test(rawValue)) {
       throw new ValidationError(
-        `Invalid value for param ":${def.name}": ${typeDef.message ?? "does not match expected format"}`,
+        `Invalid value for param ":${def.name}": ${typeDef.message ?? "格式不匹配"}`,
       );
     }
 
@@ -313,7 +313,16 @@ async function validateRouteResponse(
     return response;
   }
 
-  const errors = validateResponseData(rawBody, resolved.schema);
+  let errors = validateResponseData(rawBody, resolved.schema);
+  if (
+    errors.length > 0 &&
+    typeof rawBody === "object" &&
+    rawBody !== null &&
+    !Array.isArray(rawBody) &&
+    "data" in rawBody
+  ) {
+    errors = validateResponseData((rawBody as { data: unknown }).data, resolved.schema, "response.data");
+  }
   if (errors.length > 0) {
     return createResponseValidationError(errors);
   }
@@ -330,6 +339,10 @@ export interface Router {
    * @param middleware - 可选中间件
    */
   get<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  /**
+   * 注册 GET 路由（中间件在前，处理器在后）
+   */
+  get<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
   /**
    * 注册 GET 路由（带 schema 配置）
    * @param path - 路径
@@ -357,6 +370,10 @@ export interface Router {
    */
   post<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
   /**
+   * 注册 POST 路由（中间件在前，处理器在后）
+   */
+  post<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  /**
    * 注册 POST 路由（带 schema 配置）
    * @param path - 路径
    * @param config - 路由配置
@@ -382,6 +399,10 @@ export interface Router {
    * @param middleware - 可选中间件
    */
   put<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  /**
+   * 注册 PUT 路由（中间件在前，处理器在后）
+   */
+  put<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
   /**
    * 注册 PUT 路由（带 schema 配置）
    * @param path - 路径
@@ -409,6 +430,10 @@ export interface Router {
    */
   patch<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
   /**
+   * 注册 PATCH 路由（中间件在前，处理器在后）
+   */
+  patch<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  /**
    * 注册 PATCH 路由（带 schema 配置）
    * @param path - 路径
    * @param config - 路由配置
@@ -434,6 +459,10 @@ export interface Router {
    * @param middleware - 可选中间件
    */
   delete<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  /**
+   * 注册 DELETE 路由（中间件在前，处理器在后）
+   */
+  delete<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
   /**
    * 注册 DELETE 路由（带 schema 配置）
    * @param path - 路径
@@ -532,6 +561,12 @@ export function createRouter(): Router {
     schemaConfig?: RouteConfig,
   ): Router {
     const parsed = parseRoutePath(path);
+    let metadata: Record<string, unknown> | undefined;
+    if (schemaConfig?.openapi) {
+      metadata = { openapi: schemaConfig.openapi };
+    } else if (schemaConfig?.metadata) {
+      metadata = schemaConfig.metadata;
+    }
     routeDefs.push({
       method: method.toUpperCase(),
       path,
@@ -540,55 +575,70 @@ export function createRouter(): Router {
       middleware,
       params: parsed.params,
       schemaConfig,
-      ...(schemaConfig?.metadata !== undefined ? { metadata: schemaConfig.metadata } : {}),
+      ...(metadata !== undefined ? { metadata } : {}),
     });
     return router;
   }
 
   const router: Router = {
-    get: ((path: string, arg2: RouteHandler | RouteConfig, ...rest: Middleware[]) => {
+    get: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
       if (typeof arg2 === "function") {
-        return addRoute("GET", path, arg2, rest);
+        if (arg2.length >= 2 && typeof rest[0] === "function") {
+          return addRoute("GET", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+        }
+        return addRoute("GET", path, arg2 as RouteHandler, rest as Middleware[]);
       }
       const config = arg2;
       const handler = rest[0] as RouteHandler;
-      const mw = rest.slice(1);
+      const mw = rest.slice(1) as Middleware[];
       return addRoute("GET", path, handler, mw, config);
     }) as Router["get"],
-    post: ((path: string, arg2: RouteHandler | RouteConfig, ...rest: Middleware[]) => {
+    post: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
       if (typeof arg2 === "function") {
-        return addRoute("POST", path, arg2, rest);
+        if (arg2.length >= 2 && typeof rest[0] === "function") {
+          return addRoute("POST", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+        }
+        return addRoute("POST", path, arg2 as RouteHandler, rest as Middleware[]);
       }
       const config = arg2;
       const handler = rest[0] as RouteHandler;
-      const mw = rest.slice(1);
+      const mw = rest.slice(1) as Middleware[];
       return addRoute("POST", path, handler, mw, config);
     }) as Router["post"],
-    put: ((path: string, arg2: RouteHandler | RouteConfig, ...rest: Middleware[]) => {
+    put: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
       if (typeof arg2 === "function") {
-        return addRoute("PUT", path, arg2, rest);
+        if (arg2.length >= 2 && typeof rest[0] === "function") {
+          return addRoute("PUT", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+        }
+        return addRoute("PUT", path, arg2 as RouteHandler, rest as Middleware[]);
       }
       const config = arg2;
       const handler = rest[0] as RouteHandler;
-      const mw = rest.slice(1);
+      const mw = rest.slice(1) as Middleware[];
       return addRoute("PUT", path, handler, mw, config);
     }) as Router["put"],
-    patch: ((path: string, arg2: RouteHandler | RouteConfig, ...rest: Middleware[]) => {
+    patch: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
       if (typeof arg2 === "function") {
-        return addRoute("PATCH", path, arg2, rest);
+        if (arg2.length >= 2 && typeof rest[0] === "function") {
+          return addRoute("PATCH", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+        }
+        return addRoute("PATCH", path, arg2 as RouteHandler, rest as Middleware[]);
       }
       const config = arg2;
       const handler = rest[0] as RouteHandler;
-      const mw = rest.slice(1);
+      const mw = rest.slice(1) as Middleware[];
       return addRoute("PATCH", path, handler, mw, config);
     }) as Router["patch"],
-    delete: ((path: string, arg2: RouteHandler | RouteConfig, ...rest: Middleware[]) => {
+    delete: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
       if (typeof arg2 === "function") {
-        return addRoute("DELETE", path, arg2, rest);
+        if (arg2.length >= 2 && typeof rest[0] === "function") {
+          return addRoute("DELETE", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+        }
+        return addRoute("DELETE", path, arg2 as RouteHandler, rest as Middleware[]);
       }
       const config = arg2;
       const handler = rest[0] as RouteHandler;
-      const mw = rest.slice(1);
+      const mw = rest.slice(1) as Middleware[];
       return addRoute("DELETE", path, handler, mw, config);
     }) as Router["delete"],
 

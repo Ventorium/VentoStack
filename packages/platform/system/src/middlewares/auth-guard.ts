@@ -32,7 +32,7 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
     const authHeader = ctx.request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return new Response(
-        JSON.stringify({ code: 401, message: "Missing token" }),
+        JSON.stringify({ code: 401, message: "缺少认证令牌" }),
         { status: 401, headers: JSON_HEADERS },
       );
     }
@@ -48,7 +48,7 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
       return next();
     } catch {
       return new Response(
-        JSON.stringify({ code: 401, message: "Invalid token" }),
+        JSON.stringify({ code: 401, message: "无效的认证令牌" }),
         { status: 401, headers: JSON_HEADERS },
       );
     }
@@ -68,7 +68,7 @@ export function createPermMiddleware(rbac: RBAC): (resource: string, action: str
       const user = ctx.user as AuthUser | undefined;
       if (!user) {
         return new Response(
-          JSON.stringify({ code: 401, message: "Not authenticated" }),
+          JSON.stringify({ code: 401, message: "未登录" }),
           { status: 401, headers: JSON_HEADERS },
         );
       }
@@ -83,7 +83,7 @@ export function createPermMiddleware(rbac: RBAC): (resource: string, action: str
       );
       if (!allowed) {
         return new Response(
-          JSON.stringify({ code: 403, message: `No permission: ${resource}:${action}` }),
+          JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),
           { status: 403, headers: JSON_HEADERS },
         );
       }

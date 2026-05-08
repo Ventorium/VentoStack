@@ -5,12 +5,10 @@
 import { defineModel, column } from "@ventostack/database";
 
 export const WorkflowDefModel = defineModel("sys_workflow_definition", {
-  id: column.string({ primary: true }),
-  name: column.string(),
-  code: column.string(),
-  version: column.number(),
-  description: column.string({ nullable: true }),
-  status: column.number(),
-  createdAt: column.string(),
-  updatedAt: column.string(),
+  id: column.varchar({ primary: true, length: 36 }),
+  name: column.varchar({ length: 128 }),
+  code: column.varchar({ length: 64 }),
+  version: column.int({ default: 1 }),
+  description: column.text({ nullable: true }),
+  status: column.int({ default: 1 }),
 }, { timestamps: true });

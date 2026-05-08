@@ -5,7 +5,7 @@
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router, Middleware } from "@ventostack/core";
 import type { HealthCheck } from "@ventostack/observability";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import { createMonitorService } from "./services/monitor";
 import type { MonitorService, CacheStatus, DataSourceStatus } from "./services/monitor";
 import { createMonitorRoutes } from "./routes/monitor";
@@ -24,27 +24,27 @@ export interface MonitorModuleDeps {
   jwt: JWTManager;
   jwtSecret: string;
   rbac?: RBAC;
-  executor?: SqlExecutor;
+  db?: Database;
   cacheStatsProvider?: () => Promise<CacheStatus>;
   dataSourceStatsProvider?: () => Promise<DataSourceStatus>;
 }
 
 export function createMonitorModule(deps: MonitorModuleDeps): MonitorModule {
-  const { healthCheck, jwt, jwtSecret, rbac, executor, cacheStatsProvider, dataSourceStatsProvider } = deps;
+  const { healthCheck, jwt, jwtSecret, rbac, db, cacheStatsProvider, dataSourceStatsProvider } = deps;
 
-  const monitorService = createMonitorService({ healthCheck, executor, cacheStatsProvider, dataSourceStatsProvider });
+  const monitorService = createMonitorService({ healthCheck, db, cacheStatsProvider, dataSourceStatsProvider });
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
 
   const perm = (resource: string, action: string): Middleware => {
     return async (ctx, next) => {
       const user = ctx.user as { roles: string[] } | undefined;
       if (!user) {
-        return new Response(JSON.stringify({ code: 401, message: "Not authenticated" }), { status: 401, headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ code: 401, message: "未登录" }), { status: 401, headers: { "Content-Type": "application/json" } });
       }
       if (rbac) {
         const allowed = user.roles.some((r: string) => rbac.hasPermission(r, resource, action));
         if (!allowed) {
-          return new Response(JSON.stringify({ code: 403, message: `No permission: ${resource}:${action}` }), { status: 403, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }), { status: 403, headers: { "Content-Type": "application/json" } });
         }
       }
       return next();

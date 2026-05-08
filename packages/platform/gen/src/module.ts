@@ -2,10 +2,9 @@
  * @ventostack/gen - 模块聚合
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router } from "@ventostack/core";
-import type { TableSchemaInfo } from "@ventostack/database";
 import { createGenService } from "./services/gen";
 import { createGenRoutes } from "./routes/gen";
 import { createAuthMiddleware } from "./middlewares/auth-guard";
@@ -19,6 +18,8 @@ export interface GenModule {
 }
 
 export interface GenModuleDeps {
+  db: Database;
+  /** Raw executor needed for readTableSchema */
   executor: SqlExecutor;
   readTableSchema: (executor: SqlExecutor, tableName: string) => Promise<TableSchemaInfo>;
   jwt: JWTManager;
@@ -27,21 +28,21 @@ export interface GenModuleDeps {
 }
 
 export function createGenModule(deps: GenModuleDeps): GenModule {
-  const { executor, readTableSchema, jwt, jwtSecret, rbac } = deps;
+  const { db, executor, readTableSchema, jwt, jwtSecret, rbac } = deps;
 
-  const genService = createGenService({ executor, readTableSchema });
+  const genService = createGenService({ db, executor, readTableSchema });
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
 
   const perm = (resource: string, action: string) => {
     return async (ctx: any, next: any) => {
       const user = ctx.user as { roles: string[] } | undefined;
       if (!user) {
-        return new Response(JSON.stringify({ code: 401, message: "Not authenticated" }), { status: 401, headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ code: 401, message: "未登录" }), { status: 401, headers: { "Content-Type": "application/json" } });
       }
       if (rbac) {
         const allowed = user.roles.some((r: string) => rbac.hasPermission(r, resource, action));
         if (!allowed) {
-          return new Response(JSON.stringify({ code: 403, message: `No permission: ${resource}:${action}` }), { status: 403, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }), { status: 403, headers: { "Content-Type": "application/json" } });
         }
       }
       return next();

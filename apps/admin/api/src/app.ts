@@ -1,23 +1,17 @@
 /**
  * 应用装配工厂（Composition Root）
  *
- * 职责：
- * 1. 按依赖顺序初始化各层
- * 2. 组装中间件管道
- * 3. 注册路由
- * 4. 返回启动/关闭接口
- *
- * 依赖方向：infra → auth → system → app → entry
+ * 使用 @ventostack/boot 的 createPlatform() 聚合所有平台模块，
+ * 替代手动逐个创建和注册模块的模式。
  */
 
-import { resolve } from "node:path";
-import { createApp, createRouter, requestId, requestLogger, errorHandler, cors, createTagLogger } from "@ventostack/core";
-import type { VentoStackApp } from "@ventostack/core";
+import { createApp, createRouter, requestId, requestLogger, errorHandler, cors, createTagLogger, createStaticMiddleware, rateLimit } from "@ventostack/core";
+import type { Middleware, VentoStackApp } from "@ventostack/core";
 import { setupOpenAPI } from "@ventostack/openapi";
-import { getDefaultLogger } from "@ventostack/observability";
-import type { Logger } from "@ventostack/observability";
-import { createAuditLog, createDefaultHealthCheck } from "@ventostack/observability";
-import { createOSSModule } from "@ventostack/oss";
+import { createAuditLog, createDefaultHealthCheck, createMetrics, createTracer } from "@ventostack/observability";
+import { createEventBus, createScheduler } from "@ventostack/events";
+import { readTableSchema, listTables } from "@ventostack/database";
+import { createPlatform } from "@ventostack/boot";
 
 import { env } from "./config";
 import { createDatabaseConnection, runMigrations, runSeeds } from "./database";
@@ -25,8 +19,6 @@ import type { DatabaseContext } from "./database";
 import { createCacheInstance, type CacheInstance } from "./cache";
 import { createStorageAdapter } from "./storage";
 import { assembleAuthEngines } from "./auth";
-import { assembleSystemModule } from "./system";
-import { createMonitorModule } from "@ventostack/monitor";
 
 export interface AppContext {
   /** VentoStack 应用实例 */
@@ -46,8 +38,8 @@ export async function buildApp(): Promise<AppContext> {
   // =============================================
   // 1. 基础设施层
   // =============================================
-  const logger = createTagLogger('app')
-  logger.info(`Starting mode: ${env.NODE_ENV }`);
+  const logger = createTagLogger('app');
+  logger.info(`Starting mode: ${env.NODE_ENV}`);
 
   // 1a. 数据库
   const database = createDatabaseConnection();
@@ -63,11 +55,15 @@ export async function buildApp(): Promise<AppContext> {
   // 1d. 缓存
   const cacheInstance = await createCacheInstance();
 
-  // 1e. 存储 + OSS
+  // 1e. 存储适配器
   const storage = createStorageAdapter();
 
-  // 1f. 审计日志
+  // 1f. 可观测性
   const auditLog = createAuditLog();
+
+  // 1g. 指标与追踪
+  const metrics = createMetrics();
+  const tracer = createTracer();
 
   // 1g. 健康检查
   const healthCheck = createDefaultHealthCheck({
@@ -75,50 +71,64 @@ export async function buildApp(): Promise<AppContext> {
     ...(cacheInstance.redisClient ? { redis: cacheInstance.redisClient } : {}),
   });
 
+  // 1h. 事件总线 + 调度器
+  const eventBus = createEventBus();
+  const scheduler = createScheduler();
+
   // =============================================
   // 2. 认证引擎层
   // =============================================
-
-  const auth = assembleAuthEngines();
+  const auth = assembleAuthEngines(cacheInstance.redisClient);
 
   // =============================================
-  // 3. 系统模块层
+  // 3. 平台模块聚合（使用 createPlatform）
   // =============================================
-
-  // 3a. OSS 模块
-  const ossModule = createOSSModule({
+  const platform = await createPlatform({
     executor,
-    storage,
-    jwt: auth.jwt,
-    jwtSecret: auth.jwtSecret,
-    rbac: auth.rbac,
-  });
-
-  // 3b. 系统模块（注入 ossService 用于头像上传）
-  const system = assembleSystemModule({
-    executor,
+    db: database.db,
+    readTableSchema,
+    listTables,
     cache: cacheInstance.cache,
-    auth,
-    auditLog,
-    ossService: ossModule.services.oss,
-  });
-
-  // 3a. 加载权限
-  await system.init();
-
-  // 3c. 监控模块
-  const monitor = createMonitorModule({
-    healthCheck,
     jwt: auth.jwt,
     jwtSecret: auth.jwtSecret,
+    passwordHasher: auth.passwordHasher,
+    totpManager: auth.totp,
     rbac: auth.rbac,
-    executor,
+    rowFilter: auth.rowFilter,
+    authSessionManager: auth.authSessionManager,
+    tokenRefreshManager: auth.tokenRefresh,
+    sessionManager: auth.sessionManager,
+    multiDeviceManager: auth.deviceManager,
+    auditStore: auditLog,
+    eventBus,
+    healthCheck,
+    scheduler,
+    storageAdapter: storage,
+    rpID: env.WEBAUTHN_RP_ID,
+    rpName: env.WEBAUTHN_RP_NAME,
+    rpOrigins: env.ALLOWED_ORIGINS,
+    // 模块开关：按需启用/禁用
+    modules: {
+      system: true,
+      gen: true,
+      monitor: true,
+      notification: false, // 需配置 notifyChannels 后启用
+      i18n: true,
+      workflow: true,
+      oss: true,
+      scheduler: true,
+    },
+    // notifyChannels: new Map(), // 配置通知通道后启用 notification 模块
+    // jobHandlers: { ... }, // 注册定时任务处理器
   });
+
+  // 初始化所有模块（加载权限、启动定时任务等）
+  await platform.init();
+  logger.info("Platform modules initialized");
 
   // =============================================
   // 4. 应用装配
   // =============================================
-
   const app = createApp({ port: env.PORT, hostname: env.HOST });
 
   // 4a. 全局中间件（顺序敏感）
@@ -140,6 +150,13 @@ export async function buildApp(): Promise<AppContext> {
   });
   app.use(healthRouter);
 
+  // 4b-2. 指标端点（无需认证）
+  const metricsRouter = createRouter();
+  metricsRouter.get("/metrics", (ctx) => {
+    return ctx.text(metrics.render());
+  });
+  app.use(metricsRouter);
+
   // 4c. OpenAPI 文档（无需认证，必须在系统路由之前注册）
   setupOpenAPI(app, {
     info: { title: "VentoStack API", version: "0.1.0" },
@@ -153,42 +170,34 @@ export async function buildApp(): Promise<AppContext> {
 
   // 4d. 静态文件服务（仅本地存储模式）
   if (env.STORAGE_DRIVER === "local") {
-    const staticRouter = createRouter();
-    staticRouter.get("/uploads/*", async (ctx) => {
-      const url = new URL(ctx.request.url);
-      const relativePath = url.pathname.replace(/^\/uploads\/?/, "");
-      // Prevent path traversal
-      const sanitized = relativePath.replace(/\.\./g, "").replace(/^\/+/, "");
-      const basePath = resolve(env.STORAGE_LOCAL_PATH);
-      const filePath = resolve(basePath, sanitized);
-      if (!filePath.startsWith(basePath)) {
-        return new Response("Forbidden", { status: 403 });
-      }
-      const file = Bun.file(filePath);
-      if (await file.exists()) {
-        return new Response(file);
-      }
-      return new Response("Not Found", { status: 404 });
-    });
-    app.use(staticRouter);
+    app.use(createStaticMiddleware({
+      root: env.STORAGE_LOCAL_PATH,
+      prefix: "/uploads",
+    }));
   }
 
-  // 4e. 系统模块路由
-  app.use(system.router);
+  // 4e. 认证端点限流（防暴力破解）
+  const authRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 20,
+    message: "登录尝试过于频繁，请稍后再试",
+  });
+  const authRateLimitPaths = new Set(["/api/auth/login", "/api/auth/register", "/api/auth/refresh"]);
+  const authRateLimitMiddleware: Middleware = (ctx, next) => {
+    const pathname = new URL(ctx.request.url).pathname;
+    return authRateLimitPaths.has(pathname) ? authRateLimit(ctx, next) : next();
+  };
+  app.use(authRateLimitMiddleware);
 
-  // 4f. OSS 模块路由
-  app.use(ossModule.router);
+  // 4e. 平台模块路由（createPlatform 自动聚合了所有模块路由）
+  app.use(platform.router);
 
-  // 4g. 监控模块路由
-  app.use(monitor.router);
-
-  // 4h. 注册优雅关停回调（框架收到 SIGTERM/SIGINT 时自动调用）
+  // 4f. 优雅关停
   let shutdownStarted = false;
   app.lifecycle.onBeforeStop(async () => {
     if (shutdownStarted) return;
     shutdownStarted = true;
 
-    // 安全超时：5 秒后强制退出，防止连接未关闭导致进程挂起
     const forceExit = setTimeout(() => {
       logger.info("[shutdown] Force exit (timeout)");
       process.exit(0);
@@ -208,12 +217,8 @@ export async function buildApp(): Promise<AppContext> {
     }
   });
 
-  // 4i. 错误处理（必须最后注册）
+  // 4g. 错误处理（必须最后注册）
   app.use(errorHandler({ logger }));
-
-  // =============================================
-  // 5. 返回
-  // =============================================
 
   return {
     app,

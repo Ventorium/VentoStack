@@ -4,12 +4,14 @@
 
 import { describe, expect, test } from "bun:test";
 import { createPostService } from "../services/post";
-import { createMockExecutor } from "./helpers";
+import { createMockExecutor, createMockDatabase } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
-  const postService = createPostService({ executor });
-  return { postService, executor, calls, results };
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_post", "sys_post", true);
+  const postService = createPostService({ db });
+  return { postService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
 describe("PostService", () => {
@@ -40,7 +42,7 @@ describe("PostService", () => {
 
   test("list returns paginated results", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 3 }]);
+    s.results.set("COUNT", [{ count: 3 }]);
     s.results.set("SELECT", [
       { id: "p1", name: "总经理", code: "ceo", sort: 1, status: 1, remark: "最高" },
       { id: "p2", name: "经理", code: "mgr", sort: 2, status: 1, remark: "中层" },
@@ -53,7 +55,7 @@ describe("PostService", () => {
 
   test("list with empty result returns zero items", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 0 }]);
+    s.results.set("COUNT", [{ count: 0 }]);
     const result = await s.postService.list();
     expect(result.items.length).toBe(0);
     expect(result.total).toBe(0);
@@ -61,7 +63,7 @@ describe("PostService", () => {
 
   test("list with status filter", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 1 }]);
+    s.results.set("COUNT", [{ count: 1 }]);
     s.results.set("SELECT", [
       { id: "p1", name: "总经理", code: "ceo", sort: 1, status: 1, remark: "" },
     ]);

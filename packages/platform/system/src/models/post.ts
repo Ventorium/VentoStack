@@ -10,6 +10,6 @@ export const PostModel = defineModel('sys_post', {
 }, { softDelete: true, timestamps: true });
 
 export const UserPostModel = defineModel('sys_user_post', {
-  userId: column.varchar({ length: 36 }),
-  postId: column.varchar({ length: 36 }),
+  user_id: column.varchar({ length: 36 }),
+  post_id: column.varchar({ length: 36 }),
 }, { timestamps: false });

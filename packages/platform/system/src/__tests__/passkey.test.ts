@@ -6,6 +6,7 @@ import { describe, expect, test, mock, beforeEach } from "bun:test";
 import { createPasskeyService } from "../services/passkey";
 import {
   createMockExecutor,
+  createMockDatabase,
   createTestCache,
   createMockAuditStore,
 } from "./helpers";
@@ -61,12 +62,15 @@ mock.module("@simplewebauthn/server", () => ({
 }));
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_passkey", "sys_passkey", false);
+  registerModel("sys_user", "sys_user", true);
   const cache = createTestCache();
   const auditStore = createMockAuditStore();
 
   const passkeyService = createPasskeyService({
-    executor,
+    db,
     cache,
     rpID: "localhost",
     rpName: "VentoStack Admin",
@@ -74,7 +78,7 @@ function setup() {
     auditStore,
   });
 
-  return { passkeyService, executor, calls, results, cache, auditStore };
+  return { passkeyService, executor: mockExec.executor, calls, results: mockExec.results, cache, auditStore };
 }
 
 describe("PasskeyService", () => {
@@ -88,7 +92,7 @@ describe("PasskeyService", () => {
   describe("beginRegistration", () => {
     test("returns options and challengeId when under limit", async () => {
       const s = setup();
-      s.results.set("COUNT", [{ cnt: 0 }]);
+      s.results.set("COUNT", [{ count: 0 }]);
       s.results.set("credential_id", []);
 
       const result = await s.passkeyService.beginRegistration("user-1");
@@ -100,14 +104,14 @@ describe("PasskeyService", () => {
 
     test("throws when max passkeys reached (3)", async () => {
       const s = setup();
-      s.results.set("COUNT", [{ cnt: 3 }]);
+      s.results.set("COUNT", [{ count: 3 }]);
 
       expect(s.passkeyService.beginRegistration("user-1")).rejects.toThrow("最多只能注册 3 个通行密钥");
     });
 
     test("includes existing credentials in excludeCredentials", async () => {
       const s = setup();
-      s.results.set("COUNT", [{ cnt: 1 }]);
+      s.results.set("COUNT", [{ count: 1 }]);
       s.results.set("credential_id", [{ credential_id: "existing-cred-1" }]);
 
       await s.passkeyService.beginRegistration("user-1");
@@ -119,12 +123,12 @@ describe("PasskeyService", () => {
 
     test("stores challenge in cache", async () => {
       const s = setup();
-      s.results.set("COUNT", [{ cnt: 0 }]);
+      s.results.set("COUNT", [{ count: 0 }]);
       s.results.set("credential_id", []);
 
       const result = await s.passkeyService.beginRegistration("user-1");
       const cached = await s.cache.get<string>(`passkey_reg:${result.challengeId}`);
-      expect(cached).toBe('"reg-challenge-base64"');
+      expect(cached).toBe("reg-challenge-base64");
     });
   });
 

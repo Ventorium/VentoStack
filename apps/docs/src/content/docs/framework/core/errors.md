@@ -1,4 +1,5 @@
 ---
+order: 6
 title: 错误处理
 description: VentoStack 内置错误类型和错误处理机制
 ---

@@ -43,7 +43,7 @@ describe("rateLimit", () => {
     expect(response.headers.has("Retry-After")).toBe(true);
     expect(response.headers.get("X-RateLimit-Remaining")).toBe("0");
     const body = await response.json();
-    expect(body.error).toBe("Too Many Requests");
+    expect(body.error).toBe("请求过于频繁");
   });
 
   test("custom message on 429", async () => {

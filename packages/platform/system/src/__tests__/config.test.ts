@@ -4,13 +4,15 @@
 
 import { describe, expect, test } from "bun:test";
 import { createConfigService } from "../services/config";
-import { createMockExecutor, createTestCache } from "./helpers";
+import { createMockExecutor, createMockDatabase, createTestCache } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_config", "sys_config", true);
   const cache = createTestCache();
-  const configService = createConfigService({ executor, cache });
-  return { configService, executor, calls, results, cache };
+  const configService = createConfigService({ db, cache });
+  return { configService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
 
 describe("ConfigService", () => {
@@ -45,7 +47,7 @@ describe("ConfigService", () => {
   test("delete removes config", async () => {
     const s = setup();
     await s.configService.delete("site_name");
-    expect(s.calls.some(c => c.text.includes("DELETE"))).toBe(true);
+    expect(s.calls.some(c => c.text.includes("deleted_at"))).toBe(true);
   });
 
   test("refreshCache clears cached value", async () => {

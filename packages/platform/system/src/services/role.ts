@@ -4,8 +4,10 @@
  */
 
 import type { Cache } from "@ventostack/cache";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { PaginatedResult } from "./user";
+import { RoleModel } from "../models/role";
+import { RoleMenuModel } from "../models/menu";
 
 /** 创建角色参数 */
 export interface CreateRoleParams {
@@ -65,21 +67,25 @@ export interface RoleService {
  * @returns 角色服务实例
  */
 export function createRoleService(deps: {
-  executor: SqlExecutor;
+  db: Database;
   cache: Cache;
 }): RoleService {
-  const { executor, cache } = deps;
+  const { db, cache } = deps;
 
   return {
     async create(params) {
       const { name, code, sort, dataScope, remark } = params;
       const id = crypto.randomUUID();
 
-      await executor(
-        `INSERT INTO sys_role (id, name, code, sort, data_scope, status, remark, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, 1, $6, NOW(), NOW())`,
-        [id, name, code, sort ?? 0, dataScope ?? null, remark ?? null],
-      );
+      await db.query(RoleModel).insert({
+        id,
+        name,
+        code,
+        sort: sort ?? 0,
+        data_scope: dataScope ?? null,
+        status: 1,
+        remark: remark ?? null,
+      });
 
       await cache.del("role:list");
 
@@ -87,35 +93,16 @@ export function createRoleService(deps: {
     },
 
     async update(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let paramIndex = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.name !== undefined) updates.name = params.name;
+      if (params.code !== undefined) updates.code = params.code;
+      if (params.sort !== undefined) updates.sort = params.sort;
+      if (params.dataScope !== undefined) updates.data_scope = params.dataScope;
+      if (params.remark !== undefined) updates.remark = params.remark;
 
-      const updatableFields: Record<string, unknown> = {
-        name: params.name,
-        code: params.code,
-        sort: params.sort,
-        data_scope: params.dataScope,
-        remark: params.remark,
-      };
+      if (Object.keys(updates).length === 0) return;
 
-      for (const [field, value] of Object.entries(updatableFields)) {
-        if (value !== undefined) {
-          fields.push(`${field} = $${paramIndex}`);
-          values.push(value);
-          paramIndex++;
-        }
-      }
-
-      if (fields.length === 0) return;
-
-      fields.push("updated_at = NOW()");
-      values.push(id);
-
-      await executor(
-        `UPDATE sys_role SET ${fields.join(", ")} WHERE id = $${paramIndex}`,
-        values,
-      );
+      await db.query(RoleModel).where("id", "=", id).update(updates);
 
       await cache.del(`role:detail:${id}`);
       await cache.del("role:list");
@@ -123,20 +110,11 @@ export function createRoleService(deps: {
 
     async delete(id) {
       // 先删除角色-菜单关联
-      await executor(
-        "DELETE FROM sys_role_menu WHERE role_id = $1",
-        [id],
-      );
+      await db.query(RoleMenuModel).where("role_id", "=", id).hardDelete();
       // 先删除用户-角色关联
-      await executor(
-        "DELETE FROM sys_user_role WHERE role_id = $1",
-        [id],
-      );
+      await db.raw("DELETE FROM sys_user_role WHERE role_id = $1", [id]);
       // 软删除角色
-      await executor(
-        "UPDATE sys_role SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1",
-        [id],
-      );
+      await db.query(RoleModel).where("id", "=", id).delete();
 
       await cache.del(`role:detail:${id}`);
       await cache.del("role:list");
@@ -146,26 +124,23 @@ export function createRoleService(deps: {
       const cached = await cache.get<RoleDetail>(`role:detail:${id}`);
       if (cached) return cached;
 
-      const rows = await executor(
-        `SELECT id, name, code, sort, data_scope, status, remark, created_at, updated_at
-         FROM sys_role WHERE id = $1 AND deleted_at IS NULL`,
-        [id],
-      );
-      const roles = rows as Array<Record<string, unknown>>;
+      const row = await db.query(RoleModel)
+        .where("id", "=", id)
+        .select("id", "name", "code", "sort", "data_scope", "status", "remark", "created_at", "updated_at")
+        .get();
 
-      if (roles.length === 0) return null;
+      if (!row) return null;
 
-      const row = roles[0]!;
       const detail: RoleDetail = {
-        id: row.id as string,
-        name: row.name as string,
-        code: row.code as string,
-        sort: row.sort as number,
-        dataScope: (row.data_scope as number) ?? null,
-        status: row.status as number,
-        remark: (row.remark as string) ?? null,
-        createdAt: row.created_at as string,
-        updatedAt: row.updated_at as string,
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        sort: row.sort,
+        dataScope: row.data_scope ?? null,
+        status: row.status,
+        remark: row.remark ?? null,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
       };
 
       await cache.set(`role:detail:${id}`, detail, { ttl: 300 });
@@ -175,41 +150,30 @@ export function createRoleService(deps: {
 
     async list(params) {
       const { page = 1, pageSize = 10, status } = params ?? {};
-      const conditions: string[] = ["deleted_at IS NULL"];
-      const values: unknown[] = [];
-      let paramIndex = 1;
 
+      let query = db.query(RoleModel);
       if (status !== undefined) {
-        conditions.push(`status = $${paramIndex}`);
-        values.push(status);
-        paramIndex++;
+        query = query.where("status", "=", status);
       }
 
-      const whereClause = conditions.join(" AND ");
+      const total = await query.count();
 
-      const countRows = await executor(
-        `SELECT COUNT(*) as total FROM sys_role WHERE ${whereClause}`,
-        values,
-      );
-      const total = (countRows as Array<{ total: number }>)[0]?.total ?? 0;
+      const rows = await query
+        .select("id", "name", "code", "sort", "data_scope", "status", "created_at")
+        .orderBy("sort", "asc")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      const offset = (page - 1) * pageSize;
-      const listRows = await executor(
-        `SELECT id, name, code, sort, data_scope, status, created_at
-         FROM sys_role WHERE ${whereClause}
-         ORDER BY sort ASC, created_at DESC
-         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-        [...values, pageSize, offset],
-      );
-
-      const list = (listRows as Array<Record<string, unknown>>).map((row) => ({
-        id: row.id as string,
-        name: row.name as string,
-        code: row.code as string,
-        sort: row.sort as number,
-        dataScope: (row.data_scope as number) ?? null,
-        status: row.status as number,
-        createdAt: row.created_at as string,
+      const list = rows.map((row) => ({
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        sort: row.sort,
+        dataScope: row.data_scope ?? null,
+        status: row.status,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
 
       return { items: list, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
@@ -217,26 +181,12 @@ export function createRoleService(deps: {
 
     async assignMenus(roleId, menuIds) {
       // 先删除旧的关联
-      await executor(
-        "DELETE FROM sys_role_menu WHERE role_id = $1",
-        [roleId],
-      );
+      await db.query(RoleMenuModel).where("role_id", "=", roleId).hardDelete();
 
       // 批量插入新关联
       if (menuIds.length > 0) {
-        const values: unknown[] = [];
-        const placeholders: string[] = [];
-        let paramIndex = 1;
-
-        for (const menuId of menuIds) {
-          placeholders.push(`($${paramIndex}, $${paramIndex + 1})`);
-          values.push(roleId, menuId);
-          paramIndex += 2;
-        }
-
-        await executor(
-          `INSERT INTO sys_role_menu (role_id, menu_id) VALUES ${placeholders.join(", ")}`,
-          values,
+        await db.query(RoleMenuModel).batchInsert(
+          menuIds.map(menuId => ({ role_id: roleId, menu_id: menuId })),
         );
       }
 
@@ -246,32 +196,16 @@ export function createRoleService(deps: {
     },
 
     async assignDataScope(roleId, scope, deptIds) {
-      await executor(
-        "UPDATE sys_role SET data_scope = $1, updated_at = NOW() WHERE id = $2",
-        [scope, roleId],
-      );
+      await db.query(RoleModel).where("id", "=", roleId).update({ data_scope: scope });
 
       // 如果提供了部门 ID，更新角色-部门关联表
       if (deptIds) {
-        await executor(
-          "DELETE FROM sys_role_dept WHERE role_id = $1",
-          [roleId],
-        );
+        await db.raw("DELETE FROM sys_role_dept WHERE role_id = $1", [roleId]);
 
         if (deptIds.length > 0) {
-          const values: unknown[] = [];
-          const placeholders: string[] = [];
-          let paramIndex = 1;
-
-          for (const deptId of deptIds) {
-            placeholders.push(`($${paramIndex}, $${paramIndex + 1})`);
-            values.push(roleId, deptId);
-            paramIndex += 2;
-          }
-
-          await executor(
-            `INSERT INTO sys_role_dept (role_id, dept_id) VALUES ${placeholders.join(", ")}`,
-            values,
+          await db.raw(
+            `INSERT INTO sys_role_dept (role_id, dept_id) VALUES ${deptIds.map((_, i) => `($1, $${i + 2})`).join(", ")}`,
+            [roleId, ...deptIds],
           );
         }
       }

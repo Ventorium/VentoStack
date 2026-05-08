@@ -10,17 +10,22 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@simplewebauthn/server": "^13.3.0",
     "@ventostack/auth": "workspace:*",
+    "@ventostack/boot": "workspace:*",
     "@ventostack/cache": "workspace:*",
     "@ventostack/core": "workspace:*",
     "@ventostack/database": "workspace:*",
     "@ventostack/events": "workspace:*",
+    "@ventostack/gen": "workspace:*",
+    "@ventostack/i18n": "workspace:*",
     "@ventostack/monitor": "workspace:*",
+    "@ventostack/notification": "workspace:*",
     "@ventostack/observability": "workspace:*",
-    "@ventostack/oss": "workspace:*",
     "@ventostack/openapi": "workspace:*",
-    "@ventostack/system": "workspace:*"
+    "@ventostack/oss": "workspace:*",
+    "@ventostack/scheduler": "workspace:*",
+    "@ventostack/system": "workspace:*",
+    "@ventostack/workflow": "workspace:*"
   },
   "devDependencies": {
     "typescript": "~6.0.2"

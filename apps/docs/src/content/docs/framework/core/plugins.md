@@ -1,4 +1,5 @@
 ---
+order: 9
 title: 插件系统
 description: 使用 Plugin 接口、createPluginRegistry 和 createPluginSandbox 构建可扩展的插件系统
 ---

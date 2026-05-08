@@ -42,7 +42,23 @@
       "@ventostack/integration": ["./packages/platform/integration/src/index.ts"],
       "@ventostack/integration/*": ["./packages/platform/integration/src/*"],
       "@ventostack/system": ["./packages/platform/system/src/index.ts"],
-      "@ventostack/system/*": ["./packages/platform/system/src/*"]
+      "@ventostack/system/*": ["./packages/platform/system/src/*"],
+      "@ventostack/boot": ["./packages/platform/boot/src/index.ts"],
+      "@ventostack/boot/*": ["./packages/platform/boot/src/*"],
+      "@ventostack/gen": ["./packages/platform/gen/src/index.ts"],
+      "@ventostack/gen/*": ["./packages/platform/gen/src/*"],
+      "@ventostack/i18n": ["./packages/platform/i18n/src/index.ts"],
+      "@ventostack/i18n/*": ["./packages/platform/i18n/src/*"],
+      "@ventostack/monitor": ["./packages/platform/monitor/src/index.ts"],
+      "@ventostack/monitor/*": ["./packages/platform/monitor/src/*"],
+      "@ventostack/notification": ["./packages/platform/notification/src/index.ts"],
+      "@ventostack/notification/*": ["./packages/platform/notification/src/*"],
+      "@ventostack/oss": ["./packages/platform/oss/src/index.ts"],
+      "@ventostack/oss/*": ["./packages/platform/oss/src/*"],
+      "@ventostack/scheduler": ["./packages/platform/scheduler/src/index.ts"],
+      "@ventostack/scheduler/*": ["./packages/platform/scheduler/src/*"],
+      "@ventostack/workflow": ["./packages/platform/workflow/src/index.ts"],
+      "@ventostack/workflow/*": ["./packages/platform/workflow/src/*"]
     }
   },
   "exclude": ["node_modules", "dist", "**/*.test.ts", "apps/docs"]

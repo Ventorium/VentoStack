@@ -6,6 +6,7 @@ import { describe, expect, test, mock } from "bun:test";
 import { createAuthService } from "../services/auth";
 import {
   createMockExecutor,
+  createMockDatabase,
   createTestCache,
   createMockJWTManager,
   createMockPasswordHasher,
@@ -17,7 +18,12 @@ import {
 }  from "./helpers";
 
 function setup(configOverrides: Record<string, string> = {}) {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_user", "sys_user", true);
+  registerModel("sys_user_role", "sys_user_role", false);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_login_log", "sys_login_log", false);
   const cache = createTestCache();
   const jwt = createMockJWTManager();
   const passwordHasher = createMockPasswordHasher();
@@ -28,7 +34,7 @@ function setup(configOverrides: Record<string, string> = {}) {
   const configService = createMockConfigService(configOverrides);
 
   const authService = createAuthService({
-    executor,
+    db,
     cache,
     jwt,
     jwtSecret: "test-secret-32-bytes-long-enough!!",
@@ -40,7 +46,7 @@ function setup(configOverrides: Record<string, string> = {}) {
     configService,
   });
 
-  return { authService, executor, calls, results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus, configService };
+  return { authService, executor: mockExec.executor, calls, results: mockExec.results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus, configService };
 }
 
 describe("AuthService", () => {
@@ -193,7 +199,7 @@ describe("AuthService", () => {
       s.jwt.verify.mockResolvedValue({ sub: "u1", iss: "invalid" } as any);
 
       await expect(s.authService.completeMFALogin("bad-token", "123456", "1.2.3.4", "test"))
-        .rejects.toThrow("Invalid MFA token");
+        .rejects.toThrow("MFA 令牌无效");
     });
 
     test("expired/missing sub in mfaToken throws error", async () => {
@@ -201,7 +207,7 @@ describe("AuthService", () => {
       s.jwt.verify.mockResolvedValue({ iss: "mfa-pending" } as any);
 
       await expect(s.authService.completeMFALogin("expired-token", "123456", "1.2.3.4", "test"))
-        .rejects.toThrow("Invalid MFA token");
+        .rejects.toThrow("MFA 令牌无效");
     });
 
     test("wrong TOTP code throws error", async () => {
@@ -213,7 +219,7 @@ describe("AuthService", () => {
       s.totp.verifyAndConsume.mockResolvedValue(false as any);
 
       await expect(s.authService.completeMFALogin("valid-token", "000000", "1.2.3.4", "test"))
-        .rejects.toThrow("Invalid MFA code");
+        .rejects.toThrow("MFA 验证码错误");
     });
 
     test("user without MFA configured throws error", async () => {
@@ -224,7 +230,7 @@ describe("AuthService", () => {
       }]);
 
       await expect(s.authService.completeMFALogin("valid-token", "123456", "1.2.3.4", "test"))
-        .rejects.toThrow("MFA not configured");
+        .rejects.toThrow("未配置 MFA");
     });
   });
 

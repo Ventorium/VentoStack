@@ -3,8 +3,9 @@
  * 提供字典类型与字典数据的 CRUD，带缓存策略
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { Cache } from "@ventostack/cache";
+import { DictTypeModel, DictDataModel } from "../models/dict";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -97,8 +98,8 @@ export interface DictService {
  * @param deps 依赖注入
  * @returns DictService 实例
  */
-export function createDictService(deps: { executor: SqlExecutor; cache: Cache }): DictService {
-  const { executor, cache } = deps;
+export function createDictService(deps: { db: Database; cache: Cache }): DictService {
+  const { db, cache } = deps;
 
   function cacheKey(typeCode: string): string {
     return `dict:${typeCode}`;
@@ -108,70 +109,55 @@ export function createDictService(deps: { executor: SqlExecutor; cache: Cache })
 
   async function createType(params: CreateDictTypeParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
-    await executor(
-      `INSERT INTO sys_dict_type (id, name, code, status, remark) VALUES ($1, $2, $3, 1, $4)`,
-      [id, params.name, params.code, params.remark ?? null],
-    );
+    await db.query(DictTypeModel).insert({
+      id,
+      name: params.name,
+      code: params.code,
+      status: 1,
+      remark: params.remark ?? null,
+    });
     return { id };
   }
 
   async function updateType(code: string, params: UpdateDictTypeParams): Promise<void> {
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const updates: Record<string, unknown> = {};
+    if (params.name !== undefined) updates.name = params.name;
+    if (params.status !== undefined) updates.status = params.status;
+    if (params.remark !== undefined) updates.remark = params.remark;
 
-    if (params.name !== undefined) {
-      sets.push(`name = $${idx++}`);
-      values.push(params.name);
-    }
-    if (params.status !== undefined) {
-      sets.push(`status = $${idx++}`);
-      values.push(params.status);
-    }
-    if (params.remark !== undefined) {
-      sets.push(`remark = $${idx++}`);
-      values.push(params.remark);
-    }
+    if (Object.keys(updates).length === 0) return;
 
-    if (sets.length === 0) return;
-
-    values.push(code);
-    await executor(
-      `UPDATE sys_dict_type SET ${sets.join(", ")} WHERE code = $${idx}`,
-      values,
-    );
+    await db.query(DictTypeModel).where("code", "=", code).update(updates);
 
     // 类型变更后刷新对应字典数据缓存
     await refreshCache(code);
   }
 
   async function deleteType(code: string): Promise<void> {
-    await executor(`DELETE FROM sys_dict_data WHERE type_code = $1`, [code]);
-    await executor(`DELETE FROM sys_dict_type WHERE code = $1`, [code]);
+    await db.query(DictDataModel).where("type_code", "=", code).hardDelete();
+    await db.query(DictTypeModel).where("code", "=", code).hardDelete();
     await cache.del(cacheKey(code));
   }
 
   async function listTypes(params?: { page?: number; pageSize?: number }): Promise<PaginatedResult<DictTypeItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
-    const offset = (page - 1) * pageSize;
 
-    const countRows = await executor(
-      `SELECT COUNT(*) AS total FROM sys_dict_type`,
-    ) as Array<Record<string, unknown>>;
-    const total = Number(countRows[0]?.total ?? 0);
+    const total = await db.query(DictTypeModel).count();
 
-    const rows = await executor(
-      `SELECT id, name, code, status, COALESCE(remark, '') AS remark FROM sys_dict_type ORDER BY id ASC LIMIT $1 OFFSET $2`,
-      [pageSize, offset],
-    ) as Array<Record<string, unknown>>;
+    const rows = await db.query(DictTypeModel)
+      .select("id", "name", "code", "status", "remark")
+      .orderBy("id", "asc")
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .list();
 
     const items: DictTypeItem[] = rows.map((row) => ({
-      id: row.id as string,
-      name: row.name as string,
-      code: row.code as string,
-      status: (row.status as number) ?? 1,
-      remark: (row.remark as string) ?? "",
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      status: row.status ?? 1,
+      remark: row.remark ?? "",
     }));
 
     return {
@@ -187,17 +173,16 @@ export function createDictService(deps: { executor: SqlExecutor; cache: Cache })
 
   async function createData(params: CreateDictDataParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
-    await executor(
-      `INSERT INTO sys_dict_data (id, type_code, label, value, sort, css_class, status, remark) VALUES ($1, $2, $3, $4, $5, $6, 1, NULL)`,
-      [
-        id,
-        params.typeCode,
-        params.label,
-        params.value,
-        params.sort ?? 0,
-        params.cssClass ?? null,
-      ],
-    );
+    await db.query(DictDataModel).insert({
+      id,
+      type_code: params.typeCode,
+      label: params.label,
+      value: params.value,
+      sort: params.sort ?? 0,
+      css_class: params.cssClass ?? null,
+      status: 1,
+      remark: null,
+    });
     // 新增数据后使缓存失效
     await cache.del(cacheKey(params.typeCode));
     return { id };
@@ -205,85 +190,61 @@ export function createDictService(deps: { executor: SqlExecutor; cache: Cache })
 
   async function updateData(id: string, params: UpdateDictDataParams): Promise<void> {
     // 先查出当前记录的 type_code 以便刷新缓存
-    const existing = await executor(
-      `SELECT type_code FROM sys_dict_data WHERE id = $1`,
-      [id],
-    ) as Array<Record<string, unknown>>;
+    const existing = await db.query(DictDataModel)
+      .where("id", "=", id)
+      .select("type_code")
+      .get();
 
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const updates: Record<string, unknown> = {};
+    if (params.label !== undefined) updates.label = params.label;
+    if (params.value !== undefined) updates.value = params.value;
+    if (params.sort !== undefined) updates.sort = params.sort;
+    if (params.cssClass !== undefined) updates.css_class = params.cssClass;
+    if (params.status !== undefined) updates.status = params.status;
+    if (params.remark !== undefined) updates.remark = params.remark;
 
-    if (params.label !== undefined) {
-      sets.push(`label = $${idx++}`);
-      values.push(params.label);
-    }
-    if (params.value !== undefined) {
-      sets.push(`value = $${idx++}`);
-      values.push(params.value);
-    }
-    if (params.sort !== undefined) {
-      sets.push(`sort = $${idx++}`);
-      values.push(params.sort);
-    }
-    if (params.cssClass !== undefined) {
-      sets.push(`css_class = $${idx++}`);
-      values.push(params.cssClass);
-    }
-    if (params.status !== undefined) {
-      sets.push(`status = $${idx++}`);
-      values.push(params.status);
-    }
-    if (params.remark !== undefined) {
-      sets.push(`remark = $${idx++}`);
-      values.push(params.remark);
-    }
+    if (Object.keys(updates).length === 0) return;
 
-    if (sets.length === 0) return;
-
-    values.push(id);
-    await executor(
-      `UPDATE sys_dict_data SET ${sets.join(", ")} WHERE id = $${idx}`,
-      values,
-    );
+    await db.query(DictDataModel).where("id", "=", id).update(updates);
 
     // 刷新关联的字典类型缓存
-    const typeCode = existing[0]?.type_code as string | undefined;
-    if (typeCode) {
-      await cache.del(cacheKey(typeCode));
+    if (existing?.type_code) {
+      await cache.del(cacheKey(existing.type_code));
     }
   }
 
   async function deleteData(id: string): Promise<void> {
     // 先查出当前记录的 type_code 以便刷新缓存
-    const existing = await executor(
-      `SELECT type_code FROM sys_dict_data WHERE id = $1`,
-      [id],
-    ) as Array<Record<string, unknown>>;
+    const existing = await db.query(DictDataModel)
+      .where("id", "=", id)
+      .select("type_code")
+      .get();
 
-    await executor(`DELETE FROM sys_dict_data WHERE id = $1`, [id]);
+    await db.query(DictDataModel).where("id", "=", id).hardDelete();
 
-    const typeCode = existing[0]?.type_code as string | undefined;
-    if (typeCode) {
-      await cache.del(cacheKey(typeCode));
+    if (existing?.type_code) {
+      await cache.del(cacheKey(existing.type_code));
     }
   }
 
   async function queryDataByType(typeCode: string): Promise<DictDataItem[]> {
-    const rows = await executor(
-      `SELECT id, type_code, label, value, sort, COALESCE(css_class, '') AS css_class, status, COALESCE(remark, '') AS remark FROM sys_dict_data WHERE type_code = $1 AND status = 1 ORDER BY sort ASC, id ASC`,
-      [typeCode],
-    ) as Array<Record<string, unknown>>;
+    const rows = await db.query(DictDataModel)
+      .where("type_code", "=", typeCode)
+      .where("status", "=", 1)
+      .select("id", "type_code", "label", "value", "sort", "css_class", "status", "remark")
+      .orderBy("sort", "asc")
+      .orderBy("id", "asc")
+      .list();
 
     return rows.map((row) => ({
-      id: row.id as string,
-      typeCode: row.type_code as string,
-      label: row.label as string,
-      value: row.value as string,
-      sort: (row.sort as number) ?? 0,
-      cssClass: (row.css_class as string) ?? "",
-      status: (row.status as number) ?? 1,
-      remark: (row.remark as string) ?? "",
+      id: row.id,
+      typeCode: row.type_code,
+      label: row.label,
+      value: row.value,
+      sort: row.sort ?? 0,
+      cssClass: row.css_class ?? "",
+      status: row.status ?? 1,
+      remark: row.remark ?? "",
     }));
   }
 
@@ -300,8 +261,6 @@ export function createDictService(deps: { executor: SqlExecutor; cache: Cache })
       await queryDataByType(typeCode);
     } else {
       // 刷新所有 dict:* 缓存
-      const keys = await cache.get<string[]>("dict:*");
-      // 通过 keys() 获取所有 dict: 前缀的键并逐一删除
       const adapter = (cache as unknown as { keys?: (pattern: string) => Promise<string[]> }).keys;
       if (adapter && typeof adapter === "function") {
         const allKeys = await adapter("dict:*");

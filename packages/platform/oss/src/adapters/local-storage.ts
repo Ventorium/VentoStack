@@ -25,7 +25,7 @@ export function createLocalStorage(options: LocalStorageOptions): StorageAdapter
       const filePath = fullPath(key);
       await mkdir(dirname(filePath), { recursive: true });
 
-      if (data instanceof Buffer) {
+      if (Buffer.isBuffer(data)) {
         await writeFile(filePath, data);
       } else {
         // ReadableStream → Buffer

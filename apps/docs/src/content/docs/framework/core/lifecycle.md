@@ -1,4 +1,5 @@
 ---
+order: 2
 title: 生命周期
 description: 通过 app.lifecycle 管理应用启动、路由编译和关闭阶段的钩子
 ---

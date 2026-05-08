@@ -1,4 +1,5 @@
 import type { Seed } from '@ventostack/database';
+import { createPasswordHasher } from '@ventostack/auth';
 import { generateUUID } from '@ventostack/core';
 
 /**
@@ -18,11 +19,9 @@ export const initAdminSeed: Seed = {
     const adminUserId = generateUUID();
     const adminRoleId = generateUUID();
 
-    // Hash the admin password using Bun.password at seed time
-    const passwordHash = await Bun.password.hash('admin123', {
-      algorithm: 'bcrypt',
-      cost: 10,
-    });
+    // Hash the admin password using @ventostack/auth
+    const passwordHasher = createPasswordHasher();
+    const passwordHash = await passwordHasher.hash('admin123');
 
     // Insert admin role
     await executor(

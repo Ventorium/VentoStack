@@ -1,4 +1,5 @@
 ---
+order: 1
 title: OpenAPI Schema 定义与文档生成
 description: 使用 Schema 构建函数、路由元数据和 setupOpenAPI 自动生成 OpenAPI 3.0 文档
 ---
@@ -92,7 +93,6 @@ const ageSchema = schemaNumber({
   maximum: 150,
   example: 25,
 });
-});
 
 // 整数类型
 const countSchema = schemaInteger({
@@ -131,48 +131,48 @@ const userRef = schemaRef("User");
 
 ## 路由 Schema 配置（推荐）
 
-在 `@ventostack/core` 的路由中配置 `schemaConfig`，OpenAPI 文档将**自动同步生成**，无需手写 Schema。
+在 `@ventostack/core` 的路由中通过第二个参数传入配置对象，OpenAPI 文档将**自动同步生成**，无需手写 Schema。
 
 ```typescript
 import { createRouter } from "@ventostack/core";
 
 const router = createRouter();
 
-router.post("/api/users", async (ctx) => {
-  const body = ctx.request.json ? await ctx.request.json() : {};
-  const user = await createUser(body);
+router.post("/api/users", {
+  body: {
+    name: { type: "string", required: true, min: 2, max: 100, description: "用户姓名" },
+    email: { type: "string", required: true, format: "email", description: "邮箱地址" },
+    password: { type: "string", required: true, min: 8, description: "密码" },
+    role: { type: "string", enum: ["admin", "user", "viewer"], default: "user" },
+  },
+  responses: {
+    201: {
+      id: { type: "uuid", description: "用户 ID" },
+      name: { type: "string" },
+      email: { type: "string", format: "email" },
+      role: { type: "string" },
+    },
+    422: { description: "参数校验失败" },
+  },
+  openapi: {
+    summary: "创建用户",
+    tags: ["users"],
+    operationId: "createUser",
+  },
+}, async (ctx) => {
+  const user = await createUser(ctx.body);
   return ctx.json({ id: user.id, name: user.name }, 201);
-}, {
-  schemaConfig: {
-    body: {
-      name: { type: "string", required: true, min: 2, max: 100, description: "用户姓名" },
-      email: { type: "string", required: true, format: "email", description: "邮箱地址" },
-      password: { type: "string", required: true, min: 8, description: "密码" },
-      role: { type: "string", enum: ["admin", "user", "viewer"], default: "user" },
-    },
-    responses: {
-      201: {
-        contentType: "application/json",
-        schema: {
-          id: { type: "uuid", description: "用户 ID" },
-          name: { type: "string" },
-          email: { type: "string", format: "email" },
-          role: { type: "string" },
-        },
-        description: "创建成功",
-      },
-      422: { description: "参数校验失败" },
-    },
-  },
-  metadata: {
-    openapi: {
-      summary: "创建用户",
-      tags: ["users"],
-      operationId: "createUser",
-    },
-  },
 });
 ```
+
+配置对象支持以下字段：
+
+- `query` — 查询参数 Schema
+- `body` — 请求体 Schema
+- `headers` — 请求头 Schema
+- `formData` — FormData Schema（multipart）
+- `responses` — 响应 Schema（按状态码组织）
+- `openapi` — OpenAPI 文档元数据（summary、tags 等）
 
 ### 支持的 Schema 字段类型
 
@@ -208,25 +208,27 @@ router.post("/api/users", async (ctx) => {
 ### 查询参数自动推断
 
 ```typescript
-router.get("/api/users", async (ctx) => {
-  const { page, limit, search } = ctx.query as { page: string; limit: string; search?: string };
-  // ...
-}, {
-  schemaConfig: {
-    query: {
-      page: { type: "string", required: true, description: "页码" },
-      limit: { type: "string", required: true, description: "每页数量" },
-      search: { type: "string", description: "搜索关键词" },
-    },
+router.get("/api/users", {
+  query: {
+    page: { type: "int", default: 1, description: "页码" },
+    limit: { type: "int", default: 20, description: "每页数量" },
+    search: { type: "string", description: "搜索关键词" },
   },
+  openapi: {
+    summary: "获取用户列表",
+    tags: ["users"],
+  },
+}, async (ctx) => {
+  const { page, limit, search } = ctx.query;
+  // page → number, limit → number, search → string | undefined
 });
 ```
 
-配置 `schemaConfig.query` 后，OpenAPI 会自动生成 `parameters` 定义，无需手动声明。
+配置 `query` 后，OpenAPI 会自动生成 `parameters` 定义，无需手动声明。
 
 ## 响应类型自动推断
 
-当未配置 `schemaConfig.responses` 时，OpenAPI 模块会尝试从 handler 的返回值推断响应类型：
+当未配置 `responses` 时，OpenAPI 模块会尝试从 handler 的返回值推断响应类型：
 
 ```typescript
 // 自动推断为 200 响应，类型为 { message: string }
@@ -245,7 +247,7 @@ router.get("/text", (ctx) => {
 });
 ```
 
-推断优先级：**手动声明 `schemaConfig.responses` > 自动推断 > 默认 200**
+推断优先级：**手动声明 `responses` > 自动推断 > 默认 200**
 
 ## Schema 构建器（手动声明）
 
@@ -368,7 +370,7 @@ import { syncRouterToOpenAPI } from "@ventostack/openapi";
 const generator = createOpenAPIGenerator();
 generator.setInfo({ title: "My API", version: "1.0.0" });
 
-// 自动读取 router 中所有路由的 schemaConfig 和 metadata
+// 自动读取 router 中所有路由的 schema 配置和 openapi 元数据
 syncRouterToOpenAPI(router, generator, {
   excludePaths: ["/health", "/metrics"],  // 排除内部端点
 });
@@ -458,126 +460,4 @@ interface OpenAPIDocument {
   tags?: OpenAPITag[];
 }
 ```
-
-// 添加安全方案
-generator.addSecurityScheme("bearerAuth", {
-  type: "http",
-  scheme: "bearer",
-  bearerFormat: "JWT",
-});
-
-// 添加路径操作
-generator.addPath("/users", "get", {
-  summary: "获取用户列表",
-  tags: ["users"],
-  responses: {
-    200: { description: "成功" },
-  },
-});
-
-// 生成文档
-const document = generator.generate();     // OpenAPIDocument 对象
-const json = generator.toJSON();           // JSON 字符串
-const yaml = generator.toYAML();           // YAML 字符串
-```
-
-## 从 Router 自动同步
-
-将已注册的路由自动同步到生成器（`setupOpenAPI` 内部使用）：
-
-```typescript
-import { syncRouterToOpenAPI } from "@ventostack/openapi";
-
-const generator = createOpenAPIGenerator();
-generator.setInfo({ title: "My API", version: "1.0.0" });
-
-// 自动读取 router 中所有路由的 schemaConfig 和 metadata
-syncRouterToOpenAPI(router, generator, {
-  excludePaths: ["/health", "/metrics"],  // 排除内部端点
-});
-
-const spec = generator.generate();
-```
-
-## 自定义文档 UI
-
-默认使用 Scalar UI。如需切换为 Swagger UI：
-
-```typescript
-import { createSwaggerUIPlugin, setupOpenAPI } from "@ventostack/openapi";
-
-// 方式 1：单独注册 Swagger UI 插件
-app.use(createSwaggerUIPlugin({
-  specUrl: "/openapi.json",
-  title: "Swagger UI",
-  path: "/swagger",
-}));
-
-// 方式 2：完全手动控制
-generator.addPath("/docs", "get", {
-  summary: "API 文档",
-  responses: {
-    200: { description: "HTML 页面" },
-  },
-});
-
-// 然后自己注册 handler
-app.router.get("/docs", createSwaggerUIHandler({ specUrl: "/openapi.json" }));
-```
-
-## 安全注意事项
-
-- `/openapi.json` 和 `/docs` 默认公开暴露，生产环境应通过 `excludePaths` 或环境变量控制访问范围
-- `securitySchemes` 中配置的认证方案仅作文档说明，实际认证仍需在路由中实现
-- 避免在 `description` 中泄露内部实现细节（如数据库表名、内部 IP）
-
-## 接口定义
-
-```typescript
-/** OpenAPI 3.0 Schema 对象 */
-interface OpenAPISchema {
-  type?: string;
-  properties?: Record<string, OpenAPISchema>;
-  required?: string[];
-  items?: OpenAPISchema;
-  enum?: unknown[];
-  description?: string;
-  example?: unknown;
-  format?: string;
-  minimum?: number;
-  maximum?: number;
-  minLength?: number;
-  maxLength?: number;
-  pattern?: string;
-  nullable?: boolean;
-  oneOf?: OpenAPISchema[];
-  allOf?: OpenAPISchema[];
-  $ref?: string;
-}
-
-/** OpenAPI 文档生成器 */
-interface OpenAPIGenerator {
-  setInfo(info: OpenAPIInfo): void;
-  addServer(server: OpenAPIServer): void;
-  addTag(name: string, description?: string): void;
-  addSchema(name: string, schema: OpenAPISchema): void;
-  addSecurityScheme(name: string, scheme: unknown): void;
-  addPath(path: string, method: string, operation: OpenAPIOperation): void;
-  generate(): OpenAPIDocument;
-  toJSON(): string;
-  toYAML(): string;
-}
-
-/** OpenAPI 3.0 完整文档 */
-interface OpenAPIDocument {
-  openapi: "3.0.3";
-  info: OpenAPIInfo;
-  servers?: OpenAPIServer[];
-  paths: Record<string, OpenAPIPath>;
-  components?: {
-    schemas?: Record<string, OpenAPISchema>;
-    securitySchemes?: Record<string, unknown>;
-  };
-  tags?: OpenAPITag[];
-}
 ```

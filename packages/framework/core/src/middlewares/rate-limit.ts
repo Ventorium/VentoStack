@@ -191,7 +191,7 @@ export function createRedisRateLimitStore(options: RedisRateLimitStoreOptions): 
 export function rateLimit(options: RateLimitOptions = {}): Middleware {
   const windowMs = options.windowMs ?? 60_000;
   const max = options.max ?? 100;
-  const message = options.message ?? "Too Many Requests";
+  const message = options.message ?? "请求过于频繁";
   const keyFn = options.keyFn ?? ((ctx: Context) => defaultKeyFn(ctx, options.trustProxyHeaders));
   const store = options.store ?? createMemoryRateLimitStore();
 

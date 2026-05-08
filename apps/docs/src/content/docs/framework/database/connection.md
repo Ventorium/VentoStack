@@ -1,4 +1,5 @@
 ---
+order: 1
 title: 连接池
 description: 使用 createConnectionPool 管理数据库连接复用
 ---
@@ -163,3 +164,60 @@ interface ConnectionPool<T> {
 - `drain()` 会关闭连接池，清空等待队列，并销毁所有连接。关闭后 `acquire()` 会抛出错误。
 - `destroy(conn)` 用于从池中移除并销毁单个连接（通常在连接异常时使用）。
 - 连接池内部会定期清理过期的空闲连接，清理间隔为 `min(idleTimeout, 10000)`。
+
+---
+
+## SQL 连接工厂（推荐）
+
+对于大多数应用场景，推荐使用 `createSqlExecutor` 直接创建 Bun SQL 连接，无需手动管理 `createConnectionPool`：
+
+```typescript
+import { createSqlExecutor, createDatabase } from "@ventostack/database";
+
+// 创建带连接池的 executor
+const { executor, close } = createSqlExecutor("postgres://user:pass@localhost/db", {
+  max: 10,       // 最大连接数
+  idle: 30000,   // 空闲超时（毫秒）
+  timeout: 5000, // 连接超时（毫秒）
+});
+
+// 创建数据库实例
+const db = createDatabase({ executor });
+
+// 使用完毕后关闭
+await close();
+```
+
+### 创建独立的迁移连接
+
+迁移建议使用单连接（`max: 1`），避免并发事务冲突：
+
+```typescript
+const pool = createSqlExecutor(process.env.DATABASE_URL!, { max: 10 });
+const migration = createSqlExecutor(process.env.DATABASE_URL!, { max: 1 });
+
+// 迁移使用单连接
+const runner = createMigrationRunner(migration.executor);
+await runner.up();
+
+// 业务使用连接池
+const db = createDatabase({ executor: pool.executor });
+
+// 优雅关闭
+app.lifecycle.onBeforeStop(async () => {
+  await pool.close();
+  await migration.close();
+});
+```
+
+### 直接使用 createDatabase
+
+如果不需要自定义连接池参数，可以直接传 URL：
+
+```typescript
+import { createDatabase } from "@ventostack/database";
+
+const db = createDatabase({ url: "postgres://user:pass@localhost/db" });
+// 内部自动创建 Bun.sql 连接
+// db.close() 会自动关闭底层连接
+```

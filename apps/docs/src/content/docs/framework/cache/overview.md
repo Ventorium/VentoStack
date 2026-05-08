@@ -1,4 +1,5 @@
 ---
+order: 1
 title: 缓存层
 description: 使用 createCache 添加高性能缓存支持
 ---
@@ -18,10 +19,9 @@ const cache = createCache(createMemoryAdapter());
 ### Redis 缓存（生产/分布式）
 
 ```typescript
-import { createCache, createRedisAdapter } from "@ventostack/cache";
-import { RedisClient } from "bun";
+import { createCache, createRedisAdapter, createRedisClient } from "@ventostack/cache";
 
-const redis = new RedisClient("redis://localhost:6379");
+const redis = createRedisClient({ url: "redis://localhost:6379" });
 const cache = createCache(
   createRedisAdapter({ client: redis, keyPrefix: "app:v1:" })
 );

@@ -3,8 +3,9 @@
  * 提供系统配置的 CRUD、按 key 查值（带缓存）与缓存刷新
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { Cache } from "@ventostack/cache";
+import { ConfigModel } from "../models/config";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -73,8 +74,8 @@ export interface ConfigService {
  * @param deps 依赖注入
  * @returns ConfigService 实例
  */
-export function createConfigService(deps: { executor: SqlExecutor; cache: Cache }): ConfigService {
-  const { executor, cache } = deps;
+export function createConfigService(deps: { db: Database; cache: Cache }): ConfigService {
+  const { db, cache } = deps;
 
   function cacheKey(key: string): string {
     return `config:${key}`;
@@ -82,99 +83,62 @@ export function createConfigService(deps: { executor: SqlExecutor; cache: Cache 
 
   async function create(params: CreateConfigParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
-    await executor(
-      `INSERT INTO sys_config (id, name, key, value, type, "group", remark) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        id,
-        params.name,
-        params.key,
-        params.value,
-        params.type ?? null,
-        params.group ?? null,
-        params.remark ?? null,
-      ],
-    );
+    await db.query(ConfigModel).insert({
+      id,
+      name: params.name,
+      key: params.key,
+      value: params.value,
+      type: params.type ?? null,
+      group: params.group ?? null,
+      remark: params.remark ?? null,
+    });
     return { id };
   }
 
   async function update(key: string, params: UpdateConfigParams): Promise<void> {
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const updates: Record<string, unknown> = {};
+    if (params.name !== undefined) updates.name = params.name;
+    if (params.value !== undefined) updates.value = params.value;
+    if (params.type !== undefined) updates.type = params.type;
+    if (params.group !== undefined) updates.group = params.group;
+    if (params.remark !== undefined) updates.remark = params.remark;
 
-    if (params.name !== undefined) {
-      sets.push(`name = $${idx++}`);
-      values.push(params.name);
-    }
-    if (params.value !== undefined) {
-      sets.push(`value = $${idx++}`);
-      values.push(params.value);
-    }
-    if (params.type !== undefined) {
-      sets.push(`type = $${idx++}`);
-      values.push(params.type);
-    }
-    if (params.group !== undefined) {
-      sets.push(`"group" = $${idx++}`);
-      values.push(params.group);
-    }
-    if (params.remark !== undefined) {
-      sets.push(`remark = $${idx++}`);
-      values.push(params.remark);
-    }
+    if (Object.keys(updates).length === 0) return;
 
-    if (sets.length === 0) return;
-
-    values.push(key);
-    await executor(
-      `UPDATE sys_config SET ${sets.join(", ")} WHERE key = $${idx}`,
-      values,
-    );
-
-    // 更新后刷新缓存
+    await db.query(ConfigModel).where("key", "=", key).update(updates);
     await cache.del(cacheKey(key));
   }
 
   async function deleteConfig(key: string): Promise<void> {
-    await executor(`DELETE FROM sys_config WHERE key = $1`, [key]);
+    await db.query(ConfigModel).where("key", "=", key).delete();
     await cache.del(cacheKey(key));
   }
 
   async function list(params?: ConfigListParams): Promise<PaginatedResult<ConfigItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
-    const offset = (page - 1) * pageSize;
 
-    const conditions: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
-
+    let query = db.query(ConfigModel);
     if (params?.group !== undefined) {
-      conditions.push(`"group" = $${idx++}`);
-      values.push(params.group);
+      query = query.where("group", "=", params.group);
     }
 
-    const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+    const total = await query.count();
 
-    const countRows = await executor(
-      `SELECT COUNT(*) AS total FROM sys_config ${where}`,
-      values,
-    ) as Array<Record<string, unknown>>;
-    const total = Number(countRows[0]?.total ?? 0);
-
-    const rows = await executor(
-      `SELECT id, name, key, value, type, COALESCE("group", '') AS "group", COALESCE(remark, '') AS remark FROM sys_config ${where} ORDER BY id ASC LIMIT $${idx++} OFFSET $${idx++}`,
-      [...values, pageSize, offset],
-    ) as Array<Record<string, unknown>>;
+    const rows = await query
+      .orderBy("id", "asc")
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .list();
 
     const items: ConfigItem[] = rows.map((row) => ({
-      id: row.id as string,
-      name: row.name as string,
-      key: row.key as string,
-      value: (row.value as string) ?? "",
-      type: (row.type as number) ?? 0,
-      group: (row.group as string) ?? "",
-      remark: (row.remark as string) ?? "",
+      id: row.id,
+      name: row.name,
+      key: row.key,
+      value: row.value ?? "",
+      type: row.type ?? 0,
+      group: row.group ?? "",
+      remark: row.remark ?? "",
     }));
 
     return {
@@ -188,12 +152,12 @@ export function createConfigService(deps: { executor: SqlExecutor; cache: Cache 
 
   async function getValue(key: string): Promise<string | null> {
     return cache.remember<string | null>(cacheKey(key), 3600, async () => {
-      const rows = await executor(
-        `SELECT value FROM sys_config WHERE key = $1`,
-        [key],
-      ) as Array<Record<string, unknown>>;
-      if (rows.length === 0) return null;
-      return rows[0]!.value as string;
+      const row = await db.query(ConfigModel)
+        .where("key", "=", key)
+        .select("value")
+        .get();
+      if (!row) return null;
+      return row.value as string;
     });
   }
 

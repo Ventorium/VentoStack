@@ -4,13 +4,19 @@
 
 import { describe, expect, test } from "bun:test";
 import { createRoleService } from "../services/role";
-import { createMockExecutor, createTestCache } from "./helpers";
+import { createMockExecutor, createMockDatabase, createTestCache } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_user_role", "sys_user_role", false);
+  registerModel("sys_role_menu", "sys_role_menu", false);
+  registerModel("sys_role_dept", "sys_role_dept", false);
+  registerModel("sys_dept", "sys_dept", true);
   const cache = createTestCache();
-  const roleService = createRoleService({ executor, cache });
-  return { roleService, executor, calls, results, cache };
+  const roleService = createRoleService({ db, cache });
+  return { roleService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
 
 describe("RoleService", () => {
@@ -82,7 +88,7 @@ describe("RoleService", () => {
 
   test("list returns paginated results", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 2 }]);
+    s.results.set("COUNT", [{ count: 2 }]);
     s.results.set("SELECT", [
       { id: "r1", name: "管理员", code: "admin", sort: 1, data_scope: 1, status: 1, created_at: "2025-01-01" },
       { id: "r2", name: "用户", code: "user", sort: 2, data_scope: null, status: 1, created_at: "2025-01-01" },
@@ -95,7 +101,7 @@ describe("RoleService", () => {
 
   test("list with empty result returns zero items", async () => {
     const s = setup();
-    s.results.set("COUNT", [{ total: 0 }]);
+    s.results.set("COUNT", [{ count: 0 }]);
     const result = await s.roleService.list({ page: 1, pageSize: 10 });
     expect(result.items.length).toBe(0);
     expect(result.total).toBe(0);

@@ -1,222 +1,162 @@
 ---
 title: 任务调度概述
-description: '任务调度模块提供定时任务的创建、启停、执行日志管理及 Cron 表达式校验，与 @ventostack/events 调度器集成。'
+description: '任务调度模块提供定时任务的 CRUD、启停控制、手动触发和执行日志管理，基于 @ventostack/events 的 Scheduler 构建。'
 ---
 
 ## 概述
 
-任务调度模块基于 `@ventostack/events` 的调度能力，提供可视化的定时任务管理界面。支持任务的增删改查、手动触发、启停控制及执行日志查看。
+`@ventostack/scheduler` 是 VentoStack 平台层的定时任务管理模块，基于 `@ventostack/events` 的 `Scheduler` 能力，在其之上增加了任务持久化（数据库）、管理 API、执行日志和启停控制。
 
 ## 架构关系
 
 ```
-@ventostack/system (scheduler)
+@ventostack/scheduler
         │
-        │  使用
+        │  使用 Scheduler 实例
         ▼
-@ventostack/events (scheduler)
+@ventostack/events  (createScheduler)
         │
         │  基于
         ▼
-@ventostack/core (lifecycle)
+@ventostack/core  (lifecycle)
 ```
 
-平台层的任务调度模块在框架层调度器之上增加了：
-- 任务持久化（数据库存储）
-- 管理接口（CRUD API）
-- 执行日志（记录每次执行结果）
-- Cron 表达式校验
-- 任务状态管理
+## 快速开始
 
-## 任务 CRUD
+### 创建调度模块
+
+```typescript
+import { createSchedulerModule } from '@ventostack/scheduler';
+import { createScheduler } from '@ventostack/events';
+
+// 创建框架层调度器
+const scheduler = createScheduler();
+
+// 定义任务处理器
+const handlers = {
+  cleanExpiredSessions: async (params) => {
+    // 清理过期会话逻辑
+    return '清理完成';
+  },
+  syncDictCache: async (params) => {
+    // 字典缓存同步逻辑
+    return '同步完成';
+  },
+};
+
+// 创建调度模块
+const schedulerModule = createSchedulerModule({
+  db,
+  scheduler,
+  handlers,
+  jwt,
+  jwtSecret,
+  rbac,
+});
+
+// 注册路由
+app.use(schedulerModule.router);
+
+// 初始化（自动启动所有 status=1 的任务）
+await schedulerModule.init();
+```
+
+### 模块依赖
+
+```typescript
+interface SchedulerModuleDeps {
+  db: Database;                    // 数据库实例
+  scheduler: Scheduler;            // @ventostack/events 的调度器
+  handlers: JobHandlerMap;         // 任务处理器映射
+  jwt: JWTManager;                 // JWT 管理器
+  jwtSecret: string;               // JWT 密钥
+  rbac?: RBAC;                     // 权限控制（可选）
+}
+```
+
+## API 路由
+
+所有路由前缀 `/api/scheduler`，需要认证：
+
+| 方法 | 路径 | 权限 | 说明 |
+|------|------|------|------|
+| GET | `/api/scheduler/jobs` | `scheduler:job:list` | 查询任务列表 |
+| GET | `/api/scheduler/jobs/:id` | `scheduler:job:query` | 查询任务详情 |
+| POST | `/api/scheduler/jobs` | `scheduler:job:create` | 创建任务 |
+| PUT | `/api/scheduler/jobs/:id` | `scheduler:job:update` | 更新任务 |
+| DELETE | `/api/scheduler/jobs/:id` | `scheduler:job:delete` | 删除任务 |
+| PUT | `/api/scheduler/jobs/:id/start` | `scheduler:job:update` | 启动任务 |
+| PUT | `/api/scheduler/jobs/:id/stop` | `scheduler:job:update` | 停止任务 |
+| POST | `/api/scheduler/jobs/:id/execute` | `scheduler:job:update` | 立即执行一次 |
+| GET | `/api/scheduler/logs` | `scheduler:job:list` | 查询执行日志 |
 
 ### 创建任务
 
 ```typescript
-POST /api/system/scheduler
+POST /api/scheduler/jobs
 {
   "name": "清理过期会话",
-  "group": "system",
-  "handler": "cleanExpiredSessions",
-  "cron": "0 0 3 * * ?",         // Cron 表达式
-  "params": {                     // 传递给 handler 的参数
-    "maxAge": 86400
-  },
-  "strategy": "abort",            // 并发策略: abort | skip | parallel
-  "retryCount": 3,                // 失败重试次数
-  "retryInterval": 60,            // 重试间隔（秒）
-  "timeout": 300,                 // 超时时间（秒）
-  "remark": "每天凌晨 3 点清理过期会话"
+  "handlerId": "cleanExpiredSessions",   // 对应 handlers 中的 key
+  "cron": "0 0 3 * *",                   // Cron 表达式
+  "params": { "maxAge": 86400 },         // 传递给 handler 的参数
+  "description": "每天凌晨 3 点清理过期会话"
 }
 ```
 
-### 查询任务
+### 查询任务列表
 
 ```typescript
-GET /api/system/scheduler?page=1&pageSize=10&group=system&status=running
+GET /api/scheduler/jobs?page=1&pageSize=10&status=1
 
-// 响应
-{
-  "total": 20,
-  "rows": [
-    {
-      "id": "job-001",
-      "name": "清理过期会话",
-      "group": "system",
-      "handler": "cleanExpiredSessions",
-      "cron": "0 0 3 * * ?",
-      "cronDescription": "每天 03:00",
-      "status": "running",          // pending | running | paused | completed | error
-      "strategy": "abort",
-      "retryCount": 3,
-      "timeout": 300,
-      "lastExecutedAt": "2024-06-01T03:00:00Z",
-      "lastResult": "success",
-      "nextExecuteAt": "2024-06-02T03:00:00Z",
-      "remark": "每天凌晨 3 点清理过期会话"
-    }
-  ]
-}
+// status: 0=暂停, 1=运行中
 ```
 
-### 更新任务
+### 启停控制
 
 ```typescript
-PUT /api/system/scheduler/{id}
-{
-  "cron": "0 0 4 * * ?",           // 修改为凌晨 4 点
-  "params": {
-    "maxAge": 172800               // 修改参数
-  }
-}
+// 启动任务（注册到调度器）
+PUT /api/scheduler/jobs/:id/start
 
-// 更新后自动重新注册调度
+// 停止任务（从调度器移除，保留配置）
+PUT /api/scheduler/jobs/:id/stop
+
+// 立即执行一次（不影响原有调度计划）
+POST /api/scheduler/jobs/:id/execute
 ```
 
-### 删除任务
+### 执行日志
 
 ```typescript
-DELETE /api/system/scheduler/{id}
-
-// 删除前自动停止调度
-// 保留历史执行日志
+GET /api/scheduler/logs?jobId=xxx&page=1&pageSize=10
 ```
 
-## 启停控制
+## 服务接口
 
-### 启动任务
-
-```typescript
-PUT /api/system/scheduler/{id}/start
-
-// 效果：将任务注册到 @ventostack/events 调度器
-```
-
-### 暂停任务
+通过 `schedulerModule.services.scheduler` 访问服务：
 
 ```typescript
-PUT /api/system/scheduler/{id}/pause
-
-// 效果：从调度器移除，但保留任务配置
-```
-
-### 手动触发
-
-```typescript
-POST /api/system/scheduler/{id}/trigger
-
-// 立即执行一次，不影响原有调度计划
-// 返回执行 ID 用于追踪
-{
-  "executionId": "exec-001"
-}
-```
-
-## 执行日志
-
-每次任务执行都会记录详细日志：
-
-```typescript
-GET /api/system/scheduler/{id}/logs?page=1&pageSize=10&status=failed
-
-// 响应
-{
-  "total": 100,
-  "rows": [
-    {
-      "id": "exec-001",
-      "jobId": "job-001",
-      "jobName": "清理过期会话",
-      "status": "success",          // success | failed | timeout | aborted
-      "startTime": "2024-06-01T03:00:00Z",
-      "endTime": "2024-06-01T03:00:05Z",
-      "duration": 5000,             // 毫秒
-      "result": "清理了 150 条过期会话",
-      "error": null,
-      "retryCount": 0,
-      "triggerType": "cron"         // cron | manual
-    }
-  ]
-}
-```
-
-日志保留策略：默认保留 30 天，可通过系统参数配置。
-
-## Cron 表达式校验
-
-创建和更新任务时自动校验 Cron 表达式的合法性：
-
-```typescript
-// 校验规则
-// 1. 格式：支持 5 位（分 时 日 月 周）和 6 位（秒 分 时 日 月 周）
-// 2. 范围校验：秒 0-59，分 0-59，时 0-23，日 1-31，月 1-12，周 0-7
-// 3. 特殊字符：* , - / #
-// 4. 频率限制：最小间隔不低于 1 分钟（防止高频任务）
-// 5. 提供人类可读描述
-
-validateCron('0 0 3 * * ?');   // ✓ "每天 03:00"
-validateCron('*/5 * * * *');   // ✓ "每 5 分钟"
-validateCron('0 0 31 2 *');    // ✗ "2 月没有 31 日"
-validateCron('* * * * * * *'); // ✗ "无效的 Cron 表达式格式"
-```
-
-## 与框架调度器集成
-
-```typescript
-import { createSchedulerModule } from '@ventostack/system';
-import { createEventBus } from '@ventostack/events';
-
-const eventBus = createEventBus({ /* config */ });
-const schedulerModule = createSchedulerModule({
-  db,
-  cache,
-  eventBus,
-  logger,
-  handlers: {
-    // 注册可用的 handler 函数
-    cleanExpiredSessions: async (params) => {
-      const count = await db.query`DELETE FROM sessions WHERE expires_at < NOW()`;
-      return `清理了 ${count} 条过期会话`;
-    },
-    syncDictCache: async (params) => {
-      // 字典缓存同步逻辑
-    },
-    generateDailyReport: async (params) => {
-      // 日报生成逻辑
-    },
-  },
+// 列出任务
+const result = await schedulerModule.services.scheduler.list({
+  status: 1,   // 只查运行中的
+  page: 1,
+  pageSize: 20,
 });
 
-// 启动时从数据库加载所有 running 状态的任务
-await schedulerModule.loadActiveJobs();
+// 创建任务
+const job = await schedulerModule.services.scheduler.create({
+  name: '数据备份',
+  handlerId: 'backupDatabase',
+  cron: '0 2 * * *',
+  description: '每天凌晨 2 点备份数据库',
+});
+
+// 启动任务
+await schedulerModule.services.scheduler.start(job.id);
+
+// 停止任务
+await schedulerModule.services.scheduler.stop(job.id);
 ```
 
-## 并发策略
+## 初始化行为
 
-| 策略 | 说明 |
-|------|------|
-| `abort` | 如果上一次执行未完成，中止当前触发 |
-| `skip` | 如果上一次执行未完成，跳过当前触发 |
-| `parallel` | 允许并行执行（需注意资源消耗） |
-
-默认策略为 `abort`，防止任务堆积。
+调用 `schedulerModule.init()` 时，模块会自动从数据库加载所有 `status=1`（运行中）的任务并注册到调度器。应用重启后无需手动恢复任务。

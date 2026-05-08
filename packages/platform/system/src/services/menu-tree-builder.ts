@@ -4,7 +4,8 @@
  * 菜单类型：1=目录 2=菜单 3=按钮
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+import { UserRoleModel, RoleModel, RoleMenuModel, MenuModel } from "../models";
 
 /** 前端路由元信息 */
 export interface RouteMeta {
@@ -126,9 +127,9 @@ function buildRouteTree(
  * @returns 菜单树构建器实例
  */
 export function createMenuTreeBuilder(deps: {
-  executor: SqlExecutor;
+  db: Database;
 }): MenuTreeBuilder {
-  const { executor } = deps;
+  const { db } = deps;
 
   /**
    * 查询用户的角色关联的所有菜单 ID
@@ -136,27 +137,32 @@ export function createMenuTreeBuilder(deps: {
    * @returns 菜单 ID 集合
    */
   async function queryUserMenuIds(userId: string): Promise<Set<string>> {
-    // 查询用户的所有角色
-    const roleRows = await executor(
-      `SELECT r.id FROM sys_user_role ur
-       JOIN sys_role r ON r.id = ur.role_id
-       WHERE ur.user_id = $1 AND r.status = 1 AND r.deleted_at IS NULL`,
-      [userId],
-    );
-    const roleIds = (roleRows as Array<{ id: string }>).map((r) => r.id);
+    // 查询用户的角色 ID
+    const userRoles = await db.query(UserRoleModel)
+      .where("user_id", "=", userId)
+      .select("role_id")
+      .list();
+    const roleIds = userRoles.map((ur) => ur.role_id);
 
     if (roleIds.length === 0) return new Set();
 
-    // 查询角色关联的菜单 ID
-    const placeholders = roleIds.map((_, i) => `$${i + 1}`).join(", ");
-    const menuRows = await executor(
-      `SELECT DISTINCT menu_id FROM sys_role_menu WHERE role_id IN (${placeholders})`,
-      roleIds,
-    );
+    // 过滤出启用的角色
+    const activeRoles = await db.query(RoleModel)
+      .where("id", "IN", roleIds)
+      .where("status", "=", 1)
+      .select("id")
+      .list();
+    const activeRoleIds = activeRoles.map((r) => r.id);
 
-    return new Set(
-      (menuRows as Array<{ menu_id: string }>).map((r) => r.menu_id),
-    );
+    if (activeRoleIds.length === 0) return new Set();
+
+    // 查询角色关联的菜单 ID
+    const roleMenus = await db.query(RoleMenuModel)
+      .where("role_id", "IN", activeRoleIds)
+      .select("menu_id")
+      .list();
+
+    return new Set(roleMenus.map((rm) => rm.menu_id));
   }
 
   /**
@@ -164,24 +170,24 @@ export function createMenuTreeBuilder(deps: {
    * @returns 菜单行记录列表
    */
   async function queryAllMenus(): Promise<MenuRow[]> {
-    const rows = await executor(
-      `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible
-       FROM sys_menu WHERE status = 1
-       ORDER BY sort ASC`,
-    );
+    const rows = await db.query(MenuModel)
+      .where("status", "=", 1)
+      .select("id", "parent_id", "name", "path", "component", "redirect", "type", "permission", "icon", "sort", "visible")
+      .orderBy("sort", "asc")
+      .list();
 
-    return (rows as Array<Record<string, unknown>>).map((row) => ({
-      id: row.id as string,
-      parent_id: (row.parent_id as string) ?? null,
-      name: row.name as string,
-      path: (row.path as string) ?? "",
-      component: (row.component as string) ?? "",
-      redirect: (row.redirect as string) ?? "",
-      type: row.type as number,
-      permission: (row.permission as string) ?? "",
-      icon: (row.icon as string) ?? "",
-      sort: row.sort as number,
-      visible: (row.visible as boolean) ?? true,
+    return rows.map((row) => ({
+      id: row.id,
+      parent_id: row.parent_id ?? null,
+      name: row.name,
+      path: row.path ?? "",
+      component: row.component ?? "",
+      redirect: row.redirect ?? "",
+      type: row.type,
+      permission: row.permission ?? "",
+      icon: row.icon ?? "",
+      sort: row.sort ?? 0,
+      visible: row.visible ?? true,
     }));
   }
 

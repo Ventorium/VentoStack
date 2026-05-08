@@ -1,4 +1,5 @@
 ---
+order: 5
 title: 菜单管理
 description: '菜单管理模块提供菜单树结构管理、权限标识符定义、动态路由生成及菜单树构建器。'
 ---
@@ -139,13 +140,15 @@ system:user:import    // 系统模块-用户-导入
 权限标识符在路由中间件中使用：
 
 ```typescript
-import { requirePermission } from '@ventostack/system';
+import { createPermMiddleware } from '@ventostack/system';
+
+const perm = createPermMiddleware(rbac);
 
 // 路由级权限控制
-app.get('/api/system/user', requirePermission('system:user:list'), listUsers);
-app.post('/api/system/user', requirePermission('system:user:add'), createUser);
-app.put('/api/system/user/:id', requirePermission('system:user:edit'), updateUser);
-app.delete('/api/system/user/:id', requirePermission('system:user:remove'), deleteUser);
+router.get('/api/system/user', listUsers, perm('system', 'user:list'));
+router.post('/api/system/user', createUser, perm('system', 'user:add'));
+router.put('/api/system/user/:id', updateUser, perm('system', 'user:edit'));
+router.delete('/api/system/user/:id', deleteUser, perm('system', 'user:remove'));
 ```
 
 ## 动态路由生成

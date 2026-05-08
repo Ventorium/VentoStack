@@ -8,7 +8,7 @@ const VENTOSTACK_TIMEOUT_SENTINEL = "__VENTOSTACK_TIMEOUT__";
 export interface TimeoutOptions {
   /** 超时时间（毫秒），默认 30000 */
   ms?: number;
-  /** 超时响应消息，默认 "Request Timeout" */
+  /** 超时响应消息，默认 "请求超时" */
   message?: string;
 }
 
@@ -20,7 +20,7 @@ export interface TimeoutOptions {
  */
 export function timeout(options: TimeoutOptions = {}): Middleware {
   const ms = options.ms ?? 30_000;
-  const message = options.message ?? "Request Timeout";
+  const message = options.message ?? "请求超时";
 
   return async (_ctx, next) => {
     const controller = new AbortController();

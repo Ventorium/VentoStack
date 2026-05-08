@@ -2,7 +2,7 @@ import { defineModel, column } from '@ventostack/database';
 
 export const MenuModel = defineModel('sys_menu', {
   id: column.varchar({ primary: true, length: 36 }),
-  parentId: column.varchar({ length: 36, nullable: true }),
+  parent_id: column.varchar({ length: 36, nullable: true }),
   name: column.varchar({ length: 64 }),
   path: column.varchar({ length: 256, nullable: true }),
   component: column.varchar({ length: 256, nullable: true }),
@@ -16,6 +16,6 @@ export const MenuModel = defineModel('sys_menu', {
 }, { timestamps: true });
 
 export const RoleMenuModel = defineModel('sys_role_menu', {
-  roleId: column.varchar({ length: 36 }),
-  menuId: column.varchar({ length: 36 }),
+  role_id: column.varchar({ length: 36 }),
+  menu_id: column.varchar({ length: 36 }),
 }, { timestamps: false });

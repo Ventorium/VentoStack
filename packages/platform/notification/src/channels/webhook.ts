@@ -37,7 +37,7 @@ export function createWebhookChannel(options: WebhookChannelOptions): NotifyChan
         }
         return { success: true };
       } catch (e) {
-        return { success: false, error: e instanceof Error ? e.message : "Webhook failed" };
+        return { success: false, error: e instanceof Error ? e.message : "Webhook 发送失败" };
       }
     },
   };

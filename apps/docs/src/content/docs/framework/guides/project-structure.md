@@ -1,4 +1,5 @@
 ---
+order: 3
 title: 项目结构
 description: VentoStack 推荐的项目结构和文件组织方式
 ---
@@ -63,8 +64,8 @@ export async function createExampleApp(options: CreateAppOptions) {
   const logger = createLogger({ level: "info" });
   const app = createApp({ port: config.port });
 
-  app.use(errorHandler(logger));
-  app.use(requestLogger(logger));
+  app.use(errorHandler({ logger }));
+  app.use(requestLogger({ logger }));
 
   registerRoutes({ router: app.router, userService, authService });
 

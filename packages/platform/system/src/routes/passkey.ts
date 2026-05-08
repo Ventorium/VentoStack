@@ -6,7 +6,7 @@
  */
 
 import { createRouter } from "@ventostack/core";
-import type { Middleware, Router } from "@ventostack/core";
+import type { Middleware, Router, RouteSchemaConfig } from "@ventostack/core";
 import type { Cache } from "@ventostack/cache";
 import type { PasskeyService } from "../services/passkey";
 import type { AuthService } from "../services/auth";
@@ -28,6 +28,12 @@ function getClientIP(request: Request): string {
   return "unknown";
 }
 
+const passkeyItemSchema = {
+  id: { type: "uuid" as const, description: "Passkey ID" },
+  name: { type: "string" as const, description: "Passkey 名称" },
+  createdAt: { type: "date" as const, description: "创建时间" },
+};
+
 export function createPasskeyRoutes(
   passkeyService: PasskeyService,
   authService: AuthService,
@@ -37,7 +43,18 @@ export function createPasskeyRoutes(
   const router = createRouter();
 
   // ---- 公开端点 ----
-  router.post("/api/auth/passkey/login-begin", async (ctx) => {
+  router.post("/api/auth/passkey/login-begin", {
+    body: {
+      username: { type: "string" as const, description: "用户名（可选，用于识别用户）" },
+    },
+    responses: {
+      200: {
+        challengeId: { type: "string" as const, description: "挑战 ID" },
+        challenge: { type: "string" as const, description: "WebAuthn 挑战数据" },
+      },
+    },
+    openapi: { summary: "开始 Passkey 登录", tags: ["auth", "passkey"], operationId: "passkeyLoginBegin" },
+  }, async (ctx) => {
     try {
       // IP 速率限制
       const ip = getClientIP(ctx.request);
@@ -52,12 +69,26 @@ export function createPasskeyRoutes(
       const result = await passkeyService.beginAuthentication(body.username as string);
       return ok(result);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to begin passkey login";
+      const msg = e instanceof Error ? e.message : "通行密钥登录失败";
       return fail(msg, 400);
     }
   });
 
-  router.post("/api/auth/passkey/login-finish", async (ctx) => {
+  router.post("/api/auth/passkey/login-finish", {
+    body: {
+      challengeId: { type: "string" as const, required: true, description: "挑战 ID" },
+      assertion: { type: "object" as const, required: true, description: "WebAuthn 断言数据" },
+      deviceType: { type: "string" as const, description: "设备类型" },
+    },
+    responses: {
+      200: {
+        accessToken: { type: "string" as const, description: "访问令牌" },
+        refreshToken: { type: "string" as const, description: "刷新令牌" },
+        expiresIn: { type: "int" as const, description: "过期时间（秒）" },
+      },
+    },
+    openapi: { summary: "完成 Passkey 登录", tags: ["auth", "passkey"], operationId: "passkeyLoginFinish" },
+  }, async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
       const { userId, username } = await passkeyService.finishAuthentication(
@@ -77,7 +108,7 @@ export function createPasskeyRoutes(
 
       return ok(loginResult);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Passkey verification failed";
+      const msg = e instanceof Error ? e.message : "通行密钥验证失败";
       return fail(msg, 401, 401);
     }
   });
@@ -86,22 +117,38 @@ export function createPasskeyRoutes(
   const protectedRouter = createRouter();
   protectedRouter.use(authMiddleware);
 
-  protectedRouter.post("/api/auth/passkey/register-begin", async (ctx) => {
+  protectedRouter.post("/api/auth/passkey/register-begin", {
+    responses: {
+      200: {
+        challengeId: { type: "string" as const, description: "挑战 ID" },
+        challenge: { type: "string" as const, description: "WebAuthn 挑战数据" },
+      },
+    },
+    openapi: { summary: "开始 Passkey 注册", tags: ["auth", "passkey"], operationId: "passkeyRegisterBegin" },
+  }, async (ctx) => {
     try {
       const user = ctx.user as { id: string } | undefined;
-      if (!user?.id) return fail("Not authenticated", 401, 401);
+      if (!user?.id) return fail("未登录", 401, 401);
       const result = await passkeyService.beginRegistration(user.id);
       return ok(result);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to begin registration";
+      const msg = e instanceof Error ? e.message : "通行密钥注册失败";
       return fail(msg, 400);
     }
   });
 
-  protectedRouter.post("/api/auth/passkey/register-finish", async (ctx) => {
+  protectedRouter.post("/api/auth/passkey/register-finish", {
+    body: {
+      name: { type: "string" as const, required: true, description: "Passkey 名称" },
+      challengeId: { type: "string" as const, required: true, description: "挑战 ID" },
+      credential: { type: "object" as const, required: true, description: "WebAuthn 凭证数据" },
+    },
+    responses: { 200: passkeyItemSchema },
+    openapi: { summary: "完成 Passkey 注册", tags: ["auth", "passkey"], operationId: "passkeyRegisterFinish" },
+  }, async (ctx) => {
     try {
       const user = ctx.user as { id: string } | undefined;
-      if (!user?.id) return fail("Not authenticated", 401, 401);
+      if (!user?.id) return fail("未登录", 401, 401);
       const body = await parseBody(ctx.request);
       const result = await passkeyService.finishRegistration(
         user.id,
@@ -111,21 +158,26 @@ export function createPasskeyRoutes(
       );
       return ok(result);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "Failed to finish registration";
+      const msg = e instanceof Error ? e.message : "通行密钥注册完成失败";
       return fail(msg, 400);
     }
   });
 
-  protectedRouter.get("/api/auth/passkey/list", async (ctx) => {
+  protectedRouter.get("/api/auth/passkey/list", {
+    responses: { 200: { type: "array" as const, description: "Passkey 列表" } },
+    openapi: { summary: "获取 Passkey 列表", tags: ["auth", "passkey"], operationId: "listPasskeys" },
+  }, async (ctx) => {
     const user = ctx.user as { id: string } | undefined;
-    if (!user?.id) return fail("Not authenticated", 401, 401);
+    if (!user?.id) return fail("未登录", 401, 401);
     const passkeys = await passkeyService.listPasskeys(user.id);
     return ok(passkeys);
   });
 
-  protectedRouter.delete("/api/auth/passkey/:id", async (ctx) => {
+  protectedRouter.delete("/api/auth/passkey/:id", {
+    openapi: { summary: "删除 Passkey", tags: ["auth", "passkey"], operationId: "deletePasskey" },
+  }, async (ctx) => {
     const user = ctx.user as { id: string } | undefined;
-    if (!user?.id) return fail("Not authenticated", 401, 401);
+    if (!user?.id) return fail("未登录", 401, 401);
     const passkeyId = (ctx.params as Record<string, string>).id!;
     await passkeyService.removePasskey(user.id, passkeyId);
     return ok(null);

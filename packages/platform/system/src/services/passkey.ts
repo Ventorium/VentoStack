@@ -4,9 +4,11 @@
  * 基于 WebAuthn (FIDO2) 协议，使用 @simplewebauthn/server 实现服务端验证
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { Cache } from "@ventostack/cache";
 import type { AuditStore } from "@ventostack/observability";
+import { PasskeyModel } from "../models/passkey";
+import { UserModel } from "../models/user";
 import {
   generateRegistrationOptions,
   verifyRegistrationResponse,
@@ -72,33 +74,31 @@ const CHALLENGE_TTL = 120;
  * 创建通行密钥服务实例
  */
 export function createPasskeyService(deps: {
-  executor: SqlExecutor;
+  db: Database;
   cache: Cache;
   rpID: string;
   rpName: string;
   rpOrigins: string[];
   auditStore: AuditStore;
 }): PasskeyService {
-  const { executor, cache, rpID, rpName, rpOrigins, auditStore } = deps;
+  const { db, cache, rpID, rpName, rpOrigins, auditStore } = deps;
 
   return {
     async beginRegistration(userId) {
       // 检查数量限制
-      const countRows = await executor(
-        "SELECT COUNT(*) AS cnt FROM sys_passkey WHERE user_id = $1",
-        [userId],
-      );
-      const count = Number((countRows as Array<Record<string, unknown>>)[0]?.cnt ?? 0);
+      const count = await db.query(PasskeyModel)
+        .where("user_id", "=", userId)
+        .count();
       if (count >= MAX_PASSKEYS) {
         throw new Error(`最多只能注册 ${MAX_PASSKEYS} 个通行密钥`);
       }
 
       // 查询已有凭证用于排除重复注册
-      const existingRows = await executor(
-        "SELECT credential_id FROM sys_passkey WHERE user_id = $1",
-        [userId],
-      );
-      const excludeCredentials = (existingRows as Array<{ credential_id: string }>).map(r => ({
+      const existingRows = await db.query(PasskeyModel)
+        .where("user_id", "=", userId)
+        .select("credential_id")
+        .list();
+      const excludeCredentials = existingRows.map(r => ({
         id: r.credential_id,
         type: "public-key" as const,
       }));
@@ -147,22 +147,19 @@ export function createPasskeyService(deps: {
       // Convert Uint8Array publicKey to base64 for storage
       const publicKeyBase64 = Buffer.from(info.credential.publicKey).toString("base64");
 
-      await executor(
-        `INSERT INTO sys_passkey (id, user_id, name, credential_id, public_key, counter, transports, device_type, backed_up, aaguid, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, NOW())`,
-        [
-          id,
-          userId,
-          name,
-          info.credential.id,
-          publicKeyBase64,
-          info.credential.counter,
-          JSON.stringify(info.credential.transports ?? []),
-          info.credentialDeviceType,
-          info.credentialBackedUp ? true : false,
-          info.aaguid,
-        ],
-      );
+      await db.query(PasskeyModel).insert({
+        id,
+        user_id: userId,
+        name,
+        credential_id: info.credential.id,
+        public_key: publicKeyBase64,
+        counter: BigInt(info.credential.counter),
+        transports: JSON.stringify(info.credential.transports ?? []),
+        device_type: info.credentialDeviceType,
+        backed_up: info.credentialBackedUp ? true : false,
+        aaguid: info.aaguid,
+        created_at: new Date(),
+      });
 
       await auditStore.append({
         actor: userId,
@@ -185,28 +182,27 @@ export function createPasskeyService(deps: {
 
     async beginAuthentication(username) {
       // 查找用户
-      const userRows = await executor(
-        "SELECT id FROM sys_user WHERE username = $1 AND deleted_at IS NULL AND status = 1",
-        [username],
-      );
-      const users = userRows as Array<{ id: string }>;
-      if (users.length === 0) {
+      const authUser = await db.query(UserModel)
+        .where("username", "=", username)
+        .where("status", "=", 1)
+        .select("id")
+        .get();
+      if (!authUser) {
         throw new Error("通行密钥登录失败");
       }
 
-      const userId = users[0]!.id;
+      const userId = authUser.id;
 
       // 查找用户的 passkeys
-      const passkeyRows = await executor(
-        "SELECT credential_id, transports FROM sys_passkey WHERE user_id = $1",
-        [userId],
-      );
-      const passkeys = passkeyRows as Array<{ credential_id: string; transports: string | null }>;
-      if (passkeys.length === 0) {
+      const passkeyRows = await db.query(PasskeyModel)
+        .where("user_id", "=", userId)
+        .select("credential_id", "transports")
+        .list();
+      if (passkeyRows.length === 0) {
         throw new Error("通行密钥登录失败");
       }
 
-      const allowCredentials = passkeys.map(pk => ({
+      const allowCredentials = passkeyRows.map(pk => ({
         id: pk.credential_id,
         type: "public-key" as const,
         transports: pk.transports ? JSON.parse(pk.transports) : undefined,
@@ -244,16 +240,14 @@ export function createPasskeyService(deps: {
       };
 
       // 查找 passkey
-      const rows = await executor(
-        "SELECT id, credential_id, public_key, counter FROM sys_passkey WHERE user_id = $1 AND credential_id = $2",
-        [userId, assertion.id],
-      );
-      const passkeys = rows as Array<{ id: string; credential_id: string; public_key: string; counter: number }>;
-      if (passkeys.length === 0) {
+      const passkey = await db.query(PasskeyModel)
+        .where("user_id", "=", userId)
+        .where("credential_id", "=", assertion.id)
+        .select("id", "credential_id", "public_key", "counter")
+        .get();
+      if (!passkey) {
         throw new Error("通行密钥未找到");
       }
-
-      const passkey = passkeys[0]!;
 
       // Decode base64 publicKey back to Uint8Array
       const publicKeyBytes = new Uint8Array(Buffer.from(passkey.public_key, "base64"));
@@ -267,7 +261,7 @@ export function createPasskeyService(deps: {
         credential: {
           id: passkey.credential_id,
           publicKey: publicKeyBytes,
-          counter: passkey.counter,
+          counter: Number(passkey.counter),
         },
       });
 
@@ -283,10 +277,10 @@ export function createPasskeyService(deps: {
 
       // 更新 counter 和最后使用时间
       const newCounter = verification.authenticationInfo.newCounter;
-      await executor(
-        "UPDATE sys_passkey SET counter = $1, last_used_at = NOW() WHERE id = $2",
-        [newCounter, passkey.id],
-      );
+      await db.query(PasskeyModel).where("id", "=", passkey.id).update({
+        counter: BigInt(newCounter),
+        last_used_at: new Date(),
+      });
 
       await auditStore.append({
         actor: userId,
@@ -300,32 +294,33 @@ export function createPasskeyService(deps: {
     },
 
     async listPasskeys(userId) {
-      const rows = await executor(
-        `SELECT id, name, device_type, backed_up, created_at, last_used_at
-         FROM sys_passkey WHERE user_id = $1 ORDER BY created_at DESC`,
-        [userId],
-      );
+      const rows = await db.query(PasskeyModel)
+        .where("user_id", "=", userId)
+        .select("id", "name", "device_type", "backed_up", "created_at", "last_used_at")
+        .orderBy("created_at", "desc")
+        .list();
 
-      return (rows as Array<Record<string, unknown>>).map(r => ({
-        id: r.id as string,
-        name: r.name as string,
-        deviceType: (r.device_type as string) ?? null,
-        backedUp: r.backed_up as boolean,
-        createdAt: r.created_at as string,
-        lastUsedAt: (r.last_used_at as string) ?? null,
+      return rows.map(r => ({
+        id: r.id,
+        name: r.name,
+        deviceType: r.device_type ?? null,
+        backedUp: r.backed_up,
+        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
+        lastUsedAt: r.last_used_at instanceof Date ? r.last_used_at.toISOString() : r.last_used_at ?? null,
       }));
     },
 
     async removePasskey(userId, passkeyId) {
-      const rows = await executor(
-        "SELECT id FROM sys_passkey WHERE id = $1 AND user_id = $2",
-        [passkeyId, userId],
-      );
-      if ((rows as unknown[]).length === 0) {
+      const existing = await db.query(PasskeyModel)
+        .where("id", "=", passkeyId)
+        .where("user_id", "=", userId)
+        .select("id")
+        .get();
+      if (!existing) {
         throw new Error("通行密钥不存在或不属于当前用户");
       }
 
-      await executor("DELETE FROM sys_passkey WHERE id = $1", [passkeyId]);
+      await db.query(PasskeyModel).where("id", "=", passkeyId).hardDelete();
 
       await auditStore.append({
         actor: userId,

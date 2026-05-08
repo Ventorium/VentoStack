@@ -6,7 +6,8 @@
 
 import type { RBAC } from "@ventostack/auth";
 import type { RowFilter } from "@ventostack/auth";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+import { RoleModel, RoleMenuModel, MenuModel } from "../models";
 
 /** 权限字符串解析结果 */
 interface ParsedPermission {
@@ -50,11 +51,11 @@ function parsePermission(permission: string): ParsedPermission | null {
  * @returns 权限加载器实例
  */
 export function createPermissionLoader(deps: {
-  executor: SqlExecutor;
+  db: Database;
   rbac: RBAC;
   rowFilter: RowFilter;
 }): PermissionLoader {
-  const { executor, rbac, rowFilter } = deps;
+  const { db, rbac, rowFilter } = deps;
 
   /**
    * 加载指定角色的权限
@@ -65,17 +66,29 @@ export function createPermissionLoader(deps: {
     roleId: string,
     roleCode: string,
   ): Promise<void> {
-    // 查询角色关联的菜单权限
-    const rows = await executor(
-      `SELECT m.permission
-       FROM sys_role_menu rm
-       JOIN sys_menu m ON m.id = rm.menu_id
-       WHERE rm.role_id = $1 AND m.status = 1 AND m.permission IS NOT NULL AND m.permission != ''`,
-      [roleId],
-    );
+    // 查询角色关联的菜单 ID
+    const roleMenus = await db.query(RoleMenuModel)
+      .where("role_id", "=", roleId)
+      .select("menu_id")
+      .list();
 
-    const permissions = (rows as Array<{ permission: string }>)
-      .map((row) => parsePermission(row.permission))
+    if (roleMenus.length === 0) {
+      rbac.addRole({ name: roleCode, permissions: [] });
+      return;
+    }
+
+    const menuIds = roleMenus.map((rm) => rm.menu_id);
+
+    // 查询菜单权限
+    const menus = await db.query(MenuModel)
+      .where("id", "IN", menuIds)
+      .where("status", "=", 1)
+      .where("permission", "IS NOT NULL")
+      .select("permission")
+      .list();
+
+    const permissions = menus
+      .map((row) => row.permission ? parsePermission(row.permission) : null)
       .filter((p): p is ParsedPermission => p !== null);
 
     // 注册角色到 RBAC
@@ -93,13 +106,11 @@ export function createPermissionLoader(deps: {
    */
   async function loadDataScopeRules(): Promise<void> {
     // 查询有自定义数据范围的角色
-    const rows = await executor(
-      `SELECT r.code, r.data_scope
-       FROM sys_role r
-       WHERE r.status = 1 AND r.deleted_at IS NULL AND r.data_scope IS NOT NULL`,
-    );
-
-    const roles = rows as Array<{ code: string; data_scope: number }>;
+    const roles = await db.query(RoleModel)
+      .where("status", "=", 1)
+      .where("data_scope", "IS NOT NULL")
+      .select("code", "data_scope")
+      .list();
 
     for (const role of roles) {
       // data_scope 含义：
@@ -127,10 +138,10 @@ export function createPermissionLoader(deps: {
   return {
     async loadAll() {
       // 1. 查询所有启用角色
-      const roleRows = await executor(
-        `SELECT id, code FROM sys_role WHERE status = 1 AND deleted_at IS NULL`,
-      );
-      const roles = roleRows as Array<{ id: string; code: string }>;
+      const roles = await db.query(RoleModel)
+        .where("status", "=", 1)
+        .select("id", "code")
+        .list();
 
       // 2. 为每个角色加载权限
       for (const role of roles) {
@@ -143,19 +154,19 @@ export function createPermissionLoader(deps: {
 
     async reloadRole(roleCode) {
       // 查询角色
-      const rows = await executor(
-        `SELECT id FROM sys_role WHERE code = $1 AND status = 1 AND deleted_at IS NULL`,
-        [roleCode],
-      );
-      const roles = rows as Array<{ id: string }>;
+      const role = await db.query(RoleModel)
+        .where("code", "=", roleCode)
+        .where("status", "=", 1)
+        .select("id")
+        .get();
 
-      if (roles.length === 0) {
+      if (!role) {
         // 角色不存在或已禁用，从 RBAC 中移除
         rbac.removeRole(roleCode);
         return;
       }
 
-      await loadRolePermissions(roles[0]!.id, roleCode);
+      await loadRolePermissions(role.id, roleCode);
     },
 
     async reloadAll() {

@@ -4,14 +4,18 @@
 
 import { describe, expect, test } from "bun:test";
 import { createPermissionLoader } from "../services/permission-loader";
-import { createMockExecutor, createMockRBAC, createMockRowFilter } from "./helpers";
+import { createMockExecutor, createMockDatabase, createMockRBAC, createMockRowFilter } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_role_menu", "sys_role_menu", false);
+  registerModel("sys_menu", "sys_menu", true);
   const rbac = createMockRBAC();
   const rowFilter = createMockRowFilter();
-  const permissionLoader = createPermissionLoader({ executor, rbac, rowFilter });
-  return { permissionLoader, executor, calls, results, rbac, rowFilter };
+  const permissionLoader = createPermissionLoader({ db, rbac, rowFilter });
+  return { permissionLoader, executor: mockExec.executor, calls, results: mockExec.results, rbac, rowFilter };
 }
 
 describe("PermissionLoader", () => {
@@ -97,10 +101,10 @@ describe("PermissionLoader", () => {
 
   test("data_scope=4 adds created_by filter rule", async () => {
     const s = setup();
-    s.results.set("sys_role WHERE status", []);
-    s.results.set("data_scope IS NOT NULL", [
+    s.results.set("code, data_scope", [
       { code: "self_only", data_scope: 4 },
     ]);
+    s.results.set("id, code", []);
     await s.permissionLoader.loadAll();
     expect(s.rowFilter.addRule).toHaveBeenCalled();
   });

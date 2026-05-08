@@ -3,6 +3,9 @@
  *
  * 将 @ventostack/auth 的各个独立引擎组合为可注入 system module 的依赖集合。
  * 每个引擎保持独立，不互相耦合——组合发生在工厂函数中。
+ *
+ * 当传入 Redis 客户端时，Session 和 Token 吊销存储自动切换为 Redis 实现，
+ * 支持多实例分布式部署。
  */
 
 import {
@@ -13,9 +16,11 @@ import {
   createTOTP,
   createSessionManager,
   createMemorySessionStore,
+  createRedisSessionStore,
   createMultiDeviceManager,
   createTokenRefresh,
   createMemoryRevocationStore,
+  createRedisRevocationStore,
   createAuthSessionManager,
 } from "@ventostack/auth";
 import type {
@@ -29,6 +34,7 @@ import type {
   TokenRefreshManager,
   AuthSessionManager,
 } from "@ventostack/auth";
+import type { RedisClientInstance } from "@ventostack/cache";
 import { env } from "../config";
 
 export interface AuthEngines {
@@ -46,8 +52,9 @@ export interface AuthEngines {
 
 /**
  * 装配完整的认证引擎集合
+ * @param redisClient 可选的 Redis 客户端，传入时 Session 和吊销存储使用 Redis 实现
  */
-export function assembleAuthEngines(): AuthEngines {
+export function assembleAuthEngines(redisClient?: RedisClientInstance): AuthEngines {
   const jwtSecret = env.JWT_SECRET;
 
   // ---- 核心引擎 ----
@@ -59,8 +66,10 @@ export function assembleAuthEngines(): AuthEngines {
   // ---- 双因素认证 ----
   const totp = createTOTP({ algorithm: "SHA-256" });
 
-  // ---- Session ----
-  const sessionStore = createMemorySessionStore();
+  // ---- Session（Redis 优先，内存兜底） ----
+  const sessionStore = redisClient
+    ? createRedisSessionStore({ client: redisClient })
+    : createMemorySessionStore();
   const sessionManager = createSessionManager(sessionStore, {
     ttl: env.SESSION_TTL_SECONDS,
   });
@@ -71,8 +80,10 @@ export function assembleAuthEngines(): AuthEngines {
     overflowStrategy: "kick-oldest",
   });
 
-  // ---- Token 刷新与吊销 ----
-  const revocationStore = createMemoryRevocationStore();
+  // ---- Token 刷新与吊销（Redis 优先，内存兜底） ----
+  const revocationStore = redisClient
+    ? createRedisRevocationStore(redisClient)
+    : createMemoryRevocationStore();
   const tokenRefresh = createTokenRefresh(jwt, { revocationStore });
 
   // ---- 统一认证会话管理 ----

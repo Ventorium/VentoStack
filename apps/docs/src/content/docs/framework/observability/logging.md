@@ -1,4 +1,5 @@
 ---
+order: 1
 title: 结构化日志
 description: 使用 createLogger 实现结构化日志记录
 ---

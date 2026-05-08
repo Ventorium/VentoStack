@@ -1,4 +1,5 @@
 ---
+order: 2
 title: 快速开始
 description: 5 分钟内创建并运行你的第一个 VentoStack 应用
 ---
@@ -176,12 +177,12 @@ router.post("/auth/login", async (ctx) => {
 
   const user = await db.query(UserModel).where("email", "=", email).get();
   if (!user) {
-    return ctx.json({ error: "Invalid credentials" }, 401);
+    return ctx.json({ error: "用户名或密码错误" }, 401);
   }
 
   const valid = await passwordHasher.verify(password, user.password);
   if (!valid) {
-    return ctx.json({ error: "Invalid credentials" }, 401);
+    return ctx.json({ error: "用户名或密码错误" }, 401);
   }
 
   const token = await jwt.sign({ sub: String(user.id), role: user.role });
@@ -209,8 +210,8 @@ router.get("/users", async (ctx) => {
 });
 
 const app = createApp({ port: 3000 });
-app.use(errorHandler(logger));
-app.use(requestLogger(logger));
+app.use(errorHandler({ logger }));
+app.use(requestLogger({ logger }));
 app.use(router);
 
 // 启动前自动建表（示例用；生产环境应使用迁移工具）
@@ -229,7 +230,7 @@ await app.listen();
 
 ## 下一步
 
-- 深入了解[路由系统](/core/router/)
-- 了解[中间件机制](/core/middleware/)
-- 配置[数据库连接](/database/connection/)
-- 设置[认证和授权](/auth/jwt/)
+- 深入了解[路由系统](/framework/core/router/)
+- 了解[中间件机制](/framework/core/middleware/)
+- 配置[数据库连接](/framework/database/connection/)
+- 设置[认证和授权](/platform/auth/jwt/)

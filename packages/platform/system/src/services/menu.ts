@@ -4,7 +4,8 @@
  * 菜单类型：1=目录 2=菜单 3=按钮
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+import { MenuModel, RoleMenuModel } from "../models/menu";
 
 /** 创建菜单参数 */
 export interface CreateMenuParams {
@@ -127,9 +128,9 @@ function findInTree(nodes: MenuTreeNode[], id: string): MenuTreeNode | null {
  * @returns 菜单服务实例
  */
 export function createMenuService(deps: {
-  executor: SqlExecutor;
+  db: Database;
 }): MenuService {
-  const { executor } = deps;
+  const { db } = deps;
 
   return {
     async create(params) {
@@ -148,121 +149,83 @@ export function createMenuService(deps: {
       } = params;
       const id = crypto.randomUUID();
 
-      await executor(
-        `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())`,
-        [
-          id,
-          parentId ?? null,
-          name,
-          path,
-          component,
-          redirect,
-          type,
-          permission,
-          icon,
-          sort,
-          visible,
-          status ?? 1,
-        ],
-      );
+      await db.query(MenuModel).insert({
+        id,
+        parent_id: parentId ?? null,
+        name,
+        path,
+        component,
+        redirect,
+        type,
+        permission,
+        icon,
+        sort,
+        visible,
+        status: status ?? 1,
+      });
 
       return { id };
     },
 
     async update(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let paramIndex = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.parentId !== undefined) updates.parent_id = params.parentId;
+      if (params.name !== undefined) updates.name = params.name;
+      if (params.path !== undefined) updates.path = params.path;
+      if (params.component !== undefined) updates.component = params.component;
+      if (params.redirect !== undefined) updates.redirect = params.redirect;
+      if (params.type !== undefined) updates.type = params.type;
+      if (params.permission !== undefined) updates.permission = params.permission;
+      if (params.icon !== undefined) updates.icon = params.icon;
+      if (params.sort !== undefined) updates.sort = params.sort;
+      if (params.visible !== undefined) updates.visible = params.visible;
+      if (params.status !== undefined) updates.status = params.status;
 
-      const updatableFields: Record<string, unknown> = {
-        parent_id: params.parentId,
-        name: params.name,
-        path: params.path,
-        component: params.component,
-        redirect: params.redirect,
-        type: params.type,
-        permission: params.permission,
-        icon: params.icon,
-        sort: params.sort,
-        visible: params.visible,
-        status: params.status,
-      };
+      if (Object.keys(updates).length === 0) return;
 
-      for (const [field, value] of Object.entries(updatableFields)) {
-        if (value !== undefined) {
-          fields.push(`${field} = $${paramIndex}`);
-          values.push(value);
-          paramIndex++;
-        }
-      }
-
-      if (fields.length === 0) return;
-
-      fields.push("updated_at = NOW()");
-      values.push(id);
-
-      await executor(
-        `UPDATE sys_menu SET ${fields.join(", ")} WHERE id = $${paramIndex}`,
-        values,
-      );
+      await db.query(MenuModel).where("id", "=", id).update(updates);
     },
 
     async delete(id) {
-      // 先删除子菜单（递归删除子节点的子节点）
-      await executor(
-        "DELETE FROM sys_menu WHERE parent_id = $1",
-        [id],
-      );
+      // 先删除子菜单
+      await db.query(MenuModel).where("parent_id", "=", id).hardDelete();
       // 删除角色-菜单关联
-      await executor(
-        "DELETE FROM sys_role_menu WHERE menu_id = $1",
-        [id],
-      );
+      await db.query(RoleMenuModel).where("menu_id", "=", id).hardDelete();
       // 删除菜单本身
-      await executor(
-        "DELETE FROM sys_menu WHERE id = $1",
-        [id],
-      );
+      await db.query(MenuModel).where("id", "=", id).hardDelete();
     },
 
     async getTree() {
-      const rows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
-         FROM sys_menu WHERE status = 1
-         ORDER BY sort ASC`,
-      );
+      const rows = await db.query(MenuModel)
+        .where("status", "=", 1)
+        .orderBy("sort", "asc")
+        .list();
 
-      return buildTree(rows as Array<Record<string, unknown>>);
+      return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getAllTree() {
-      const rows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
-         FROM sys_menu
-         ORDER BY sort ASC`,
-      );
+      const rows = await db.query(MenuModel)
+        .orderBy("sort", "asc")
+        .list();
 
-      return buildTree(rows as Array<Record<string, unknown>>);
+      return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getById(id) {
-      const rows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
-         FROM sys_menu WHERE id = $1`,
-        [id],
-      );
-      const menus = rows as Array<Record<string, unknown>>;
+      const row = await db.query(MenuModel)
+        .where("id", "=", id)
+        .get();
 
-      if (menus.length === 0) return null;
+      if (!row) return null;
 
       // 获取所有菜单来构建树（因为需要返回含 children 的节点）
-      const allRows = await executor(
-        `SELECT id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at
-         FROM sys_menu WHERE status = 1
-         ORDER BY sort ASC`,
-      );
-      const tree = buildTree(allRows as Array<Record<string, unknown>>);
+      const allRows = await db.query(MenuModel)
+        .where("status", "=", 1)
+        .orderBy("sort", "asc")
+        .list();
+
+      const tree = buildTree(allRows as unknown as Array<Record<string, unknown>>);
 
       return findInTree(tree, id);
     },

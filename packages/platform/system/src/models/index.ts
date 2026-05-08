@@ -8,3 +8,4 @@ export { ConfigModel } from './config';
 export { NoticeModel, UserNoticeModel } from './notice';
 export { LoginLogModel, OperationLogModel } from './log';
 export { MfaRecoveryModel } from './mfa-recovery';
+export { PasskeyModel } from './passkey';

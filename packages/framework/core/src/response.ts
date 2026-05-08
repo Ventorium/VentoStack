@@ -29,11 +29,11 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 /**
  * 返回成功响应
  * @param data - 响应数据
- * @param message - 响应消息，默认 "ok"
+ * @param message - 响应消息，默认 "成功"
  * @param status - HTTP 状态码，默认 200
  * @returns Response 对象
  */
-export function success<T>(data?: T, message = "ok", status = 200): Response {
+export function success<T>(data?: T, message = "成功", status = 200): Response {
   const body: ApiResponse<T> = { code: 0, message };
   if (data !== undefined) {
     body.data = data;
@@ -71,7 +71,7 @@ export function paginated<T>(items: T[], total: number, page: number, pageSize: 
   const totalPages = pageSize > 0 ? Math.ceil(total / pageSize) : 0;
   const body: ApiResponse<PaginatedData<T>> = {
     code: 0,
-    message: "ok",
+    message: "成功",
     data: { items, total, page, pageSize, totalPages },
   };
   return new Response(JSON.stringify(body), {

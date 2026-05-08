@@ -3,9 +3,10 @@
  * 文件上传、下载、删除、签名 URL、列表查询
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { StorageAdapter } from "../adapters/storage";
 import { detectMIME, mimeFromExtension } from "./mime-detect";
+import { OSSFileModel } from "../models";
 
 /** 上传参数 */
 export interface UploadParams {
@@ -56,10 +57,10 @@ export interface OSSService {
 }
 
 export function createOSSService(deps: {
-  executor: SqlExecutor;
+  db: Database;
   storage: StorageAdapter;
 }): OSSService {
-  const { executor, storage } = deps;
+  const { db, storage } = deps;
 
   return {
     async upload(params, uploaderId) {
@@ -79,11 +80,16 @@ export function createOSSService(deps: {
       await storage.write(storagePath, data, mime ?? undefined);
 
       // Insert metadata record
-      await executor(
-        `INSERT INTO sys_oss_file (id, original_name, storage_path, size, mime_type, extension, bucket, uploader_id, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
-        [id, filename, storagePath, data.length, mime, ext, bucket, uploaderId],
-      );
+      await db.query(OSSFileModel).insert({
+        id,
+        original_name: filename,
+        storage_path: storagePath,
+        size: BigInt(data.length),
+        mime_type: mime,
+        extension: ext,
+        bucket,
+        uploader_id: uploaderId,
+      });
 
       return {
         id,
@@ -99,109 +105,89 @@ export function createOSSService(deps: {
     },
 
     async download(fileId) {
-      const rows = await executor(
-        `SELECT id, original_name, storage_path, mime_type FROM sys_oss_file WHERE id = $1`,
-        [fileId],
-      );
-      const files = rows as Array<Record<string, unknown>>;
-      if (files.length === 0) return null;
+      const file = await db.query(OSSFileModel)
+        .where("id", "=", fileId)
+        .select("id", "original_name", "storage_path", "mime_type")
+        .get();
+      if (!file) return null;
 
-      const file = files[0]!;
-      const stream = await storage.read(file.storage_path as string);
+      const stream = await storage.read(file.storage_path);
       if (!stream) return null;
 
       return {
         stream,
-        contentType: (file.mime_type as string) ?? "application/octet-stream",
-        filename: file.original_name as string,
+        contentType: file.mime_type ?? "application/octet-stream",
+        filename: file.original_name,
       };
     },
 
     async delete(fileId) {
-      const rows = await executor(
-        `SELECT storage_path FROM sys_oss_file WHERE id = $1`,
-        [fileId],
-      );
-      const files = rows as Array<Record<string, unknown>>;
-      if (files.length === 0) return;
+      const file = await db.query(OSSFileModel)
+        .where("id", "=", fileId)
+        .select("storage_path")
+        .get();
+      if (!file) return;
 
-      await storage.delete(files[0]!.storage_path as string);
-      await executor(`DELETE FROM sys_oss_file WHERE id = $1`, [fileId]);
+      await storage.delete(file.storage_path);
+      await db.query(OSSFileModel).where("id", "=", fileId).hardDelete();
     },
 
     async getSignedUrl(fileId, expiresIn = 3600) {
-      const rows = await executor(
-        `SELECT storage_path FROM sys_oss_file WHERE id = $1`,
-        [fileId],
-      );
-      const files = rows as Array<Record<string, unknown>>;
-      if (files.length === 0) return null;
+      const file = await db.query(OSSFileModel)
+        .where("id", "=", fileId)
+        .select("storage_path")
+        .get();
+      if (!file) return null;
 
-      return storage.getSignedUrl(files[0]!.storage_path as string, expiresIn);
+      return storage.getSignedUrl(file.storage_path, expiresIn);
     },
 
     async getById(fileId) {
-      const rows = await executor(
-        `SELECT id, original_name, storage_path, size, mime_type, extension, bucket, uploader_id, created_at
-         FROM sys_oss_file WHERE id = $1`,
-        [fileId],
-      );
-      const files = rows as Array<Record<string, unknown>>;
-      if (files.length === 0) return null;
+      const row = await db.query(OSSFileModel)
+        .where("id", "=", fileId)
+        .select("id", "original_name", "storage_path", "size", "mime_type", "extension", "bucket", "uploader_id", "created_at")
+        .get();
+      if (!row) return null;
 
-      const row = files[0]!;
       return {
-        id: row.id as string,
-        originalName: row.original_name as string,
-        storagePath: row.storage_path as string,
+        id: row.id,
+        originalName: row.original_name,
+        storagePath: row.storage_path,
         size: Number(row.size),
-        mimeType: (row.mime_type as string) ?? null,
-        extension: (row.extension as string) ?? null,
-        bucket: row.bucket as string,
-        uploaderId: (row.uploader_id as string) ?? null,
-        createdAt: row.created_at as string,
+        mimeType: row.mime_type ?? null,
+        extension: row.extension ?? null,
+        bucket: row.bucket,
+        uploaderId: row.uploader_id ?? null,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       };
     },
 
     async list(params) {
       const { bucket, uploaderId, page = 1, pageSize = 10 } = params;
-      const conditions: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
 
-      if (bucket) {
-        conditions.push(`bucket = $${idx++}`);
-        values.push(bucket);
-      }
-      if (uploaderId) {
-        conditions.push(`uploader_id = $${idx++}`);
-        values.push(uploaderId);
-      }
+      let query = db.query(OSSFileModel);
+      if (bucket) query = query.where("bucket", "=", bucket);
+      if (uploaderId) query = query.where("uploader_id", "=", uploaderId);
 
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const total = await query.count();
 
-      const countRows = await executor(`SELECT COUNT(*) as total FROM sys_oss_file ${where}`, values);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
+      const rows = await query
+        .select("id", "original_name", "storage_path", "size", "mime_type", "extension", "bucket", "uploader_id", "created_at")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        `SELECT id, original_name, storage_path, size, mime_type, extension, bucket, uploader_id, created_at
-         FROM sys_oss_file ${where}
-         ORDER BY created_at DESC
-         LIMIT $${idx++} OFFSET $${idx++}`,
-        [...values, pageSize, offset],
-      );
-
-      const items = (rows as Array<Record<string, unknown>>).map((row) => ({
-        id: row.id as string,
-        originalName: row.original_name as string,
-        storagePath: row.storage_path as string,
+      const items = rows.map((row) => ({
+        id: row.id,
+        originalName: row.original_name,
+        storagePath: row.storage_path,
         size: Number(row.size),
-        mimeType: (row.mime_type as string) ?? null,
-        extension: (row.extension as string) ?? null,
-        bucket: row.bucket as string,
-        uploaderId: (row.uploader_id as string) ?? null,
-        createdAt: row.created_at as string,
+        mimeType: row.mime_type ?? null,
+        extension: row.extension ?? null,
+        bucket: row.bucket,
+        uploaderId: row.uploader_id ?? null,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
 
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };

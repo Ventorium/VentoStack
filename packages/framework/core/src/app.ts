@@ -102,7 +102,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
     return new Response(
       JSON.stringify({
         error: "INTERNAL_ERROR",
-        message: "Internal Server Error",
+        message: "服务器内部错误",
       }),
       {
         status: 500,
@@ -209,7 +209,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
         hostname,
         routes: wrapped,
         fetch() {
-          return new Response(JSON.stringify({ error: "NOT_FOUND", message: "Not Found" }), {
+          return new Response(JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }), {
             status: 404,
             headers: { "Content-Type": "application/json" },
           });

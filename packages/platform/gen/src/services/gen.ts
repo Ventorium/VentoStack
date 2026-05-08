@@ -4,8 +4,8 @@
  * 导入数据库表结构、管理字段配置、生成代码。
  */
 
-import type { SqlExecutor } from "@ventostack/database";
-import type { TableSchemaInfo, ColumnSchemaInfo } from "@ventostack/database";
+import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
+import { GenTableModel, GenTableColumnModel } from "../models";
 import { renderModel } from "../templates/model.ts.tmpl";
 import { renderService } from "../templates/service.ts.tmpl";
 import { renderRoutes } from "../templates/routes.ts.tmpl";
@@ -95,118 +95,154 @@ function toPascalCase(s: string): string {
 }
 
 export function createGenService(deps: {
+  db: Database;
+  /** readTableSchema from @ventostack/database — needs raw SqlExecutor */
   executor: SqlExecutor;
-  /** readTableSchema from @ventostack/database */
   readTableSchema: (executor: SqlExecutor, tableName: string) => Promise<TableSchemaInfo>;
 }): GenService {
-  const { executor, readTableSchema } = deps;
+  const { db, executor, readTableSchema } = deps;
 
   return {
     async importTable(tableName, moduleName, author) {
       const tableId = crypto.randomUUID();
 
-      // Read schema from DB
+      // Read schema from DB — needs raw executor
       const schema = await readTableSchema(executor, tableName);
       const className = toPascalCase(tableName.replace(/^sys_/, ""));
 
-      // Insert table record
-      await executor(
-        `INSERT INTO sys_gen_table (id, table_name, class_name, module_name, function_name, function_author, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 0, NOW(), NOW())`,
-        [tableId, tableName, className, moduleName, className + "管理", author ?? null],
-      );
+      await db.query(GenTableModel).insert({
+        id: tableId,
+        table_name: tableName,
+        class_name: className,
+        module_name: moduleName,
+        function_name: className + "管理",
+        function_author: author ?? null,
+        status: 0,
+      });
 
       // Insert column records
       for (let i = 0; i < schema.columns.length; i++) {
         const col = schema.columns[i]!;
-        const colId = crypto.randomUUID();
         const tsType = sqlTypeToTs(col.type);
-        await executor(
-          `INSERT INTO sys_gen_table_column (id, table_id, column_name, column_type, typescript_type, field_name, field_comment, is_primary, is_nullable, is_list, is_insert, is_update, is_query, sort)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-          [
-            colId, tableId, col.name, col.type, tsType,
-            toCamelCase(col.name), col.comment ?? null,
-            col.isPrimary, col.nullable,
-            !col.isPrimary, // isList: all non-PK
-            !col.isPrimary, // isInsert: all non-PK
-            !col.isPrimary, // isUpdate: all non-PK
-            false, // isQuery: off by default
-            i,
-          ],
-        );
+        await db.query(GenTableColumnModel).insert({
+          id: crypto.randomUUID(),
+          table_id: tableId,
+          column_name: col.name,
+          column_type: col.type,
+          typescript_type: tsType,
+          field_name: toCamelCase(col.name),
+          field_comment: col.comment ?? null,
+          is_primary: col.isPrimary,
+          is_nullable: col.nullable,
+          is_list: !col.isPrimary,
+          is_insert: !col.isPrimary,
+          is_update: !col.isPrimary,
+          is_query: false,
+          sort: i,
+        });
       }
 
       return { tableId };
     },
 
     async updateTable(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.className !== undefined) updates.class_name = params.className;
+      if (params.moduleName !== undefined) updates.module_name = params.moduleName;
+      if (params.functionName !== undefined) updates.function_name = params.functionName;
+      if (params.functionAuthor !== undefined) updates.function_author = params.functionAuthor;
+      if (params.remark !== undefined) updates.remark = params.remark;
 
-      if (params.className !== undefined) { fields.push(`class_name = $${idx++}`); values.push(params.className); }
-      if (params.moduleName !== undefined) { fields.push(`module_name = $${idx++}`); values.push(params.moduleName); }
-      if (params.functionName !== undefined) { fields.push(`function_name = $${idx++}`); values.push(params.functionName); }
-      if (params.functionAuthor !== undefined) { fields.push(`function_author = $${idx++}`); values.push(params.functionAuthor); }
-      if (params.remark !== undefined) { fields.push(`remark = $${idx++}`); values.push(params.remark); }
-
-      if (fields.length === 0) return;
-      fields.push("updated_at = NOW()");
-      values.push(id);
-      await executor(`UPDATE sys_gen_table SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+      if (Object.keys(updates).length === 0) return;
+      await db.query(GenTableModel).where("id", "=", id).update(updates);
     },
 
     async updateColumn(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let idx = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.isList !== undefined) updates.is_list = params.isList;
+      if (params.isInsert !== undefined) updates.is_insert = params.isInsert;
+      if (params.isUpdate !== undefined) updates.is_update = params.isUpdate;
+      if (params.isQuery !== undefined) updates.is_query = params.isQuery;
+      if (params.queryType !== undefined) updates.query_type = params.queryType;
+      if (params.fieldComment !== undefined) updates.field_comment = params.fieldComment;
 
-      if (params.isList !== undefined) { fields.push(`is_list = $${idx++}`); values.push(params.isList); }
-      if (params.isInsert !== undefined) { fields.push(`is_insert = $${idx++}`); values.push(params.isInsert); }
-      if (params.isUpdate !== undefined) { fields.push(`is_update = $${idx++}`); values.push(params.isUpdate); }
-      if (params.isQuery !== undefined) { fields.push(`is_query = $${idx++}`); values.push(params.isQuery); }
-      if (params.queryType !== undefined) { fields.push(`query_type = $${idx++}`); values.push(params.queryType); }
-      if (params.fieldComment !== undefined) { fields.push(`field_comment = $${idx++}`); values.push(params.fieldComment); }
-
-      if (fields.length === 0) return;
-      values.push(id);
-      await executor(`UPDATE sys_gen_table_column SET ${fields.join(", ")} WHERE id = $${idx}`, values);
+      if (Object.keys(updates).length === 0) return;
+      await db.query(GenTableColumnModel).where("id", "=", id).update(updates);
     },
 
     async getTable(id) {
-      const rows = await executor(`SELECT * FROM sys_gen_table WHERE id = $1`, [id]);
-      const tables = rows as Array<Record<string, unknown>>;
-      if (tables.length === 0) return null;
-      return rowToTable(tables[0]!);
+      const row = await db.query(GenTableModel)
+        .where("id", "=", id)
+        .select("id", "table_name", "class_name", "module_name", "function_name", "function_author", "remark", "status")
+        .get();
+      if (!row) return null;
+      return {
+        id: row.id,
+        tableName: row.table_name,
+        className: row.class_name,
+        moduleName: row.module_name,
+        functionName: row.function_name,
+        functionAuthor: row.function_author ?? null,
+        remark: row.remark ?? null,
+        status: row.status,
+      };
     },
 
     async listTables(params) {
       const { page = 1, pageSize = 10 } = params ?? {};
-      const countRows = await executor(`SELECT COUNT(*) as total FROM sys_gen_table`);
-      const total = Number((countRows as Array<{ total: number }>)[0]?.total ?? 0);
 
-      const offset = (page - 1) * pageSize;
-      const rows = await executor(
-        `SELECT * FROM sys_gen_table ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-        [pageSize, offset],
-      );
+      const total = await db.query(GenTableModel).count();
 
-      const items = (rows as Array<Record<string, unknown>>).map(rowToTable);
+      const rows = await db.query(GenTableModel)
+        .select("id", "table_name", "class_name", "module_name", "function_name", "function_author", "remark", "status")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
+
+      const items = rows.map((row) => ({
+        id: row.id,
+        tableName: row.table_name,
+        className: row.class_name,
+        moduleName: row.module_name,
+        functionName: row.function_name,
+        functionAuthor: row.function_author ?? null,
+        remark: row.remark ?? null,
+        status: row.status,
+      }));
+
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
     },
 
     async getColumns(tableId) {
-      const rows = await executor(
-        `SELECT * FROM sys_gen_table_column WHERE table_id = $1 ORDER BY sort`,
-        [tableId],
-      );
-      return (rows as Array<Record<string, unknown>>).map(rowToColumn);
+      const rows = await db.query(GenTableColumnModel)
+        .where("table_id", "=", tableId)
+        .select("id", "table_id", "column_name", "column_type", "typescript_type", "field_name", "field_comment", "is_primary", "is_nullable", "is_list", "is_insert", "is_update", "is_query", "query_type", "sort")
+        .orderBy("sort", "asc")
+        .list();
+
+      return rows.map((row) => ({
+        id: row.id,
+        tableId: row.table_id,
+        columnName: row.column_name,
+        columnType: row.column_type,
+        typescriptType: row.typescript_type,
+        fieldName: row.field_name,
+        fieldComment: row.field_comment ?? null,
+        isPrimary: row.is_primary,
+        isNullable: row.is_nullable,
+        isList: row.is_list,
+        isInsert: row.is_insert,
+        isUpdate: row.is_update,
+        isQuery: row.is_query,
+        queryType: row.query_type ?? null,
+        sort: row.sort,
+      }));
     },
 
     async preview(tableId) {
       const table = await this.getTable(tableId);
-      if (!table) throw new Error("Table not found");
+      if (!table) throw new Error("表不存在");
       const columns = await this.getColumns(tableId);
 
       return [
@@ -221,39 +257,6 @@ export function createGenService(deps: {
     async generate(tableId) {
       return this.preview(tableId);
     },
-  };
-}
-
-function rowToTable(row: Record<string, unknown>): GenTableInfo {
-  return {
-    id: row.id as string,
-    tableName: row.table_name as string,
-    className: row.class_name as string,
-    moduleName: row.module_name as string,
-    functionName: row.function_name as string,
-    functionAuthor: (row.function_author as string) ?? null,
-    remark: (row.remark as string) ?? null,
-    status: row.status as number,
-  };
-}
-
-function rowToColumn(row: Record<string, unknown>): GenColumnInfo {
-  return {
-    id: row.id as string,
-    tableId: row.table_id as string,
-    columnName: row.column_name as string,
-    columnType: row.column_type as string,
-    typescriptType: row.typescript_type as string,
-    fieldName: row.field_name as string,
-    fieldComment: (row.field_comment as string) ?? null,
-    isPrimary: row.is_primary as boolean,
-    isNullable: row.is_nullable as boolean,
-    isList: row.is_list as boolean,
-    isInsert: row.is_insert as boolean,
-    isUpdate: row.is_update as boolean,
-    isQuery: row.is_query as boolean,
-    queryType: (row.query_type as string) ?? null,
-    sort: row.sort as number,
   };
 }
 

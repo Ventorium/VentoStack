@@ -29,9 +29,9 @@ export function createSchedulerRoutes(
 
   // Get job by ID
   router.get("/api/scheduler/jobs/:id", perm("scheduler", "job:query"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const job = await schedulerService.getById(id);
-    if (!job) return fail("Job not found", 404, 404);
+    if (!job) return fail("任务不存在", 404, 404);
     return ok(job);
   });
 
@@ -42,13 +42,13 @@ export function createSchedulerRoutes(
       const result = await schedulerService.create(body as any);
       return ok(result);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Create failed", 400);
+      return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
   });
 
   // Update job
   router.put("/api/scheduler/jobs/:id", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await schedulerService.update(id, body as any);
     return ok(null);
@@ -56,33 +56,33 @@ export function createSchedulerRoutes(
 
   // Delete job
   router.delete("/api/scheduler/jobs/:id", perm("scheduler", "job:delete"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     await schedulerService.delete(id);
     return ok(null);
   });
 
   // Start job
   router.put("/api/scheduler/jobs/:id/start", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     await schedulerService.start(id);
     return ok(null);
   });
 
   // Stop job
   router.put("/api/scheduler/jobs/:id/stop", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     await schedulerService.stop(id);
     return ok(null);
   });
 
   // Execute job immediately
   router.post("/api/scheduler/jobs/:id/execute", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id;
+    const id = (ctx.params as Record<string, string>).id!;
     try {
       await schedulerService.executeNow(id);
       return ok(null);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "Execute failed", 500);
+      return fail(e instanceof Error ? e.message : "执行失败", 500);
     }
   });
 

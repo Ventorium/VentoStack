@@ -8,6 +8,7 @@ import { describe, expect, test } from "bun:test";
 import { createAuthService } from "../../services/auth";
 import {
   createMockExecutor,
+  createMockDatabase,
   createTestCache,
   createMockJWTManager,
   createMockPasswordHasher,
@@ -19,7 +20,15 @@ import {
 } from "../helpers";
 
 function setup(configOverrides: Record<string, string> = {}) {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+
+  // Register models by table name (db.query(Model) extracts Model.tableName)
+  registerModel("sys_user", "sys_user", true);
+  registerModel("sys_user_role", "sys_user_role", false);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_login_log", "sys_login_log", false);
+
   const cache = createTestCache();
   const jwt = createMockJWTManager();
   const passwordHasher = createMockPasswordHasher();
@@ -30,7 +39,7 @@ function setup(configOverrides: Record<string, string> = {}) {
   const configService = createMockConfigService(configOverrides);
 
   const authService = createAuthService({
-    executor,
+    db,
     cache,
     jwt,
     jwtSecret: "test-secret-32-bytes-long-enough!!",
@@ -42,7 +51,7 @@ function setup(configOverrides: Record<string, string> = {}) {
     configService,
   });
 
-  return { authService, executor, calls, results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus, configService };
+  return { authService, executor: mockExec.executor, calls, results: mockExec.results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus, configService };
 }
 
 function loginResult(overrides: Record<string, unknown> = {}) {
@@ -75,7 +84,7 @@ describe("Security: Auth", () => {
       // 第 6 次应被锁定
       await expect(s.authService.login({
         username: "admin", password: "wrong", ip: "1.2.3.4", userAgent: "test",
-      })).rejects.toThrow("Account locked");
+      })).rejects.toThrow(/锁定|locked/i);
     });
 
     test("不同 IP 的失败计数互相独立", async () => {
@@ -119,7 +128,7 @@ describe("Security: Auth", () => {
 
       await expect(s.authService.login({
         username: "admin", password: "wrong", ip: "1.1.1.1", userAgent: "test",
-      })).rejects.toThrow("Account locked");
+      })).rejects.toThrow(/锁定|locked/i);
     });
 
     test("不存在的用户名也递增失败计数（防枚举探测）", async () => {
@@ -152,7 +161,7 @@ describe("Security: Auth", () => {
       // 第 21 次应被限流
       await expect(s.authService.login({
         username: "admin", password: "admin123", ip: "10.0.0.1", userAgent: "test",
-      })).rejects.toThrow("Too many requests");
+      })).rejects.toThrow(/频繁|Too many/i);
     });
   });
 
@@ -172,7 +181,7 @@ describe("Security: Auth", () => {
         // 不应泄露密码哈希、内部状态等细节
         expect(msg).not.toContain("hash");
         expect(msg).not.toContain("password_hash");
-        expect(msg).toBe("Invalid credentials");
+        expect(msg).toBe("用户名或密码错误");
       }
     });
 
@@ -188,7 +197,7 @@ describe("Security: Auth", () => {
       } catch (e) {
         const msg = e instanceof Error ? e.message : "";
         // 与密码错误返回相同消息，防止用户枚举
-        expect(msg).toBe("Invalid credentials");
+        expect(msg).toBe("用户名或密码错误");
       }
     });
   });
@@ -269,13 +278,13 @@ describe("Security: Auth", () => {
 
       // 第二次使用应失败（token 已删除）
       await expect(s.authService.resetPasswordByToken(resetToken, "newpwd2"))
-        .rejects.toThrow("Invalid or expired reset token");
+        .rejects.toThrow("重置令牌无效或已过期");
     });
 
     test("无效 token 拒绝重置", async () => {
       const s = setup();
       await expect(s.authService.resetPasswordByToken("fake-token", "newpwd"))
-        .rejects.toThrow("Invalid or expired reset token");
+        .rejects.toThrow("重置令牌无效或已过期");
     });
   });
 

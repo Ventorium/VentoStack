@@ -100,7 +100,7 @@ export function ipFilter(options: IPFilterOptions = {}): Middleware {
     if (!ip) {
       // 无法获取 IP 时，allowlist 模式下拒绝
       if (allowlist && allowlist.length > 0) {
-        return new Response(JSON.stringify({ error: "FORBIDDEN", message: "Access denied" }), {
+        return new Response(JSON.stringify({ error: "FORBIDDEN", message: "访问被拒绝" }), {
           status: statusCode,
           headers: { "Content-Type": "application/json" },
         });
@@ -112,7 +112,7 @@ export function ipFilter(options: IPFilterOptions = {}): Middleware {
     if (denylist && denylist.length > 0) {
       for (const pattern of denylist) {
         if (matchIP(ip, pattern)) {
-          return new Response(JSON.stringify({ error: "FORBIDDEN", message: "Access denied" }), {
+          return new Response(JSON.stringify({ error: "FORBIDDEN", message: "访问被拒绝" }), {
             status: statusCode,
             headers: { "Content-Type": "application/json" },
           });
@@ -130,7 +130,7 @@ export function ipFilter(options: IPFilterOptions = {}): Middleware {
         }
       }
       if (!allowed) {
-        return new Response(JSON.stringify({ error: "FORBIDDEN", message: "Access denied" }), {
+        return new Response(JSON.stringify({ error: "FORBIDDEN", message: "访问被拒绝" }), {
           status: statusCode,
           headers: { "Content-Type": "application/json" },
         });

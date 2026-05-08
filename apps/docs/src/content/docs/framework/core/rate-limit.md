@@ -1,4 +1,5 @@
 ---
+order: 8
 title: 限流
 description: 使用 rateLimit 中间件保护应用免受暴力攻击和过载
 ---
@@ -127,9 +128,9 @@ app.use(
 
 ```typescript
 import { rateLimit, createRedisRateLimitStore } from "@ventostack/core";
-import { RedisClient } from "bun";
+import { createRedisClient } from "@ventostack/cache";
 
-const redis = new RedisClient("redis://localhost:6379");
+const redis = createRedisClient({ url: "redis://localhost:6379" });
 
 app.use(
   rateLimit({
@@ -143,7 +144,7 @@ app.use(
 `createRedisRateLimitStore` 基于 Bun Redis 设计：
 
 ```typescript
-const redis = new RedisClient("redis://localhost:6379");
+const redis = createRedisClient({ url: "redis://localhost:6379" });
 const store = createRedisRateLimitStore({ client: redis });
 ```
 

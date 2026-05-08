@@ -43,7 +43,7 @@ async function getCroppedImg(imageSrc: string, crop: Area, rotation = 0): Promis
   return new Promise((resolve, reject) => {
     croppedCanvas.toBlob((blob) => {
       if (blob) resolve(blob)
-      else reject(new Error('Canvas toBlob failed'))
+      else reject(new Error('图片处理失败'))
     }, 'image/png')
   })
 }

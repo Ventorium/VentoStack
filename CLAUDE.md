@@ -374,7 +374,24 @@ bun run cli
 
 ---
 
-## 12. Core Principles
+## 12. Available Skills
+
+Skills are reusable workflows stored in `.agents/skills/`. Use them when working on specific types of tasks:
+
+| Skill | When to Use |
+|-------|-------------|
+| `admin-shared-components` | Creating or modifying shared UI components for the admin frontend |
+| `admin-crud-page` | Creating or modifying CRUD pages in the admin frontend |
+| `admin-backend-entity` | Creating or modifying admin backend entities (services, routes, models, i18n, permissions) |
+| `bun` | Working with Bun APIs, performance optimization, or dependency selection |
+| `security-review-expert` | Security audits and reviewing code for vulnerabilities |
+| `ai-collaboration` | Working effectively with AI assistants |
+
+To use a skill, reference it in your task description or ask the AI to follow the skill's guidelines.
+
+---
+
+## 13. Core Principles
 
 1. **Bun 优先**。Bun 能解决的问题，不引入额外框架。
 2. **函数式优先**。避免 class、避免 DI、避免反射。

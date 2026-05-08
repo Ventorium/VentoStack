@@ -101,7 +101,7 @@ export function createTenantMiddleware(options: TenantResolverOptions): TenantMi
     const tenantId = getTenantFromRequest(ctx.request);
 
     if (!tenantId) {
-      return new Response(JSON.stringify({ error: "Missing tenant identifier" }), {
+      return new Response(JSON.stringify({ error: "缺少租户标识" }), {
         status: 400,
         headers: { "Content-Type": "application/json" },
       });
@@ -113,13 +113,13 @@ export function createTenantMiddleware(options: TenantResolverOptions): TenantMi
       try {
         const valid = await options.validateTenant(tenantId, ctx);
         if (!valid) {
-          return new Response(JSON.stringify({ error: "Access denied to tenant" }), {
+          return new Response(JSON.stringify({ error: "无权访问该租户" }), {
             status: 403,
             headers: { "Content-Type": "application/json" },
           });
         }
       } catch {
-        return new Response(JSON.stringify({ error: "Internal server error" }), {
+        return new Response(JSON.stringify({ error: "服务器内部错误" }), {
           status: 500,
           headers: { "Content-Type": "application/json" },
         });

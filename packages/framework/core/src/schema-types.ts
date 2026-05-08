@@ -66,6 +66,22 @@ export interface RouteResponseConfig {
 /** 路由响应声明 */
 export type RouteResponseDefinition = Record<string, SchemaField> | SchemaField | RouteResponseConfig;
 
+/** 路由级 OpenAPI 元数据 */
+export interface RouteOpenAPIConfig {
+  /** 接口摘要 */
+  summary?: string;
+  /** 接口详细描述 */
+  description?: string;
+  /** 标签分类 */
+  tags?: string[];
+  /** 操作唯一标识 */
+  operationId?: string;
+  /** 是否已废弃 */
+  deprecated?: boolean;
+  /** 安全要求 */
+  security?: Array<Record<string, string[]>>;
+}
+
 /** 路由 Schema 配置 */
 export interface RouteSchemaConfig {
   /** 查询参数 Schema */
@@ -78,6 +94,8 @@ export interface RouteSchemaConfig {
   formData?: Record<string, SchemaField>;
   /** 响应 Schema（用于类型推导、运行时校验和 OpenAPI） */
   responses?: Record<number | string, RouteResponseDefinition>;
+  /** OpenAPI 文档元数据 */
+  openapi?: RouteOpenAPIConfig;
   /** 附加元数据 */
   metadata?: Record<string, unknown>;
 }
@@ -169,12 +187,12 @@ function coerceValue(value: unknown, field: SchemaField): unknown {
       return typeof value === "number" ? value : Number(value);
     case "int": {
       const intVal = typeof value === "number" ? value : parseInt(String(value), 10);
-      if (!Number.isFinite(intVal)) throw new Error("Must be an integer");
+      if (!Number.isFinite(intVal)) throw new Error("必须为整数");
       return intVal;
     }
     case "float": {
       const floatVal = typeof value === "number" ? value : parseFloat(String(value));
-      if (!Number.isFinite(floatVal)) throw new Error("Must be a number");
+      if (!Number.isFinite(floatVal)) throw new Error("必须为数字");
       return floatVal;
     }
     case "boolean":
@@ -182,17 +200,17 @@ function coerceValue(value: unknown, field: SchemaField): unknown {
       if (typeof value === "boolean") return value;
       if (typeof value === "string") return value === "true" || value === "1";
       if (typeof value === "number") return value === 1;
-      throw new Error("Must be a boolean");
+      throw new Error("必须为布尔值");
     }
     case "date": {
       if (value instanceof Date) return value;
       const d = new Date(String(value));
-      if (Number.isNaN(d.getTime())) throw new Error("Must be a valid date");
+      if (Number.isNaN(d.getTime())) throw new Error("必须为有效的日期");
       return d;
     }
     case "file": {
       if (value instanceof File) return value;
-      throw new Error("Must be a file");
+      throw new Error("必须为文件");
     }
     case "array": {
       if (Array.isArray(value)) return value;
@@ -200,7 +218,7 @@ function coerceValue(value: unknown, field: SchemaField): unknown {
     }
     case "object": {
       if (typeof value === "object" && value !== null && !Array.isArray(value)) return value;
-      throw new Error("Must be an object");
+      throw new Error("必须为对象");
     }
     default:
       return value;

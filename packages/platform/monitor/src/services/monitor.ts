@@ -6,7 +6,7 @@
  */
 
 import type { HealthCheck, HealthStatus as FrameworkHealthStatus } from "@ventostack/observability";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 
 /** 在线用户 */
 export interface OnlineUser {
@@ -81,13 +81,13 @@ export interface CacheStatsProvider {
 /** 监控服务依赖 */
 export interface MonitorServiceDeps {
   healthCheck: HealthCheck;
-  executor?: SqlExecutor;
+  db?: Database;
   cacheStatsProvider?: () => Promise<CacheStatus>;
   dataSourceStatsProvider?: () => Promise<DataSourceStatus>;
 }
 
 export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
-  const { healthCheck, executor, cacheStatsProvider, dataSourceStatsProvider } = deps;
+  const { healthCheck, db, cacheStatsProvider, dataSourceStatsProvider } = deps;
 
   return {
     async getServerStatus(): Promise<ServerStatus> {
@@ -136,10 +136,10 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       if (dataSourceStatsProvider) {
         return dataSourceStatsProvider();
       }
-      // 默认通过 executor 做简单探测
-      if (executor) {
+      // 默认通过 db 做简单探测
+      if (db) {
         try {
-          await executor("SELECT 1");
+          await db.raw("SELECT 1");
           return { status: "UP", activeConnections: 1, idleConnections: 0, maxConnections: 0 };
         } catch {
           return { status: "DOWN", activeConnections: 0, idleConnections: 0, maxConnections: 0 };
@@ -150,12 +150,15 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
 
     async getHealthStatus(): Promise<HealthStatus> {
       const raw: FrameworkHealthStatus = await healthCheck.ready();
-      const checks: HealthCheckItem[] = Object.entries(raw.checks).map(([name, result]) => ({
-        name,
-        status: result.status === "ok" ? "UP" : "DOWN",
-        details: result.message,
-        duration: result.duration,
-      }));
+      const checks: HealthCheckItem[] = Object.entries(raw.checks).map(([name, result]) => {
+        const item: HealthCheckItem = {
+          name,
+          status: result.status === "ok" ? "UP" : "DOWN",
+        };
+        if (result.message !== undefined) item.details = result.message;
+        if (result.duration !== undefined) item.duration = result.duration;
+        return item;
+      });
       return {
         status: raw.status === "ok" ? "UP" : raw.status === "degraded" ? "DEGRADED" : "DOWN",
         checks,
@@ -163,10 +166,10 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
     },
 
     async getOnlineUsers(): Promise<OnlineUser[]> {
-      if (!executor) return [];
+      if (!db) return [];
 
       // 查询最近 30 分钟内成功登录的记录作为在线用户近似
-      const rows = await executor(
+      const rows = await db.raw(
         `SELECT l.id, l.user_id, l.username, l.ip, l.browser, l.os, l.login_at,
                 u.nickname
          FROM sys_login_log l

@@ -10,11 +10,11 @@ export const DictTypeModel = defineModel('sys_dict_type', {
 
 export const DictDataModel = defineModel('sys_dict_data', {
   id: column.varchar({ primary: true, length: 36 }),
-  typeCode: column.varchar({ length: 64 }),
+  type_code: column.varchar({ length: 64 }),
   label: column.varchar({ length: 128 }),
   value: column.varchar({ length: 128 }),
   sort: column.int({ default: 0 }),
-  cssClass: column.varchar({ length: 64, nullable: true }),
+  css_class: column.varchar({ length: 64, nullable: true }),
   status: column.int({ default: 1 }),
   remark: column.varchar({ length: 512, nullable: true }),
 }, { timestamps: true });

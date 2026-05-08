@@ -3,7 +3,8 @@
  * 提供部门的 CRUD 与树形结构查询
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+import { DeptModel } from "../models/dept";
 
 /** 部门创建参数 */
 export interface CreateDeptParams {
@@ -57,92 +58,60 @@ export interface DeptService {
  * @param deps 依赖注入
  * @returns DeptService 实例
  */
-export function createDeptService(deps: { executor: SqlExecutor }): DeptService {
-  const { executor } = deps;
+export function createDeptService(deps: { db: Database }): DeptService {
+  const { db } = deps;
 
   async function create(params: CreateDeptParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
-    await executor(
-      `INSERT INTO sys_dept (id, parent_id, name, sort, leader, phone, email, status, deleted_at) VALUES ($1, $2, $3, $4, $5, $6, $7, 1, NULL)`,
-      [
-        id,
-        params.parentId ?? null,
-        params.name,
-        params.sort ?? 0,
-        params.leader ?? null,
-        params.phone ?? null,
-        params.email ?? null,
-      ],
-    );
+    await db.query(DeptModel).insert({
+      id,
+      parent_id: params.parentId ?? null,
+      name: params.name,
+      sort: params.sort ?? 0,
+      leader: params.leader ?? null,
+      phone: params.phone ?? null,
+      email: params.email ?? null,
+      status: 1,
+    });
     return { id };
   }
 
   async function update(id: string, params: UpdateDeptParams): Promise<void> {
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const updates: Record<string, unknown> = {};
+    if (params.parentId !== undefined) updates.parent_id = params.parentId;
+    if (params.name !== undefined) updates.name = params.name;
+    if (params.sort !== undefined) updates.sort = params.sort;
+    if (params.leader !== undefined) updates.leader = params.leader;
+    if (params.phone !== undefined) updates.phone = params.phone;
+    if (params.email !== undefined) updates.email = params.email;
+    if (params.status !== undefined) updates.status = params.status;
 
-    if (params.parentId !== undefined) {
-      sets.push(`parent_id = $${idx++}`);
-      values.push(params.parentId);
-    }
-    if (params.name !== undefined) {
-      sets.push(`name = $${idx++}`);
-      values.push(params.name);
-    }
-    if (params.sort !== undefined) {
-      sets.push(`sort = $${idx++}`);
-      values.push(params.sort);
-    }
-    if (params.leader !== undefined) {
-      sets.push(`leader = $${idx++}`);
-      values.push(params.leader);
-    }
-    if (params.phone !== undefined) {
-      sets.push(`phone = $${idx++}`);
-      values.push(params.phone);
-    }
-    if (params.email !== undefined) {
-      sets.push(`email = $${idx++}`);
-      values.push(params.email);
-    }
-    if (params.status !== undefined) {
-      sets.push(`status = $${idx++}`);
-      values.push(params.status);
-    }
+    if (Object.keys(updates).length === 0) return;
 
-    if (sets.length === 0) return;
-
-    values.push(id);
-    await executor(
-      `UPDATE sys_dept SET ${sets.join(", ")} WHERE id = $${idx} AND deleted_at IS NULL`,
-      values,
-    );
+    await db.query(DeptModel).where("id", "=", id).update(updates);
   }
 
   async function deleteDept(id: string): Promise<void> {
-    const now = new Date().toISOString();
-    await executor(
-      `UPDATE sys_dept SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL`,
-      [now, id],
-    );
+    await db.query(DeptModel).where("id", "=", id).delete();
   }
 
   async function getTree(): Promise<DeptTreeNode[]> {
-    const rows = await executor(
-      `SELECT id, parent_id, name, sort, leader, phone, email, status, created_at FROM sys_dept WHERE deleted_at IS NULL ORDER BY sort ASC, id ASC`,
-    ) as Array<Record<string, unknown>>;
+    const rows = await db.query(DeptModel)
+      .select("id", "parent_id", "name", "sort", "leader", "phone", "email", "status", "created_at")
+      .orderBy("sort", "asc")
+      .orderBy("id", "asc")
+      .list();
 
     const nodes: DeptTreeNode[] = rows.map((row) => ({
-      id: row.id as string,
-      parentId: (row.parent_id as string) ?? null,
-      name: row.name as string,
-      sort: (row.sort as number) ?? 0,
-      leader: (row.leader as string) ?? "",
-      phone: (row.phone as string) ?? "",
-      email: (row.email as string) ?? "",
-      status: (row.status as number) ?? 1,
-      createdAt: (row.created_at as string) ?? "",
+      id: row.id,
+      parentId: row.parent_id ?? null,
+      name: row.name,
+      sort: row.sort ?? 0,
+      leader: row.leader ?? "",
+      phone: row.phone ?? "",
+      email: row.email ?? "",
+      status: row.status ?? 1,
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
       children: [],
     }));
 

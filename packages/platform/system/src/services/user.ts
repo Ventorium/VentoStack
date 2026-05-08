@@ -5,9 +5,11 @@
 
 import type { Cache } from "@ventostack/cache";
 import type { PasswordHasher } from "@ventostack/auth";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { ConfigService } from "./config";
 import { validatePassword } from "./password-policy";
+import { UserModel } from "../models/user";
+import { DeptModel } from "../models/dept";
 
 /** 创建用户参数 */
 export interface CreateUserParams {
@@ -95,10 +97,10 @@ export interface UserService {
 /**
  * 递归收集指定部门及其所有子部门 ID
  */
-async function collectDescendantDeptIds(executor: SqlExecutor, parentId: string): Promise<string[]> {
-  const rows = await executor(
-    `SELECT id, parent_id FROM sys_dept WHERE deleted_at IS NULL`
-  ) as Array<{ id: string; parent_id: string | null }>;
+async function collectDescendantDeptIds(db: Database, parentId: string): Promise<string[]> {
+  const rows = await db.query(DeptModel)
+    .select("id", "parent_id")
+    .list();
 
   const childrenMap = new Map<string, string[]>();
   for (const row of rows) {
@@ -128,12 +130,12 @@ async function collectDescendantDeptIds(executor: SqlExecutor, parentId: string)
  * @returns 用户服务实例
  */
 export function createUserService(deps: {
-  executor: SqlExecutor;
+  db: Database;
   passwordHasher: PasswordHasher;
   cache: Cache;
   configService: ConfigService;
 }): UserService {
-  const { executor, passwordHasher, cache, configService } = deps;
+  const { db, passwordHasher, cache, configService } = deps;
 
   return {
     async create(params) {
@@ -165,21 +167,19 @@ export function createUserService(deps: {
 
       const passwordHash = await passwordHasher.hash(actualPassword);
 
-      await executor(
-        `INSERT INTO sys_user (id, username, password_hash, email, phone, nickname, dept_id, status, remark, mfa_enabled, password_changed_at, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, false, NOW(), NOW(), NOW())`,
-        [
-          id,
-          username,
-          passwordHash,
-          email ?? null,
-          phone ?? null,
-          nickname ?? null,
-          deptId ?? null,
-          status ?? 1,
-          remark ?? null,
-        ],
-      );
+      await db.query(UserModel).insert({
+        id,
+        username,
+        password_hash: passwordHash,
+        email: email ?? null,
+        phone: phone ?? null,
+        nickname: nickname ?? null,
+        dept_id: deptId ?? null,
+        status: status ?? 1,
+        remark: remark ?? null,
+        mfa_enabled: false,
+        password_changed_at: new Date(),
+      });
 
       // 清除用户列表缓存
       await cache.del("user:list");
@@ -188,40 +188,19 @@ export function createUserService(deps: {
     },
 
     async update(id, params) {
-      const fields: string[] = [];
-      const values: unknown[] = [];
-      let paramIndex = 1;
+      const updates: Record<string, unknown> = {};
+      if (params.email !== undefined) updates.email = params.email;
+      if (params.phone !== undefined) updates.phone = params.phone;
+      if (params.nickname !== undefined) updates.nickname = params.nickname;
+      if (params.avatar !== undefined) updates.avatar = params.avatar;
+      if (params.gender !== undefined) updates.gender = params.gender;
+      if (params.deptId !== undefined) updates.dept_id = params.deptId;
+      if (params.status !== undefined) updates.status = params.status;
+      if (params.remark !== undefined) updates.remark = params.remark;
 
-      const updatableFields: Record<string, unknown> = {
-        email: params.email,
-        phone: params.phone,
-        nickname: params.nickname,
-        avatar: params.avatar,
-        gender: params.gender,
-        dept_id: params.deptId,
-        status: params.status,
-        remark: params.remark,
-      };
+      if (Object.keys(updates).length === 0) return;
 
-      for (const [field, value] of Object.entries(updatableFields)) {
-        if (value !== undefined) {
-          fields.push(`${field} = $${paramIndex}`);
-          values.push(value);
-          paramIndex++;
-        }
-      }
-
-      if (fields.length === 0) {
-        return;
-      }
-
-      fields.push(`updated_at = NOW()`);
-      values.push(id);
-
-      await executor(
-        `UPDATE sys_user SET ${fields.join(", ")} WHERE id = $${paramIndex}`,
-        values,
-      );
+      await db.query(UserModel).where("id", "=", id).update(updates);
 
       // 清除用户缓存
       await cache.del(`user:detail:${id}`);
@@ -230,10 +209,7 @@ export function createUserService(deps: {
 
     async delete(id) {
       // 软删除
-      await executor(
-        "UPDATE sys_user SET deleted_at = NOW(), updated_at = NOW() WHERE id = $1",
-        [id],
-      );
+      await db.query(UserModel).where("id", "=", id).delete();
 
       // 清除缓存
       await cache.del(`user:detail:${id}`);
@@ -245,30 +221,28 @@ export function createUserService(deps: {
       const cached = await cache.get<UserDetail>(`user:detail:${id}`);
       if (cached) return cached;
 
-      const rows = await executor(
-        `SELECT id, username, email, phone, nickname, avatar, gender, status, dept_id, mfa_enabled, remark, created_at, updated_at
-         FROM sys_user WHERE id = $1 AND deleted_at IS NULL`,
-        [id],
-      );
-      const users = rows as Array<Record<string, unknown>>;
+      const row = await db.query(UserModel)
+        .where("id", "=", id)
+        .select("id", "username", "email", "phone", "nickname", "avatar", "gender",
+                "status", "dept_id", "mfa_enabled", "remark", "created_at", "updated_at")
+        .get();
 
-      if (users.length === 0) return null;
+      if (!row) return null;
 
-      const row = users[0]!;
       const detail: UserDetail = {
-        id: row.id as string,
-        username: row.username as string,
-        email: (row.email as string) ?? null,
-        phone: (row.phone as string) ?? null,
-        nickname: (row.nickname as string) ?? null,
-        avatar: (row.avatar as string) ?? null,
-        gender: (row.gender as number) ?? null,
-        status: row.status as number,
-        deptId: (row.dept_id as string) ?? null,
-        mfaEnabled: row.mfa_enabled as boolean,
-        remark: (row.remark as string) ?? null,
-        createdAt: row.created_at as string,
-        updatedAt: row.updated_at as string,
+        id: row.id,
+        username: row.username,
+        email: row.email ?? null,
+        phone: row.phone ?? null,
+        nickname: row.nickname ?? null,
+        avatar: row.avatar ?? null,
+        gender: row.gender ?? null,
+        status: row.status,
+        deptId: row.dept_id ?? null,
+        mfaEnabled: row.mfa_enabled,
+        remark: row.remark ?? null,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
       };
 
       // 写入缓存
@@ -279,56 +253,38 @@ export function createUserService(deps: {
 
     async list(params) {
       const { page = 1, pageSize = 10, username, status, deptId } = params;
-      const conditions: string[] = ["deleted_at IS NULL"];
-      const values: unknown[] = [];
-      let paramIndex = 1;
+
+      let query = db.query(UserModel);
 
       if (username) {
-        conditions.push(`username LIKE $${paramIndex}`);
-        values.push(`%${username}%`);
-        paramIndex++;
+        query = query.where("username", "LIKE", `%${username}%`);
       }
       if (status !== undefined) {
-        conditions.push(`status = $${paramIndex}`);
-        values.push(status);
-        paramIndex++;
+        query = query.where("status", "=", status);
       }
       if (deptId) {
-        const deptIds = await collectDescendantDeptIds(executor, deptId);
-        const placeholders = deptIds.map((_, i) => `$${paramIndex + i}`).join(', ');
-        conditions.push(`dept_id IN (${placeholders})`);
-        values.push(...deptIds);
-        paramIndex += deptIds.length;
+        const deptIds = await collectDescendantDeptIds(db, deptId);
+        query = query.where("dept_id", "IN", deptIds);
       }
 
-      const whereClause = conditions.join(" AND ");
+      const total = await query.count();
 
-      // 查询总数
-      const countRows = await executor(
-        `SELECT COUNT(*) as total FROM sys_user WHERE ${whereClause}`,
-        values,
-      );
-      const total = (countRows as Array<{ total: number }>)[0]?.total ?? 0;
+      const rows = await query
+        .select("id", "username", "nickname", "email", "phone", "status", "dept_id", "created_at")
+        .orderBy("created_at", "desc")
+        .limit(pageSize)
+        .offset((page - 1) * pageSize)
+        .list();
 
-      // 查询分页数据
-      const offset = (page - 1) * pageSize;
-      const listRows = await executor(
-        `SELECT id, username, nickname, email, phone, status, dept_id, created_at
-         FROM sys_user WHERE ${whereClause}
-         ORDER BY created_at DESC
-         LIMIT $${paramIndex} OFFSET $${paramIndex + 1}`,
-        [...values, pageSize, offset],
-      );
-
-      const list = (listRows as Array<Record<string, unknown>>).map((row) => ({
-        id: row.id as string,
-        username: row.username as string,
-        nickname: (row.nickname as string) ?? null,
-        email: (row.email as string) ?? null,
-        phone: (row.phone as string) ?? null,
-        status: row.status as number,
-        deptId: (row.dept_id as string) ?? null,
-        createdAt: row.created_at as string,
+      const list = rows.map((row) => ({
+        id: row.id,
+        username: row.username,
+        nickname: row.nickname ?? null,
+        email: row.email ?? null,
+        phone: row.phone ?? null,
+        status: row.status,
+        deptId: row.dept_id ?? null,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
 
       return { items: list, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
@@ -345,20 +301,17 @@ export function createUserService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await executor(
-        "UPDATE sys_user SET password_hash = $1, password_changed_at = NOW(), updated_at = NOW() WHERE id = $2",
-        [passwordHash, id],
-      );
+      await db.query(UserModel).where("id", "=", id).update({
+        password_hash: passwordHash,
+        password_changed_at: new Date(),
+      });
 
       // 清除用户缓存
       await cache.del(`user:detail:${id}`);
     },
 
     async updateStatus(id, status) {
-      await executor(
-        "UPDATE sys_user SET status = $1, updated_at = NOW() WHERE id = $2",
-        [status, id],
-      );
+      await db.query(UserModel).where("id", "=", id).update({ status });
 
       // 清除缓存
       await cache.del(`user:detail:${id}`);
@@ -367,38 +320,27 @@ export function createUserService(deps: {
 
     async export(params) {
       const { username, status, deptId } = params ?? {};
-      const conditions: string[] = ["deleted_at IS NULL"];
-      const values: unknown[] = [];
-      let paramIndex = 1;
+
+      let query = db.query(UserModel);
 
       if (username) {
-        conditions.push(`username LIKE $${paramIndex}`);
-        values.push(`%${username}%`);
-        paramIndex++;
+        query = query.where("username", "LIKE", `%${username}%`);
       }
       if (status !== undefined) {
-        conditions.push(`status = $${paramIndex}`);
-        values.push(status);
-        paramIndex++;
+        query = query.where("status", "=", status);
       }
       if (deptId) {
-        conditions.push(`dept_id = $${paramIndex}`);
-        values.push(deptId);
-        paramIndex++;
+        query = query.where("dept_id", "=", deptId);
       }
 
-      const whereClause = conditions.join(" AND ");
-      const rows = await executor(
-        `SELECT id, username, nickname, email, phone, status, dept_id, created_at, updated_at
-         FROM sys_user WHERE ${whereClause} ORDER BY created_at DESC`,
-        values,
-      );
-
-      const users = rows as Array<Record<string, unknown>>;
+      const rows = await query
+        .select("id", "username", "nickname", "email", "phone", "status", "dept_id", "created_at", "updated_at")
+        .orderBy("created_at", "desc")
+        .list();
 
       // 生成 CSV
       const header = "ID,用户名,昵称,邮箱,手机,状态,部门ID,创建时间,更新时间";
-      const csvRows = users.map((row) => {
+      const csvRows = rows.map((row) => {
         const escapeCsv = (val: unknown) => {
           if (val === null || val === undefined) return "";
           const str = String(val);

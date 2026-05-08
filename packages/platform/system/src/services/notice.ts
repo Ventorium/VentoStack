@@ -3,7 +3,8 @@
  * 提供通知公告的 CRUD、发布/撤回、已读标记与未读计数
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
+import { NoticeModel, UserNoticeModel } from "../models/notice";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -73,95 +74,67 @@ export interface NoticeService {
  * @param deps 依赖注入
  * @returns NoticeService 实例
  */
-export function createNoticeService(deps: { executor: SqlExecutor }): NoticeService {
-  const { executor } = deps;
+export function createNoticeService(deps: { db: Database }): NoticeService {
+  const { db } = deps;
 
   async function create(params: CreateNoticeParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
-    await executor(
-      `INSERT INTO sys_notice (id, title, content, type, status, publisher_id, publish_at, deleted_at) VALUES ($1, $2, $3, $4, 0, NULL, NULL, NULL)`,
-      [id, params.title, params.content, params.type],
-    );
+    await db.query(NoticeModel).insert({
+      id,
+      title: params.title,
+      content: params.content,
+      type: params.type,
+      status: 0,
+      publisher_id: null,
+      publish_at: null,
+    });
     return { id };
   }
 
   async function update(id: string, params: UpdateNoticeParams): Promise<void> {
-    const sets: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const updates: Record<string, unknown> = {};
+    if (params.title !== undefined) updates.title = params.title;
+    if (params.content !== undefined) updates.content = params.content;
+    if (params.type !== undefined) updates.type = params.type;
+    if (params.status !== undefined) updates.status = params.status;
 
-    if (params.title !== undefined) {
-      sets.push(`title = $${idx++}`);
-      values.push(params.title);
-    }
-    if (params.content !== undefined) {
-      sets.push(`content = $${idx++}`);
-      values.push(params.content);
-    }
-    if (params.type !== undefined) {
-      sets.push(`type = $${idx++}`);
-      values.push(params.type);
-    }
-    if (params.status !== undefined) {
-      sets.push(`status = $${idx++}`);
-      values.push(params.status);
-    }
+    if (Object.keys(updates).length === 0) return;
 
-    if (sets.length === 0) return;
-
-    values.push(id);
-    await executor(
-      `UPDATE sys_notice SET ${sets.join(", ")} WHERE id = $${idx} AND deleted_at IS NULL`,
-      values,
-    );
+    await db.query(NoticeModel).where("id", "=", id).update(updates);
   }
 
   async function deleteNotice(id: string): Promise<void> {
-    const now = new Date().toISOString();
-    await executor(
-      `UPDATE sys_notice SET deleted_at = $1 WHERE id = $2 AND deleted_at IS NULL`,
-      [now, id],
-    );
+    await db.query(NoticeModel).where("id", "=", id).delete();
   }
 
   async function list(params?: NoticeListParams): Promise<PaginatedResult<NoticeItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
-    const offset = (page - 1) * pageSize;
 
-    const conditions: string[] = ["deleted_at IS NULL"];
-    const values: unknown[] = [];
-    let idx = 1;
-
+    let query = db.query(NoticeModel);
     if (params?.type !== undefined) {
-      conditions.push(`type = $${idx++}`);
-      values.push(params.type);
+      query = query.where("type", "=", params.type);
     }
     if (params?.status !== undefined) {
-      conditions.push(`status = $${idx++}`);
-      values.push(params.status);
+      query = query.where("status", "=", params.status);
     }
 
-    const where = conditions.join(" AND ");
+    const total = await query.count();
 
-    const countRows = await executor(
-      `SELECT COUNT(*) AS total FROM sys_notice WHERE ${where}`,
-      values,
-    ) as Array<Record<string, unknown>>;
-    const total = Number(countRows[0]?.total ?? 0);
-
-    const rows = await executor(
-      `SELECT id, title, content, type, status, publisher_id, publish_at FROM sys_notice WHERE ${where} ORDER BY id DESC LIMIT $${idx++} OFFSET $${idx++}`,
-      [...values, pageSize, offset],
-    ) as Array<Record<string, unknown>>;
+    const rows = await query
+      .select("id", "title", "content", "type", "status", "publisher_id", "publish_at")
+      .orderBy("id", "desc")
+      .limit(pageSize)
+      .offset((page - 1) * pageSize)
+      .list();
 
     const items: NoticeItem[] = rows.map((row) => ({
-      id: row.id as string,
-      title: row.title as string,
-      content: row.content as string,
-      type: (row.type as number) ?? 1,
-      status: (row.status as number) ?? 0,
-      publisherId: (row.publisher_id as string) ?? "",
+      id: row.id,
+      title: row.title,
+      content: row.content,
+      type: row.type ?? 1,
+      status: row.status ?? 0,
+      publisherId: row.publisher_id ?? "",
       publishAt: row.publish_at ? String(row.publish_at) : null,
     }));
 
@@ -175,30 +148,31 @@ export function createNoticeService(deps: { executor: SqlExecutor }): NoticeServ
   }
 
   async function publish(id: string, publisherId: string): Promise<void> {
-    const now = new Date().toISOString();
-    await executor(
-      `UPDATE sys_notice SET status = 1, publisher_id = $1, publish_at = $2 WHERE id = $3 AND deleted_at IS NULL`,
-      [publisherId, now, id],
-    );
+    await db.query(NoticeModel).where("id", "=", id).update({
+      status: 1,
+      publisher_id: publisherId,
+      publish_at: new Date(),
+    });
   }
 
   async function revoke(id: string): Promise<void> {
-    await executor(
-      `UPDATE sys_notice SET status = 2, publish_at = NULL WHERE id = $1 AND deleted_at IS NULL`,
-      [id],
-    );
+    await db.query(NoticeModel).where("id", "=", id).update({
+      status: 2,
+      publish_at: null,
+    });
   }
 
   async function markRead(userId: string, noticeId: string): Promise<void> {
-    const now = new Date().toISOString();
-    await executor(
+    // ON CONFLICT DO NOTHING — use db.raw for this pattern
+    await db.raw(
       `INSERT INTO sys_user_notice (user_id, notice_id, read_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-      [userId, noticeId, now],
+      [userId, noticeId, new Date()],
     );
   }
 
   async function getUnreadCount(userId: string): Promise<number> {
-    const rows = await executor(
+    // NOT EXISTS subquery — use db.raw
+    const rows = await db.raw(
       `SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.deleted_at IS NULL AND n.status = 1 AND NOT EXISTS (SELECT 1 FROM sys_user_notice un WHERE un.user_id = $1 AND un.notice_id = n.id)`,
       [userId],
     ) as Array<Record<string, unknown>>;

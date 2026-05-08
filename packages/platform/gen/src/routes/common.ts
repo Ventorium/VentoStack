@@ -5,14 +5,14 @@
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
 export function ok(data: unknown): Response {
-  return new Response(JSON.stringify({ code: 0, message: "success", data }), {
+  return new Response(JSON.stringify({ code: 0, message: "成功", data }), {
     status: 200, headers: JSON_HEADERS,
   });
 }
 
 export function okPage(list: unknown[], total: number, page: number, pageSize: number): Response {
   return new Response(
-    JSON.stringify({ code: 0, message: "success", data: { list, total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 } }),
+    JSON.stringify({ code: 0, message: "成功", data: { list, total, page, pageSize, totalPages: Math.ceil(total / pageSize) || 1 } }),
     { status: 200, headers: JSON_HEADERS },
   );
 }

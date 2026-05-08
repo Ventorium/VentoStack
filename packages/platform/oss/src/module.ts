@@ -4,7 +4,7 @@
 
 import { createRouter } from "@ventostack/core";
 import type { Router } from "@ventostack/core";
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { StorageAdapter } from "./adapters/storage";
 import { createOSSService } from "./services/oss";
@@ -20,7 +20,7 @@ export interface OSSModule {
 }
 
 export interface OSSModuleDeps {
-  executor: SqlExecutor;
+  db: Database;
   storage: StorageAdapter;
   jwt: JWTManager;
   jwtSecret: string;
@@ -28,9 +28,9 @@ export interface OSSModuleDeps {
 }
 
 export function createOSSModule(deps: OSSModuleDeps): OSSModule {
-  const { executor, storage, jwt, jwtSecret, rbac } = deps;
+  const { db, storage, jwt, jwtSecret, rbac } = deps;
 
-  const ossService = createOSSService({ executor, storage });
+  const ossService = createOSSService({ db, storage });
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
 
   // Permission middleware — integrates with RBAC if provided
@@ -39,7 +39,7 @@ export function createOSSModule(deps: OSSModuleDeps): OSSModule {
       const user = ctx.user as { roles: string[] } | undefined;
       if (!user) {
         return new Response(
-          JSON.stringify({ code: 401, message: "Not authenticated" }),
+          JSON.stringify({ code: 401, message: "未登录" }),
           { status: 401, headers: { "Content-Type": "application/json" } },
         );
       }
@@ -47,7 +47,7 @@ export function createOSSModule(deps: OSSModuleDeps): OSSModule {
         const allowed = user.roles.some((r: string) => rbac.hasPermission(r, resource, action));
         if (!allowed) {
           return new Response(
-            JSON.stringify({ code: 403, message: `No permission: ${resource}:${action}` }),
+            JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),
             { status: 403, headers: { "Content-Type": "application/json" } },
           );
         }

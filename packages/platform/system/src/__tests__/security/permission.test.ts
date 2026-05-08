@@ -5,30 +5,45 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createMockExecutor, createTestCache, createMockRBAC, createMockRowFilter } from "../helpers";
+import { createMockExecutor, createMockDatabase, createTestCache, createMockRBAC, createMockRowFilter } from "../helpers";
 import { createRoleService } from "../../services/role";
 import { createPermissionLoader } from "../../services/permission-loader";
 import { createMenuTreeBuilder } from "../../services/menu-tree-builder";
 
 function setupRole() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_user_role", "sys_user_role", false);
+  registerModel("sys_role_menu", "sys_role_menu", false);
+  registerModel("sys_role_dept", "sys_role_dept", false);
+  registerModel("sys_dept", "sys_dept", true);
   const cache = createTestCache();
-  const roleService = createRoleService({ executor, cache });
-  return { roleService, executor, calls, results, cache };
+  const roleService = createRoleService({ db, cache });
+  return { roleService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
 
 function setupPermissionLoader() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_role_menu", "sys_role_menu", false);
+  registerModel("sys_menu", "sys_menu", true);
   const rbac = createMockRBAC();
   const rowFilter = createMockRowFilter();
-  const loader = createPermissionLoader({ executor, rbac, rowFilter });
-  return { loader, executor, calls, results, rbac, rowFilter };
+  const loader = createPermissionLoader({ db, rbac, rowFilter });
+  return { loader, executor: mockExec.executor, calls, results: mockExec.results, rbac, rowFilter };
 }
 
 function setupMenuTreeBuilder() {
-  const { executor, calls, results } = createMockExecutor();
-  const builder = createMenuTreeBuilder({ executor });
-  return { builder, executor, calls, results };
+  const mockExec = createMockExecutor();
+  const { db, registerModel, calls } = createMockDatabase(mockExec);
+  registerModel("sys_user_role", "sys_user_role", false);
+  registerModel("sys_role", "sys_role", true);
+  registerModel("sys_role_menu", "sys_role_menu", false);
+  registerModel("sys_menu", "sys_menu", true);
+  const builder = createMenuTreeBuilder({ db });
+  return { builder, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
 describe("Security: Permission", () => {
@@ -167,14 +182,18 @@ describe("Security: Permission", () => {
 
   describe("SQL 注入防护", () => {
     test("用户名搜索参数化查询（不拼接 SQL）", async () => {
-      const { executor, calls, results } = createMockExecutor();
+      const mockExec = createMockExecutor();
+      const { db, registerModel, calls } = createMockDatabase(mockExec);
+      registerModel("sys_user", "sys_user", true);
+      registerModel("sys_user_role", "sys_user_role", false);
+      registerModel("sys_role", "sys_role", true);
       const { createUserService } = await import("../../services/user");
       const { createMockPasswordHasher } = await import("../helpers");
       const cache = createTestCache();
       const passwordHasher = createMockPasswordHasher();
 
-      const userService = createUserService({ executor, passwordHasher, cache });
-      results.set("COUNT", [{ total: 0 }]);
+      const userService = createUserService({ db, passwordHasher, cache });
+      mockExec.results.set("COUNT", [{ total: 0 }]);
 
       // 尝试 SQL 注入
       await userService.list({ username: "'; DROP TABLE sys_user; --" });

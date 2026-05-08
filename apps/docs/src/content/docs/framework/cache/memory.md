@@ -1,4 +1,5 @@
 ---
+order: 2
 title: 内存适配器
 description: createMemoryAdapter - 用于开发和测试的内存缓存
 ---

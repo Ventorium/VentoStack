@@ -2,7 +2,7 @@
  * @ventostack/notify - 模块聚合
  */
 
-import type { SqlExecutor } from "@ventostack/database";
+import type { Database } from "@ventostack/database";
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router } from "@ventostack/core";
 import { createNotificationService } from "./services/notification";
@@ -19,7 +19,7 @@ export interface NotificationModule {
 }
 
 export interface NotificationModuleDeps {
-  executor: SqlExecutor;
+  db: Database;
   jwt: JWTManager;
   jwtSecret: string;
   rbac?: RBAC;
@@ -27,21 +27,21 @@ export interface NotificationModuleDeps {
 }
 
 export function createNotificationModule(deps: NotificationModuleDeps): NotificationModule {
-  const { executor, jwt, jwtSecret, rbac, channels } = deps;
+  const { db, jwt, jwtSecret, rbac, channels } = deps;
 
-  const notificationService = createNotificationService({ executor, channels });
+  const notificationService = createNotificationService({ db, channels });
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
 
   const perm = (resource: string, action: string) => {
     return async (ctx: any, next: any) => {
       const user = ctx.user as { roles: string[] } | undefined;
       if (!user) {
-        return new Response(JSON.stringify({ code: 401, message: "Not authenticated" }), { status: 401, headers: { "Content-Type": "application/json" } });
+        return new Response(JSON.stringify({ code: 401, message: "未登录" }), { status: 401, headers: { "Content-Type": "application/json" } });
       }
       if (rbac) {
         const allowed = user.roles.some((r: string) => rbac.hasPermission(r, resource, action));
         if (!allowed) {
-          return new Response(JSON.stringify({ code: 403, message: `No permission: ${resource}:${action}` }), { status: 403, headers: { "Content-Type": "application/json" } });
+          return new Response(JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }), { status: 403, headers: { "Content-Type": "application/json" } });
         }
       }
       return next();

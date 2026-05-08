@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 import { startAuthentication } from '@simplewebauthn/browser'
-import { client, setOnUnauthorized } from '@/api'
+import { client } from '@/api'
 import { globalNavigate } from '@/components/GlobalHistory'
 import { getAccessToken, setAccessToken, clearToken } from './token'
 
@@ -25,6 +25,7 @@ export type AuthState = {
   computed: { logged: boolean }
   init: () => Promise<void>
   refreshProfile: () => Promise<void>
+  patchUser: (patch: Partial<UserProfile>) => void
   login: (args: LoginForm) => Promise<LoginResult>
   completeMFALogin: (mfaToken: string, code: string) => Promise<LoginResult>
   passkeyLogin: (username: string) => Promise<LoginResult>
@@ -47,6 +48,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
     if (user) set({ user })
   },
+  patchUser(patch) {
+    const { user } = get()
+    if (user) set({ user: { ...user, ...patch } })
+  },
   async init() {
     if (get().loading) return
     set({ loading: true })
@@ -62,8 +67,12 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ loading: false, ready: true })
   },
   async login(args) {
-    const { error, data } = await client.post('/api/auth/login', { body: args })
+    const { error, data } = await client.post('/api/auth/login', { body: args }) as { error?: unknown; data?: any }
     if (!error && data) {
+      // 密码过期：拦截器通过 ok Response 透传 error 信息
+      if (data.error?.code === 'password_expired' && data.error.tempToken) {
+        return { code: 'password_expired' as const, tempToken: data.error.tempToken }
+      }
       // MFA required — return mfaToken for second step
       if (data.mfaRequired && data.mfaToken) {
         return { code: 'mfa_required' as const, mfaToken: data.mfaToken }
@@ -79,10 +88,6 @@ export const useAuth = create<AuthState>((set, get) => ({
         set({ user })
         return result
       }
-    }
-    // 密码过期：返回临时 token 信息
-    if (error?.code === 'password_expired' && error.tempToken) {
-      return { code: 'password_expired' as const, tempToken: error.tempToken }
     }
     return null
   },
@@ -100,15 +105,17 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
   async passkeyLogin(username) {
     try {
-      const { error: beginError, data: beginData } = await client.post('/api/auth/passkey/login-begin', { body: { username } } as any) as { data?: { challengeId: string; options: unknown }; error?: unknown }
-      if (beginError || !beginData) return null
+      const { error: beginError, data: resp } = await client.post('/api/auth/passkey/login-begin', { body: { username } } as any)
+      if (beginError || !resp) return null
+      const beginData = (resp as any).data ?? resp
+      if (!beginData?.options) return null
 
-      const assertion = await startAuthentication({ optionsJSON: beginData.options as any })
-      const { error: finishError, data: finishData } = await client.post('/api/auth/passkey/login-finish', {
+      const assertion = await startAuthentication({ optionsJSON: beginData.options })
+      const { error: finishError, data: finishResp } = await client.post('/api/auth/passkey/login-finish', {
         body: { challengeId: beginData.challengeId, assertion },
-      } as any) as { data?: { accessToken: string; refreshToken: string; expiresIn: number; sessionId: string }; error?: unknown }
-
-      if (finishError || !finishData) return null
+      } as any)
+      if (finishError || !finishResp) return null
+      const finishData = (finishResp as any).data ?? finishResp
 
       setAccessToken(finishData.accessToken)
       const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
@@ -116,8 +123,12 @@ export const useAuth = create<AuthState>((set, get) => ({
         set({ user })
         return user
       }
-    } catch {
-      // NotAllowedError: user cancelled browser dialog
+    } catch (e) {
+      if (e instanceof Error && e.name === 'NotAllowedError') {
+        // user cancelled browser dialog
+      } else {
+        console.error('[passkeyLogin] unexpected error:', e)
+      }
     }
     return null
   },
@@ -127,9 +138,3 @@ export const useAuth = create<AuthState>((set, get) => ({
     onExpired()
   },
 }))
-
-// 注册 401 全局处理 — API 返回 401 时自动跳转登录页
-setOnUnauthorized(() => {
-  useAuth.setState({ user: null })
-  globalNavigate('/auth/login', { replace: true })
-})

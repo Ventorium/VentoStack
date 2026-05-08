@@ -22,6 +22,10 @@ export type {
 export { createContext } from "./context";
 export type { Context } from "./context";
 
+// ========== 客户端 IP ==========
+export { getClientIPFromRequest } from "./client-ip";
+export type { ClientIPOptions } from "./client-ip";
+
 // ========== 中间件模型 ==========
 export type { Middleware, NextFunction } from "./middleware";
 
@@ -153,6 +157,7 @@ export type {
   RouteResponseConfig,
   RouteResponseDefinition,
   RouteSchemaConfig,
+  RouteOpenAPIConfig,
   InferFieldType,
   InferSchema,
   InferResponseType,
@@ -265,4 +270,8 @@ export { createTagLogger } from "./tag-log";
 export type { TagLogger } from "./tag-log";
 
 // ========== 工具函数 ==========
-export { generateUUID } from "./utils/generate-id";
+export { generateId, generateUUID } from "./utils/generate-id";
+
+// 静态文件服务
+export { createStaticMiddleware } from "./middlewares/static";
+export type { StaticOptions } from "./middlewares/static";
