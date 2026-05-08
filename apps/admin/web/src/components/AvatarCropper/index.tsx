@@ -1,6 +1,6 @@
-import { useState, useCallback } from 'react'
-import { Modal, Slider, Space, Button } from 'antd'
-import { RotateLeftOutlined, RotateRightOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons'
+import { useState, useCallback, useEffect } from 'react'
+import { Modal, Button, Tooltip } from 'antd'
+import { RotateLeftOutlined, RotateRightOutlined, ZoomInOutlined, ZoomOutOutlined, UndoOutlined } from '@ant-design/icons'
 import Cropper from 'react-easy-crop'
 import type { Area } from 'react-easy-crop'
 
@@ -19,22 +19,17 @@ async function getCroppedImg(imageSrc: string, crop: Area, rotation = 0): Promis
   const cos = Math.abs(Math.cos(radians))
   const w = image.width
   const h = image.height
-  // 旋转后画布尺寸
   const canvasW = Math.floor(w * cos + h * sin)
   const canvasH = Math.floor(w * sin + h * cos)
 
   const canvas = document.createElement('canvas')
-  canvas.width = crop.width
-  canvas.height = crop.height
+  canvas.width = canvasW
+  canvas.height = canvasH
   const ctx = canvas.getContext('2d')!
-
-  // 将原图旋转后绘制到临时画布
   ctx.translate(canvasW / 2, canvasH / 2)
   ctx.rotate(radians)
   ctx.drawImage(image, -w / 2, -h / 2)
-  ctx.setTransform(1, 0, 0, 1, 0, 0)
 
-  // 裁剪
   const croppedCanvas = document.createElement('canvas')
   croppedCanvas.width = crop.width
   croppedCanvas.height = crop.height
@@ -63,6 +58,8 @@ function createImage(src: string): Promise<HTMLImageElement> {
   })
 }
 
+const iconStyle = { fontSize: 18 }
+
 const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) => {
   const [crop, setCrop] = useState({ x: 0, y: 0 })
   const [zoom, setZoom] = useState(1)
@@ -73,9 +70,31 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
 
   const imageUrl = URL.createObjectURL(file)
 
+  // 打开时生成初始预览
+  useEffect(() => {
+    if (!open) return
+    let revoked = false
+    const generate = async () => {
+      const img = await createImage(imageUrl)
+      if (revoked) return
+      const size = Math.min(img.width, img.height)
+      const initialCrop: Area = {
+        x: (img.width - size) / 2,
+        y: (img.height - size) / 2,
+        width: size,
+        height: size,
+      }
+      setCroppedAreaPixels(initialCrop)
+      const blob = await getCroppedImg(imageUrl, initialCrop, 0)
+      if (revoked) return
+      setPreviewUrl(URL.createObjectURL(blob))
+    }
+    generate()
+    return () => { revoked = true }
+  }, [open, imageUrl])
+
   const onCropComplete = useCallback((_croppedArea: Area, croppedAreaPixels: Area) => {
     setCroppedAreaPixels(croppedAreaPixels)
-    // 生成预览
     getCroppedImg(imageUrl, croppedAreaPixels, rotation).then((blob) => {
       const url = URL.createObjectURL(blob)
       setPreviewUrl((prev) => {
@@ -112,12 +131,12 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
       okText="确定"
       cancelText="取消"
       destroyOnHidden
-      width={480}
+      width={640}
     >
       <div style={{ display: 'flex', gap: 16 }}>
-        {/* 裁剪区域 */}
+        {/* 左：裁剪区域 */}
         <div style={{ flex: 1 }}>
-          <div style={{ position: 'relative', width: '100%', height: 280, background: '#1a1a1a', borderRadius: 8 }}>
+          <div style={{ position: 'relative', width: '100%', height: 340, background: '#1a1a1a', borderRadius: 8 }}>
             <Cropper
               image={imageUrl}
               crop={crop}
@@ -132,36 +151,11 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
               onCropComplete={onCropComplete}
             />
           </div>
-          <Space style={{ marginTop: 12, width: '100%' }} orientation="vertical" size={4}>
-            <Space size={4} align="center" style={{ width: '100%' }}>
-              <ZoomOutOutlined />
-              <Slider
-                min={1}
-                max={3}
-                step={0.01}
-                value={zoom}
-                onChange={setZoom}
-                style={{ flex: 1 }}
-              />
-              <ZoomInOutlined />
-            </Space>
-            <Space size={4} align="center" style={{ width: '100%' }}>
-              <RotateLeftOutlined />
-              <Slider
-                min={0}
-                max={360}
-                step={1}
-                value={rotation}
-                onChange={setRotation}
-                style={{ flex: 1 }}
-              />
-              <RotateRightOutlined />
-            </Space>
-          </Space>
         </div>
 
-        {/* 圆形预览 */}
-        <div style={{ width: 100, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        {/* 右：预览 + 操作按钮 */}
+        <div style={{ width: 140, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, paddingTop: 8 }}>
+          {/* 预览 */}
           <div
             style={{
               width: 80,
@@ -172,25 +166,37 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
               background: '#f5f5f5',
             }}
           >
-            {previewUrl ? (
-              <img
-                src={previewUrl}
-                alt="预览"
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            ) : (
-              <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bbb' }}>
-                预览
-              </div>
+            {previewUrl && (
+              <img src={previewUrl} alt="预览" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
             )}
           </div>
-          <span style={{ fontSize: 12, color: '#999' }}>圆形预览</span>
-          <Button
-            size="small"
-            onClick={() => { setZoom(1); setRotation(0); setCrop({ x: 0, y: 0 }) }}
-          >
-            重置
-          </Button>
+
+          {/* 缩放按钮 */}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <Tooltip title="缩小">
+              <Button icon={<ZoomOutOutlined style={iconStyle} />} onClick={() => setZoom(z => Math.max(1, z - 0.1))} />
+            </Tooltip>
+            <Tooltip title="放大">
+              <Button icon={<ZoomInOutlined style={iconStyle} />} onClick={() => setZoom(z => Math.min(3, z + 0.1))} />
+            </Tooltip>
+          </div>
+
+          {/* 旋转按钮 */}
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'center' }}>
+            <Tooltip title="左旋90°">
+              <Button icon={<RotateLeftOutlined style={iconStyle} />} onClick={() => setRotation(r => r - 90)} />
+            </Tooltip>
+            <Tooltip title="右旋90°">
+              <Button icon={<RotateRightOutlined style={iconStyle} />} onClick={() => setRotation(r => r + 90)} />
+            </Tooltip>
+          </div>
+
+          {/* 重置 */}
+          <Tooltip title="重置">
+            <Button icon={<UndoOutlined style={iconStyle} />} onClick={() => { setZoom(1); setRotation(0); setCrop({ x: 0, y: 0 }) }}>
+              重置
+            </Button>
+          </Tooltip>
         </div>
       </div>
     </Modal>

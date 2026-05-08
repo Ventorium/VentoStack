@@ -28,6 +28,13 @@ export type OpenAPIs = {
       body: never,
       response: {}
     },
+    '/uploads/*': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/system/configs/public': {
       query: never,
       params: never,
@@ -197,6 +204,34 @@ export type OpenAPIs = {
       response: any
     },
     '/api/system/dashboard/stats': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oss': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oss/:id': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oss/:id/download': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oss/:id/url': {
       query: never,
       params: never,
       headers: never,
@@ -421,6 +456,13 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    '/api/oss/upload': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
     }
   },
   delete: {
@@ -495,6 +537,13 @@ export type OpenAPIs = {
       response: any
     },
     '/api/system/login-logs': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oss/:id': {
       query: never,
       params: never,
       headers: never,

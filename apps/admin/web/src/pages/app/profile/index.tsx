@@ -8,6 +8,7 @@ import { startRegistration } from '@simplewebauthn/browser'
 import dayjs from 'dayjs'
 import { client } from '@/api'
 import type { LoginLogItem } from '@/api/types'
+import { useAuth } from '@/store/useAuth'
 import { useTable } from '@/hooks/useTable'
 import { usePublicConfig } from '@/hooks/usePublicConfig'
 
@@ -129,6 +130,7 @@ export default function ProfilePage() {
     if (!result.error) {
       msg.success('头像上传成功')
       fetchProfile()
+      useAuth.getState().refreshProfile()
     }
   }
 
