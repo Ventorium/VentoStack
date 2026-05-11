@@ -20,11 +20,12 @@ export interface DatabaseContext {
 
 /**
  * 创建数据库连接
+ * @param tracedExecutor - 可选的已包装 executor（如 tracing），传入后 Database 实例使用此 executor
  */
-export function createDatabaseConnection(): DatabaseContext {
+export function createDatabaseConnection(tracedExecutor?: SqlExecutor): DatabaseContext {
   // 生产连接池 — 并发处理请求
   const pool = createSqlExecutor(env.DATABASE_URL, { max: env.DB_POOL_SIZE });
-  const db = createDatabase({ executor: pool.executor });
+  const db = createDatabase({ executor: tracedExecutor ?? pool.executor });
 
   // 迁移 单连接 — 允许手动 BEGIN/COMMIT
   const migration = createSqlExecutor(env.DATABASE_URL, { max: 1 });

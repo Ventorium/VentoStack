@@ -12,7 +12,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { createAuditLog, createDefaultHealthCheck, createMetrics, createTracer, createTracingMiddleware, wrapExecutorWithTracing } from "@ventostack/observability";
 import type { SpanContext } from "@ventostack/observability";
 import { createEventBus, createScheduler } from "@ventostack/events";
-import { readTableSchema, listTables } from "@ventostack/database";
+import { readTableSchema, listTables, createDatabase } from "@ventostack/database";
 import { createPlatform } from "@ventostack/boot";
 
 import { env } from "./config";
@@ -37,37 +37,37 @@ export async function buildApp(): Promise<AppContext> {
   // =============================================
   serverLogger.info(`启动模式: ${env.NODE_ENV}`);
 
-  // 1a. 数据库
-  const database = createDatabaseConnection();
-  const { executor } = database;
-  serverLogger.info("数据库已连接");
-
-  // 1b. 运行迁移（使用单连接 executor）
-  await runMigrations(database.migrationExecutor);
-
-  // 1c. 种子数据（使用连接池 executor）
-  await runSeeds(executor);
-
-  // 1d. 缓存
-  const cacheInstance = await createCacheInstance();
-
-  // 1e. 存储适配器
-  const storage = createStorageAdapter();
-
-  // 1f. 可观测性
-  const auditLog = createAuditLog();
-
-  // 1g. 指标与追踪
-  const metrics = createMetrics();
+  // 1a. 追踪（需在数据库之前初始化，以便包装 executor）
   const tracer = createTracer();
   const traceStore = new AsyncLocalStorage<SpanContext>();
-  const tracingExecutor = wrapExecutorWithTracing(executor, tracer, {
+
+  // 1b. 数据库（创建连接池 → 包装 executor → 重建 Database）
+  const rawConn = createDatabaseConnection();
+  const tracingExecutor = wrapExecutorWithTracing(rawConn.executor, tracer, {
     getSpanContext: () => traceStore.getStore(),
   });
+  const tracedDb = createDatabase({ executor: tracingExecutor });
+  serverLogger.info("数据库已连接");
 
-  // 1g. 健康检查
+  // 1c. 运行迁移（使用单连接 executor，不经过 tracing）
+  await runMigrations(rawConn.migrationExecutor);
+
+  // 1d. 种子数据（使用原始 executor，启动阶段无请求上下文）
+  await runSeeds(rawConn.executor);
+
+  // 1e. 缓存
+  const cacheInstance = await createCacheInstance();
+
+  // 1f. 存储适配器
+  const storage = createStorageAdapter();
+
+  // 1g. 可观测性
+  const auditLog = createAuditLog();
+  const metrics = createMetrics();
+
+  // 1h. 健康检查
   const healthCheck = createDefaultHealthCheck({
-    sql: executor,
+    sql: tracingExecutor,
     ...(cacheInstance.redisClient ? { redis: cacheInstance.redisClient } : {}),
   });
 
@@ -85,7 +85,7 @@ export async function buildApp(): Promise<AppContext> {
   // =============================================
   const platform = await createPlatform({
     executor: tracingExecutor,
-    db: database.db,
+    db: tracedDb,
     readTableSchema,
     listTables,
     cache: cacheInstance.cache,
@@ -211,7 +211,7 @@ export async function buildApp(): Promise<AppContext> {
       serverLogger.info("缓存已关闭");
 
       serverLogger.info("正在关闭数据库...");
-      await database.close();
+      await rawConn.close();
       serverLogger.info("数据库已关闭");
     } catch (err) {
       serverLogger.error(`关停异常: ${err instanceof Error ? err.message : String(err)}`);
