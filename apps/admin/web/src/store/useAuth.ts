@@ -67,12 +67,18 @@ export const useAuth = create<AuthState>((set, get) => ({
     set({ loading: false, ready: true })
   },
   async login(args) {
-    const { error, data } = await client.post('/api/auth/login', { body: args }) as { error?: unknown; data?: any }
+    const { error, data, response } = await client.post('/api/auth/login', { body: args }) as { error?: unknown; data?: any; response?: Response }
+    // 密码过期：从原始 403 响应中提取 tempToken
+    if (response?.status === 403) {
+      try {
+        const json: any = await response.clone().json()
+        if (json?.data?.code === 'password_expired' && json.data.tempToken) {
+          return { code: 'password_expired' as const, tempToken: json.data.tempToken }
+        }
+      } catch { /* ignore */ }
+      return null
+    }
     if (!error && data) {
-      // 密码过期：拦截器通过 ok Response 透传 error 信息
-      if (data.error?.code === 'password_expired' && data.error.tempToken) {
-        return { code: 'password_expired' as const, tempToken: data.error.tempToken }
-      }
       // MFA required — return mfaToken for second step
       if (data.mfaRequired && data.mfaToken) {
         return { code: 'mfa_required' as const, mfaToken: data.mfaToken }

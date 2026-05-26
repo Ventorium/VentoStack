@@ -13,48 +13,34 @@ export const client = createFetchClient<OpenAPIs>({
     }
     return request
   },
-  async responseInterceptor(_request, response) {
-    // 401 — Token 过期或无效
-    if (response.status === 401) {
-      clearToken()
-      globalNavigate('/auth/login', { replace: true })
-      return new Response(null, { status: 401 })
-    }
+  // async responseInterceptor(_request, response) {
+  //   // 仅处理成功响应的信封解包 { code, message, data } → data
+  //   if (!response.ok) return response
 
-    // 403 — 密码过期特殊处理，通过 ok Response 透传 error 信息
-    if (response.status === 403) {
-      const ct = response.headers.get('content-type')
-      if (ct?.includes('application/json')) {
-        const json: any = await response.clone().json()
-        if (json?.data?.code === 'password_expired') {
-          return new Response(JSON.stringify({
-            error: { code: 'password_expired', tempToken: json.data.tempToken },
-          }), { status: 200, headers: { 'Content-Type': 'application/json' } })
-        }
-      }
-      return response
-    }
+  //   const ct = response.headers.get('content-type')
+  //   if (!ct?.includes('application/json')) return response
 
-    // 解包后端 { code, message, data } 信封
-    const ct = response.headers.get('content-type')
-    if (response.ok && ct?.includes('application/json')) {
-      const json: any = await response.clone().json()
-      if (json && typeof json === 'object' && 'code' in json) {
-        if (json.code !== 0) {
-          msg.error(json.message || '请求失败')
-          return new Response(null, { status: 400 })
-        }
-        // code=0 成功，解包 data 层
-        return new Response(JSON.stringify(json.data ?? null), {
-          status: 200,
-          headers: { 'Content-Type': 'application/json' },
-        })
-      }
-    }
+  //   const json: unknown = await response.clone().json()
+  //   if (!json || typeof json !== 'object' || !('code' in json)) return response
 
-    return response
-  },
-  async errorHandler(request, response, error) {
+  //   const envelope = json as { code: number; message?: string; data?: unknown }
+
+  //   // code !== 0 业务错误，转为 400 由 errorHandler 统一处理
+  //   if (envelope.code !== 0) {
+  //     return new Response(
+  //       JSON.stringify({ code: envelope.code, message: envelope.message || '请求失败' }),
+  //       { status: 400, headers: { 'Content-Type': 'application/json' } },
+  //     )
+  //   }
+
+  //   // code=0 成功，解包 data
+  //   return new Response(JSON.stringify(envelope.data ?? null), {
+  //     status: 200,
+  //     headers: { 'Content-Type': 'application/json' },
+  //   })
+  // },
+  async errorHandler(_request, response, error) {
+    // 网络错误
     if (error) {
       const msgMap: Record<string, string> = {
         'Failed to fetch': '网络连接失败，请检查网络',
@@ -64,19 +50,77 @@ export const client = createFetchClient<OpenAPIs>({
       }
       const key = Object.keys(msgMap).find(k => error.message.includes(k))
       msg.error(key ? msgMap[key] : '请求失败，请稍后重试')
-    } else if (response) {
+      return
+    }
+
+    if (!response) return
+
+    // 401 — 凭证无效：显示后端错误信息；有 token 时视为过期，清 token 并跳转登录
+    if (response.status === 401) {
       try {
-        const contentType = response.headers.get('content-type')
-        if (contentType?.includes('application/json')) {
-          const resp: any = await response.clone().json()
-          msg.error(resp?.message || resp?.msg || '服务器错误')
-        } else {
-          msg.error(await response.text() || '服务器错误')
+        const ct = response.headers.get('content-type')
+        if (ct?.includes('application/json')) {
+          const json: unknown = await response.clone().json()
+          if (json && typeof json === 'object' && 'message' in json) {
+            msg.error((json as { message: string }).message)
+          }
+        }
+      } catch { /* ignore */ }
+      if (getAccessToken()) {
+        clearToken()
+        globalNavigate('/auth/login', { replace: true })
+      }
+      return
+    }
+
+    // 400 — 业务错误（code !== 0 被转为 400）
+    if (response.status === 400) {
+      try {
+        const json: unknown = await response.clone().json()
+        if (json && typeof json === 'object' && 'message' in json) {
+          msg.error((json as { message: string }).message)
         }
       } catch {
-        msg.error('服务器错误')
+        msg.error('请求失败')
       }
+      return
     }
-    console.error(request, response, error)
-  }
+
+    // 403 — 登录接口的密码过期由业务层处理，其他 403 显示错误信息
+    if (response.status === 403) {
+      try {
+        const json: unknown = await response.clone().json()
+        if (json && typeof json === 'object' && 'data' in json) {
+          const data = (json as { data: unknown }).data
+          if (data && typeof data === 'object' && 'code' in data && (data as { code: string }).code === 'password_expired') {
+            return // 登录密码过期，由 useAuth.login() 处理
+          }
+        }
+        if ('message' in (json as object)) {
+          msg.error((json as { message: string }).message || '没有权限')
+        }
+      } catch {
+        msg.error('没有权限')
+      }
+      return
+    }
+
+    // 其他服务端错误（500/502 等）
+    try {
+      const contentType = response.headers.get('content-type')
+      if (contentType?.includes('application/json')) {
+        const resp: unknown = await response.clone().json()
+        if (resp && typeof resp === 'object' && 'message' in resp) {
+          msg.error((resp as { message: string }).message || '服务器错误')
+        } else {
+          msg.error('服务器错误')
+        }
+      } else {
+        const text = await response.text()
+        msg.error(text || '服务器错误')
+      }
+    } catch {
+      msg.error('服务器错误')
+    }
+  },
 })
