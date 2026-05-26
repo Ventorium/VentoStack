@@ -10,9 +10,13 @@ import { createLocalStorage, createS3Storage } from "@ventostack/oss";
 import type { StorageAdapter } from "@ventostack/oss";
 import { resolve } from "node:path";
 import { env } from "../config";
+import { createTagLogger } from "@ventostack/core";
+
+const logger = createTagLogger('storage')
 
 export function createStorageAdapter(): StorageAdapter {
   if (env.STORAGE_DRIVER === "s3") {
+    logger.info(`使用 S3 存储 (${env.S3_BUCKET})`)
     return createS3Storage({
       bucket: env.S3_BUCKET!,
       accessKeyId: env.S3_ACCESS_KEY_ID!,
@@ -22,7 +26,7 @@ export function createStorageAdapter(): StorageAdapter {
       ...(env.S3_PUBLIC_BASE_URL ? { publicBaseUrl: env.S3_PUBLIC_BASE_URL } : {}),
     });
   }
-
+  logger.info(`使用本地存储 (${env.STORAGE_LOCAL_PATH})`)
   return createLocalStorage({
     basePath: resolve(env.STORAGE_LOCAL_PATH),
     baseUrl: env.STORAGE_LOCAL_BASE_URL,

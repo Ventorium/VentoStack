@@ -12,11 +12,9 @@ const noopLogger: LoggerLike = {
 
 const consoleLogger: LoggerLike = {
   info(message, meta) {
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({ level: "info", message, ...meta }));
   },
   error(message, meta) {
-    // eslint-disable-next-line no-console
     console.error(JSON.stringify({ level: "error", message, ...meta }));
   },
 };

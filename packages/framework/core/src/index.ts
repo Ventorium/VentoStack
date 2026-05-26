@@ -265,6 +265,9 @@ export type { ABTestManager, ABTest, ABTestVariant, ABTestResult } from "./ab-te
 export { loadTwelveFactorConfig, validateEnvVars } from "./twelve-factor";
 export type { TwelveFactorConfig, TwelveFactorResult } from "./twelve-factor";
 
+// ========== 终端颜色 ==========
+export { ansi, RESET, COLORS } from "./color";
+
 // ========== 标签日志 ==========
 export { createTagLogger } from "./tag-log";
 export type { TagLogger } from "./tag-log";

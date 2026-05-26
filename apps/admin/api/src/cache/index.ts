@@ -9,7 +9,7 @@ import { createCache, createMemoryAdapter, createRedisAdapter, createRedisClient
 import type { Cache, RedisClientInstance } from "@ventostack/cache";
 import { env } from "../config";
 
-const log = createTagLogger("cache");
+const logger = createTagLogger("cache");
 
 export type { Cache };
 
@@ -31,7 +31,7 @@ export async function createCacheInstance(): Promise<CacheInstance> {
       const redisUrl = env.REDIS_URL ?? "redis://localhost:6379";
       const client = createRedisClient({ url: redisUrl });
       const cache = createCache(createRedisAdapter({ client, keyPrefix: "admin:" }));
-      log.info(`Using Redis adapter (${redisUrl})`);
+      logger.info(`使用 Redis 缓存 (${redisUrl})`);
       return {
         cache,
         redisClient: client,
@@ -40,7 +40,7 @@ export async function createCacheInstance(): Promise<CacheInstance> {
     }
     case "memory":
     default: {
-      log.info("Using memory adapter");
+      logger.info("使用内存缓存");
       return {
         cache: createCache(createMemoryAdapter()),
         close: async () => {},

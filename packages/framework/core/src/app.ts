@@ -5,6 +5,7 @@ import { type Lifecycle, createLifecycle } from "./lifecycle";
 import type { Middleware } from "./middleware";
 import type { Plugin } from "./plugin";
 import { type CompiledRoutes, type Router, createRouter } from "./router";
+import { RESET, ansi, COLORS } from "./color";
 
 /**
  * 判断给定对象是否为 Router 实例
@@ -216,14 +217,23 @@ export function createApp(config?: AppConfig): VentoStackApp {
         },
       });
 
-      // 打印可访问地址
+      // 打印启动 Banner
       const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
       const baseUrl = `http://${displayHost}:${listenPort}`;
-      // eslint-disable-next-line no-console
-      console.log(`\n  ➜  Local:   ${baseUrl}`);
+      const accent = ansi(COLORS.info);
+      const tag = ansi(COLORS.tag);
+      console.log(`
+${tag}██╗   ██╗███████╗███╗   ██╗████████╗ ██████╗ ███████╗████████╗ █████╗  ██████╗██╗  ██╗${RESET}
+${tag}██║   ██║██╔════╝████╗  ██║╚══██╔══╝██╔═══██╗██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝${RESET}
+${tag}██║   ██║█████╗  ██╔██╗ ██║   ██║   ██║   ██║███████╗   ██║   ███████║██║     █████╔╝ ${RESET}
+${tag}╚██╗ ██╔╝██╔══╝  ██║╚██╗██║   ██║   ██║   ██║╚════██║   ██║   ██╔══██║██║     ██╔═██╗ ${RESET}
+${tag} ╚████╔╝ ███████╗██║ ╚████║   ██║   ╚██████╔╝███████║   ██║   ██║  ██║╚██████╗██║  ██╗${RESET}
+${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝${RESET}
+
+  ➜  Local:   ${accent}${baseUrl}${RESET}`);
       for (const url of urls) {
         // eslint-disable-next-line no-console
-        console.log(`  ➜  ${url.label}: ${baseUrl}${url.path}`);
+        console.log(`  ➜  ${url.label}: ${accent}${baseUrl}${url.path}${RESET}`);
       }
       console.log();
 

@@ -114,18 +114,20 @@ export function createMigrationRunner(executor: SqlExecutor): MigrationRunner {
       const sorted = [...migrations].sort((a, b) => a.name.localeCompare(b.name));
       const pending = sorted.filter((m) => !executedNames.has(m.name));
 
+      if (pending.length === 0) return [];
+
       const executedList: string[] = [];
-      for (const migration of pending) {
-        await executor("BEGIN");
-        try {
+      await executor("BEGIN");
+      try {
+        for (const migration of pending) {
           await migration.up(executor);
           await executor(`INSERT INTO ${MIGRATIONS_TABLE} (name) VALUES ($1)`, [migration.name]);
-          await executor("COMMIT");
-        } catch (err) {
-          await executor("ROLLBACK");
-          throw err;
+          executedList.push(migration.name);
         }
-        executedList.push(migration.name);
+        await executor("COMMIT");
+      } catch (err) {
+        await executor("ROLLBACK");
+        throw err;
       }
 
       return executedList;

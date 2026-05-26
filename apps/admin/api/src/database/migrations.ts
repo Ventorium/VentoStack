@@ -16,7 +16,7 @@ import { createI18nTables } from "@ventostack/i18n";
 import { createWorkflowTables } from "@ventostack/workflow";
 import { createSchedulerTables } from "@ventostack/scheduler";
 
-const log = createTagLogger("migrations");
+const logger = createTagLogger("migrations");
 
 /**
  * 注册并执行所有迁移
@@ -41,8 +41,8 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   const executed = await runner.up();
 
   if (executed.length > 0) {
-    log.info(`Executed: ${executed.join(", ")}`);
+    logger.info(`Executed: ${executed.join(", ")}`);
   } else {
-    log.info("All up to date");
+    logger.info("All up to date");
   }
 }

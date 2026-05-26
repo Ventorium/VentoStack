@@ -8,26 +8,23 @@
 import { createApp, createRouter, requestId, requestLogger, errorHandler, cors, createTagLogger, createStaticMiddleware, rateLimit } from "@ventostack/core";
 import type { Middleware, VentoStackApp } from "@ventostack/core";
 import { setupOpenAPI } from "@ventostack/openapi";
-import { createAuditLog, createDefaultHealthCheck, createMetrics, createTracer } from "@ventostack/observability";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { createAuditLog, createDefaultHealthCheck, createMetrics, createTracer, createTracingMiddleware, wrapExecutorWithTracing, wrapCacheWithTracing, wrapRedisClientWithTracing } from "@ventostack/observability";
+import type { SpanContext } from "@ventostack/observability";
 import { createEventBus, createScheduler } from "@ventostack/events";
-import { readTableSchema, listTables } from "@ventostack/database";
+import { readTableSchema, listTables, createDatabase } from "@ventostack/database";
 import { createPlatform } from "@ventostack/boot";
 
 import { env } from "./config";
 import { createDatabaseConnection, runMigrations, runSeeds } from "./database";
-import type { DatabaseContext } from "./database";
-import { createCacheInstance, type CacheInstance } from "./cache";
+import { createCacheInstance } from "./cache";
 import { createStorageAdapter } from "./storage";
 import { assembleAuthEngines } from "./auth";
+import { serverLogger } from "./logger";
 
 export interface AppContext {
   /** VentoStack 应用实例 */
   app: VentoStackApp;
-  /** 基础设施引用（用于优雅关闭） */
-  infra: {
-    database: DatabaseContext;
-    cache: CacheInstance;
-  };
 }
 
 /**
@@ -38,37 +35,45 @@ export async function buildApp(): Promise<AppContext> {
   // =============================================
   // 1. 基础设施层
   // =============================================
-  const logger = createTagLogger('app');
-  logger.info(`Starting mode: ${env.NODE_ENV}`);
+  serverLogger.info(`启动模式: ${env.NODE_ENV}`);
 
-  // 1a. 数据库
-  const database = createDatabaseConnection();
-  const { executor } = database;
-  logger.info("Database connected");
+  // 1a. 追踪（需在数据库之前初始化，以便包装 executor）
+  const tracer = createTracer();
+  const traceStore = new AsyncLocalStorage<SpanContext>();
 
-  // 1b. 运行迁移（使用单连接 executor）
-  await runMigrations(database.migrationExecutor);
+  // 1b. 数据库（创建连接池 → 包装 executor → 重建 Database）
+  const rawConn = createDatabaseConnection();
+  const tracingExecutor = wrapExecutorWithTracing(rawConn.executor, tracer, {
+    getSpanContext: () => traceStore.getStore(),
+  });
+  const tracedDb = createDatabase({ executor: tracingExecutor });
+  serverLogger.info("数据库已连接");
 
-  // 1c. 种子数据（使用连接池 executor）
-  await runSeeds(executor);
+  // 1c. 运行迁移（使用单连接 executor，不经过 tracing）
+  await runMigrations(rawConn.migrationExecutor);
 
-  // 1d. 缓存
+  // 1d. 种子数据（使用原始 executor，启动阶段无请求上下文）
+  await runSeeds(rawConn.executor);
+
+  // 1e. 缓存（包装 Redis client 和 Cache，使所有操作可追踪）
   const cacheInstance = await createCacheInstance();
+  const getSpanCtx = () => traceStore.getStore();
+  const tracedRedisClient = cacheInstance.redisClient
+    ? wrapRedisClientWithTracing(cacheInstance.redisClient, tracer, { getSpanContext: getSpanCtx })
+    : undefined;
+  const tracedCache = wrapCacheWithTracing(cacheInstance.cache, tracer, { getSpanContext: getSpanCtx });
 
-  // 1e. 存储适配器
+  // 1f. 存储适配器
   const storage = createStorageAdapter();
 
-  // 1f. 可观测性
+  // 1g. 可观测性
   const auditLog = createAuditLog();
-
-  // 1g. 指标与追踪
   const metrics = createMetrics();
-  const tracer = createTracer();
 
-  // 1g. 健康检查
+  // 1h. 健康检查
   const healthCheck = createDefaultHealthCheck({
-    sql: executor,
-    ...(cacheInstance.redisClient ? { redis: cacheInstance.redisClient } : {}),
+    sql: tracingExecutor,
+    ...(tracedRedisClient ? { redis: tracedRedisClient } : {}),
   });
 
   // 1h. 事件总线 + 调度器
@@ -78,17 +83,17 @@ export async function buildApp(): Promise<AppContext> {
   // =============================================
   // 2. 认证引擎层
   // =============================================
-  const auth = assembleAuthEngines(cacheInstance.redisClient);
+  const auth = assembleAuthEngines(tracedRedisClient);
 
   // =============================================
   // 3. 平台模块聚合（使用 createPlatform）
   // =============================================
   const platform = await createPlatform({
-    executor,
-    db: database.db,
+    executor: tracingExecutor,
+    db: tracedDb,
     readTableSchema,
     listTables,
-    cache: cacheInstance.cache,
+    cache: tracedCache,
     jwt: auth.jwt,
     jwtSecret: auth.jwtSecret,
     passwordHasher: auth.passwordHasher,
@@ -124,7 +129,7 @@ export async function buildApp(): Promise<AppContext> {
 
   // 初始化所有模块（加载权限、启动定时任务等）
   await platform.init();
-  logger.info("Platform modules initialized");
+  serverLogger.info("平台模块已初始化完成");
 
   // =============================================
   // 4. 应用装配
@@ -133,6 +138,7 @@ export async function buildApp(): Promise<AppContext> {
 
   // 4a. 全局中间件（顺序敏感）
   app.use(requestId());
+  app.use(createTracingMiddleware(tracer, { traceStore }));
   app.use(cors({
     origin: env.ALLOWED_ORIGINS,
     credentials: true,
@@ -199,32 +205,26 @@ export async function buildApp(): Promise<AppContext> {
     shutdownStarted = true;
 
     const forceExit = setTimeout(() => {
-      logger.info("[shutdown] Force exit (timeout)");
+      serverLogger.info("强制退出（超时）");
       process.exit(0);
     }, 5000);
     forceExit.unref();
 
     try {
-      logger.info("[shutdown] Closing Redis/cache...");
+      serverLogger.info("正在关闭缓存...");
       await cacheInstance.close();
-      logger.info("[shutdown] Redis/cache closed");
+      serverLogger.info("缓存已关闭");
 
-      logger.info("[shutdown] Closing database...");
-      await database.close();
-      logger.info("[shutdown] Database closed");
+      serverLogger.info("正在关闭数据库...");
+      await rawConn.close();
+      serverLogger.info("数据库已关闭");
     } catch (err) {
-      logger.info(`[shutdown] Error during shutdown: ${err instanceof Error ? err.message : String(err)}`);
+      serverLogger.error(`关停异常: ${err instanceof Error ? err.message : String(err)}`);
     }
   });
 
   // 4g. 错误处理（必须最后注册）
-  app.use(errorHandler({ logger }));
+  app.use(errorHandler({ logger: serverLogger }));
 
-  return {
-    app,
-    infra: {
-      database,
-      cache: cacheInstance,
-    },
-  };
+  return { app };
 }

@@ -39,7 +39,6 @@ export interface UseTableReturn<T, P extends PaginatedParams> {
   hasSelected: boolean
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export function useTable<T, P extends PaginatedParams = PaginatedParams>(
   fetcher: (params: P) => Promise<any>,
   options?: UseTableOptions<P>,
@@ -118,7 +117,7 @@ export function useTable<T, P extends PaginatedParams = PaginatedParams>(
   // 初始加载
   useEffect(() => {
     fetchData(params)
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [])
 
   return {
     loading, data, total, page, pageSize, params,

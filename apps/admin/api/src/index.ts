@@ -16,9 +16,7 @@
 import { createTagLogger } from "@ventostack/core";
 import { env } from "./config";
 import { buildApp, type AppContext } from "./app";
-
-const log = createTagLogger("server");
-const genLog = createTagLogger("gen:sdk");
+import { serverLogger } from "./logger";
 
 let appCtx: AppContext | null = null;
 
@@ -36,12 +34,13 @@ async function main(): Promise<void> {
 
   // 后端启动后自动生成前端 SDK 类型（仅开发模式）
   if (env.NODE_ENV !== "production") {
+    const genLog = createTagLogger("gen:sdk");
     const webDir = import.meta.dir.replace("/apps/admin/api/src", "/apps/admin/web");
     Bun.spawn({
       cmd: ["bun", "run", "gen:sdk"],
       cwd: webDir,
-      stdout: "inherit",
-      stderr: "inherit",
+      stdout: "pipe",
+      stderr: "pipe",
       onExit(subprocess, exitCode) {
         if (exitCode === 0) {
           genLog.info("前端 SDK 类型已更新");
@@ -58,7 +57,7 @@ async function main(): Promise<void> {
 // ===============================================
 
 main().catch((err) => {
-  console.error("[fatal] Startup failed:");
+  serverLogger.error("Startup failed:");
   console.error(err);
   process.exit(1);
 });
