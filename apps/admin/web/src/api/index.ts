@@ -13,32 +13,32 @@ export const client = createFetchClient<OpenAPIs>({
     }
     return request
   },
-  // async responseInterceptor(_request, response) {
-  //   // 仅处理成功响应的信封解包 { code, message, data } → data
-  //   if (!response.ok) return response
+  async responseInterceptor(_request, response) {
+    // 仅处理成功响应的信封解包 { code, message, data } → data
+    if (!response.ok) return response
 
-  //   const ct = response.headers.get('content-type')
-  //   if (!ct?.includes('application/json')) return response
+    const ct = response.headers.get('content-type')
+    if (!ct?.includes('application/json')) return response
 
-  //   const json: unknown = await response.clone().json()
-  //   if (!json || typeof json !== 'object' || !('code' in json)) return response
+    const json: unknown = await response.clone().json()
+    if (!json || typeof json !== 'object' || !('code' in json)) return response
 
-  //   const envelope = json as { code: number; message?: string; data?: unknown }
+    const envelope = json as { code: number; message?: string; data?: unknown }
 
-  //   // code !== 0 业务错误，转为 400 由 errorHandler 统一处理
-  //   if (envelope.code !== 0) {
-  //     return new Response(
-  //       JSON.stringify({ code: envelope.code, message: envelope.message || '请求失败' }),
-  //       { status: 400, headers: { 'Content-Type': 'application/json' } },
-  //     )
-  //   }
+    // code !== 0 业务错误，转为 400 由 errorHandler 统一处理
+    if (envelope.code !== 0) {
+      return new Response(
+        JSON.stringify({ code: envelope.code, message: envelope.message || '请求失败' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
+      )
+    }
 
-  //   // code=0 成功，解包 data
-  //   return new Response(JSON.stringify(envelope.data ?? null), {
-  //     status: 200,
-  //     headers: { 'Content-Type': 'application/json' },
-  //   })
-  // },
+    // code=0 成功，解包 data
+    return new Response(JSON.stringify(envelope.data ?? null), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  },
   async errorHandler(_request, response, error) {
     // 网络错误
     if (error) {
