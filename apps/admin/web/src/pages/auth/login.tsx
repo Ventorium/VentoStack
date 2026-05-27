@@ -1,4 +1,4 @@
-import { Button, Divider, Form, Input, Modal } from 'antd'
+import { Button, Checkbox, Divider, Form, Input, Modal } from 'antd'
 import { msg } from '@/components/GlobalMessage'
 import type { OTPRef } from 'antd/es/input/Otp'
 import { useState, useRef, useEffect } from 'react'
@@ -6,6 +6,7 @@ import { useNavigate } from 'react-router-dom'
 import { useAuth, type LoginForm, type PasswordExpiredInfo, type MfaRequiredInfo } from '@/store/useAuth'
 import { usePublicConfig } from '@/hooks/usePublicConfig'
 import { client } from '@/api'
+import { STORAGE_KEYS } from '@/constants'
 
 const LoginPage = () => {
   const navigate = useNavigate()
@@ -32,12 +33,24 @@ const LoginPage = () => {
     }
   }, [mfaInfo])
 
+  useEffect(() => {
+    const savedUsername = localStorage.getItem(STORAGE_KEYS.REMEMBERED_USERNAME)
+    if (savedUsername) {
+      form.setFieldsValue({ username: savedUsername, remember: true })
+    }
+  }, [])
+
   const onFinish = async (values: LoginForm) => {
     if (loginMode === 'passkey') {
       handlePasskeyLogin()
       return
     }
     setLoading(true)
+    if (values.remember) {
+      localStorage.setItem(STORAGE_KEYS.REMEMBERED_USERNAME, values.username)
+    } else {
+      localStorage.removeItem(STORAGE_KEYS.REMEMBERED_USERNAME)
+    }
     const result = await login(values)
     setLoading(false)
     if (result && 'id' in result) {
@@ -132,6 +145,12 @@ const LoginPage = () => {
           {loginMode === 'password' && (
             <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
               <Input.Password placeholder="请输入密码" size="large" />
+            </Form.Item>
+          )}
+
+          {loginMode === 'password' && (
+            <Form.Item name="remember" valuePropName="checked" initialValue={true} className="!mb-3">
+              <Checkbox>记住用户名</Checkbox>
             </Form.Item>
           )}
 

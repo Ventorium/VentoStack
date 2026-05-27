@@ -82,7 +82,7 @@ const RolePage = () => {
         const { error } = await client.put('/api/system/roles/:id', { params: { id: editingRole.id }, body: { name: values.name, sort: values.sort, remark: values.remark, status: values.status } })
         if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
-        const { error } = await client.post('/api/system/roles', { body: { name: values.name, code: values.code, sort: values.sort, remark: values.remark } })
+        const { error } = await client.post('/api/system/roles', { body: { name: values.name, code: values.code, sort: values.sort, remark: values.remark, status: values.status } })
         if (!error) { msg.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }

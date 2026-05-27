@@ -10,9 +10,10 @@ import { useTable } from '@/hooks/useTable'
 import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
+import { SCHEDULER_API } from '@/constants'
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get('/api/system/scheduler/jobs', { query: cleanParams(params) })
+  client.get(SCHEDULER_API.JOBS, { query: cleanParams(params) })
 
 const SchedulerPage = () => {
   const navigate = useNavigate()
@@ -36,14 +37,14 @@ const SchedulerPage = () => {
     setModalLoading(true)
     try {
       if (editingJob) {
-        const { error } = await client.put('/api/system/scheduler/jobs/:id', { params: { id: editingJob.id }, body: values })
+        const { error } = await client.put(SCHEDULER_API.JOB_UPDATE, { params: { id: editingJob.id }, body: values })
         if (!error) {
           msg.success('更新成功')
           setModalOpen(false)
           refresh()
         }
       } else {
-        const { error } = await client.post('/api/system/scheduler/jobs', { body: values })
+        const { error } = await client.post(SCHEDULER_API.JOB_CREATE, { body: values })
         if (!error) {
           msg.success('创建成功')
           setModalOpen(false)
@@ -53,21 +54,22 @@ const SchedulerPage = () => {
     } finally { setModalLoading(false) }
   }
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete('/api/system/scheduler/jobs/:id', { params: { id } })
+    const { error } = await client.delete(SCHEDULER_API.JOB_DELETE, { params: { id } })
     if (!error) {
       msg.success('删除成功')
       refresh()
     }
   }
-  const handleToggle = async (id: string) => {
-    const { error } = await client.put('/api/system/scheduler/jobs/:id/toggle', { params: { id } })
+  const handleToggle = async (job: ScheduleJob) => {
+    const endpoint = job.status === 'RUNNING' ? SCHEDULER_API.JOB_STOP : SCHEDULER_API.JOB_START
+    const { error } = await client.put(endpoint, { params: { id: job.id } })
     if (!error) {
       msg.success('状态切换成功')
       refresh()
     }
   }
   const handleExecute = async (id: string) => {
-    const { error } = await client.post('/api/system/scheduler/jobs/:id/execute', { params: { id } })
+    const { error } = await client.post(SCHEDULER_API.JOB_EXECUTE, { params: { id } })
     if (!error) {
       msg.success('执行成功')
       refresh()
@@ -86,7 +88,7 @@ const SchedulerPage = () => {
       render: (_: unknown, r: ScheduleJob) => (
         <ActionColumn items={[
           { label: '编辑', onClick: () => openEdit(r) },
-          { label: r.status === 'RUNNING' ? '暂停' : '启动', onClick: () => handleToggle(r.id) },
+          { label: r.status === 'RUNNING' ? '暂停' : '启动', onClick: () => handleToggle(r) },
           { label: '立即执行', onClick: () => handleExecute(r.id), confirm: '确定立即执行该任务？' },
           { label: '查看日志', onClick: () => viewLogs(r.id) },
           { label: '删除', onClick: () => handleDelete(r.id), danger: true, confirm: '确定删除该任务？' },
@@ -114,7 +116,7 @@ const SchedulerPage = () => {
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
           scroll={{ x: 1200 }} />
       </Card>
-      <Modal title={editingJob ? '编辑任务' : '新增任务'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnClose width={640}>
+      <Modal title={editingJob ? '编辑任务' : '新增任务'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={640}>
         <Form form={form} layout="vertical" preserve={false}>
           <Row gutter={16}>
             <Col span={12}>

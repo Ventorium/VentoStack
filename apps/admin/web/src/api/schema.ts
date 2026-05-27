@@ -707,21 +707,21 @@ export type OpenAPIs = {
         unreadNotices?: number
       }
     },
-    '/api/gen/tables': {
+    '/api/system/gen/tables': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/gen/tables/:id': {
+    '/api/system/gen/tables/:id': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/gen/tables/:id/preview': {
+    '/api/system/gen/tables/:id/preview': {
       query: never,
       params: never,
       headers: never,
@@ -945,7 +945,7 @@ export type OpenAPIs = {
     /**
      * 获取文件详情
      */
-    '/api/oss/:id': {
+    '/api/system/oss/:id': {
       query: never,
       params: never,
       headers: never,
@@ -984,7 +984,7 @@ export type OpenAPIs = {
     /**
      * 下载文件
      */
-    '/api/oss/:id/download': {
+    '/api/system/oss/:id/download': {
       query: never,
       params: never,
       headers: never,
@@ -994,7 +994,7 @@ export type OpenAPIs = {
     /**
      * 获取签名 URL
      */
-    '/api/oss/:id/url': {
+    '/api/system/oss/:id/url': {
       query: {
         expiresIn?: number
       },
@@ -1012,21 +1012,21 @@ export type OpenAPIs = {
         expiresIn?: number
       }
     },
-    '/api/scheduler/jobs': {
+    '/api/system/scheduler/jobs': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/scheduler/jobs/:id': {
+    '/api/system/scheduler/jobs/:id': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/scheduler/logs': {
+    '/api/system/scheduler/logs': {
       query: never,
       params: never,
       headers: never,
@@ -1828,14 +1828,14 @@ export type OpenAPIs = {
         id?: string
       }
     },
-    '/api/gen/tables/import': {
+    '/api/system/gen/tables/import': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/gen/tables/:id/generate': {
+    '/api/system/gen/tables/:id/generate': {
       query: never,
       params: never,
       headers: never,
@@ -1880,7 +1880,7 @@ export type OpenAPIs = {
     /**
      * 上传文件
      */
-    '/api/oss/upload': {
+    '/api/system/oss/upload': {
       query: never,
       params: never,
       headers: never,
@@ -1925,14 +1925,14 @@ export type OpenAPIs = {
         createdAt?: string
       }
     },
-    '/api/scheduler/jobs': {
+    '/api/system/scheduler/jobs': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/scheduler/jobs/:id/execute': {
+    '/api/system/scheduler/jobs/:id/execute': {
       query: never,
       params: never,
       headers: never,
@@ -2087,14 +2087,14 @@ export type OpenAPIs = {
     /**
      * 删除文件
      */
-    '/api/oss/:id': {
+    '/api/system/oss/:id': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/scheduler/jobs/:id': {
+    '/api/system/scheduler/jobs/:id': {
       query: never,
       params: never,
       headers: never,
@@ -2561,14 +2561,14 @@ export type OpenAPIs = {
       },
       response: any
     },
-    '/api/gen/tables/:id': {
+    '/api/system/gen/tables/:id': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/gen/columns/:id': {
+    '/api/system/gen/columns/:id': {
       query: never,
       params: never,
       headers: never,
@@ -2610,21 +2610,21 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
-    '/api/scheduler/jobs/:id': {
+    '/api/system/scheduler/jobs/:id': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/scheduler/jobs/:id/start': {
+    '/api/system/scheduler/jobs/:id/start': {
       query: never,
       params: never,
       headers: never,
       body: never,
       response: any
     },
-    '/api/scheduler/jobs/:id/stop': {
+    '/api/system/scheduler/jobs/:id/stop': {
       query: never,
       params: never,
       headers: never,

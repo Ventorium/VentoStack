@@ -74,10 +74,10 @@ const DictPage = () => {
     setDataModalLoading(true)
     try {
       if (editingData) {
-        const { error } = await client.put('/api/system/dict/data/:id', { params: { id: editingData.id }, body: values })
+        const { error } = await client.put('/api/system/dict/data/:id', { params: { id: editingData.id }, body: { label: values.label, value: values.value, sort: values.sort, status: values.status } })
         if (!error) { msg.success('更新成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
       } else {
-        const { error } = await client.post('/api/system/dict/data', { body: { ...values, typeCode: currentTypeCode } })
+        const { error } = await client.post('/api/system/dict/data', { body: { label: values.label, value: values.value, sort: values.sort, status: values.status, dictType: currentTypeCode } })
         if (!error) { msg.success('创建成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
       }
     } finally { setDataModalLoading(false) }

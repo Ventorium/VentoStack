@@ -1,14 +1,60 @@
 import { createFetchClient } from '@doremijs/o2t/client'
 import { msg } from '@/components/GlobalMessage'
-import { getAccessToken, clearToken } from '@/store/token'
+import { getAccessToken, getRefreshToken, setAccessToken, setRefreshToken, clearToken } from '@/store/token'
 import { globalNavigate } from '@/components/GlobalHistory'
 import type { OpenAPIs } from './schema'
 
-export const client = createFetchClient<OpenAPIs>({
+// ---------------------------------------------------------------------------
+// Token refresh state — module-level to coordinate concurrent 401 retries
+// ---------------------------------------------------------------------------
+let isRefreshing = false
+const refreshQueue: Array<() => void> = []
+
+async function refreshAccessToken(): Promise<boolean> {
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) return false
+
+  isRefreshing = true
+  try {
+    const res = await fetch('/api/auth/refresh', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refreshToken }),
+    })
+    const json = await res.json()
+    // Backend wraps responses in { code, message, data }
+    const data = json?.data ?? json
+    if (res.ok && data?.accessToken) {
+      setAccessToken(data.accessToken)
+      if (data.refreshToken) setRefreshToken(data.refreshToken)
+      // Flush queued requests with the new token
+      const queue = refreshQueue.splice(0)
+      for (const resolve of queue) {
+        resolve()
+      }
+      return true
+    }
+    // Refresh itself failed — clean up and redirect
+    clearToken()
+    globalNavigate('/auth/login', { replace: true })
+    return false
+  } catch {
+    clearToken()
+    globalNavigate('/auth/login', { replace: true })
+    return false
+  } finally {
+    isRefreshing = false
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Underlying typed client
+// ---------------------------------------------------------------------------
+const rawClient = createFetchClient<OpenAPIs>({
   requestTimeoutMs: 10000,
   requestInterceptor(request) {
     const token = getAccessToken()
-    if (!['/api/login'].includes(request.url) && token) {
+    if (!['/api/login', '/api/auth/refresh'].includes(request.url) && token) {
       request.init.headers.Authorization = `Bearer ${token}`
     }
     return request
@@ -55,17 +101,11 @@ export const client = createFetchClient<OpenAPIs>({
 
     if (!response) return
 
-    // 401 — 凭证无效：显示后端错误信息；有 token 时视为过期，清 token 并跳转登录
+    // 401 — token 过期：由 requestWithRefresh 处理刷新，此处不显示错误
     if (response.status === 401) {
-      try {
-        const ct = response.headers.get('content-type')
-        if (ct?.includes('application/json')) {
-          const json: unknown = await response.clone().json()
-          if (json && typeof json === 'object' && 'message' in json) {
-            msg.error((json as { message: string }).message)
-          }
-        }
-      } catch { /* ignore */ }
+      // 有 refresh token 时，静默等待 requestWithRefresh 处理刷新
+      if (getRefreshToken()) return
+      // 无 refresh token，走原有逻辑
       if (getAccessToken()) {
         clearToken()
         globalNavigate('/auth/login', { replace: true })
@@ -124,3 +164,74 @@ export const client = createFetchClient<OpenAPIs>({
     }
   },
 })
+
+// ---------------------------------------------------------------------------
+// Public client — wraps rawClient with automatic token refresh on 401
+// ---------------------------------------------------------------------------
+
+type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch'
+
+function isAuthPath(url: string): boolean {
+  return url.startsWith('/api/auth/login')
+    || url.startsWith('/api/auth/register')
+    || url.startsWith('/api/auth/refresh')
+    || url.startsWith('/api/auth/passkey/')
+}
+
+/** Strip Authorization header so the request interceptor can re-add the fresh token. */
+function stripAuthHeader(options: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!options?.headers) return options
+  const { Authorization: _, ...rest } = options.headers as Record<string, string>
+  return { ...options, headers: Object.keys(rest).length > 0 ? rest : undefined }
+}
+
+type ClientResult = { error: boolean; response?: Response; data: unknown }
+
+async function requestWithRefresh(
+  method: HttpMethod,
+  path: string,
+  options?: Record<string, unknown>,
+): Promise<ClientResult> {
+  const methodFn = rawClient[method] as (p: string, o?: unknown) => Promise<ClientResult>
+  const result = await methodFn(path, options)
+
+  // Only attempt refresh for 401 on non-auth paths when a refresh token exists
+  if (
+    result.error
+    && result.response?.status === 401
+    && !isAuthPath(path)
+    && getRefreshToken()
+  ) {
+    if (isRefreshing) {
+      // Another request is already refreshing — queue this one
+      await new Promise<void>((resolve) => { refreshQueue.push(resolve) })
+      return methodFn(path, stripAuthHeader(options))
+    }
+
+    // Initiate refresh
+    const refreshed = await refreshAccessToken()
+    if (refreshed) {
+      return methodFn(path, stripAuthHeader(options))
+    }
+  }
+
+  return result
+}
+
+/**
+ * Type-safe API client with automatic token refresh on 401.
+ *
+ * Delegates to the underlying `rawClient` for all requests. When a 401 is
+ * received on a non-auth endpoint and a refresh token is available, the
+ * request is transparently retried after a successful token refresh.
+ * Concurrent 401s are coalesced into a single refresh call.
+ */
+export const client = new Proxy(rawClient, {
+  get(target, prop: string) {
+    if (['get', 'post', 'put', 'delete', 'patch'].includes(prop)) {
+      return (path: string, options?: Record<string, unknown>) =>
+        requestWithRefresh(prop as HttpMethod, path, options)
+    }
+    return Reflect.get(target, prop)
+  },
+}) as typeof rawClient

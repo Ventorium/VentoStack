@@ -5,6 +5,7 @@ import type { ColumnsType } from 'antd/es/table'
 import { useNavigate, useParams } from 'react-router-dom'
 import { client } from '@/api'
 import type { GenTable, GenTableColumn } from '@/api/types'
+import { GEN_API } from '@/constants'
 
 const GenEditPage = () => {
   const navigate = useNavigate()
@@ -18,7 +19,7 @@ const GenEditPage = () => {
     const fetchConfig = async () => {
       setLoading(true)
       try {
-        const { error, data: result } = await client.get('/api/system/gen/tables/:id', { params: { id: id! } })
+        const { error, data: result } = await client.get(GEN_API.TABLE_DETAIL, { params: { id: id! } })
         if (!error && result) {
           setTableConfig(result)
           form.setFieldsValue({
@@ -39,7 +40,7 @@ const GenEditPage = () => {
     const values = await form.validateFields()
     setSaving(true)
     try {
-      const { error } = await client.put('/api/system/gen/tables/:id', {
+      const { error } = await client.put(GEN_API.TABLE_UPDATE, {
         params: { id: id! },
         body: {
           moduleName: values.moduleName,

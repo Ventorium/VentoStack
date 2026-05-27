@@ -35,7 +35,7 @@ import { UserModel } from "./models/user";
 import { OperationLogModel, LoginLogModel } from "./models/log";
 
 import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
-import { createOperationLogMiddleware } from "./middlewares/operation-log";
+import { createOperationLogMiddleware, type OperationLogEntry } from "./middlewares/operation-log";
 import { createAuthRoutes } from "./routes/auth";
 import { createPasskeyRoutes } from "./routes/passkey";
 import { createUserRoutes } from "./routes/user";
@@ -113,7 +113,33 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   // Middlewares
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
   const perm = createPermMiddleware(rbac);
-  const opLogMiddleware = createOperationLogMiddleware(auditLog);
+
+  // 操作日志数据库写入函数
+  const saveOperationLog = async (entry: OperationLogEntry): Promise<void> => {
+    await db.query(OperationLogModel).insert({
+      id: entry.id,
+      user_id: entry.user_id,
+      username: entry.username,
+      module: entry.module,
+      action: entry.action,
+      method: entry.method,
+      url: entry.url,
+      ip: entry.ip,
+      params: entry.params,
+      result: entry.result,
+      error_msg: entry.error_msg,
+      duration: entry.duration,
+      created_at: entry.created_at,
+    });
+  };
+
+  const opLogMiddleware = createOperationLogMiddleware(auditLog, {
+    saveToDb: saveOperationLog,
+    excludePathPrefixes: [
+      "/api/system/operation-logs",
+      "/api/system/login-logs",
+    ],
+  });
 
   // Routes
   const router = createRouter();
@@ -165,6 +191,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "角色 ID" },
@@ -230,6 +257,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "菜单 ID" },
@@ -294,6 +322,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "部门 ID" },
@@ -345,6 +374,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "岗位 ID" },
@@ -384,6 +414,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "字典类型 ID" },
@@ -432,6 +463,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "配置 ID" },
@@ -483,6 +515,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     authMiddleware,
     perm,
+    operationLogMiddleware: opLogMiddleware,
     schemas: {
       item: {
         id: { type: "uuid" as const, description: "通知 ID" },

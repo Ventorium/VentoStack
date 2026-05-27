@@ -37,7 +37,7 @@ export function createOSSRoutes(
   router.use(authMiddleware);
 
   // Upload file
-  router.post("/api/oss/upload", {
+  router.post("/api/system/oss/upload", {
     formData: {
       file: { type: "file" as const, required: true, description: "上传文件" },
       bucket: { type: "string" as const, default: "default", description: "存储桶" },
@@ -103,7 +103,7 @@ export function createOSSRoutes(
   }, perm("oss", "file:list"));
 
   // Get file metadata
-  router.get("/api/oss/:id", {
+  router.get("/api/system/oss/:id", {
     responses: { 200: fileItemSchema },
     openapi: { summary: "获取文件详情", tags: ["oss"], operationId: "getFile" },
   }, async (ctx) => {
@@ -114,7 +114,7 @@ export function createOSSRoutes(
   }, perm("oss", "file:query"));
 
   // Download file
-  router.get("/api/oss/:id/download", {
+  router.get("/api/system/oss/:id/download", {
     openapi: { summary: "下载文件", tags: ["oss"], operationId: "downloadFile" },
   }, async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
@@ -131,7 +131,7 @@ export function createOSSRoutes(
   }, perm("oss", "file:download"));
 
   // Get signed URL
-  router.get("/api/oss/:id/url", {
+  router.get("/api/system/oss/:id/url", {
     query: {
       expiresIn: { type: "int" as const, default: 3600, description: "过期时间（秒）" },
     },
@@ -152,7 +152,7 @@ export function createOSSRoutes(
   }, perm("oss", "file:query"));
 
   // Delete file
-  router.delete("/api/oss/:id", {
+  router.delete("/api/system/oss/:id", {
     openapi: { summary: "删除文件", tags: ["oss"], operationId: "deleteFile" },
   }, async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;

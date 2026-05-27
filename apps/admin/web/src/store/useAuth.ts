@@ -2,7 +2,7 @@ import { create } from 'zustand'
 import { startAuthentication } from '@simplewebauthn/browser'
 import { client } from '@/api'
 import { globalNavigate } from '@/components/GlobalHistory'
-import { getAccessToken, setAccessToken, clearToken } from './token'
+import { getAccessToken, setAccessToken, setRefreshToken, clearToken } from './token'
 
 interface UserProfile {
   id: string; username: string; nickname: string; email: string; phone: string
@@ -10,7 +10,7 @@ interface UserProfile {
   roles: string[]; permissions: string[]
 }
 
-export type LoginForm = { username: string; password: string }
+export type LoginForm = { username: string; password: string; remember?: boolean }
 
 export type PasswordExpiredInfo = { code: 'password_expired'; tempToken: string }
 
@@ -85,6 +85,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       }
       // Normal login success
       setAccessToken(data.accessToken)
+      if (data.refreshToken) setRefreshToken(data.refreshToken)
       const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
       if (user) {
         const result: UserProfile & { mfaSetupRequired?: boolean } = { ...user }
@@ -101,6 +102,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     const { error, data } = await client.post('/api/auth/mfa/login', { body: { mfaToken, code } }) as { data?: { accessToken: string; refreshToken: string; expiresIn: number; sessionId: string }; error?: unknown }
     if (!error && data) {
       setAccessToken(data.accessToken)
+      if (data.refreshToken) setRefreshToken(data.refreshToken)
       const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
       if (user) {
         set({ user })
@@ -124,6 +126,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       const finishData = (finishResp as any).data ?? finishResp
 
       setAccessToken(finishData.accessToken)
+      if (finishData.refreshToken) setRefreshToken(finishData.refreshToken)
       const { data: user } = await client.get('/api/system/user/profile') as { data?: UserProfile; error?: unknown }
       if (user) {
         set({ user })

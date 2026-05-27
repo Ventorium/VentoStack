@@ -16,7 +16,7 @@ export function createNotificationRoutes(
   router.use(authMiddleware);
 
   // 发送通知
-  router.post("/api/notification/send", perm("notification", "message:send"), async (ctx) => {
+  router.post("/api/system/notification/send", perm("notification", "message:send"), async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
       const result = await notificationService.send({
@@ -34,7 +34,7 @@ export function createNotificationRoutes(
   });
 
   // 消息列表
-  router.get("/api/notification/messages", perm("notification", "message:list"), async (ctx) => {
+  router.get("/api/system/notification/messages", perm("notification", "message:list"), async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const q = ctx.query as Record<string, unknown>;
     const result = await notificationService.listMessages({
@@ -48,14 +48,14 @@ export function createNotificationRoutes(
   });
 
   // 未读数
-  router.get("/api/notification/messages/unread-count", perm("notification", "message:query"), async (ctx) => {
+  router.get("/api/system/notification/messages/unread-count", perm("notification", "message:query"), async (ctx) => {
     const user = ctx.user as { id: string };
     const count = await notificationService.getUnreadCount(user.id);
     return ok({ count });
   });
 
   // 标记已读
-  router.put("/api/notification/messages/:id/read", perm("notification", "message:update"), async (ctx) => {
+  router.put("/api/system/notification/messages/:id/read", perm("notification", "message:update"), async (ctx) => {
     const user = ctx.user as { id: string };
     const id = (ctx.params as Record<string, string>).id!;
     await notificationService.markRead(user.id, id);
@@ -63,7 +63,7 @@ export function createNotificationRoutes(
   });
 
   // 批量标记已读
-  router.post("/api/notification/messages/read-batch", perm("notification", "message:update"), async (ctx) => {
+  router.post("/api/system/notification/messages/read-batch", perm("notification", "message:update"), async (ctx) => {
     const user = ctx.user as { id: string };
     const body = await parseBody(ctx.request);
     const messageIds = body.messageIds as string[];
@@ -75,7 +75,7 @@ export function createNotificationRoutes(
   });
 
   // 重试发送
-  router.post("/api/notification/messages/:id/retry", perm("notification", "message:send"), async (ctx) => {
+  router.post("/api/system/notification/messages/:id/retry", perm("notification", "message:send"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     try {
       await notificationService.retry(id);
@@ -88,7 +88,7 @@ export function createNotificationRoutes(
   // === Template CRUD ===
 
   // 创建模板
-  router.post("/api/notification/templates", perm("notification", "template:create"), async (ctx) => {
+  router.post("/api/system/notification/templates", perm("notification", "template:create"), async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
       const result = await notificationService.createTemplate({
@@ -105,7 +105,7 @@ export function createNotificationRoutes(
   });
 
   // 模板列表
-  router.get("/api/notification/templates", perm("notification", "template:list"), async (ctx) => {
+  router.get("/api/system/notification/templates", perm("notification", "template:list"), async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const q = ctx.query as Record<string, unknown>;
     const result = await notificationService.listTemplates({
@@ -117,7 +117,7 @@ export function createNotificationRoutes(
   });
 
   // 更新模板
-  router.put("/api/notification/templates/:id", perm("notification", "template:update"), async (ctx) => {
+  router.put("/api/system/notification/templates/:id", perm("notification", "template:update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await notificationService.updateTemplate(id, body);
@@ -125,7 +125,7 @@ export function createNotificationRoutes(
   });
 
   // 删除模板
-  router.delete("/api/notification/templates/:id", perm("notification", "template:delete"), async (ctx) => {
+  router.delete("/api/system/notification/templates/:id", perm("notification", "template:delete"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     await notificationService.deleteTemplate(id);
     return ok(null);

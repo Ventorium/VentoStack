@@ -9,9 +9,10 @@ import { useTable } from '@/hooks/useTable'
 import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
+import { NOTIFICATION_API } from '@/constants'
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get('/api/system/notification/templates', { query: cleanParams(params) })
+  client.get(NOTIFICATION_API.TEMPLATES, { query: cleanParams(params) })
 
 const channelOptions = [
   { label: '邮件', value: 'smtp' },
@@ -42,7 +43,7 @@ const NotifyTemplatesPage = () => {
   const openCreate = () => { setEditingTemplate(null); form.resetFields(); form.setFieldsValue({ status: 1 }); setModalOpen(true) }
   const openEdit = (r: NotifyTemplate) => {
     setEditingTemplate(r)
-    form.setFieldsValue({ type: r.type, channel: r.channel, titleTemplate: r.titleTemplate, contentTemplate: r.contentTemplate, variables: r.variables, status: r.status })
+    form.setFieldsValue({ name: r.name, code: r.code, channel: r.channel, title: r.title, content: r.content, status: r.status })
     setModalOpen(true)
   }
 
@@ -51,9 +52,9 @@ const NotifyTemplatesPage = () => {
     setModalLoading(true)
     try {
       if (editingTemplate) {
-        const { error } = await client.put('/api/system/notification/templates/:id', {
+        const { error } = await client.put(NOTIFICATION_API.TEMPLATE_UPDATE, {
           params: { id: editingTemplate.id },
-          body: { type: values.type, channel: values.channel, titleTemplate: values.titleTemplate, contentTemplate: values.contentTemplate, variables: values.variables, status: values.status ? 1 : 0 },
+          body: { name: values.name, channel: values.channel, title: values.title, content: values.content, status: values.status ? 1 : 0 },
         })
         if (!error) {
           msg.success('更新成功')
@@ -61,8 +62,8 @@ const NotifyTemplatesPage = () => {
           refresh()
         }
       } else {
-        const { error } = await client.post('/api/system/notification/templates', {
-          body: { type: values.type, channel: values.channel, titleTemplate: values.titleTemplate, contentTemplate: values.contentTemplate, variables: values.variables, status: values.status ? 1 : 0 },
+        const { error } = await client.post(NOTIFICATION_API.TEMPLATE_CREATE, {
+          body: { name: values.name, code: values.code, channel: values.channel, title: values.title, content: values.content },
         })
         if (!error) {
           msg.success('创建成功')
@@ -74,7 +75,7 @@ const NotifyTemplatesPage = () => {
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete('/api/system/notification/templates/:id', { params: { id } })
+    const { error } = await client.delete(NOTIFICATION_API.TEMPLATE_DELETE, { params: { id } })
     if (!error) {
       msg.success('删除成功')
       refresh()
@@ -82,15 +83,15 @@ const NotifyTemplatesPage = () => {
   }
 
   const columns: ColumnsType<NotifyTemplate> = [
-    { title: '类型', dataIndex: 'type', key: 'type', width: 150 },
+    { title: '名称', dataIndex: 'name', key: 'name', width: 150 },
+    { title: '编码', dataIndex: 'code', key: 'code', width: 120 },
     { title: '渠道', dataIndex: 'channel', key: 'channel', width: 100,
       render: (_: unknown, r: NotifyTemplate) => {
         const ch = channelMap[r.channel]
         return ch ? <Tag color={ch.color}>{ch.label}</Tag> : r.channel
       } },
-    { title: '标题模板', dataIndex: 'titleTemplate', key: 'titleTemplate', ellipsis: true },
-    { title: '内容模板', dataIndex: 'contentTemplate', key: 'contentTemplate', ellipsis: true },
-    { title: '变量', dataIndex: 'variables', key: 'variables', ellipsis: true },
+    { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true },
+    { title: '内容', dataIndex: 'content', key: 'content', ellipsis: true },
     { title: '状态', dataIndex: 'status', key: 'status', width: 80,
       render: (_: unknown, r: NotifyTemplate) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '启用' : '禁用'}</Tag> },
     { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180, render: (_: unknown, r: NotifyTemplate) => fmtDate(r.createdAt) },
@@ -123,31 +124,37 @@ const NotifyTemplatesPage = () => {
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
           scroll={{ x: 1200 }} />
       </Card>
-      <Modal title={editingTemplate ? '编辑模板' : '新增模板'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnClose width={700}>
+      <Modal title={editingTemplate ? '编辑模板' : '新增模板'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={700}>
         <Form form={form} layout="vertical" preserve={false}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="type" label="类型" rules={[{ required: true, message: '请输入类型' }]}>
-                <Input placeholder="如: welcome" />
+              <Form.Item name="name" label="名称" rules={[{ required: true, message: '请输入模板名称' }]}>
+                <Input placeholder="如: 欢迎通知" />
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item name="code" label="编码" rules={[{ required: true, message: '请输入模板编码' }]}>
+                <Input placeholder="如: welcome" disabled={!!editingTemplate} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="channel" label="渠道" rules={[{ required: true, message: '请选择渠道' }]}>
                 <Select options={channelOptions} placeholder="选择渠道" />
               </Form.Item>
             </Col>
+            <Col span={12}>
+              <Form.Item name="status" label="状态" valuePropName="checked" initialValue={true}>
+                <Switch checkedChildren="启用" unCheckedChildren="禁用" />
+              </Form.Item>
+            </Col>
           </Row>
-          <Form.Item name="titleTemplate" label="标题模板" rules={[{ required: true, message: '请输入标题模板' }]}>
+          <Form.Item name="title" label="标题" rules={[{ required: true, message: '请输入标题' }]}>
             <Input placeholder="如: 欢迎 {{username}}" />
           </Form.Item>
-          <Form.Item name="contentTemplate" label="内容模板" rules={[{ required: true, message: '请输入内容模板' }]}>
+          <Form.Item name="content" label="内容" rules={[{ required: true, message: '请输入内容' }]}>
             <Input.TextArea rows={6} placeholder="如: 您好 {{username}}，欢迎加入..." />
-          </Form.Item>
-          <Form.Item name="variables" label="变量" tooltip="模板中可用的变量，逗号分隔">
-            <Input placeholder="如: username, email, code" />
-          </Form.Item>
-          <Form.Item name="status" label="状态" valuePropName="checked" initialValue={true}>
-            <Switch checkedChildren="启用" unCheckedChildren="禁用" />
           </Form.Item>
         </Form>
       </Modal>

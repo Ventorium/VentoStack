@@ -10,9 +10,10 @@ import { useTable } from '@/hooks/useTable'
 import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
+import { GEN_API } from '@/constants'
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get('/api/system/gen/tables', { query: cleanParams(params) })
+  client.get(GEN_API.TABLES, { query: cleanParams(params) })
 
 const GenPage = () => {
   const navigate = useNavigate()
@@ -27,7 +28,7 @@ const GenPage = () => {
   const fetchDbTables = async () => {
     setDbTablesLoading(true)
     try {
-      const { error, data: result } = await client.get('/api/system/gen/db-tables')
+      const { error, data: result } = await client.get(GEN_API.DB_TABLES)
       if (!error) {
         setDbTables(result ?? [])
       }
@@ -37,7 +38,7 @@ const GenPage = () => {
   }
 
   const handleImport = async (tableName: string) => {
-    const { error } = await client.post('/api/system/gen/import', { body: { tableName } })
+    const { error } = await client.post(GEN_API.TABLE_IMPORT, { body: { tableName } })
     if (!error) {
       msg.success('导入成功')
       refresh()
@@ -48,7 +49,7 @@ const GenPage = () => {
     setPreviewLoading(true)
     setPreviewModalOpen(true)
     try {
-      const { error, data: result } = await client.get('/api/system/gen/tables/:id/preview', { params: { id } })
+      const { error, data: result } = await client.get(GEN_API.TABLE_PREVIEW, { params: { id } })
       if (!error) {
         setPreviewData(result?.files ?? [])
       }
@@ -58,14 +59,14 @@ const GenPage = () => {
   }
 
   const handleGenerate = async (id: string) => {
-    const { error } = await client.post('/api/system/gen/tables/:id/generate', { params: { id } })
+    const { error } = await client.post(GEN_API.TABLE_GENERATE, { params: { id } })
     if (!error) {
       msg.success('代码生成成功')
     }
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete('/api/system/gen/tables/:id', { params: { id } })
+    const { error } = await client.delete(GEN_API.TABLE_DETAIL, { params: { id } })
     if (!error) {
       msg.success('删除成功')
       refresh()

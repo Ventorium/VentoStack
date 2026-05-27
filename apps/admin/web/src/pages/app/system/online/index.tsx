@@ -10,13 +10,17 @@ import { fmtDate } from '@/utils/fmtDate'
 const OnlinePage = () => {
   const [loading, setLoading] = useState(false)
   const [data, setData] = useState<OnlineUser[]>([])
+  const [total, setTotal] = useState(0)
   const [autoRefresh, setAutoRefresh] = useState(true)
 
   const fetchData = async () => {
     setLoading(true)
     try {
-      const { error, data } = await client.get('/api/system/monitor/online')
-      if (!error && data) setData(data)
+      const { error, data: result } = await client.get('/api/system/monitor/online') as { error?: unknown; data?: { list: OnlineUser[]; total: number } }
+      if (!error && result) {
+        setData(result.list ?? [])
+        setTotal(result.total ?? 0)
+      }
     } finally {
       setLoading(false)
     }
@@ -77,7 +81,7 @@ const OnlinePage = () => {
           </Button>
         </Space>
       </div>
-      <Card title={`在线用户（${data.length}）`}>
+      <Card title={`在线用户（${total}）`}>
         <Table rowKey="sessionId" columns={columns} dataSource={data} loading={loading} size="small" pagination={false} scroll={{ x: 1200 }} />
       </Card>
     </div>

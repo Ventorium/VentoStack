@@ -36,7 +36,7 @@ const ConfigPage = () => {
     setModalLoading(true)
     try {
       if (editingConfig) {
-        const { error } = await client.put('/api/system/configs/:id', { params: { id: editingConfig.key }, body: values })
+        const { error } = await client.put('/api/system/configs/:id', { params: { id: editingConfig.id }, body: { name: values.name, value: values.value, type: values.type, remark: values.remark } })
         if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
         const { error } = await client.post('/api/system/configs', { body: values })
@@ -44,8 +44,8 @@ const ConfigPage = () => {
       }
     } finally { setModalLoading(false) }
   }
-  const handleDelete = async (key: string) => {
-    const { error } = await client.delete('/api/system/configs/:id', { params: { id: key } })
+  const handleDelete = async (id: string) => {
+    const { error } = await client.delete('/api/system/configs/:id', { params: { id } })
     if (!error) { msg.success('删除成功'); refresh() }
   }
 
@@ -62,7 +62,7 @@ const ConfigPage = () => {
       render: (_: unknown, r: ConfigItem) => (
         <ActionColumn items={[
           { label: '编辑', onClick: () => openEdit(r) },
-          { label: '删除', onClick: () => handleDelete(r.key), danger: true, confirm: '确定删除该参数？' },
+          { label: '删除', onClick: () => handleDelete(r.id), danger: true, confirm: '确定删除该参数？' },
         ]} />
       ) },
   ]

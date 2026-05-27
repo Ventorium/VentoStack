@@ -16,14 +16,14 @@ export function createGenRoutes(
   router.use(authMiddleware);
 
   // List imported tables
-  router.get("/api/gen/tables", perm("gen", "table:list"), async (ctx) => {
+  router.get("/api/system/gen/tables", perm("gen", "table:list"), async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const result = await genService.listTables({ page, pageSize });
     return okPage(result.items, result.total, result.page, result.pageSize);
   });
 
   // Import a DB table
-  router.post("/api/gen/tables/import", perm("gen", "table:create"), async (ctx) => {
+  router.post("/api/system/gen/tables/import", perm("gen", "table:create"), async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
       const result = await genService.importTable(
@@ -38,7 +38,7 @@ export function createGenRoutes(
   });
 
   // Get table detail
-  router.get("/api/gen/tables/:id", perm("gen", "table:query"), async (ctx) => {
+  router.get("/api/system/gen/tables/:id", perm("gen", "table:query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const table = await genService.getTable(id);
     if (!table) return fail("表不存在", 404, 404);
@@ -47,7 +47,7 @@ export function createGenRoutes(
   });
 
   // Update table config
-  router.put("/api/gen/tables/:id", perm("gen", "table:update"), async (ctx) => {
+  router.put("/api/system/gen/tables/:id", perm("gen", "table:update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await genService.updateTable(id, body as any);
@@ -55,7 +55,7 @@ export function createGenRoutes(
   });
 
   // Update column config
-  router.put("/api/gen/columns/:id", perm("gen", "table:update"), async (ctx) => {
+  router.put("/api/system/gen/columns/:id", perm("gen", "table:update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await genService.updateColumn(id, body as any);
@@ -63,7 +63,7 @@ export function createGenRoutes(
   });
 
   // Preview generated code
-  router.get("/api/gen/tables/:id/preview", perm("gen", "table:query"), async (ctx) => {
+  router.get("/api/system/gen/tables/:id/preview", perm("gen", "table:query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     try {
       const files = await genService.preview(id);
@@ -74,7 +74,7 @@ export function createGenRoutes(
   });
 
   // Generate code
-  router.post("/api/gen/tables/:id/generate", perm("gen", "table:generate"), async (ctx) => {
+  router.post("/api/system/gen/tables/:id/generate", perm("gen", "table:generate"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     try {
       const files = await genService.generate(id);

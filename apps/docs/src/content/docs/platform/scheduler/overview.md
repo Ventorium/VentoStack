@@ -80,20 +80,20 @@ interface SchedulerModuleDeps {
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/scheduler/jobs` | `scheduler:job:list` | 查询任务列表 |
-| GET | `/api/scheduler/jobs/:id` | `scheduler:job:query` | 查询任务详情 |
-| POST | `/api/scheduler/jobs` | `scheduler:job:create` | 创建任务 |
-| PUT | `/api/scheduler/jobs/:id` | `scheduler:job:update` | 更新任务 |
-| DELETE | `/api/scheduler/jobs/:id` | `scheduler:job:delete` | 删除任务 |
-| PUT | `/api/scheduler/jobs/:id/start` | `scheduler:job:update` | 启动任务 |
-| PUT | `/api/scheduler/jobs/:id/stop` | `scheduler:job:update` | 停止任务 |
-| POST | `/api/scheduler/jobs/:id/execute` | `scheduler:job:update` | 立即执行一次 |
-| GET | `/api/scheduler/logs` | `scheduler:job:list` | 查询执行日志 |
+| GET | `/api/system/scheduler/jobs` | `scheduler:job:list` | 查询任务列表 |
+| GET | `/api/system/scheduler/jobs/:id` | `scheduler:job:query` | 查询任务详情 |
+| POST | `/api/system/scheduler/jobs` | `scheduler:job:create` | 创建任务 |
+| PUT | `/api/system/scheduler/jobs/:id` | `scheduler:job:update` | 更新任务 |
+| DELETE | `/api/system/scheduler/jobs/:id` | `scheduler:job:delete` | 删除任务 |
+| PUT | `/api/system/scheduler/jobs/:id/start` | `scheduler:job:update` | 启动任务 |
+| PUT | `/api/system/scheduler/jobs/:id/stop` | `scheduler:job:update` | 停止任务 |
+| POST | `/api/system/scheduler/jobs/:id/execute` | `scheduler:job:update` | 立即执行一次 |
+| GET | `/api/system/scheduler/logs` | `scheduler:job:list` | 查询执行日志 |
 
 ### 创建任务
 
 ```typescript
-POST /api/scheduler/jobs
+POST /api/system/scheduler/jobs
 {
   "name": "清理过期会话",
   "handlerId": "cleanExpiredSessions",   // 对应 handlers 中的 key
@@ -106,7 +106,7 @@ POST /api/scheduler/jobs
 ### 查询任务列表
 
 ```typescript
-GET /api/scheduler/jobs?page=1&pageSize=10&status=1
+GET /api/system/scheduler/jobs?page=1&pageSize=10&status=1
 
 // status: 0=暂停, 1=运行中
 ```
@@ -115,19 +115,19 @@ GET /api/scheduler/jobs?page=1&pageSize=10&status=1
 
 ```typescript
 // 启动任务（注册到调度器）
-PUT /api/scheduler/jobs/:id/start
+PUT /api/system/scheduler/jobs/:id/start
 
 // 停止任务（从调度器移除，保留配置）
-PUT /api/scheduler/jobs/:id/stop
+PUT /api/system/scheduler/jobs/:id/stop
 
 // 立即执行一次（不影响原有调度计划）
-POST /api/scheduler/jobs/:id/execute
+POST /api/system/scheduler/jobs/:id/execute
 ```
 
 ### 执行日志
 
 ```typescript
-GET /api/scheduler/logs?jobId=xxx&page=1&pageSize=10
+GET /api/system/scheduler/logs?jobId=xxx&page=1&pageSize=10
 ```
 
 ## 服务接口

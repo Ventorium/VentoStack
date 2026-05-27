@@ -29,7 +29,7 @@ const NoticePage = () => {
   }
   const handleReset = () => { searchForm.resetFields(); onReset() }
 
-  const openCreate = () => { setEditingNotice(null); form.resetFields(); form.setFieldsValue({ type: 1 }); setModalOpen(true) }
+  const openCreate = () => { setEditingNotice(null); form.resetFields(); form.setFieldsValue({ type: '1' }); setModalOpen(true) }
   const openEdit = (r: NoticeItem) => {
     setEditingNotice(r)
     form.setFieldsValue({ title: r.title, content: r.content, type: r.type })
@@ -67,8 +67,8 @@ const NoticePage = () => {
     if (!error) { msg.success('已撤回'); refresh() }
   }
 
-  const typeMap: Record<number, string> = { 1: '通知', 2: '公告' }
-  const typeColor: Record<number, string> = { 1: 'blue', 2: 'purple' }
+  const typeMap: Record<string, string> = { '1': '通知', '2': '公告' }
+  const typeColor: Record<string, string> = { '1': 'blue', '2': 'purple' }
   const statusMap: Record<number, { label: string; color: string }> = {
     0: { label: '草稿', color: 'default' },
     1: { label: '已发布', color: 'green' },

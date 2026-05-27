@@ -10,9 +10,10 @@ import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
 import { getAccessToken } from '@/store/token'
+import { OSS_API } from '@/constants'
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get('/api/system/oss/files', { query: cleanParams(params) })
+  client.get(OSS_API.LIST, { query: cleanParams(params) })
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return '0 B'
@@ -36,7 +37,7 @@ const OSSPage = () => {
   const handleReset = () => { searchForm.resetFields(); onReset() }
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete('/api/system/oss/files/:id', { params: { id } })
+    const { error } = await client.delete(OSS_API.DELETE, { params: { id } })
     if (!error) {
       msg.success('删除成功')
       refresh()
@@ -55,32 +56,42 @@ const OSSPage = () => {
   const uploadProps = {
     name: 'file',
     multiple: true,
-    action: '/api/system/oss/upload',
+    action: OSS_API.UPLOAD,
     headers: { Authorization: `Bearer ${getAccessToken()}` },
     onChange: handleUploadChange,
   }
 
-  const handlePreview = (record: OSSFile) => {
-    setPreviewImage(record.storagePath)
-    setPreviewOpen(true)
+  const handlePreview = async (record: OSSFile) => {
+    const { error, data } = await client.get(OSS_API.SIGNED_URL, { params: { id: record.id } }) as { error?: unknown; data?: { url: string } }
+    if (!error && data?.url) {
+      setPreviewImage(data.url)
+      setPreviewOpen(true)
+    }
   }
 
-  const isImage = (mime: string) => mime.startsWith('image/')
+  const handleDownload = async (record: OSSFile) => {
+    const { error, data } = await client.get(OSS_API.SIGNED_URL, { params: { id: record.id } }) as { error?: unknown; data?: { url: string } }
+    if (!error && data?.url) {
+      window.open(data.url, '_blank')
+    }
+  }
+
+  const isImage = (contentType: string) => contentType?.startsWith('image/')
 
   const columns: ColumnsType<OSSFile> = [
-    { title: '文件名', dataIndex: 'originalName', key: 'originalName', width: 200, ellipsis: true },
+    { title: '文件名', dataIndex: 'filename', key: 'filename', width: 200, ellipsis: true },
     { title: '大小', dataIndex: 'size', key: 'size', width: 100, render: (_: unknown, r: OSSFile) => formatFileSize(r.size) },
-    { title: '类型', dataIndex: 'mime', key: 'mime', width: 120, render: (mime: string) => <Tag>{mime}</Tag> },
+    { title: '类型', dataIndex: 'contentType', key: 'contentType', width: 120, render: (v: string) => <Tag>{v}</Tag> },
     { title: '存储桶', dataIndex: 'bucket', key: 'bucket', width: 120 },
     { title: '上传者', dataIndex: 'uploaderName', key: 'uploaderName', width: 120 },
     { title: '上传时间', dataIndex: 'createdAt', key: 'createdAt', width: 180, render: (_: unknown, r: OSSFile) => fmtDate(r.createdAt) },
     { title: '操作', key: 'action', width: 150, fixed: 'right' as const,
       render: (_: unknown, r: OSSFile) => (
         <Space size="small">
-          {isImage(r.mime) && (
+          {isImage(r.contentType) && (
             <Button type="link" size="small" icon={<EyeOutlined />} onClick={() => handlePreview(r)} />
           )}
-          <Button type="link" size="small" icon={<DownloadOutlined />} href={r.storagePath} target="_blank" />
+          <Button type="link" size="small" icon={<DownloadOutlined />} onClick={() => handleDownload(r)} />
           <ActionColumn items={[
             { label: '删除', onClick: () => handleDelete(r.id), danger: true, confirm: '确定删除该文件？' },
           ]} />
@@ -93,8 +104,8 @@ const OSSPage = () => {
       <h3 className="text-lg font-semibold mb-4">文件管理</h3>
       <Card className="mb-4">
         <Form form={searchForm} layout="inline">
-          <Form.Item name="originalName"><Input placeholder="文件名" prefix={<SearchOutlined />} /></Form.Item>
-          <Form.Item name="mime"><Input placeholder="MIME类型" /></Form.Item>
+          <Form.Item name="filename"><Input placeholder="文件名" prefix={<SearchOutlined />} /></Form.Item>
+          <Form.Item name="bucket"><Input placeholder="存储桶" /></Form.Item>
           <Space>
             <Button type="primary" onClick={handleSearch}>搜索</Button>
             <Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button>

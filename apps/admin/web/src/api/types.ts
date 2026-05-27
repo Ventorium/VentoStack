@@ -2,8 +2,8 @@
 
 export type { PaginatedData, PaginatedParams } from '../hooks/useTable'
 
-export type CreateNoticeBody = { title: string; content: string; type?: number }
-export type UpdateNoticeBody = { title?: string; content?: string; type?: number }
+export type CreateNoticeBody = { title: string; content: string; type: string }
+export type UpdateNoticeBody = { title?: string; content?: string; type?: string }
 
 export interface UserItem {
   id: string; username: string; nickname: string; email: string; phone: string
@@ -20,8 +20,8 @@ export interface RoleItem {
 
 export interface MenuItem {
   id: string; parentId: string | null; name: string; path: string; component: string
-  redirect: string; type: number; permission: string; icon: string; sort: number
-  visible: boolean; status: number; createdAt: string; children: MenuItem[]
+  redirect: string; type: string; permission: string; icon: string; sort: number
+  visible: number; status: number; createdAt: string; children: MenuItem[]
 }
 
 export interface DeptItem {
@@ -47,7 +47,7 @@ export interface ConfigItem {
 }
 
 export interface NoticeItem {
-  id: string; title: string; content: string; type: number; status: number
+  id: string; title: string; content: string; type: string; status: number
   publisherId: string; publishAt: string; createdAt: string
 }
 
@@ -82,22 +82,37 @@ export interface ScheduleJobLog {
 
 // ===== 文件管理 =====
 export interface OSSFile {
-  id: string; originalName: string; storagePath: string; size: number
-  mime: string; uploaderId: string; uploaderName?: string; bucket: string; createdAt: string
+  id: string; filename: string; size: number
+  contentType: string; uploaderId: string; uploaderName?: string; bucket: string; createdAt: string
 }
 
 // ===== 系统监控 =====
+export interface ServerCpuInfo {
+  model: string; cores: number; usage: number
+}
+export interface ServerMemoryInfo {
+  total: number; used: number; usage: number
+}
+export interface ServerDiskInfo {
+  total: number; used: number; usage: number; mount: string
+}
+export interface ServerOsInfo {
+  platform: string; arch: string; hostname: string
+}
+export interface ServerProcessInfo {
+  pid: number; uptime: number; bunVersion: string; nodeVersion: string
+}
 export interface ServerStatus {
-  cpuUsage: number; memoryUsage: number; memoryTotal: number; memoryUsed: number
-  uptime: number; nodeVersion: string; bunVersion: string
+  cpu: ServerCpuInfo; memory: ServerMemoryInfo; disk: ServerDiskInfo
+  os: ServerOsInfo; process: ServerProcessInfo
 }
 
 export interface CacheStatus {
-  keyCount: number; hitRate: number; memoryUsage: number
+  keyCount: number; hitRate?: number; memory: string; uptime?: string; version?: string
 }
 
 export interface DataSourceStatus {
-  status: string; activeConnections: number; idleConnections: number; maxConnections: number
+  connected: boolean; poolSize: number; activeConnections: number; idleConnections: number
 }
 
 export interface HealthCheckItem {
@@ -132,8 +147,8 @@ export interface NotifyMessage {
 }
 
 export interface NotifyTemplate {
-  id: string; type: string; channel: string; titleTemplate: string
-  contentTemplate: string; variables: string; status: number; createdAt: string
+  id: string; name: string; code: string; channel: string; title: string | null
+  content: string; status: number; createdAt?: string
 }
 
 // ===== 在线用户 =====

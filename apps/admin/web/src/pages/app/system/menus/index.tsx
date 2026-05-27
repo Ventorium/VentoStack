@@ -10,6 +10,10 @@ import { resolveIcon } from '@/utils/icon'
 import DictSelect from '@/components/DictSelect'
 import { fmtDate } from '@/utils/fmtDate'
 
+/** 菜单类型映射：前端显示值 ↔ API 字符串 */
+const MENU_TYPE_TO_API: Record<number, string> = { 1: 'D', 2: 'M', 3: 'B' }
+const MENU_TYPE_FROM_API: Record<string, number> = { D: 1, M: 2, B: 3 }
+
 /** 常用图标列表（使用 @ant-design/icons 完整名称） */
 const iconOptions = [
   'SettingOutlined', 'UserOutlined', 'TeamOutlined', 'MenuOutlined', 'HomeOutlined', 'DashboardOutlined',
@@ -54,19 +58,24 @@ const MenuPage = () => {
 
   const openEdit = (r: MenuItem) => {
     setEditingMenu(r)
-    form.setFieldsValue({ parentId: r.parentId, name: r.name, path: r.path, component: r.component, redirect: r.redirect, type: r.type, permission: r.permission, icon: r.icon, sort: r.sort, visible: r.visible, status: r.status })
+    form.setFieldsValue({ parentId: r.parentId, name: r.name, path: r.path, component: r.component, redirect: r.redirect, type: MENU_TYPE_FROM_API[r.type] ?? r.type, permission: r.permission, icon: r.icon, sort: r.sort, visible: r.visible === 1, status: r.status })
     setModalOpen(true)
   }
 
   const handleOk = async () => {
     const values = await form.validateFields()
     setModalLoading(true)
+    const body = {
+      ...values,
+      type: MENU_TYPE_TO_API[values.type] ?? values.type,
+      visible: values.visible ? 1 : 0,
+    }
     try {
       if (editingMenu) {
-        const { error } = await client.put('/api/system/menus/:id', { params: { id: editingMenu.id }, body: values })
+        const { error } = await client.put('/api/system/menus/:id', { params: { id: editingMenu.id }, body })
         if (!error) { msg.success('更新成功'); setModalOpen(false); fetchData() }
       } else {
-        const { error } = await client.post('/api/system/menus', { body: values })
+        const { error } = await client.post('/api/system/menus', { body })
         if (!error) { msg.success('创建成功'); setModalOpen(false); fetchData() }
       }
     } finally { setModalLoading(false) }
@@ -77,8 +86,8 @@ const MenuPage = () => {
     if (!error) { msg.success('删除成功'); fetchData() }
   }
 
-  const typeMap: Record<number, string> = { 1: '目录', 2: '菜单', 3: '按钮' }
-  const typeColor: Record<number, string> = { 1: 'blue', 2: 'green', 3: 'orange' }
+  const typeMap: Record<string, string> = { D: '目录', M: '菜单', B: '按钮' }
+  const typeColor: Record<string, string> = { D: 'blue', M: 'green', B: 'orange' }
 
   const columns: ColumnsType<MenuItem> = [
     { title: '菜单名称', dataIndex: 'name', key: 'name' },
@@ -91,6 +100,7 @@ const MenuPage = () => {
     { title: '类型', dataIndex: 'type', key: 'type', width: 80, render: (_: unknown, r: MenuItem) => <Tag color={typeColor[r.type]}>{typeMap[r.type]}</Tag> },
     { title: '路由地址', dataIndex: 'path', key: 'path', width: 200 },
     { title: '权限标识', dataIndex: 'permission', key: 'permission', width: 180 },
+    { title: '显示', dataIndex: 'visible', key: 'visible', width: 60, render: (_: unknown, r: MenuItem) => r.visible === 1 ? <Tag color="green">显示</Tag> : <Tag color="red">隐藏</Tag> },
     { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (_: unknown, r: MenuItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag> },
     { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180, render: (_: unknown, r: MenuItem) => fmtDate(r.createdAt) },
@@ -108,7 +118,7 @@ const MenuPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">菜单管理</h3>
       <Card title="菜单列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增菜单</Button>}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 1200 }} defaultExpandAllRows expandable={{ rowExpandable: (r) => r.type !== 3 }} size="small" />
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 1200 }} defaultExpandAllRows expandable={{ rowExpandable: (r) => r.type !== 'B' }} size="small" />
       </Card>
       <Modal title={editingMenu ? '编辑菜单' : '新增菜单'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={640}>
         <Form form={form} layout="vertical" preserve={false}>

@@ -7,6 +7,7 @@ import { client } from '@/api'
 import type { ScheduleJobLog } from '@/api/types'
 import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
+import { SCHEDULER_API } from '@/constants'
 
 const SchedulerLogsPage = () => {
   const navigate = useNavigate()
@@ -22,11 +23,8 @@ const SchedulerLogsPage = () => {
   const fetchData = async (params: Record<string, unknown>) => {
     setLoading(true)
     try {
-      const query = cleanParams({ ...params, jobId })
-      const { error, data } = await client.get(jobId ? '/api/system/scheduler/jobs/:id/logs' : '/api/system/scheduler/logs', {
-        query,
-        ...(jobId ? { params: { id: jobId } } : {})
-      })
+      const query = cleanParams({ ...params, ...(jobId ? { jobId } : {}) })
+      const { error, data } = await client.get(SCHEDULER_API.LOGS, { query })
       if (!error && data) {
         setData(data.list || [])
         setTotal(data.total || 0)

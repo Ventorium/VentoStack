@@ -110,15 +110,15 @@ channels.set('dingtalk', customChannel);
 
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| POST | `/api/notification/send` | 发送通知 |
-| GET | `/api/notification/messages` | 查询消息列表 |
-| GET | `/api/notification/messages/unread-count` | 未读数量 |
-| PUT | `/api/notification/messages/:id/read` | 标记已读 |
-| PUT | `/api/notification/messages/read-all` | 全部已读 |
-| GET | `/api/notification/templates` | 模板列表 |
-| POST | `/api/notification/templates` | 创建模板 |
-| PUT | `/api/notification/templates/:id` | 更新模板 |
-| DELETE | `/api/notification/templates/:id` | 删除模板 |
+| POST | `/api/system/notification/send` | 发送通知 |
+| GET | `/api/system/notification/messages` | 查询消息列表 |
+| GET | `/api/system/notification/messages/unread-count` | 未读数量 |
+| PUT | `/api/system/notification/messages/:id/read` | 标记已读 |
+| PUT | `/api/system/notification/messages/read-all` | 全部已读 |
+| GET | `/api/system/notification/templates` | 模板列表 |
+| POST | `/api/system/notification/templates` | 创建模板 |
+| PUT | `/api/system/notification/templates/:id` | 更新模板 |
+| DELETE | `/api/system/notification/templates/:id` | 删除模板 |
 
 ## 服务接口
 

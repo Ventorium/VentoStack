@@ -1,11 +1,11 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col, Tree, Spin } from 'antd'
+import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col, Tree, Spin, TreeSelect, Select } from 'antd'
 import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined, SearchOutlined, ReloadOutlined, ApartmentOutlined, MenuFoldOutlined, MenuUnfoldOutlined } from '@ant-design/icons'
 import { useNavigate } from 'react-router-dom'
 import { client } from '@/api'
-import type { PaginatedData, UserItem, DeptItem } from '@/api/types'
+import type { PaginatedData, UserItem, DeptItem, RoleItem } from '@/api/types'
 import { useTable } from '@/hooks/useTable'
 import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
@@ -46,6 +46,20 @@ const UserPage = () => {
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null)
   const [deptPanelVisible, setDeptPanelVisible] = useState(true)
 
+  // Role list state
+  const [roleOptions, setRoleOptions] = useState<Array<{ label: string; value: string }>>([])
+
+  // Fetch roles for selector
+  useEffect(() => {
+    const fetchRoles = async () => {
+      const { error, data } = await client.get('/api/system/roles', { query: { pageSize: 999 } }) as { error?: unknown; data?: PaginatedData<RoleItem> }
+      if (!error && data?.list) {
+        setRoleOptions(data.list.map(r => ({ label: r.name, value: r.id })))
+      }
+    }
+    fetchRoles()
+  }, [])
+
   // Fetch dept tree
   const fetchDeptTree = useCallback(async () => {
     setDeptLoading(true)
@@ -84,7 +98,7 @@ const UserPage = () => {
   const openCreate = () => { setEditingUser(null); form.resetFields(); setModalOpen(true) }
   const openEdit = (r: UserItem) => {
     setEditingUser(r)
-    form.setFieldsValue({ username: r.username, nickname: r.nickname, email: r.email, phone: r.phone, status: r.status, deptId: r.deptId })
+    form.setFieldsValue({ username: r.username, nickname: r.nickname, email: r.email, phone: r.phone, status: r.status, deptId: r.deptId, roleIds: r.roles?.map(role => role.id) ?? [] })
     setModalOpen(true)
   }
 
@@ -93,10 +107,10 @@ const UserPage = () => {
     setModalLoading(true)
     try {
       if (editingUser) {
-        const { error } = await client.put('/api/system/users/:id', { params: { id: editingUser.id }, body: { nickname: values.nickname, email: values.email, phone: values.phone, status: values.status, deptId: values.deptId } })
+        const { error } = await client.put('/api/system/users/:id', { params: { id: editingUser.id }, body: { nickname: values.nickname, email: values.email, phone: values.phone, status: values.status, deptId: values.deptId, roleIds: values.roleIds } })
         if (!error) { msg.success('更新成功'); setModalOpen(false); refresh() }
       } else {
-        const { error } = await client.post('/api/system/users', { body: { username: values.username, password: values.password, nickname: values.nickname, email: values.email, phone: values.phone, status: values.status } })
+        const { error } = await client.post('/api/system/users', { body: { username: values.username, password: values.password, nickname: values.nickname, email: values.email, phone: values.phone, status: values.status, deptId: values.deptId, roleIds: values.roleIds } })
         if (!error) { msg.success('创建成功'); setModalOpen(false); refresh() }
       }
     } finally { setModalLoading(false) }
@@ -231,6 +245,12 @@ const UserPage = () => {
             </Col>
             <Col span={12}>
               <Form.Item name="phone" label="手机号" rules={[{ pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]}><Input /></Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="deptId" label="部门"><TreeSelect treeData={deptTreeData} placeholder="选择部门" allowClear treeDefaultExpandAll /></Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="roleIds" label="角色"><Select mode="multiple" placeholder="选择角色" options={roleOptions} allowClear /></Form.Item>
             </Col>
           </Row>
         </Form>

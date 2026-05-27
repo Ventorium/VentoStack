@@ -56,24 +56,24 @@ interface GenModuleDeps {
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
-| GET | `/api/gen/tables` | `gen:table:list` | 查询已导入表列表 |
-| POST | `/api/gen/tables/import` | `gen:table:create` | 导入数据库表 |
-| GET | `/api/gen/tables/:id` | `gen:table:query` | 查询表详情（含列信息） |
-| PUT | `/api/gen/tables/:id` | `gen:table:update` | 更新表配置 |
-| PUT | `/api/gen/columns/:id` | `gen:table:update` | 更新列配置 |
-| GET | `/api/gen/tables/:id/preview` | `gen:table:query` | 预览生成代码 |
-| POST | `/api/gen/tables/:id/generate` | `gen:table:generate` | 生成代码 |
+| GET | `/api/system/gen/tables` | `gen:table:list` | 查询已导入表列表 |
+| POST | `/api/system/gen/tables/import` | `gen:table:create` | 导入数据库表 |
+| GET | `/api/system/gen/tables/:id` | `gen:table:query` | 查询表详情（含列信息） |
+| PUT | `/api/system/gen/tables/:id` | `gen:table:update` | 更新表配置 |
+| PUT | `/api/system/gen/columns/:id` | `gen:table:update` | 更新列配置 |
+| GET | `/api/system/gen/tables/:id/preview` | `gen:table:query` | 预览生成代码 |
+| POST | `/api/system/gen/tables/:id/generate` | `gen:table:generate` | 生成代码 |
 
 ### 查询已导入表
 
 ```typescript
-GET /api/gen/tables?page=1&pageSize=10
+GET /api/system/gen/tables?page=1&pageSize=10
 ```
 
 ### 导入表
 
 ```typescript
-POST /api/gen/tables/import
+POST /api/system/gen/tables/import
 {
   "tableName": "biz_order",        // 数据库表名
   "moduleName": "order",           // 模块名
@@ -89,7 +89,7 @@ POST /api/gen/tables/import
 ### 更新表配置
 
 ```typescript
-PUT /api/gen/tables/:id
+PUT /api/system/gen/tables/:id
 {
   "className": "Order",            // 类名
   "moduleName": "order",           // 模块名
@@ -102,7 +102,7 @@ PUT /api/gen/tables/:id
 ### 更新列配置
 
 ```typescript
-PUT /api/gen/columns/:id
+PUT /api/system/gen/columns/:id
 {
   "isList": true,                  // 是否在列表中显示
   "isInsert": true,                // 是否在新增中显示
@@ -116,7 +116,7 @@ PUT /api/gen/columns/:id
 ### 预览生成代码
 
 ```typescript
-GET /api/gen/tables/:id/preview
+GET /api/system/gen/tables/:id/preview
 
 // 响应
 [
@@ -131,7 +131,7 @@ GET /api/gen/tables/:id/preview
 ### 生成代码
 
 ```typescript
-POST /api/gen/tables/:id/generate
+POST /api/system/gen/tables/:id/generate
 
 // 响应与预览相同，返回生成的文件列表
 ```

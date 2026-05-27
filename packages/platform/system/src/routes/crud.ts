@@ -37,15 +37,22 @@ interface CrudRouteOptions {
   perm: (resource: string, action: string) => Middleware;
   extraRoutes?: (router: Router) => void;
   schemas?: CrudSchemas;
+  /** 操作日志中间件（可选，用于记录写操作到数据库） */
+  operationLogMiddleware?: Middleware;
 }
 
 export function createCrudRoutes(options: CrudRouteOptions): Router {
-  const { basePath, resource, service, authMiddleware, perm, extraRoutes, schemas } = options;
+  const { basePath, resource, service, authMiddleware, perm, extraRoutes, schemas, operationLogMiddleware } = options;
   const router = createRouter();
   const module = resource.split(":")[0]!;
 
   // Auth middleware applies to all CRUD routes
   router.use(authMiddleware);
+
+  // Operation log middleware (after auth, so ctx.user is available)
+  if (operationLogMiddleware) {
+    router.use(operationLogMiddleware);
+  }
 
   // List
   const listConfig = schemas?.item ? {

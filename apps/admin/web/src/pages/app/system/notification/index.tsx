@@ -9,9 +9,10 @@ import { useTable } from '@/hooks/useTable'
 import { cleanParams } from '@/utils/cleanParams'
 import { fmtDate } from '@/utils/fmtDate'
 import ActionColumn from '@/components/ActionColumn'
+import { NOTIFICATION_API } from '@/constants'
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get('/api/system/notification/messages', { query: cleanParams(params) })
+  client.get(NOTIFICATION_API.MESSAGES, { query: cleanParams(params) })
 
 const channelOptions = [
   { label: '邮件', value: 'email' },
@@ -46,7 +47,7 @@ const NotificationPage = () => {
   const handleReset = () => { searchForm.resetFields(); onReset() }
 
   const handleMarkAsRead = async (id: string) => {
-    const { error } = await client.put('/api/system/notification/messages/:id/read', { params: { id } })
+    const { error } = await client.put(NOTIFICATION_API.MESSAGE_READ, { params: { id } })
     if (!error) {
       msg.success('已标记为已读')
       refresh()
@@ -58,7 +59,7 @@ const NotificationPage = () => {
       msg.warning('请先选择消息')
       return
     }
-    const { error } = await client.put('/api/system/notification/messages/read-batch', { body: { ids: selectedRowKeys as string[] } })
+    const { error } = await client.post(NOTIFICATION_API.MESSAGE_READ_BATCH, { body: { messageIds: selectedRowKeys as string[] } })
     if (!error) {
       msg.success('批量标记成功')
       clearSelection()
@@ -67,7 +68,7 @@ const NotificationPage = () => {
   }
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete('/api/system/notification/messages/:id', { params: { id } })
+    const { error } = await client.delete(NOTIFICATION_API.MESSAGES, { params: { id } })
     if (!error) {
       msg.success('删除成功')
       refresh()
