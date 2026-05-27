@@ -178,7 +178,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   router.merge(createAuthRoutes(authService, authMiddleware));
   router.merge(createPasskeyRoutes(passkeyService, authService, authMiddleware, cache));
-  router.merge(createUserRoutes(userService, authMiddleware, perm));
+  router.merge(createUserRoutes(userService, authMiddleware, perm, opLogMiddleware));
 
   // CRUD routes for other entities
   router.merge(createCrudRoutes({

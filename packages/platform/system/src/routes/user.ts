@@ -34,9 +34,13 @@ export function createUserRoutes(
   userService: UserService,
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
+  operationLogMiddleware?: Middleware,
 ): Router {
   const router = createRouter();
   router.use(authMiddleware);
+  if (operationLogMiddleware) {
+    router.use(operationLogMiddleware);
+  }
 
   router.get("/api/system/users", {
     query: {
