@@ -24,10 +24,25 @@ const buildTreeData = (items: DeptItem[]): Array<{ key: string; title: string; c
     children: item.children?.length ? buildTreeData(item.children) : undefined,
   }))
 
+const getPasswordRules = (minLength: number, complexity: 'low' | 'medium' | 'high') => {
+  const rules: Array<{ required: boolean; message: string } | { min: number; message: string } | { pattern: RegExp; message: string }> = [
+    { required: true, message: '请输入密码' },
+    { min: minLength, message: `密码不能少于${minLength}位` },
+  ]
+  if (complexity === 'medium') {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码需包含字母和数字' })
+  } else if (complexity === 'high') {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/, message: '密码需包含字母、数字和特殊字符' })
+  }
+  return rules
+}
+
 const UserPage = () => {
   const navigate = useNavigate()
   const deptEnabled = usePublicConfig(s => s.config.deptEnabled)
-  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, rowSelection, clearSelection, hasSelected } =
+  const passwordMinLength = usePublicConfig(s => s.config.passwordMinLength)
+  const passwordComplexity = usePublicConfig(s => s.config.passwordComplexity)
+  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, selectedRows, rowSelection, clearSelection, hasSelected } =
     useTable<UserItem>(fetcher)
   const [searchForm] = Form.useForm()
   const [modalOpen, setModalOpen] = useState(false)
@@ -127,6 +142,64 @@ const UserPage = () => {
     if (!error) { msg.success(newStatus === 1 ? '已启用' : '已禁用'); refresh() }
   }
 
+  const showBatchResult = (result: { success: number; skipped: number }, action: string) => {
+    if (result.skipped > 0) {
+      msg.success(`${action}完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`)
+    } else {
+      msg.success(`${action}成功，共 ${result.success} 项`)
+    }
+  }
+
+  const handleBatchDisable = () => {
+    const names = selectedRows.map(r => r.username).join('、')
+    Modal.confirm({
+      title: '批量禁用',
+      content: `确定要禁用以下 ${selectedRowKeys.length} 个用户吗？\n${names}`,
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/users/batch-status', { body: { ids: selectedRowKeys as string[], status: 0 } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '禁用'); clearSelection(); refresh() }
+      },
+    })
+  }
+
+  const handleBatchEnable = () => {
+    const names = selectedRows.map(r => r.username).join('、')
+    Modal.confirm({
+      title: '批量启用',
+      content: `确定要启用以下 ${selectedRowKeys.length} 个用户吗？\n${names}`,
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/users/batch-status', { body: { ids: selectedRowKeys as string[], status: 1 } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '启用'); clearSelection(); refresh() }
+      },
+    })
+  }
+
+  const handleBatchDelete = () => {
+    const names = selectedRows.map(r => r.username).join('、')
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定要删除以下 ${selectedRowKeys.length} 个用户吗？此操作不可恢复。\n${names}`,
+      okType: 'danger',
+      okText: '确定删除',
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/users/batch-delete', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '删除'); clearSelection(); refresh() }
+      },
+    })
+  }
+
+  const handleBatchResetPwd = () => {
+    const names = selectedRows.map(r => r.username).join('、')
+    Modal.confirm({
+      title: '批量重置密码',
+      content: `确定要将以下 ${selectedRowKeys.length} 个用户的密码重置为系统默认初始密码吗？\n${names}`,
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/users/batch-reset-pwd', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '重置密码'); clearSelection(); refresh() }
+      },
+    })
+  }
+
   const openResetPwd = (id: string) => {
     setResetPwdUserId(id)
     resetPwdForm.resetFields()
@@ -215,7 +288,17 @@ const UserPage = () => {
             </Form>
           </Card>
           <Card title={`用户列表（${total}）`}
-            extra={<Space><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增用户</Button></Space>}>
+            extra={
+              <Space>
+                {hasSelected && <>
+                  <Button size="small" onClick={handleBatchEnable}>批量启用</Button>
+                  <Button size="small" onClick={handleBatchDisable}>批量禁用</Button>
+                  <Button size="small" onClick={handleBatchResetPwd}>批量重置密码</Button>
+                  <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+                </>}
+                <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增用户</Button>
+              </Space>
+            }>
             {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={clearSelection}>取消选择</Button></div>}
             <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small"
               pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
@@ -230,7 +313,7 @@ const UserPage = () => {
               <Form.Item name="username" label="用户名" rules={[{ required: true, message: '请输入用户名' }]}><Input disabled={!!editingUser} /></Form.Item>
             </Col>
             {!editingUser && <Col span={12}>
-              <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}><Input.Password /></Form.Item>
+              <Form.Item name="password" label="密码" rules={getPasswordRules(passwordMinLength, passwordComplexity)}><Input.Password /></Form.Item>
             </Col>}
             <Col span={12}>
               <Form.Item name="nickname" label="昵称"><Input /></Form.Item>
@@ -257,11 +340,7 @@ const UserPage = () => {
       </Modal>
       <Modal title="重置密码" open={resetPwdOpen} onOk={handleResetPwdOk} onCancel={() => setResetPwdOpen(false)} confirmLoading={resetPwdLoading} destroyOnHidden width={480}>
         <Form form={resetPwdForm} layout="vertical" preserve={false}>
-          <Form.Item name="newPassword" label="新密码" rules={[
-            { required: true, message: '请输入新密码' },
-            { min: 8, message: '密码长度至少8位' },
-            { pattern: /^(?=.*[a-zA-Z])(?=.*\d)|(?=.*[a-zA-Z])(?=.*[^a-zA-Z0-9])|(?=.*\d)(?=.*[^a-zA-Z0-9]).+$/, message: '密码需包含字母、数字、特殊字符中的至少两种' },
-          ]}><Input.Password placeholder="请输入新密码" /></Form.Item>
+          <Form.Item name="newPassword" label="新密码" rules={getPasswordRules(passwordMinLength, passwordComplexity)}><Input.Password placeholder="请输入新密码" /></Form.Item>
           <Form.Item name="confirmPassword" label="确认密码" dependencies={['newPassword']} rules={[
             { required: true, message: '请确认密码' },
             ({ getFieldValue }) => ({

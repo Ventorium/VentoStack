@@ -15,7 +15,7 @@ const fetcher = (params: Record<string, unknown>) =>
   client.get('/api/system/notices', { query: cleanParams(params) }) as Promise<{ error?: unknown; data?: PaginatedData<NoticeItem> }>
 
 const NoticePage = () => {
-  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, rowSelection, clearSelection, hasSelected } =
+  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, selectedRows, rowSelection, clearSelection, hasSelected } =
     useTable<NoticeItem>(fetcher)
   const [searchForm] = Form.useForm()
   const [modalOpen, setModalOpen] = useState(false)
@@ -67,6 +67,52 @@ const NoticePage = () => {
     if (!error) { msg.success('已撤回'); refresh() }
   }
 
+  const showBatchResult = (result: { success: number; skipped: number }, action: string) => {
+    if (result.skipped > 0) {
+      msg.success(`${action}完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`)
+    } else {
+      msg.success(`${action}成功，共 ${result.success} 项`)
+    }
+  }
+
+  const handleBatchPublish = () => {
+    const names = selectedRows.map(r => r.title).join('、')
+    Modal.confirm({
+      title: '批量发布',
+      content: `确定要发布以下 ${selectedRowKeys.length} 项通知吗？\n${names}`,
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/notices/batch-publish', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '发布'); clearSelection(); refresh() }
+      },
+    })
+  }
+
+  const handleBatchRevoke = () => {
+    const names = selectedRows.map(r => r.title).join('、')
+    Modal.confirm({
+      title: '批量下架',
+      content: `确定要下架以下 ${selectedRowKeys.length} 项通知吗？\n${names}`,
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/notices/batch-revoke', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '下架'); clearSelection(); refresh() }
+      },
+    })
+  }
+
+  const handleBatchDelete = () => {
+    const names = selectedRows.map(r => r.title).join('、')
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定要删除以下 ${selectedRowKeys.length} 项通知吗？此操作不可恢复。\n${names}`,
+      okType: 'danger',
+      okText: '确定删除',
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/notices/batch-delete', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) { showBatchResult(data as { success: number; skipped: number }, '删除'); clearSelection(); refresh() }
+      },
+    })
+  }
+
   const typeMap: Record<string, string> = { '1': '通知', '2': '公告' }
   const typeColor: Record<string, string> = { '1': 'blue', '2': 'purple' }
   const statusMap: Record<number, { label: string; color: string }> = {
@@ -114,7 +160,16 @@ const NoticePage = () => {
           </Space>
         </Form>
       </Card>
-      <Card title={`公告列表（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增公告</Button>}>
+      <Card title={`公告列表（${total}）`} extra={
+        <Space>
+          {hasSelected && <>
+            <Button size="small" onClick={handleBatchPublish}>批量发布</Button>
+            <Button size="small" onClick={handleBatchRevoke}>批量下架</Button>
+            <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>
+          </>}
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增公告</Button>
+        </Space>
+      }>
         {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={clearSelection}>取消选择</Button></div>}
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small"
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}

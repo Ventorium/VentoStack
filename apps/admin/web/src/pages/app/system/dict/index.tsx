@@ -15,7 +15,7 @@ const typeFetcher = (params: Record<string, unknown>) =>
   client.get('/api/system/dict/types', { query: cleanParams(params) }) as Promise<{ error?: unknown; data?: PaginatedData<DictTypeItem> }>
 
 const DictPage = () => {
-  const { loading: typeLoading, data: typeData, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, rowSelection, clearSelection, hasSelected } =
+  const { loading: typeLoading, data: typeData, total, page, pageSize, refresh, onSearch, onReset, onPageChange } =
     useTable<DictTypeItem>(typeFetcher)
   const [searchForm] = Form.useForm()
   const [typeModalOpen, setTypeModalOpen] = useState(false)
@@ -31,6 +31,10 @@ const DictPage = () => {
   const [editingData, setEditingData] = useState<DictDataItem | null>(null)
   const [dataModalLoading, setDataModalLoading] = useState(false)
   const [dataForm] = Form.useForm()
+  // Dict data selection
+  const [dataSelectedKeys, setDataSelectedKeys] = useState<React.Key[]>([])
+  const [dataSelectedRows, setDataSelectedRows] = useState<DictDataItem[]>([])
+  const dataHasSelected = dataSelectedKeys.length > 0
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue()
@@ -61,7 +65,15 @@ const DictPage = () => {
 
   const openDictData = async (typeCode: string, typeName: string) => {
     setCurrentTypeCode(typeCode); setCurrentTypeName(typeName); setDataLoading(true); setDrawerOpen(true)
+    setDataSelectedKeys([]); setDataSelectedRows([])
     const { error, data } = await client.get('/api/system/dict/types/:code/data', { params: { code: typeCode } }) as { error?: unknown; data?: DictDataItem[] }
+    if (!error) { setDictData(data ?? []) }
+    setDataLoading(false)
+  }
+
+  const refreshDictData = async () => {
+    setDataLoading(true)
+    const { error, data } = await client.get('/api/system/dict/types/:code/data', { params: { code: currentTypeCode } }) as { error?: unknown; data?: DictDataItem[] }
     if (!error) { setDictData(data ?? []) }
     setDataLoading(false)
   }
@@ -75,17 +87,40 @@ const DictPage = () => {
     try {
       if (editingData) {
         const { error } = await client.put('/api/system/dict/data/:id', { params: { id: editingData.id }, body: { label: values.label, value: values.value, sort: values.sort, status: values.status } })
-        if (!error) { msg.success('更新成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
+        if (!error) { msg.success('更新成功'); setDataEditOpen(false); refreshDictData() }
       } else {
         const { error } = await client.post('/api/system/dict/data', { body: { label: values.label, value: values.value, sort: values.sort, status: values.status, dictType: currentTypeCode } })
-        if (!error) { msg.success('创建成功'); setDataEditOpen(false); openDictData(currentTypeCode, currentTypeName) }
+        if (!error) { msg.success('创建成功'); setDataEditOpen(false); refreshDictData() }
       }
     } finally { setDataModalLoading(false) }
   }
 
   const handleDeleteData = async (id: string) => {
     const { error } = await client.delete('/api/system/dict/data/:id', { params: { id } })
-    if (!error) { msg.success('删除成功'); openDictData(currentTypeCode, currentTypeName) }
+    if (!error) { msg.success('删除成功'); refreshDictData() }
+  }
+
+  const handleBatchDeleteData = () => {
+    const names = dataSelectedRows.map(r => r.label).join('、')
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定要删除以下 ${dataSelectedKeys.length} 个字典项吗？此操作不可恢复。\n${names}`,
+      okType: 'danger',
+      okText: '确定删除',
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/dict/data/batch-delete', { body: { ids: dataSelectedKeys as string[] } })
+        if (!error) {
+          const result = data as { success: number; skipped: number }
+          if (result.skipped > 0) {
+            msg.success(`删除完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`)
+          } else {
+            msg.success(`删除成功，共 ${result.success} 项`)
+          }
+          setDataSelectedKeys([]); setDataSelectedRows([])
+          refreshDictData()
+        }
+      },
+    })
   }
 
   const typeColumns: ColumnsType<DictTypeItem> = [
@@ -128,10 +163,9 @@ const DictPage = () => {
         </Form>
       </Card>
       <Card title={`字典类型（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreateType}>新增字典</Button>}>
-        {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={clearSelection}>取消选择</Button></div>}
         <Table rowKey="id" columns={typeColumns} dataSource={typeData} loading={typeLoading} size="small"
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
-          scroll={{ x: 1000 }} rowSelection={rowSelection} />
+          scroll={{ x: 1000 }} />
       </Card>
       <Modal title={editingType ? '编辑字典类型' : '新增字典类型'} open={typeModalOpen} onOk={handleTypeOk} onCancel={() => setTypeModalOpen(false)} confirmLoading={typeModalLoading} destroyOnHidden width={640}>
         <Form form={typeForm} layout="vertical" preserve={false}>
@@ -155,8 +189,14 @@ const DictPage = () => {
       </Modal>
 
       <Drawer title={`字典数据 - ${currentTypeName || currentTypeCode}`} open={drawerOpen} onClose={() => setDrawerOpen(false)} size="large" destroyOnHidden>
-        <div className="mb-4"><Button type="primary" icon={<PlusOutlined />} onClick={openCreateData}>新增字典项</Button></div>
-        <Table rowKey="id" columns={dataColumns} dataSource={dictData} loading={dataLoading} pagination={false} scroll={{ x: 600 }} size="small" />
+        <div className="mb-4 flex items-center gap-2">
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateData}>新增字典项</Button>
+          {dataHasSelected && <Button danger onClick={handleBatchDeleteData}>批量删除 ({dataSelectedKeys.length})</Button>}
+          {dataHasSelected && <Button type="link" size="small" onClick={() => { setDataSelectedKeys([]); setDataSelectedRows([]) }}>取消选择</Button>}
+        </div>
+        {dataHasSelected && <div className="mb-2 text-sm text-gray-500">已选 {dataSelectedKeys.length} 项</div>}
+        <Table rowKey="id" columns={dataColumns} dataSource={dictData} loading={dataLoading} pagination={false} scroll={{ x: 600 }} size="small"
+          rowSelection={{ selectedRowKeys: dataSelectedKeys, onChange: (keys, rows) => { setDataSelectedKeys(keys); setDataSelectedRows(rows as DictDataItem[]) } }} />
       </Drawer>
 
       <Modal title={editingData ? '编辑字典项' : '新增字典项'} open={dataEditOpen} onOk={handleDataOk} onCancel={() => setDataEditOpen(false)} confirmLoading={dataModalLoading} destroyOnHidden width={640}>

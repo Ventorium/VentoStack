@@ -15,7 +15,7 @@ const fetcher = (params: Record<string, unknown>) =>
   client.get('/api/system/configs', { query: cleanParams(params) }) as Promise<{ error?: unknown; data?: PaginatedData<ConfigItem> }>
 
 const ConfigPage = () => {
-  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, rowSelection, clearSelection, hasSelected } =
+  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange } =
     useTable<ConfigItem>(fetcher)
   const [searchForm] = Form.useForm()
   const [modalOpen, setModalOpen] = useState(false)
@@ -78,10 +78,9 @@ const ConfigPage = () => {
         </Form>
       </Card>
       <Card title={`参数列表（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增参数</Button>}>
-        {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={clearSelection}>取消选择</Button></div>}
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small"
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
-          scroll={{ x: 1000 }} rowSelection={rowSelection} />
+          scroll={{ x: 1000 }} />
       </Card>
       <Modal title={editingConfig ? '编辑参数' : '新增参数'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={640}>
         <Form form={form} layout="vertical" preserve={false}>

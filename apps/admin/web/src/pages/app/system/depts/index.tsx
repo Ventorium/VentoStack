@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from 'react'
-import { Card, Table, Button, Form, Input, InputNumber, Modal, Tag, Row, Col, TreeSelect } from 'antd'
+import { Card, Table, Button, Form, Input, InputNumber, Modal, Tag, Row, Col, TreeSelect, Space } from 'antd'
 import { msg } from '@/components/GlobalMessage'
 import type { ColumnsType } from 'antd/es/table'
 import { PlusOutlined } from '@ant-design/icons'
@@ -24,6 +24,9 @@ const DeptPage = () => {
   const [editingDept, setEditingDept] = useState<DeptItem | null>(null)
   const [modalLoading, setModalLoading] = useState(false)
   const [form] = Form.useForm()
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
+  const [selectedRows, setSelectedRows] = useState<DeptItem[]>([])
+  const hasSelected = selectedRowKeys.length > 0
 
   const fetchData = useCallback(async () => {
     setLoading(true)
@@ -65,6 +68,29 @@ const DeptPage = () => {
     if (!error) { msg.success('删除成功'); fetchData() }
   }
 
+  const handleBatchDelete = () => {
+    const names = selectedRows.map(r => r.name).join('、')
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定要删除以下 ${selectedRowKeys.length} 个部门吗？此操作不可恢复。\n${names}`,
+      okType: 'danger',
+      okText: '确定删除',
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/depts/batch-delete', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) {
+          const result = data as { success: number; skipped: number }
+          if (result.skipped > 0) {
+            msg.success(`删除完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`)
+          } else {
+            msg.success(`删除成功，共 ${result.success} 项`)
+          }
+          setSelectedRowKeys([]); setSelectedRows([])
+          fetchData()
+        }
+      },
+    })
+  }
+
   const columns: ColumnsType<DeptItem> = [
     { title: '部门名称', dataIndex: 'name', key: 'name' },
     { title: '负责人', dataIndex: 'leader', key: 'leader', width: 120 },
@@ -86,8 +112,15 @@ const DeptPage = () => {
   return (
     <div>
       <h3 className="text-lg font-semibold mb-4">部门管理</h3>
-      <Card title="部门列表" extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增部门</Button>}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 1100 }} defaultExpandAllRows size="small" />
+      <Card title="部门列表" extra={
+        <Space>
+          {hasSelected && <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>}
+          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增部门</Button>
+        </Space>
+      }>
+        {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={() => { setSelectedRowKeys([]); setSelectedRows([]) }}>取消选择</Button></div>}
+        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 1100 }} defaultExpandAllRows size="small"
+          rowSelection={{ selectedRowKeys, onChange: (keys, rows) => { setSelectedRowKeys(keys); setSelectedRows(rows as DeptItem[]) } }} />
       </Card>
       <Modal title={editingDept ? '编辑部门' : '新增部门'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={640}>
         <Form form={form} layout="vertical" preserve={false}>

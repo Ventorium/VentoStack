@@ -48,7 +48,7 @@ function getDescendantKeys(items: MenuItem[], targetKey: string): string[] {
 }
 
 const RolePage = () => {
-  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, rowSelection, clearSelection, hasSelected } =
+  const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange, selectedRowKeys, selectedRows, rowSelection, clearSelection, hasSelected } =
     useTable<RoleItem>(fetcher)
   const [searchForm] = Form.useForm()
   const [modalOpen, setModalOpen] = useState(false)
@@ -126,6 +126,28 @@ const RolePage = () => {
 
   const isBuiltInRole = (code: string) => code === 'admin'
 
+  const handleBatchDelete = () => {
+    const names = selectedRows.map(r => r.name).join('、')
+    Modal.confirm({
+      title: '批量删除',
+      content: `确定要删除以下 ${selectedRowKeys.length} 个角色吗？此操作不可恢复。\n${names}`,
+      okType: 'danger',
+      okText: '确定删除',
+      onOk: async () => {
+        const { error, data } = await client.post('/api/system/roles/batch-delete', { body: { ids: selectedRowKeys as string[] } })
+        if (!error) {
+          const result = data as { success: number; skipped: number }
+          if (result.skipped > 0) {
+            msg.success(`删除完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`)
+          } else {
+            msg.success(`删除成功，共 ${result.success} 项`)
+          }
+          clearSelection(); refresh()
+        }
+      },
+    })
+  }
+
   const columns: ColumnsType<RoleItem> = [
     { title: '角色名称', dataIndex: 'name', key: 'name', width: 160 },
     { title: '角色标识', dataIndex: 'code', key: 'code', width: 160 },
@@ -159,7 +181,12 @@ const RolePage = () => {
           <Space><Button type="primary" onClick={handleSearch}>搜索</Button><Button icon={<ReloadOutlined />} onClick={handleReset}>重置</Button></Space>
         </Form>
       </Card>
-      <Card title={`角色列表（${total}）`} extra={<Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增角色</Button>}>
+      <Card title={`角色列表（${total}）`} extra={
+        <Space>
+          {hasSelected && <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>}
+          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新增角色</Button>
+        </Space>
+      }>
         {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={clearSelection}>取消选择</Button></div>}
         <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small"
           pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
