@@ -194,7 +194,7 @@ export function createGenService(deps: {
       const total = await db.query(GenTableModel).count();
 
       const rows = await db.query(GenTableModel)
-        .select("id", "table_name", "class_name", "module_name", "function_name", "function_author", "remark", "status")
+        .select("id", "table_name", "class_name", "module_name", "function_name", "function_author", "remark", "status", "created_at")
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -209,6 +209,7 @@ export function createGenService(deps: {
         functionAuthor: row.function_author ?? null,
         remark: row.remark ?? null,
         status: row.status,
+        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
       }));
 
       return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };

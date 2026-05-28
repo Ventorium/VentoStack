@@ -8,6 +8,13 @@
 import { createRouter } from "@ventostack/core";
 import type { Middleware, Router, RouteSchemaConfig } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
+
+/** 从请求头提取客户端 IP（优先代理头，回退到 Bun 注入的 x-real-ip） */
+function extractClientIP(headers: Headers): string {
+  return headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+    ?? headers.get("x-real-ip")?.trim()
+    ?? "unknown";
+}
 import { ok, fail, parseBody } from "./common";
 
 const tokenPairSchema = {
@@ -45,7 +52,7 @@ export function createAuthRoutes(
       const result = await authService.login({
         username: body.username as string,
         password: body.password as string,
-        ip: ctx.request.headers.get("x-forwarded-for") ?? "unknown",
+        ip: extractClientIP(ctx.request.headers),
         userAgent: ctx.request.headers.get("user-agent") ?? "unknown",
         deviceType: body.deviceType as string | undefined,
       });
@@ -169,7 +176,7 @@ export function createAuthRoutes(
       const result = await authService.completeMFALogin(
         body.mfaToken as string,
         body.code as string,
-        ctx.request.headers.get("x-forwarded-for") ?? "unknown",
+        extractClientIP(ctx.request.headers),
         ctx.request.headers.get("user-agent") ?? "unknown",
         body.deviceType as string | undefined,
       );

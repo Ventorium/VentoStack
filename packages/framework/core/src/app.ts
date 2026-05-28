@@ -147,6 +147,19 @@ export function createApp(config?: AppConfig): VentoStackApp {
       }
       activeRequests++;
       try {
+        // 注入真实客户端 IP（Bun Server 级别，无需反向代理即可获取）
+        if (server && !req.headers.has("x-forwarded-for") && !req.headers.has("x-real-ip")) {
+          try {
+            const addr = server.requestIP(req);
+            if (addr) {
+              const headers = new Headers(req.headers);
+              headers.set("x-real-ip", addr.address);
+              req = new Request(req, { headers });
+            }
+          } catch {
+            // requestIP 在非服务器请求（如测试）下可能失败
+          }
+        }
         return await handler(req);
       } catch (error) {
         return defaultErrorHandler(error);

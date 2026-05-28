@@ -10,6 +10,7 @@ import type { Middleware, Router, RouteSchemaConfig } from "@ventostack/core";
 import type { Cache } from "@ventostack/cache";
 import type { PasskeyService } from "../services/passkey";
 import type { AuthService } from "../services/auth";
+import type { ConfigService } from "../services/config";
 import { ok, fail, parseBody } from "./common";
 
 /** IP 每分钟最大请求次数 */
@@ -17,14 +18,12 @@ const MAX_IP_REQUESTS_PER_MINUTE = 20;
 /** IP 限流窗口（秒） */
 const IP_RATE_WINDOW = 60;
 
-/** 从请求中提取客户端 IP */
+/** 从请求中提取客户端 IP（优先代理头，回退到 Bun 注入的 x-real-ip） */
 function getClientIP(request: Request): string {
-  // 优先使用 X-Forwarded-For（需在反向代理后使用）
   const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) {
-    // 取第一个（最外层代理添加的客户端 IP）
-    return forwarded.split(",")[0]!.trim();
-  }
+  if (forwarded) return forwarded.split(",")[0]!.trim();
+  const realIP = request.headers.get("x-real-ip");
+  if (realIP) return realIP.trim();
   return "unknown";
 }
 
@@ -39,6 +38,7 @@ export function createPasskeyRoutes(
   authService: AuthService,
   authMiddleware: Middleware,
   cache: Cache,
+  configService: ConfigService,
 ): Router {
   const router = createRouter();
 
@@ -56,6 +56,12 @@ export function createPasskeyRoutes(
     openapi: { summary: "开始 Passkey 登录", tags: ["auth", "passkey"], operationId: "passkeyLoginBegin" },
   }, async (ctx) => {
     try {
+      // 检查 Passkey 是否全局启用
+      const enabled = (await configService.getValue("sys_passkey_enabled")) !== "false";
+      if (!enabled) {
+        return fail("通行密钥登录未启用", 403);
+      }
+
       // IP 速率限制
       const ip = getClientIP(ctx.request);
       const ipKey = `passkey_ip:${ip}`;
@@ -90,6 +96,12 @@ export function createPasskeyRoutes(
     openapi: { summary: "完成 Passkey 登录", tags: ["auth", "passkey"], operationId: "passkeyLoginFinish" },
   }, async (ctx) => {
     try {
+      // 检查 Passkey 是否全局启用
+      const enabled = (await configService.getValue("sys_passkey_enabled")) !== "false";
+      if (!enabled) {
+        return fail("通行密钥登录未启用", 403);
+      }
+
       const body = await parseBody(ctx.request);
       const { userId, username } = await passkeyService.finishAuthentication(
         body.challengeId as string,

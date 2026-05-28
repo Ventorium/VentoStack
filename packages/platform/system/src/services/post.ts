@@ -31,6 +31,7 @@ export interface PostItem {
   sort: number;
   status: number;
   remark: string;
+  createdAt: string;
 }
 
 /** 分页查询结果 */
@@ -111,7 +112,7 @@ export function createPostService(deps: { db: Database }): PostService {
     const total = await query.count();
 
     const rows = await query
-      .select("id", "name", "code", "sort", "status", "remark")
+      .select("id", "name", "code", "sort", "status", "remark", "created_at")
       .orderBy("sort", "asc")
       .orderBy("id", "asc")
       .limit(pageSize)
@@ -125,6 +126,7 @@ export function createPostService(deps: { db: Database }): PostService {
       sort: row.sort ?? 0,
       status: row.status ?? 1,
       remark: row.remark ?? "",
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
     }));
 
     return {

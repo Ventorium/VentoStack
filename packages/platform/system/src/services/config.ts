@@ -44,6 +44,7 @@ export interface ConfigItem {
   type: number;
   group: string;
   remark: string;
+  createdAt: string;
 }
 
 /** 系统配置列表查询参数 */
@@ -139,6 +140,7 @@ export function createConfigService(deps: { db: Database; cache: Cache }): Confi
       type: row.type ?? 0,
       group: row.group ?? "",
       remark: row.remark ?? "",
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
     }));
 
     return {

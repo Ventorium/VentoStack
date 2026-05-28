@@ -39,6 +39,7 @@ export interface NoticeItem {
   status: number;
   publisherId: string;
   publishAt: string | null;
+  createdAt: string;
 }
 
 /** 通知列表查询参数 */
@@ -122,7 +123,7 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
     const total = await query.count();
 
     const rows = await query
-      .select("id", "title", "content", "type", "status", "publisher_id", "publish_at")
+      .select("id", "title", "content", "type", "status", "publisher_id", "publish_at", "created_at")
       .orderBy("id", "desc")
       .limit(pageSize)
       .offset((page - 1) * pageSize)
@@ -136,6 +137,7 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
       status: row.status ?? 0,
       publisherId: row.publisher_id ?? "",
       publishAt: row.publish_at ? String(row.publish_at) : null,
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
     }));
 
     return {

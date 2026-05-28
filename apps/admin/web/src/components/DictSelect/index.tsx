@@ -12,7 +12,7 @@ const DictSelect = ({ typeCode, autoload = true, ...rest }: DictSelectProps) => 
 
   const selectOptions = (options ?? []).map((item) => ({
     label: item.label,
-    value: item.value,
+    value: /^-?\d+$/.test(item.value) ? Number(item.value) : item.value,
   }))
 
   return <Select {...rest} loading={loading} options={loading ? [] : selectOptions} suffixIcon={loading ? <Spin size="small" /> : null} />

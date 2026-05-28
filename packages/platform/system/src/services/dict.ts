@@ -37,6 +37,7 @@ export interface DictTypeItem {
   code: string;
   status: number;
   remark: string;
+  createdAt: string;
 }
 
 /** 字典数据创建参数 */
@@ -146,7 +147,7 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
     const total = await db.query(DictTypeModel).count();
 
     const rows = await db.query(DictTypeModel)
-      .select("id", "name", "code", "status", "remark")
+      .select("id", "name", "code", "status", "remark", "created_at")
       .orderBy("id", "asc")
       .limit(pageSize)
       .offset((page - 1) * pageSize)
@@ -158,6 +159,7 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
       code: row.code,
       status: row.status ?? 1,
       remark: row.remark ?? "",
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
     }));
 
     return {

@@ -154,30 +154,36 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         mfaEnabled: { type: "boolean" as const, description: "是否启用 MFA" },
         mfaForce: { type: "boolean" as const, description: "是否强制 MFA" },
         passkeyEnabled: { type: "boolean" as const, description: "是否启用 Passkey" },
+        passwordMinLength: { type: "number" as const, description: "密码最小长度" },
+        passwordComplexity: { type: "string" as const, description: "密码复杂度: low/medium/high" },
       },
     },
     openapi: { summary: "获取公开配置", tags: ["config"], operationId: "getPublicConfig" },
   }, async () => {
-    const [siteName, theme, deptEnabled, mfaEnabled, mfaForce, passkeyEnabled] = await Promise.all([
+    const [siteName, theme, deptEnabled, mfaEnabled, mfaForce, passkeyEnabled, passwordMinLength, passwordComplexity] = await Promise.all([
       configService.getValue("sys_site_name"),
       configService.getValue("sys_theme"),
       configService.getValue("sys_dept_enabled"),
       configService.getValue("sys_mfa_enabled"),
       configService.getValue("sys_mfa_force"),
       configService.getValue("sys_passkey_enabled"),
+      configService.getValue("sys_password_min_length"),
+      configService.getValue("sys_password_complexity"),
     ]);
     return ok({
       siteName: siteName ?? "VentoStack",
       theme: theme ?? "light",
       deptEnabled: deptEnabled !== "false",
-      mfaEnabled: mfaEnabled === "true",
+      mfaEnabled: mfaEnabled !== "false",
       mfaForce: mfaForce === "true",
       passkeyEnabled: passkeyEnabled !== "false",
+      passwordMinLength: Number(passwordMinLength) || 6,
+      passwordComplexity: passwordComplexity === "medium" || passwordComplexity === "high" ? passwordComplexity : "low",
     });
   });
 
   router.merge(createAuthRoutes(authService, authMiddleware));
-  router.merge(createPasskeyRoutes(passkeyService, authService, authMiddleware, cache));
+  router.merge(createPasskeyRoutes(passkeyService, authService, authMiddleware, cache, configService));
   router.merge(createUserRoutes(userService, authMiddleware, perm, opLogMiddleware));
 
   // CRUD routes for other entities
@@ -240,6 +246,25 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         await roleService.assignDataScope(id, body.scope as number, body.deptIds as string[] | undefined);
         return ok(null);
       }, perm("system", "role:update"));
+      // Batch delete roles
+      r.post("/api/system/roles/batch-delete", {
+        body: { ids: { type: "array" as const, required: true, description: "角色 ID 列表" } },
+        openapi: { summary: "批量删除角色", tags: ["role"] },
+      }, async (ctx) => {
+        const body = await parseBody(ctx.request);
+        const ids = (body.ids as string[]) ?? [];
+        let success = 0, skipped = 0;
+        for (const id of ids) {
+          try {
+            // Check if role has users assigned
+            const cnt = await db.raw("SELECT COUNT(*) as cnt FROM sys_user_role WHERE role_id = $1", [id]) as Array<{ cnt: number }>;
+            if (Number(cnt[0]?.cnt ?? 0) > 0) { skipped++; continue; }
+            await roleService.delete(id);
+            success++;
+          } catch { skipped++; }
+        }
+        return ok({ success, skipped });
+      }, perm("system", "role:delete"));
     },
   }));
 
@@ -361,6 +386,25 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         const tree = await deptService.getTree();
         return ok(tree);
       }, perm("system", "dept:list"));
+      // Batch delete depts
+      r.post("/api/system/depts/batch-delete", {
+        body: { ids: { type: "array" as const, required: true, description: "部门 ID 列表" } },
+        openapi: { summary: "批量删除部门", tags: ["dept"] },
+      }, async (ctx) => {
+        const body = await parseBody(ctx.request);
+        const ids = (body.ids as string[]) ?? [];
+        let success = 0, skipped = 0;
+        for (const id of ids) {
+          try {
+            // Check if dept has children
+            const children = await db.raw("SELECT COUNT(*) as cnt FROM sys_dept WHERE parent_id = $1 AND deleted_at IS NULL", [id]) as Array<{ cnt: number }>;
+            if (Number(children[0]?.cnt ?? 0) > 0) { skipped++; continue; }
+            await deptService.delete(id);
+            success++;
+          } catch { skipped++; }
+        }
+        return ok({ success, skipped });
+      }, perm("system", "dept:delete"));
     },
   }));
 
@@ -398,6 +442,21 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         status: { type: "int" as const, description: "状态" },
         remark: { type: "string" as const, description: "备注" },
       },
+    },
+    extraRoutes: (r) => {
+      // Batch delete posts
+      r.post("/api/system/posts/batch-delete", {
+        body: { ids: { type: "array" as const, required: true, description: "岗位 ID 列表" } },
+        openapi: { summary: "批量删除岗位", tags: ["post"] },
+      }, async (ctx) => {
+        const body = await parseBody(ctx.request);
+        const ids = (body.ids as string[]) ?? [];
+        let success = 0, skipped = 0;
+        for (const id of ids) {
+          try { await postService.delete(id); success++; } catch { skipped++; }
+        }
+        return ok({ success, skipped });
+      }, perm("system", "post:delete"));
     },
   }));
 
@@ -553,6 +612,52 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         await noticeService.markRead(user.id, id);
         return ok(null);
       });
+      // Batch publish
+      r.post("/api/system/notices/batch-publish", {
+        body: { ids: { type: "array" as const, required: true, description: "通知 ID 列表" } },
+        openapi: { summary: "批量发布通知", tags: ["notice"] },
+      }, async (ctx) => {
+        const body = await parseBody(ctx.request);
+        const ids = (body.ids as string[]) ?? [];
+        const user = ctx.user as { id: string };
+        let success = 0, skipped = 0;
+        for (const id of ids) {
+          const rows = await db.raw("SELECT status FROM sys_notice WHERE id = $1 AND deleted_at IS NULL", [id]) as Array<{ status: number }>;
+          if (!rows.length || rows[0]!.status === 1) { skipped++; continue; }
+          await noticeService.publish(id, user.id);
+          success++;
+        }
+        return ok({ success, skipped });
+      }, perm("system", "notice:update"));
+      // Batch revoke (unpublish)
+      r.post("/api/system/notices/batch-revoke", {
+        body: { ids: { type: "array" as const, required: true, description: "通知 ID 列表" } },
+        openapi: { summary: "批量撤回通知", tags: ["notice"] },
+      }, async (ctx) => {
+        const body = await parseBody(ctx.request);
+        const ids = (body.ids as string[]) ?? [];
+        let success = 0, skipped = 0;
+        for (const id of ids) {
+          const rows = await db.raw("SELECT status FROM sys_notice WHERE id = $1 AND deleted_at IS NULL", [id]) as Array<{ status: number }>;
+          if (!rows.length || rows[0]!.status !== 1) { skipped++; continue; }
+          await noticeService.revoke(id);
+          success++;
+        }
+        return ok({ success, skipped });
+      }, perm("system", "notice:update"));
+      // Batch delete
+      r.post("/api/system/notices/batch-delete", {
+        body: { ids: { type: "array" as const, required: true, description: "通知 ID 列表" } },
+        openapi: { summary: "批量删除通知", tags: ["notice"] },
+      }, async (ctx) => {
+        const body = await parseBody(ctx.request);
+        const ids = (body.ids as string[]) ?? [];
+        let success = 0, skipped = 0;
+        for (const id of ids) {
+          try { await noticeService.delete(id); success++; } catch { skipped++; }
+        }
+        return ok({ success, skipped });
+      }, perm("system", "notice:delete"));
     },
   }));
 
@@ -771,6 +876,19 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     await dictService.deleteData(id);
     return ok(null);
   }, perm("system", "dict:delete"));
+  // Batch delete dict data
+  userRouter.post("/api/system/dict/data/batch-delete", {
+    body: { ids: { type: "array" as const, required: true, description: "字典数据 ID 列表" } },
+    openapi: { summary: "批量删除字典数据", tags: ["dict"] },
+  }, async (ctx) => {
+    const body = await parseBody(ctx.request);
+    const ids = (body.ids as string[]) ?? [];
+    let success = 0, skipped = 0;
+    for (const id of ids) {
+      try { await dictService.deleteData(id); success++; } catch { skipped++; }
+    }
+    return ok({ success, skipped });
+  }, perm("system", "dict:delete"));
 
   // === Notice revoke ===
   userRouter.put("/api/system/notices/:id/revoke", {
@@ -802,6 +920,57 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     await cache.del(`user:detail:${id}`);
     return ok(null);
   }, perm("system", "user:update"));
+
+  // Batch delete users
+  userRouter.post("/api/system/users/batch-delete", {
+    body: { ids: { type: "array" as const, required: true, description: "用户 ID 列表" } },
+    openapi: { summary: "批量删除用户", tags: ["user"] },
+  }, async (ctx) => {
+    const body = await parseBody(ctx.request);
+    const ids = (body.ids as string[]) ?? [];
+    const user = ctx.user as { id: string };
+    let success = 0, skipped = 0;
+    for (const id of ids) {
+      if (id === user.id) { skipped++; continue; }
+      try { await userService.delete(id); success++; } catch { skipped++; }
+    }
+    return ok({ success, skipped });
+  }, perm("system", "user:delete"));
+
+  // Batch update user status
+  userRouter.post("/api/system/users/batch-status", {
+    body: { ids: { type: "array" as const, required: true, description: "用户 ID 列表" }, status: { type: "int" as const, required: true, description: "目标状态 0=停用 1=正常" } },
+    openapi: { summary: "批量修改用户状态", tags: ["user"] },
+  }, async (ctx) => {
+    const body = await parseBody(ctx.request);
+    const ids = (body.ids as string[]) ?? [];
+    const targetStatus = body.status as number;
+    const user = ctx.user as { id: string };
+    let success = 0, skipped = 0;
+    for (const id of ids) {
+      if (id === user.id) { skipped++; continue; }
+      const row = await db.query(UserModel).where("id", "=", id).select("status").get();
+      if (!row || row.status === targetStatus) { skipped++; continue; }
+      await userService.updateStatus(id, targetStatus);
+      success++;
+    }
+    return ok({ success, skipped });
+  }, perm("system", "user:update"));
+
+  // Batch reset user passwords
+  userRouter.post("/api/system/users/batch-reset-pwd", {
+    body: { ids: { type: "array" as const, required: true, description: "用户 ID 列表" } },
+    openapi: { summary: "批量重置用户密码", tags: ["user"] },
+  }, async (ctx) => {
+    const body = await parseBody(ctx.request);
+    const ids = (body.ids as string[]) ?? [];
+    const defaultPwd = (await configService.getValue("sys_user_init_password")) || "123456";
+    let success = 0, skipped = 0;
+    for (const id of ids) {
+      try { await userService.resetPassword(id, defaultPwd); success++; } catch { skipped++; }
+    }
+    return ok({ success, skipped });
+  }, perm("system", "user:resetPwd"));
 
   // === Operation logs (read-only) ===
   const opLogPerm = perm("system", "log:list");
@@ -839,7 +1008,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     const total = Number((countResult as Array<Record<string, unknown>>)[0]?.cnt ?? 0);
 
     const rows = await db.raw(
-      `SELECT * FROM sys_operation_log ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT id, user_id as "userId", username, module, action, method, url, ip, params, result, error_msg as "errorMsg", duration, created_at as "createdAt" FROM sys_operation_log ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, pageSize, offset],
     );
 
@@ -879,7 +1048,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     const total = Number((countResult as Array<Record<string, unknown>>)[0]?.cnt ?? 0);
 
     const rows = await db.raw(
-      `SELECT * FROM sys_login_log ${where} ORDER BY login_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
+      `SELECT id, user_id as "userId", username, ip, location, browser, os, status, message, login_method as "loginMethod", login_at as "loginAt", created_at as "createdAt" FROM sys_login_log ${where} ORDER BY login_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
       [...params, pageSize, offset],
     );
 
