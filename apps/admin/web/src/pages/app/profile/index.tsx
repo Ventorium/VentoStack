@@ -28,6 +28,19 @@ interface MFASetupData {
   recoveryCodes: string[]
 }
 
+const getPasswordRules = (minLength: number, complexity: 'low' | 'medium' | 'high') => {
+  const rules: Array<{ required: boolean; message: string } | { min: number; message: string } | { pattern: RegExp; message: string }> = [
+    { required: true, message: '请输入新密码' },
+    { min: minLength, message: `密码不能少于${minLength}位` },
+  ]
+  if (complexity === 'medium') {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码需包含字母和数字' })
+  } else if (complexity === 'high') {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/, message: '密码需包含字母、数字和特殊字符' })
+  }
+  return rules
+}
+
 export default function ProfilePage() {
   const [profileForm] = Form.useForm()
   const [passwordForm] = Form.useForm()
@@ -47,6 +60,8 @@ export default function ProfilePage() {
 
   const mfaGloballyEnabled = usePublicConfig(s => s.config.mfaEnabled)
   const mfaForce = usePublicConfig(s => s.config.mfaForce)
+  const passwordMinLength = usePublicConfig(s => s.config.passwordMinLength)
+  const passwordComplexity = usePublicConfig(s => s.config.passwordComplexity)
 
   const { loading: logsLoading, data: logsData, total: logsTotal, page: logsPage, pageSize: logsPageSize, refresh, onPageChange } = useTable<LoginLogItem>(
     async (params) => {
@@ -321,10 +336,7 @@ export default function ProfilePage() {
         <Form.Item
           label="新密码"
           name="newPassword"
-          rules={[
-            { required: true, message: '请输入新密码' },
-            { min: 8, message: '密码至少8位' }
-          ]}
+          rules={getPasswordRules(passwordMinLength, passwordComplexity)}
         >
           <Input.Password placeholder="请输入新密码" />
         </Form.Item>

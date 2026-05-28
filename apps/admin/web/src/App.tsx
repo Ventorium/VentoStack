@@ -64,6 +64,12 @@ function App() {
       })
   }, [])
 
+  useEffect(() => {
+    if (publicConfig.siteName) {
+      document.title = `${publicConfig.siteName} 管理后台`
+    }
+  }, [publicConfig.siteName])
+
   const algorithm = publicConfig.theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
 
   return (

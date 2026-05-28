@@ -67,7 +67,15 @@ export type OpenAPIs = {
         /**
          * @description 是否启用 Passkey
          */
-        passkeyEnabled?: boolean
+        passkeyEnabled?: boolean,
+        /**
+         * @description 密码最小长度
+         */
+        passwordMinLength?: number,
+        /**
+         * @description 密码复杂度: low/medium/high
+         */
+        passwordComplexity?: string
       }
     },
     /**
@@ -1540,6 +1548,21 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 批量删除角色
+     */
+    '/api/system/roles/batch-delete': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 角色 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
      * 创建system:menu
      */
     '/api/system/menus': {
@@ -1641,6 +1664,21 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 批量删除部门
+     */
+    '/api/system/depts/batch-delete': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 部门 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
      * 创建system:post
      */
     '/api/system/posts': {
@@ -1675,6 +1713,21 @@ export type OpenAPIs = {
          */
         id?: string
       }
+    },
+    /**
+     * 批量删除岗位
+     */
+    '/api/system/posts/batch-delete': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 岗位 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
     },
     /**
      * 创建system:dict
@@ -1773,6 +1826,51 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 批量发布通知
+     */
+    '/api/system/notices/batch-publish': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 通知 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
+     * 批量撤回通知
+     */
+    '/api/system/notices/batch-revoke': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 通知 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
+     * 批量删除通知
+     */
+    '/api/system/notices/batch-delete': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 通知 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
      * 上传头像
      */
     '/api/system/user/profile/avatar': {
@@ -1827,6 +1925,70 @@ export type OpenAPIs = {
          */
         id?: string
       }
+    },
+    /**
+     * 批量删除字典数据
+     */
+    '/api/system/dict/data/batch-delete': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 字典数据 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
+     * 批量删除用户
+     */
+    '/api/system/users/batch-delete': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 用户 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
+    },
+    /**
+     * 批量修改用户状态
+     */
+    '/api/system/users/batch-status': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 用户 ID 列表
+         */
+        ids: any[],
+        /**
+         * @description 目标状态 0=停用 1=正常
+         */
+        status: number
+      },
+      response: any
+    },
+    /**
+     * 批量重置用户密码
+     */
+    '/api/system/users/batch-reset-pwd': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 用户 ID 列表
+         */
+        ids: any[]
+      },
+      response: any
     },
     '/api/system/gen/tables/import': {
       query: never,

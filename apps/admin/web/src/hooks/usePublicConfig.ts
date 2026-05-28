@@ -7,6 +7,8 @@ export interface PublicConfig {
   mfaEnabled: boolean
   mfaForce: boolean
   passkeyEnabled: boolean
+  passwordMinLength: number
+  passwordComplexity: 'low' | 'medium' | 'high'
 }
 
 interface PublicConfigState {
@@ -22,6 +24,8 @@ const defaultConfig: PublicConfig = {
   mfaEnabled: false,
   mfaForce: false,
   passkeyEnabled: true,
+  passwordMinLength: 6,
+  passwordComplexity: 'low',
 }
 
 export const usePublicConfig = create<PublicConfigState>((set) => ({
@@ -40,6 +44,8 @@ export const usePublicConfig = create<PublicConfigState>((set) => ({
             mfaEnabled: data.data.mfaEnabled ?? defaultConfig.mfaEnabled,
             mfaForce: data.data.mfaForce ?? defaultConfig.mfaForce,
             passkeyEnabled: data.data.passkeyEnabled ?? defaultConfig.passkeyEnabled,
+            passwordMinLength: data.data.passwordMinLength ?? defaultConfig.passwordMinLength,
+            passwordComplexity: data.data.passwordComplexity ?? defaultConfig.passwordComplexity,
           },
           loaded: true,
         })

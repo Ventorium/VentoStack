@@ -8,11 +8,26 @@ import { usePublicConfig } from '@/hooks/usePublicConfig'
 import { client } from '@/api'
 import { STORAGE_KEYS } from '@/constants'
 
+const getPasswordRules = (minLength: number, complexity: 'low' | 'medium' | 'high') => {
+  const rules: Array<{ required: boolean; message: string } | { min: number; message: string } | { pattern: RegExp; message: string }> = [
+    { required: true, message: '请输入新密码' },
+    { min: minLength, message: `密码不能少于${minLength}位` },
+  ]
+  if (complexity === 'medium') {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码需包含字母和数字' })
+  } else if (complexity === 'high') {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/, message: '密码需包含字母、数字和特殊字符' })
+  }
+  return rules
+}
+
 const LoginPage = () => {
   const navigate = useNavigate()
   const { login, completeMFALogin, passkeyLogin } = useAuth()
   const siteName = usePublicConfig(s => s.config.siteName)
   const passkeyEnabled = usePublicConfig(s => s.config.passkeyEnabled)
+  const passwordMinLength = usePublicConfig(s => s.config.passwordMinLength)
+  const passwordComplexity = usePublicConfig(s => s.config.passwordComplexity)
   const [form] = Form.useForm<LoginForm>()
   const [loading, setLoading] = useState(false)
   const [passkeyLoading, setPasskeyLoading] = useState(false)
@@ -235,7 +250,7 @@ const LoginPage = () => {
       >
         <p className="text-gray-500 mb-4">您的密码已过期，请修改密码后重新登录。</p>
         <Form form={pwdForm} layout="vertical">
-          <Form.Item name="newPassword" label="新密码" rules={[{ required: true, message: '请输入新密码' }, { min: 6, message: '密码不能少于6位' }]}>
+          <Form.Item name="newPassword" label="新密码" rules={getPasswordRules(passwordMinLength, passwordComplexity)}>
             <Input.Password placeholder="请输入新密码" />
           </Form.Item>
           <Form.Item name="confirmPassword" label="确认密码" rules={[{ required: true, message: '请确认密码' }]}>
