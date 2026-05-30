@@ -141,7 +141,16 @@ export interface OutboundWebhookManager {
   unsubscribe(subscriptionId: string): boolean;
   getSubscription(subscriptionId: string): WebhookSubscription | undefined;
   listSubscriptions(filter?: { event?: string; active?: boolean }): WebhookSubscription[];
-  send(event: string, payload: unknown, context?: { source?: string; metadata?: Record<string, unknown>; eventId?: string; eventTimestamp?: number }): Promise<string[]>;
+  send(
+    event: string,
+    payload: unknown,
+    context?: {
+      source?: string;
+      metadata?: Record<string, unknown>;
+      eventId?: string;
+      eventTimestamp?: number;
+    },
+  ): Promise<string[]>;
   sendEvent(event: WebhookEvent): Promise<string[]>;
   retry(): Promise<number>;
   getDelivery(deliveryId: string): WebhookDelivery | undefined;

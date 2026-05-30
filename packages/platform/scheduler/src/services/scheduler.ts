@@ -6,7 +6,7 @@
 
 import type { Database } from "@ventostack/database";
 import type { Scheduler } from "@ventostack/events";
-import { ScheduleJobModel, ScheduleJobLogModel } from "../models";
+import { ScheduleJobLogModel, ScheduleJobModel } from "../models";
 
 /** 任务状态枚举 */
 export const JobStatus = { PAUSED: 0, RUNNING: 1 } as const;
@@ -58,7 +58,10 @@ export interface PaginatedResult<T> {
 }
 
 /** 任务处理器注册表 */
-export type JobHandlerMap = Record<string, (params?: Record<string, unknown>) => Promise<void> | void>;
+export type JobHandlerMap = Record<
+  string,
+  (params?: Record<string, unknown>) => Promise<void> | void
+>;
 
 /** 调度服务接口 */
 export interface SchedulerService {
@@ -66,11 +69,15 @@ export interface SchedulerService {
   update(id: string, params: Partial<CreateJobParams>): Promise<void>;
   delete(id: string): Promise<void>;
   getById(id: string): Promise<ScheduleJob | null>;
-  list(params?: { status?: number; page?: number; pageSize?: number }): Promise<PaginatedResult<ScheduleJob>>;
+  list(params?: { status?: number; page?: number; pageSize?: number }): Promise<
+    PaginatedResult<ScheduleJob>
+  >;
   start(id: string): Promise<void>;
   stop(id: string): Promise<void>;
   executeNow(id: string): Promise<void>;
-  listLogs(params: { jobId?: string; status?: number; page?: number; pageSize?: number }): Promise<PaginatedResult<ScheduleJobLog>>;
+  listLogs(params: { jobId?: string; status?: number; page?: number; pageSize?: number }): Promise<
+    PaginatedResult<ScheduleJobLog>
+  >;
 }
 
 export function createSchedulerService(deps: {
@@ -83,7 +90,13 @@ export function createSchedulerService(deps: {
   /** In-memory map of running scheduled tasks: jobId -> ScheduledTask */
   const runningTasks = new Map<string, { stop: () => void }>();
 
-  async function writeLog(jobId: string, status: number, result?: string, error?: string, durationMs?: number) {
+  async function writeLog(
+    jobId: string,
+    status: number,
+    result?: string,
+    error?: string,
+    durationMs?: number,
+  ) {
     await db.query(ScheduleJobLogModel).insert({
       id: crypto.randomUUID(),
       job_id: jobId,
@@ -97,9 +110,20 @@ export function createSchedulerService(deps: {
   }
 
   async function getByIdInternal(id: string): Promise<ScheduleJob | null> {
-    const row = await db.query(ScheduleJobModel)
+    const row = await db
+      .query(ScheduleJobModel)
       .where("id", "=", id)
-      .select("id", "name", "handler_id", "cron", "params", "status", "description", "created_at", "updated_at")
+      .select(
+        "id",
+        "name",
+        "handler_id",
+        "cron",
+        "params",
+        "status",
+        "description",
+        "created_at",
+        "updated_at",
+      )
       .get();
     if (!row) return null;
     return {
@@ -163,7 +187,7 @@ export function createSchedulerService(deps: {
         },
       },
       async () => {
-        const params = job.params as Record<string, unknown> | null ?? undefined;
+        const params = (job.params as Record<string, unknown> | null) ?? undefined;
         await handler(params);
       },
     );
@@ -235,7 +259,17 @@ export function createSchedulerService(deps: {
       const total = await query.count();
 
       const rows = await query
-        .select("id", "name", "handler_id", "cron", "params", "status", "description", "created_at", "updated_at")
+        .select(
+          "id",
+          "name",
+          "handler_id",
+          "cron",
+          "params",
+          "status",
+          "description",
+          "created_at",
+          "updated_at",
+        )
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -253,7 +287,13 @@ export function createSchedulerService(deps: {
         updatedAt: row.updated_at.toISOString(),
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async start(id) {
@@ -283,7 +323,7 @@ export function createSchedulerService(deps: {
       const startMs = Date.now();
       await writeLog(id, LogStatus.RUNNING);
       try {
-        const params = job.params as Record<string, unknown> | null ?? undefined;
+        const params = (job.params as Record<string, unknown> | null) ?? undefined;
         await handler(params);
         const duration = Date.now() - startMs;
         // UPDATE...ORDER BY...LIMIT, keep as db.raw
@@ -330,7 +370,13 @@ export function createSchedulerService(deps: {
         durationMs: row.duration_ms != null ? Number(row.duration_ms) : null,
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
   };
 }

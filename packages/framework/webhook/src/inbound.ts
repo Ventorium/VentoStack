@@ -3,6 +3,7 @@
  * 通过 Provider 体系验证入站签名，转换为统一 WebhookEvent
  */
 
+import { hmacSign, timingSafeEqual } from "./crypto";
 import type {
   InboundVerifier,
   ProviderVerifyConfig,
@@ -10,7 +11,6 @@ import type {
   WebhookEvent,
   WebhookProviderVerifier,
 } from "./types";
-import { hmacSign, timingSafeEqual } from "./crypto";
 
 /**
  * 创建入站 Webhook 验证器
@@ -32,9 +32,7 @@ export function createInboundVerifier(options: {
       const result = await options.provider.verify(rawBody, headers, options.config);
 
       if (!result.valid) {
-        throw new Error(
-          `Webhook verification failed: ${result.reason ?? "invalid signature"}`,
-        );
+        throw new Error(`Webhook verification failed: ${result.reason ?? "invalid signature"}`);
       }
 
       let payload: unknown;
@@ -93,8 +91,7 @@ export function createGenericHmacVerifier(
       // 支持带前缀格式如 "sha256=xxx"
       const expectedWithPrefix = `${algorithm}=${expected}`;
       const match =
-        timingSafeEqual(signature, expected) ||
-        timingSafeEqual(signature, expectedWithPrefix);
+        timingSafeEqual(signature, expected) || timingSafeEqual(signature, expectedWithPrefix);
 
       if (!match) {
         return { valid: false, reason: "Signature mismatch" };

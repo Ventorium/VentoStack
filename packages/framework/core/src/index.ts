@@ -30,7 +30,14 @@ export type { ClientIPOptions } from "./client-ip";
 export type { Middleware, NextFunction } from "./middleware";
 
 // ========== 配置系统 ==========
-export { createConfig, loadConfig, parseArgs, safeConfig, securityPrecheck, sanitizeConfig } from "./config";
+export {
+  createConfig,
+  loadConfig,
+  parseArgs,
+  safeConfig,
+  securityPrecheck,
+  sanitizeConfig,
+} from "./config";
 export type {
   ConfigSchema,
   ConfigFieldDef,
@@ -87,7 +94,11 @@ export type {
 } from "./circuit-breaker";
 
 // ========== 限流中间件 ==========
-export { rateLimit, createMemoryRateLimitStore, createRedisRateLimitStore } from "./middlewares/rate-limit";
+export {
+  rateLimit,
+  createMemoryRateLimitStore,
+  createRedisRateLimitStore,
+} from "./middlewares/rate-limit";
 export type {
   RateLimitOptions,
   RateLimitStore,

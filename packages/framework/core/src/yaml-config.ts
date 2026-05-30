@@ -1,6 +1,11 @@
 // @ventostack/core - YAML 配置文件支持
 
-import { attachConfigInspection, type ConfigSchema, type ConfigValue, resolveConfigSchema } from "./config";
+import {
+  type ConfigSchema,
+  type ConfigValue,
+  attachConfigInspection,
+  resolveConfigSchema,
+} from "./config";
 
 /**
  * 解析 YAML 字符串为 JavaScript 对象。
@@ -203,5 +208,13 @@ export async function loadYAMLConfig<const T extends ConfigSchema>(
     return resolved as Record<string, unknown>;
   }
 
-  return attachConfigInspection(schema, resolveConfigSchema(schema, mergedEnv, "", resolved as Record<string, unknown>) as ConfigValue<T>);
+  return attachConfigInspection(
+    schema,
+    resolveConfigSchema(
+      schema,
+      mergedEnv,
+      "",
+      resolved as Record<string, unknown>,
+    ) as ConfigValue<T>,
+  );
 }

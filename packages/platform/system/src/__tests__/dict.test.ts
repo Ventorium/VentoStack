@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createDictService } from "../services/dict";
-import { createMockExecutor, createMockDatabase, createTestCache } from "./helpers";
+import { createMockDatabase, createMockExecutor, createTestCache } from "./helpers";
 
 function setup() {
   const mockExec = createMockExecutor();
@@ -28,7 +28,9 @@ describe("DictService", () => {
     const s = setup();
     s.results.set("INSERT", [{ id: "dd1" }]);
     const result = await s.dictService.createData({
-      typeCode: "status", label: "启用", value: "1",
+      typeCode: "status",
+      label: "启用",
+      value: "1",
     });
     expect(result.id).toBeTruthy();
   });
@@ -63,12 +65,12 @@ describe("DictService", () => {
   test("updateType updates dict type", async () => {
     const s = setup();
     await s.dictService.updateType("status", { name: "状态v2" });
-    expect(s.calls.some(c => c.text.includes("UPDATE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
   });
 
   test("deleteType removes dict type", async () => {
     const s = setup();
     await s.dictService.deleteType("status");
-    expect(s.calls.some(c => c.text.includes("DELETE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("DELETE"))).toBe(true);
   });
 });

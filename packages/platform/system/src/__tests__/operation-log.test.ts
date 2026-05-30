@@ -6,17 +6,24 @@ import { describe, expect, test } from "bun:test";
 import { createOperationLogMiddleware } from "../middlewares/operation-log";
 import { createMockAuditStore } from "./helpers";
 
-function mockCtx(overrides: Partial<{
-  method: string;
-  path: string;
-  user: unknown;
-  body: unknown;
-}> = {}) {
+function mockCtx(
+  overrides: Partial<{
+    method: string;
+    path: string;
+    user: unknown;
+    body: unknown;
+    request: Request;
+  }> = {},
+) {
+  const method = overrides.method ?? "POST";
+  const path = overrides.path ?? "/api/test";
+  const req = overrides.request ?? new Request(`http://localhost${path}`, { method });
   return {
-    method: overrides.method ?? "POST",
-    path: overrides.path ?? "/api/test",
+    method,
+    path,
     user: overrides.user ?? { id: "u1", username: "admin" },
     body: overrides.body,
+    request: req,
   } as any;
 }
 
@@ -120,7 +127,9 @@ describe("OperationLogMiddleware", () => {
     const auditLog = createMockAuditStore();
     const middleware = createOperationLogMiddleware(auditLog);
     const ctx = mockCtx({ method: "POST" });
-    const failingNext = async () => { throw new Error("Internal error"); };
+    const failingNext = async () => {
+      throw new Error("Internal error");
+    };
     await expect(middleware(ctx, failingNext)).rejects.toThrow("Internal error");
     expect(auditLog.append).toHaveBeenCalledTimes(1);
     const call = (auditLog.append as any).mock.calls[0][0];

@@ -50,10 +50,18 @@ export interface DatabaseConfig {
 export interface QueryExecutor<T, S extends keyof T = keyof T> {
   // WHERE 条件
   where(field: keyof T, op: "IS NULL" | "IS NOT NULL"): QueryExecutor<T, S>;
-  where(field: keyof T, op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">, value: unknown): QueryExecutor<T, S>;
+  where(
+    field: keyof T,
+    op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">,
+    value: unknown,
+  ): QueryExecutor<T, S>;
   where(field: keyof T, op: WhereOp, value?: unknown): QueryExecutor<T, S>;
   orWhere(field: keyof T, op: "IS NULL" | "IS NOT NULL"): QueryExecutor<T, S>;
-  orWhere(field: keyof T, op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">, value: unknown): QueryExecutor<T, S>;
+  orWhere(
+    field: keyof T,
+    op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">,
+    value: unknown,
+  ): QueryExecutor<T, S>;
   orWhere(field: keyof T, op: WhereOp, value?: unknown): QueryExecutor<T, S>;
 
   // 排序与分页
@@ -202,7 +210,10 @@ function createQueryExecutor<T>(
       },
 
       async count(): Promise<number> {
-        const countBuilder = nextBuilder.select("COUNT(*) as count" as keyof T).clearLimit().clearOffset();
+        const countBuilder = nextBuilder
+          .select("COUNT(*) as count" as keyof T)
+          .clearLimit()
+          .clearOffset();
         const { text, params } = countBuilder.toSQL();
         const rows = await executor(text, params);
         const first = (rows as Array<{ count: number }>)[0];
@@ -325,11 +336,16 @@ export interface SqlExecutorOptions {
  * @param options — 连接选项（max、idle、timeout）
  * @returns SQL 执行器与底层 SQL 实例（用于关闭连接）
  */
-export function createSqlExecutor(url: string, options?: SqlExecutorOptions): { executor: SqlExecutor; close: () => Promise<void> } {
+export function createSqlExecutor(
+  url: string,
+  options?: SqlExecutorOptions,
+): { executor: SqlExecutor; close: () => Promise<void> } {
   // Bun 1.2+ 将 SQL 暴露为全局类（Bun.SQL 或 globalThis.SQL）
   // @ts-ignore - Bun.SQL is only available in Bun 1.2+ runtime
-  const SQLClass: new (options: { url: string; max?: number; idle?: number; timeout?: number }) => { unsafe: (text: string, params?: unknown[]) => Promise<unknown>; close: () => void } =
-    (globalThis as any).SQL ?? (globalThis as any).Bun?.SQL;
+  const SQLClass: new (options: { url: string; max?: number; idle?: number; timeout?: number }) => {
+    unsafe: (text: string, params?: unknown[]) => Promise<unknown>;
+    close: () => void;
+  } = (globalThis as any).SQL ?? (globalThis as any).Bun?.SQL;
 
   if (typeof SQLClass !== "function") {
     throw new Error(

@@ -93,7 +93,10 @@ export interface ModelDefinition<T = Record<string, unknown>> {
  * @param opts — 列选项
  * @returns ColumnDef 对象（options 字段保留具体类型）
  */
-function createColumnDef<T, Opts extends ColumnOptions = ColumnOptions>(type: string, opts?: Opts): ColumnDef<T> & { options: Opts } {
+function createColumnDef<T, Opts extends ColumnOptions = ColumnOptions>(
+  type: string,
+  opts?: Opts,
+): ColumnDef<T> & { options: Opts } {
   return { type, options: (opts ?? {}) as Opts } as ColumnDef<T> & { options: Opts };
 }
 
@@ -103,34 +106,48 @@ function createColumnDef<T, Opts extends ColumnOptions = ColumnOptions>(type: st
  */
 export const column = {
   /** 64 位整型 */
-  bigint<Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<bigint> & { options: Opts } {
+  bigint<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<bigint> & { options: Opts } {
     return createColumnDef<bigint, Opts>("bigint", opts);
   },
   /** 32 位整型 */
-  int<Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<number> & { options: Opts } {
+  int<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<number> & { options: Opts } {
     return createColumnDef<number, Opts>("int", opts);
   },
   /** 变长字符串 */
-  varchar<Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<string> & { options: Opts } {
+  varchar<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<string> & { options: Opts } {
     return createColumnDef<string, Opts>("varchar", opts);
   },
   /** 长文本 */
-  text<Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<string> & { options: Opts } {
+  text<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<string> & { options: Opts } {
     return createColumnDef<string, Opts>("text", opts);
   },
   /** 布尔值 */
-  boolean<Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<boolean> & { options: Opts } {
+  boolean<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<boolean> & { options: Opts } {
     return createColumnDef<boolean, Opts>("boolean", opts);
   },
   /** 时间戳 */
-  timestamp<Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<Date> & { options: Opts } {
+  timestamp<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<Date> & { options: Opts } {
     return createColumnDef<Date, Opts>("timestamp", opts);
   },
   /**
    * JSON 列。
    * @template T — JSON 反序列化后的 TypeScript 类型
    */
-  json<T = unknown, Opts extends ColumnOptions = ColumnOptions>(opts?: Opts): ColumnDef<T> & { options: Opts } {
+  json<T = unknown, Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<T> & { options: Opts } {
     return createColumnDef<T, Opts>("json", opts);
   },
   /**
@@ -138,14 +155,24 @@ export const column = {
    * @template T — 枚举字符串字面量联合类型
    * @param opts — 必须包含 values 数组
    */
-  enum<T extends string, Opts extends ColumnOptions & { values: readonly T[] } = ColumnOptions & { values: readonly T[] }>(opts: Opts): ColumnDef<T> & { options: Opts } {
+  enum<
+    T extends string,
+    Opts extends ColumnOptions & { values: readonly T[] } = ColumnOptions & {
+      values: readonly T[];
+    },
+  >(opts: Opts): ColumnDef<T> & { options: Opts } {
     return createColumnDef<T, Opts>("enum", opts);
   },
   /**
    * 定点数（以字符串存储，避免浮点精度问题）。
    * @param opts — 可包含 precision（精度）与 scale（小数位）
    */
-  decimal<Opts extends ColumnOptions & { precision?: number; scale?: number } = ColumnOptions & { precision?: number; scale?: number }>(opts?: Opts): ColumnDef<string> & { options: Opts } {
+  decimal<
+    Opts extends ColumnOptions & { precision?: number; scale?: number } = ColumnOptions & {
+      precision?: number;
+      scale?: number;
+    },
+  >(opts?: Opts): ColumnDef<string> & { options: Opts } {
     return createColumnDef<string, Opts>("decimal", opts);
   },
 };
@@ -162,24 +189,28 @@ export const column = {
  * 根据 ModelOptions 判断是否启用时间戳列。
  * timestamps 默认为 true，除非显式传入 false。
  */
-type HasTimestamps<O extends ModelOptions | undefined> =
-  O extends { timestamps: false } ? false : true;
+type HasTimestamps<O extends ModelOptions | undefined> = O extends { timestamps: false }
+  ? false
+  : true;
 
 /**
  * 根据 ModelOptions 判断是否启用软删除列。
  */
-type HasSoftDelete<O extends ModelOptions | undefined> =
-  O extends { softDelete: true } ? true : false;
+type HasSoftDelete<O extends ModelOptions | undefined> = O extends { softDelete: true }
+  ? true
+  : false;
 
 /**
  * 根据选项向行类型追加自动维护的列。
  */
-type WithAutoColumns<Row, O extends ModelOptions | undefined> =
-  Row &
+type WithAutoColumns<Row, O extends ModelOptions | undefined> = Row &
   (HasTimestamps<O> extends true ? { created_at: Date; updated_at: Date } : unknown) &
   (HasSoftDelete<O> extends true ? { deleted_at: Date | null } : unknown);
 
-export function defineModel<T extends Record<string, ColumnDef>, O extends ModelOptions = ModelOptions>(
+export function defineModel<
+  T extends Record<string, ColumnDef>,
+  O extends ModelOptions = ModelOptions,
+>(
   tableName: string,
   columns: T,
   options?: O,

@@ -57,20 +57,14 @@ describe("createConfigEncryptor", () => {
   });
 
   test("rejects keys shorter than 32 bytes", () => {
-    expect(() => createConfigEncryptor({ key: "short-key" })).toThrow(
-      "exactly 32 bytes",
-    );
+    expect(() => createConfigEncryptor({ key: "short-key" })).toThrow("exactly 32 bytes");
   });
 
   test("rejects keys longer than 32 bytes", () => {
-    expect(() => createConfigEncryptor({ key: "a".repeat(33) })).toThrow(
-      "exactly 32 bytes",
-    );
+    expect(() => createConfigEncryptor({ key: "a".repeat(33) })).toThrow("exactly 32 bytes");
   });
 
   test("rejects unicode keys that are not 32 bytes after UTF-8 encoding", () => {
-    expect(() => createConfigEncryptor({ key: "密".repeat(16) })).toThrow(
-      "exactly 32 bytes",
-    );
+    expect(() => createConfigEncryptor({ key: "密".repeat(16) })).toThrow("exactly 32 bytes");
   });
 });

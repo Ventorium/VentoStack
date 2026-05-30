@@ -38,3 +38,6 @@ export type { NotificationModule, NotificationModuleDeps } from "./module";
 
 // Migrations
 export { createNotifyTables } from "./migrations/001_create_notify_tables";
+
+// In-App Channel
+export { createInAppChannel } from "./channels/in-app";

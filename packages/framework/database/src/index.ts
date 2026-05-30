@@ -19,7 +19,13 @@
 
 // 数据库核心：配置、创建、执行器与查询入口
 export { createDatabase, createSqlExecutor } from "./database";
-export type { Database, DatabaseConfig, QueryExecutor, SqlExecutor, SqlExecutorOptions } from "./database";
+export type {
+  Database,
+  DatabaseConfig,
+  QueryExecutor,
+  SqlExecutor,
+  SqlExecutorOptions,
+} from "./database";
 
 // 模型定义：列类型、模型工厂与类型推导
 export { defineModel, column } from "./model";

@@ -1,7 +1,7 @@
-import type { Migration } from '@ventostack/database';
+import type { Migration } from "@ventostack/database";
 
 export const createSysTables: Migration = {
-  name: '001_create_sys_tables',
+  name: "001_create_sys_tables",
 
   async up(executor) {
     // sys_user
@@ -243,37 +243,51 @@ export const createSysTables: Migration = {
     `);
 
     // Indexes for foreign key lookups and common queries
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_user_username ON sys_user (username)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_user_dept_id ON sys_user (dept_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_user_role_role_id ON sys_user_role (role_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_menu_parent_id ON sys_menu (parent_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_role_menu_role_id ON sys_role_menu (role_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_dept_parent_id ON sys_dept (parent_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_dict_data_type_code ON sys_dict_data (type_code)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_config_key ON sys_config (key)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_login_log_user_id ON sys_login_log (user_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_operation_log_user_id ON sys_operation_log (user_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_mfa_recovery_user_id ON sys_mfa_recovery (user_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_user_notice_user_id ON sys_user_notice (user_id)');
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_user_username ON sys_user (username)");
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_user_dept_id ON sys_user (dept_id)");
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_user_role_role_id ON sys_user_role (role_id)",
+    );
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_menu_parent_id ON sys_menu (parent_id)");
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_role_menu_role_id ON sys_role_menu (role_id)",
+    );
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_dept_parent_id ON sys_dept (parent_id)");
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_dict_data_type_code ON sys_dict_data (type_code)",
+    );
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_config_key ON sys_config (key)");
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_login_log_user_id ON sys_login_log (user_id)",
+    );
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_operation_log_user_id ON sys_operation_log (user_id)",
+    );
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_mfa_recovery_user_id ON sys_mfa_recovery (user_id)",
+    );
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_user_notice_user_id ON sys_user_notice (user_id)",
+    );
   },
 
   async down(executor) {
     // Drop in reverse order (dependent tables first)
-    await executor('DROP TABLE IF EXISTS sys_mfa_recovery');
-    await executor('DROP TABLE IF EXISTS sys_operation_log');
-    await executor('DROP TABLE IF EXISTS sys_login_log');
-    await executor('DROP TABLE IF EXISTS sys_user_notice');
-    await executor('DROP TABLE IF EXISTS sys_notice');
-    await executor('DROP TABLE IF EXISTS sys_config');
-    await executor('DROP TABLE IF EXISTS sys_dict_data');
-    await executor('DROP TABLE IF EXISTS sys_dict_type');
-    await executor('DROP TABLE IF EXISTS sys_user_post');
-    await executor('DROP TABLE IF EXISTS sys_post');
-    await executor('DROP TABLE IF EXISTS sys_dept');
-    await executor('DROP TABLE IF EXISTS sys_role_menu');
-    await executor('DROP TABLE IF EXISTS sys_menu');
-    await executor('DROP TABLE IF EXISTS sys_user_role');
-    await executor('DROP TABLE IF EXISTS sys_role');
-    await executor('DROP TABLE IF EXISTS sys_user');
+    await executor("DROP TABLE IF EXISTS sys_mfa_recovery");
+    await executor("DROP TABLE IF EXISTS sys_operation_log");
+    await executor("DROP TABLE IF EXISTS sys_login_log");
+    await executor("DROP TABLE IF EXISTS sys_user_notice");
+    await executor("DROP TABLE IF EXISTS sys_notice");
+    await executor("DROP TABLE IF EXISTS sys_config");
+    await executor("DROP TABLE IF EXISTS sys_dict_data");
+    await executor("DROP TABLE IF EXISTS sys_dict_type");
+    await executor("DROP TABLE IF EXISTS sys_user_post");
+    await executor("DROP TABLE IF EXISTS sys_post");
+    await executor("DROP TABLE IF EXISTS sys_dept");
+    await executor("DROP TABLE IF EXISTS sys_role_menu");
+    await executor("DROP TABLE IF EXISTS sys_menu");
+    await executor("DROP TABLE IF EXISTS sys_user_role");
+    await executor("DROP TABLE IF EXISTS sys_role");
+    await executor("DROP TABLE IF EXISTS sys_user");
   },
 };

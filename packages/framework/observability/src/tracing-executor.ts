@@ -5,7 +5,7 @@
  * 记录 SQL 语句、参数数量、返回行数和耗时。
  */
 
-import type { Tracer, SpanContext } from "./tracing";
+import type { SpanContext, Tracer } from "./tracing";
 
 export type SqlExecutor = (text: string, params?: unknown[]) => Promise<unknown[]>;
 

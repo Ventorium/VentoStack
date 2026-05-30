@@ -196,31 +196,25 @@ export function createMenuService(deps: {
     },
 
     async getTree() {
-      const rows = await db.query(MenuModel)
-        .where("status", "=", 1)
-        .orderBy("sort", "asc")
-        .list();
+      const rows = await db.query(MenuModel).where("status", "=", 1).orderBy("sort", "asc").list();
 
       return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getAllTree() {
-      const rows = await db.query(MenuModel)
-        .orderBy("sort", "asc")
-        .list();
+      const rows = await db.query(MenuModel).orderBy("sort", "asc").list();
 
       return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getById(id) {
-      const row = await db.query(MenuModel)
-        .where("id", "=", id)
-        .get();
+      const row = await db.query(MenuModel).where("id", "=", id).get();
 
       if (!row) return null;
 
       // 获取所有菜单来构建树（因为需要返回含 children 的节点）
-      const allRows = await db.query(MenuModel)
+      const allRows = await db
+        .query(MenuModel)
         .where("status", "=", 1)
         .orderBy("sort", "asc")
         .list();

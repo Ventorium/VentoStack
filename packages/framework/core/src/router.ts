@@ -1,15 +1,26 @@
 // @ventostack/core - 路由系统
 
-import { type Context, createContext, type TypedResponse } from "./context";
-import { type Middleware, compose } from "./middleware";
+import { type Context, type TypedResponse, createContext } from "./context";
 import { ValidationError } from "./errors";
-import { type ParamType, type ParamTypeMap, isValidParamType, paramTypes } from "./param-constraint";
-import type { RouteSchemaConfig, InferSchema, InferResponseType, RouteResponseDefinition, SchemaField } from "./schema-types";
+import { type Middleware, compose } from "./middleware";
+import {
+  type ParamType,
+  type ParamTypeMap,
+  isValidParamType,
+  paramTypes,
+} from "./param-constraint";
+import type {
+  InferResponseType,
+  InferSchema,
+  RouteResponseDefinition,
+  RouteSchemaConfig,
+  SchemaField,
+} from "./schema-types";
 import {
   coerceAndValidate,
-  coerceAndValidateJSONBody,
   coerceAndValidateFormBody,
   coerceAndValidateFormDataBody,
+  coerceAndValidateJSONBody,
   resolveRouteResponseDefinition,
   validateResponseData,
 } from "./schema-types";
@@ -17,7 +28,9 @@ import {
 /** 路由配置（声明式接口契约） */
 export interface RouteConfig extends RouteSchemaConfig {}
 
-export function defineRouteConfig<const TConfig extends RouteConfig>(config: RouteConfig & TConfig): TConfig {
+export function defineRouteConfig<const TConfig extends RouteConfig>(
+  config: RouteConfig & TConfig,
+): TConfig {
   return config;
 }
 
@@ -92,17 +105,19 @@ export interface ResourceHandlers {
 }
 
 /** 类型推导工具：从路径字符串字面量提取参数类型 */
-type InferParamSegment<Segment extends string> = Segment extends `${infer Name}<${infer Type}>${string}`
-  ? { [K in Name]: ParamTypeMap[Type extends ParamType ? Type : "string"] }
-  : Segment extends `${infer Name}(${string}`
-    ? { [K in Name]: string }
-  : { [K in Segment]: string };
+type InferParamSegment<Segment extends string> =
+  Segment extends `${infer Name}<${infer Type}>${string}`
+    ? { [K in Name]: ParamTypeMap[Type extends ParamType ? Type : "string"] }
+    : Segment extends `${infer Name}(${string}`
+      ? { [K in Name]: string }
+      : { [K in Segment]: string };
 
-export type InferParams<Path extends string> = Path extends `${infer _Start}:${infer Segment}/${infer Rest}`
-  ? InferParamSegment<Segment> & InferParams<`/${Rest}`>
-  : Path extends `${infer _Start}:${infer Segment}`
-    ? InferParamSegment<Segment>
-    : Record<string, never>;
+export type InferParams<Path extends string> =
+  Path extends `${infer _Start}:${infer Segment}/${infer Rest}`
+    ? InferParamSegment<Segment> & InferParams<`/${Rest}`>
+    : Path extends `${infer _Start}:${infer Segment}`
+      ? InferParamSegment<Segment>
+      : Record<string, never>;
 
 function isParamNameChar(char: string, isFirst = false): boolean {
   const code = char.charCodeAt(0);
@@ -192,7 +207,7 @@ export function parseRoutePath(path: string): ParsedRoute {
     } else if (cursor < path.length && path[cursor] === "(") {
       type = "string";
     } else {
-      continue;
+      type = "string";
     }
 
     if (cursor < path.length && path[cursor] === "(") {
@@ -257,9 +272,15 @@ function coerceParams(
 }
 
 // 辅助类型：schema 不存在时返回兼容的默认类型
-type _InferQuery<T> = T extends Record<string, SchemaField> ? InferSchema<T> : Record<string, string>;
-type _InferBody<T> = T extends Record<string, SchemaField> ? InferSchema<T> : Record<string, unknown>;
-type _InferFormData<T> = T extends Record<string, SchemaField> ? InferSchema<T> : Record<string, unknown>;
+type _InferQuery<T> = T extends Record<string, SchemaField>
+  ? InferSchema<T>
+  : Record<string, string>;
+type _InferBody<T> = T extends Record<string, SchemaField>
+  ? InferSchema<T>
+  : Record<string, unknown>;
+type _InferFormData<T> = T extends Record<string, SchemaField>
+  ? InferSchema<T>
+  : Record<string, unknown>;
 type _InferResponse<T> = T extends Record<number | string, infer R>
   ? InferResponseType<R>
   : Record<string, unknown>;
@@ -270,10 +291,10 @@ function normalizeContentType(contentType: string | null): string | undefined {
 }
 
 function createResponseValidationError(errors: string[]): Response {
-  return new Response(
-    JSON.stringify({ error: "RESPONSE_VALIDATION_ERROR", errors }),
-    { status: 500, headers: { "Content-Type": "application/json" } },
-  );
+  return new Response(JSON.stringify({ error: "RESPONSE_VALIDATION_ERROR", errors }), {
+    status: 500,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 async function validateRouteResponse(
@@ -321,7 +342,11 @@ async function validateRouteResponse(
     !Array.isArray(rawBody) &&
     "data" in rawBody
   ) {
-    errors = validateResponseData((rawBody as { data: unknown }).data, resolved.schema, "response.data");
+    errors = validateResponseData(
+      (rawBody as { data: unknown }).data,
+      resolved.schema,
+      "response.data",
+    );
   }
   if (errors.length > 0) {
     return createResponseValidationError(errors);
@@ -338,11 +363,20 @@ export interface Router {
    * @param handler - 处理器
    * @param middleware - 可选中间件
    */
-  get<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  get<Path extends string>(
+    path: Path,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middleware: Middleware[]
+  ): Router;
   /**
    * 注册 GET 路由（中间件在前，处理器在后）
    */
-  get<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  get<Path extends string>(
+    path: Path,
+    middleware: Middleware,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middlewareList: Middleware[]
+  ): Router;
   /**
    * 注册 GET 路由（带 schema 配置）
    * @param path - 路径
@@ -355,9 +389,15 @@ export interface Router {
     config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
-      _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
-      _InferBody<TConfig["body"]> extends Record<string, unknown> ? _InferBody<TConfig["body"]> : Record<string, unknown>,
-            _InferFormData<TConfig["formData"]> extends Record<string, unknown> ? _InferFormData<TConfig["formData"]> : Record<string, unknown>,
+      _InferQuery<TConfig["query"]> extends Record<string, unknown>
+        ? _InferQuery<TConfig["query"]>
+        : Record<string, string>,
+      _InferBody<TConfig["body"]> extends Record<string, unknown>
+        ? _InferBody<TConfig["body"]>
+        : Record<string, unknown>,
+      _InferFormData<TConfig["formData"]> extends Record<string, unknown>
+        ? _InferFormData<TConfig["formData"]>
+        : Record<string, unknown>,
       _InferResponse<TConfig["responses"]>
     >,
     ...middleware: Middleware[]
@@ -368,11 +408,20 @@ export interface Router {
    * @param handler - 处理器
    * @param middleware - 可选中间件
    */
-  post<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  post<Path extends string>(
+    path: Path,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middleware: Middleware[]
+  ): Router;
   /**
    * 注册 POST 路由（中间件在前，处理器在后）
    */
-  post<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  post<Path extends string>(
+    path: Path,
+    middleware: Middleware,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middlewareList: Middleware[]
+  ): Router;
   /**
    * 注册 POST 路由（带 schema 配置）
    * @param path - 路径
@@ -385,9 +434,15 @@ export interface Router {
     config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
-      _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
-      _InferBody<TConfig["body"]> extends Record<string, unknown> ? _InferBody<TConfig["body"]> : Record<string, unknown>,
-            _InferFormData<TConfig["formData"]> extends Record<string, unknown> ? _InferFormData<TConfig["formData"]> : Record<string, unknown>,
+      _InferQuery<TConfig["query"]> extends Record<string, unknown>
+        ? _InferQuery<TConfig["query"]>
+        : Record<string, string>,
+      _InferBody<TConfig["body"]> extends Record<string, unknown>
+        ? _InferBody<TConfig["body"]>
+        : Record<string, unknown>,
+      _InferFormData<TConfig["formData"]> extends Record<string, unknown>
+        ? _InferFormData<TConfig["formData"]>
+        : Record<string, unknown>,
       _InferResponse<TConfig["responses"]>
     >,
     ...middleware: Middleware[]
@@ -398,11 +453,20 @@ export interface Router {
    * @param handler - 处理器
    * @param middleware - 可选中间件
    */
-  put<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  put<Path extends string>(
+    path: Path,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middleware: Middleware[]
+  ): Router;
   /**
    * 注册 PUT 路由（中间件在前，处理器在后）
    */
-  put<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  put<Path extends string>(
+    path: Path,
+    middleware: Middleware,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middlewareList: Middleware[]
+  ): Router;
   /**
    * 注册 PUT 路由（带 schema 配置）
    * @param path - 路径
@@ -415,9 +479,15 @@ export interface Router {
     config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
-      _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
-      _InferBody<TConfig["body"]> extends Record<string, unknown> ? _InferBody<TConfig["body"]> : Record<string, unknown>,
-            _InferFormData<TConfig["formData"]> extends Record<string, unknown> ? _InferFormData<TConfig["formData"]> : Record<string, unknown>,
+      _InferQuery<TConfig["query"]> extends Record<string, unknown>
+        ? _InferQuery<TConfig["query"]>
+        : Record<string, string>,
+      _InferBody<TConfig["body"]> extends Record<string, unknown>
+        ? _InferBody<TConfig["body"]>
+        : Record<string, unknown>,
+      _InferFormData<TConfig["formData"]> extends Record<string, unknown>
+        ? _InferFormData<TConfig["formData"]>
+        : Record<string, unknown>,
       _InferResponse<TConfig["responses"]>
     >,
     ...middleware: Middleware[]
@@ -428,11 +498,20 @@ export interface Router {
    * @param handler - 处理器
    * @param middleware - 可选中间件
    */
-  patch<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  patch<Path extends string>(
+    path: Path,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middleware: Middleware[]
+  ): Router;
   /**
    * 注册 PATCH 路由（中间件在前，处理器在后）
    */
-  patch<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  patch<Path extends string>(
+    path: Path,
+    middleware: Middleware,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middlewareList: Middleware[]
+  ): Router;
   /**
    * 注册 PATCH 路由（带 schema 配置）
    * @param path - 路径
@@ -445,9 +524,15 @@ export interface Router {
     config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
-      _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
-      _InferBody<TConfig["body"]> extends Record<string, unknown> ? _InferBody<TConfig["body"]> : Record<string, unknown>,
-            _InferFormData<TConfig["formData"]> extends Record<string, unknown> ? _InferFormData<TConfig["formData"]> : Record<string, unknown>,
+      _InferQuery<TConfig["query"]> extends Record<string, unknown>
+        ? _InferQuery<TConfig["query"]>
+        : Record<string, string>,
+      _InferBody<TConfig["body"]> extends Record<string, unknown>
+        ? _InferBody<TConfig["body"]>
+        : Record<string, unknown>,
+      _InferFormData<TConfig["formData"]> extends Record<string, unknown>
+        ? _InferFormData<TConfig["formData"]>
+        : Record<string, unknown>,
       _InferResponse<TConfig["responses"]>
     >,
     ...middleware: Middleware[]
@@ -458,11 +543,20 @@ export interface Router {
    * @param handler - 处理器
    * @param middleware - 可选中间件
    */
-  delete<Path extends string>(path: Path, handler: RouteHandler<InferParams<Path>>, ...middleware: Middleware[]): Router;
+  delete<Path extends string>(
+    path: Path,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middleware: Middleware[]
+  ): Router;
   /**
    * 注册 DELETE 路由（中间件在前，处理器在后）
    */
-  delete<Path extends string>(path: Path, middleware: Middleware, handler: RouteHandler<InferParams<Path>>, ...middlewareList: Middleware[]): Router;
+  delete<Path extends string>(
+    path: Path,
+    middleware: Middleware,
+    handler: RouteHandler<InferParams<Path>>,
+    ...middlewareList: Middleware[]
+  ): Router;
   /**
    * 注册 DELETE 路由（带 schema 配置）
    * @param path - 路径
@@ -475,9 +569,15 @@ export interface Router {
     config: RouteConfig & TConfig,
     handler: RouteHandler<
       InferParams<Path>,
-      _InferQuery<TConfig["query"]> extends Record<string, unknown> ? _InferQuery<TConfig["query"]> : Record<string, string>,
-      _InferBody<TConfig["body"]> extends Record<string, unknown> ? _InferBody<TConfig["body"]> : Record<string, unknown>,
-            _InferFormData<TConfig["formData"]> extends Record<string, unknown> ? _InferFormData<TConfig["formData"]> : Record<string, unknown>,
+      _InferQuery<TConfig["query"]> extends Record<string, unknown>
+        ? _InferQuery<TConfig["query"]>
+        : Record<string, string>,
+      _InferBody<TConfig["body"]> extends Record<string, unknown>
+        ? _InferBody<TConfig["body"]>
+        : Record<string, unknown>,
+      _InferFormData<TConfig["formData"]> extends Record<string, unknown>
+        ? _InferFormData<TConfig["formData"]>
+        : Record<string, unknown>,
       _InferResponse<TConfig["responses"]>
     >,
     ...middleware: Middleware[]
@@ -581,10 +681,17 @@ export function createRouter(): Router {
   }
 
   const router: Router = {
-    get: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
+    get: ((
+      path: string,
+      arg2: RouteHandler | RouteConfig | Middleware,
+      ...rest: Array<RouteHandler | Middleware>
+    ) => {
       if (typeof arg2 === "function") {
         if (arg2.length >= 2 && typeof rest[0] === "function") {
-          return addRoute("GET", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+          return addRoute("GET", path, rest[0] as RouteHandler, [
+            arg2 as Middleware,
+            ...(rest.slice(1) as Middleware[]),
+          ]);
         }
         return addRoute("GET", path, arg2 as RouteHandler, rest as Middleware[]);
       }
@@ -593,10 +700,17 @@ export function createRouter(): Router {
       const mw = rest.slice(1) as Middleware[];
       return addRoute("GET", path, handler, mw, config);
     }) as Router["get"],
-    post: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
+    post: ((
+      path: string,
+      arg2: RouteHandler | RouteConfig | Middleware,
+      ...rest: Array<RouteHandler | Middleware>
+    ) => {
       if (typeof arg2 === "function") {
         if (arg2.length >= 2 && typeof rest[0] === "function") {
-          return addRoute("POST", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+          return addRoute("POST", path, rest[0] as RouteHandler, [
+            arg2 as Middleware,
+            ...(rest.slice(1) as Middleware[]),
+          ]);
         }
         return addRoute("POST", path, arg2 as RouteHandler, rest as Middleware[]);
       }
@@ -605,10 +719,17 @@ export function createRouter(): Router {
       const mw = rest.slice(1) as Middleware[];
       return addRoute("POST", path, handler, mw, config);
     }) as Router["post"],
-    put: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
+    put: ((
+      path: string,
+      arg2: RouteHandler | RouteConfig | Middleware,
+      ...rest: Array<RouteHandler | Middleware>
+    ) => {
       if (typeof arg2 === "function") {
         if (arg2.length >= 2 && typeof rest[0] === "function") {
-          return addRoute("PUT", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+          return addRoute("PUT", path, rest[0] as RouteHandler, [
+            arg2 as Middleware,
+            ...(rest.slice(1) as Middleware[]),
+          ]);
         }
         return addRoute("PUT", path, arg2 as RouteHandler, rest as Middleware[]);
       }
@@ -617,10 +738,17 @@ export function createRouter(): Router {
       const mw = rest.slice(1) as Middleware[];
       return addRoute("PUT", path, handler, mw, config);
     }) as Router["put"],
-    patch: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
+    patch: ((
+      path: string,
+      arg2: RouteHandler | RouteConfig | Middleware,
+      ...rest: Array<RouteHandler | Middleware>
+    ) => {
       if (typeof arg2 === "function") {
         if (arg2.length >= 2 && typeof rest[0] === "function") {
-          return addRoute("PATCH", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+          return addRoute("PATCH", path, rest[0] as RouteHandler, [
+            arg2 as Middleware,
+            ...(rest.slice(1) as Middleware[]),
+          ]);
         }
         return addRoute("PATCH", path, arg2 as RouteHandler, rest as Middleware[]);
       }
@@ -629,10 +757,17 @@ export function createRouter(): Router {
       const mw = rest.slice(1) as Middleware[];
       return addRoute("PATCH", path, handler, mw, config);
     }) as Router["patch"],
-    delete: ((path: string, arg2: RouteHandler | RouteConfig | Middleware, ...rest: Array<RouteHandler | Middleware>) => {
+    delete: ((
+      path: string,
+      arg2: RouteHandler | RouteConfig | Middleware,
+      ...rest: Array<RouteHandler | Middleware>
+    ) => {
       if (typeof arg2 === "function") {
         if (arg2.length >= 2 && typeof rest[0] === "function") {
-          return addRoute("DELETE", path, rest[0] as RouteHandler, [arg2 as Middleware, ...(rest.slice(1) as Middleware[])]);
+          return addRoute("DELETE", path, rest[0] as RouteHandler, [
+            arg2 as Middleware,
+            ...(rest.slice(1) as Middleware[]),
+          ]);
         }
         return addRoute("DELETE", path, arg2 as RouteHandler, rest as Middleware[]);
       }
@@ -831,7 +966,10 @@ export function createRouter(): Router {
                 result = await coerceAndValidateFormBody(req, schema.body);
               } else {
                 return new Response(
-                  JSON.stringify({ error: "VALIDATION_ERROR", errors: ["Unsupported Content-Type for body validation"] }),
+                  JSON.stringify({
+                    error: "VALIDATION_ERROR",
+                    errors: ["Unsupported Content-Type for body validation"],
+                  }),
                   { status: 400, headers: { "Content-Type": "application/json" } },
                 );
               }
@@ -864,9 +1002,12 @@ export function createRouter(): Router {
             formData: coercedFormData,
           };
 
-          const response = allMiddleware.length === 0
-            ? await route.handler(ctx as Context)
-            : await compose(allMiddleware)(ctx as Context, () => Promise.resolve(route.handler(ctx as Context)));
+          const response =
+            allMiddleware.length === 0
+              ? await route.handler(ctx as Context)
+              : await compose(allMiddleware)(ctx as Context, () =>
+                  Promise.resolve(route.handler(ctx as Context)),
+                );
 
           if (schema?.responses) {
             return validateRouteResponse(response, schema.responses);

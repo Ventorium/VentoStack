@@ -1,12 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import {
-  VentoStackError,
   ClientError,
   ForbiddenError,
   NotFoundError,
   ServerError,
   UnauthorizedError,
   ValidationError,
+  VentoStackError,
 } from "../errors";
 
 describe("VentoStackError", () => {
@@ -35,7 +35,7 @@ describe("ClientError", () => {
     const err = new ClientError();
     expect(err.code).toBe(400);
     expect(err.errorCode).toBe("CLIENT_ERROR");
-    expect(err.message).toBe("Client Error");
+    expect(err.message).toBe("客户端错误");
     expect(err.name).toBe("ClientError");
   });
 
@@ -59,7 +59,7 @@ describe("ServerError", () => {
     const err = new ServerError();
     expect(err.code).toBe(500);
     expect(err.errorCode).toBe("SERVER_ERROR");
-    expect(err.message).toBe("Internal Server Error");
+    expect(err.message).toBe("服务器内部错误");
     expect(err.name).toBe("ServerError");
   });
 
@@ -83,7 +83,7 @@ describe("NotFoundError", () => {
     const err = new NotFoundError();
     expect(err.code).toBe(404);
     expect(err.errorCode).toBe("NOT_FOUND");
-    expect(err.message).toBe("Not Found");
+    expect(err.message).toBe("资源不存在");
     expect(err.name).toBe("NotFoundError");
   });
 
@@ -105,7 +105,7 @@ describe("ValidationError", () => {
     const err = new ValidationError();
     expect(err.code).toBe(400);
     expect(err.errorCode).toBe("VALIDATION_ERROR");
-    expect(err.message).toBe("Validation Failed");
+    expect(err.message).toBe("校验失败");
     expect(err.name).toBe("ValidationError");
   });
 
@@ -125,7 +125,7 @@ describe("UnauthorizedError", () => {
     const err = new UnauthorizedError();
     expect(err.code).toBe(401);
     expect(err.errorCode).toBe("UNAUTHORIZED");
-    expect(err.message).toBe("Unauthorized");
+    expect(err.message).toBe("未授权");
     expect(err.name).toBe("UnauthorizedError");
   });
 
@@ -145,7 +145,7 @@ describe("ForbiddenError", () => {
     const err = new ForbiddenError();
     expect(err.code).toBe(403);
     expect(err.errorCode).toBe("FORBIDDEN");
-    expect(err.message).toBe("Forbidden");
+    expect(err.message).toBe("禁止访问");
     expect(err.name).toBe("ForbiddenError");
   });
 

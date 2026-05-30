@@ -43,9 +43,7 @@ function createMockRedisClient(): RedisCacheClientLike {
       return "OK";
     },
     async keys(pattern: string): Promise<string[]> {
-      const regex = new RegExp(
-        "^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$"
-      );
+      const regex = new RegExp("^" + pattern.replace(/\*/g, ".*").replace(/\?/g, ".") + "$");
       return Array.from(store.keys()).filter((k) => regex.test(k));
     },
   };

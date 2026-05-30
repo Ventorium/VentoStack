@@ -1,6 +1,6 @@
 import { createExampleApp } from "./app";
-import { db, runMigrations } from "./database";
 import { config } from "./config";
+import { db, runMigrations } from "./database";
 
 // ── 启动应用 ─────────────────────────────────────────
 

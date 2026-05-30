@@ -1,7 +1,7 @@
-import type { Migration } from '@ventostack/database';
+import type { Migration } from "@ventostack/database";
 
 export const createOssTables: Migration = {
-  name: '001_create_oss_tables',
+  name: "001_create_oss_tables",
 
   async up(executor) {
     await executor(`
@@ -20,11 +20,11 @@ export const createOssTables: Migration = {
       )
     `);
 
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_oss_uploader ON sys_oss_file (uploader_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_oss_bucket ON sys_oss_file (bucket)');
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_oss_uploader ON sys_oss_file (uploader_id)");
+    await executor("CREATE INDEX IF NOT EXISTS idx_sys_oss_bucket ON sys_oss_file (bucket)");
   },
 
   async down(executor) {
-    await executor('DROP TABLE IF EXISTS sys_oss_file');
+    await executor("DROP TABLE IF EXISTS sys_oss_file");
   },
 };

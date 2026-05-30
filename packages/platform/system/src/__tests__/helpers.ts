@@ -13,8 +13,37 @@ export function createMockExecutor() {
 
   const executor = mock(async (text: string, params?: unknown[]): Promise<unknown[]> => {
     calls.push({ text, params });
+    // Try exact match first
     for (const [pattern, result] of results) {
       if (text.includes(pattern)) return result;
+    }
+    // Flexible match: for COUNT/WHERE queries, match on table name from patterns
+    const fromMatch = text.match(/FROM\s+(\w+)/i);
+    if (fromMatch) {
+      const tableName = fromMatch[1];
+      for (const [pattern, result] of results) {
+        if (pattern.includes(tableName) && !pattern.includes("WHERE")) {
+          // Table-level match (no WHERE clause in pattern) - return result for COUNT/list queries
+          if (
+            text.startsWith("SELECT COUNT") ||
+            (!text.includes("WHERE") && !text.includes("LIMIT"))
+          ) {
+            return result;
+          }
+        }
+      }
+      // WHERE-level match: strip params for flexible matching
+      const stripped = text
+        .replace(/\$\d+/g, "?")
+        .replace(/\s+LIMIT\s+\d+/gi, "")
+        .replace(/\s+OFFSET\s+\d+/gi, "")
+        .trim();
+      for (const [pattern, result] of results) {
+        const patternStripped = pattern.replace(/\$\d+/g, "?");
+        if (stripped.includes(patternStripped) || patternStripped.includes(stripped)) {
+          return result;
+        }
+      }
     }
     return [];
   });
@@ -136,8 +165,15 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         const conditions = buildConditions(params);
         if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
 
-        const rows = await executor(sql, params);
-        return Number((rows as any[])[0]?.count ?? 0);
+        const rows = (await executor(sql, params)) as any[];
+        if (rows.length === 0) return 0;
+        // Handle { count: N }, { total: N }, or { cnt: N } patterns
+        const first = rows[0];
+        if (first?.count !== undefined) return Number(first.count);
+        if (first?.total !== undefined) return Number(first.total);
+        if (first?.cnt !== undefined) return Number(first.cnt);
+        // Fallback: return row count
+        return rows.length;
       },
       async insert(data: Record<string, unknown>) {
         const cols = Object.keys(data);
@@ -199,7 +235,10 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     if (typeof modelOrName === "string") {
       modelMeta.set(modelOrName, { tableName: tableName ?? modelOrName, softDelete });
     } else if (modelOrName?.tableName) {
-      modelMeta.set(modelOrName.tableName, { tableName: modelOrName.tableName, softDelete: modelOrName.options?.softDelete ?? softDelete });
+      modelMeta.set(modelOrName.tableName, {
+        tableName: modelOrName.tableName,
+        softDelete: modelOrName.options?.softDelete ?? softDelete,
+      });
     }
   }
 
@@ -207,7 +246,10 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     query(model: any) {
       // Try to get table name from model object (defineModel returns { tableName, ... })
       const tableName = model?.tableName ?? "unknown";
-      const meta = modelMeta.get(tableName) ?? { tableName, softDelete: model?.options?.softDelete ?? false };
+      const meta = modelMeta.get(tableName) ?? {
+        tableName,
+        softDelete: model?.options?.softDelete ?? false,
+      };
       return createBuilder()._setState(meta.tableName, meta.softDelete);
     },
     raw: mock(async (text: string, params?: unknown[]) => {
@@ -226,8 +268,9 @@ export function createTestCache() {
 /** 创建 Mock JWTManager */
 export function createMockJWTManager() {
   return {
-    sign: mock(async (payload: any) =>
-      Buffer.from(JSON.stringify(payload)).toString("base64url") + ".mocksig"
+    sign: mock(
+      async (payload: any) =>
+        Buffer.from(JSON.stringify(payload)).toString("base64url") + ".mocksig",
     ),
     verify: mock(async (token: string) => {
       const payload = JSON.parse(Buffer.from(token.split(".")[0]!, "base64url").toString());
@@ -255,8 +298,9 @@ export function createMockPasswordHasher() {
 export function createMockTOTPManager() {
   return {
     generateSecret: mock(() => "JBSWY3DPEHPK3PXP"),
-    generateURI: mock((secret: string, issuer: string, account: string) =>
-      `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`
+    generateURI: mock(
+      (secret: string, issuer: string, account: string) =>
+        `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`,
     ),
     generate: mock(async () => "123456"),
     verify: mock(async () => true),
@@ -289,15 +333,19 @@ export function createMockAuthSessionManager() {
 export function createMockRBAC() {
   const roles = new Map<string, Set<string>>();
   return {
-    addRole: mock((role: any) => { roles.set(role.name ?? role, new Set()); }),
-    removeRole: mock((name: string) => { roles.delete(name); }),
-    getRole: mock((name: string) => roles.has(name) ? { name, permissions: [] } : undefined),
+    addRole: mock((role: any) => {
+      roles.set(role.name ?? role, new Set());
+    }),
+    removeRole: mock((name: string) => {
+      roles.delete(name);
+    }),
+    getRole: mock((name: string) => (roles.has(name) ? { name, permissions: [] } : undefined)),
     hasPermission: mock((roleName: string, resource: string, action: string) => {
       const perms = roles.get(roleName);
       return perms ? perms.has(`${resource}:${action}`) : false;
     }),
     can: mock((roleNames: string[], resource: string, action: string) =>
-      roleNames.some(r => roles.get(r)?.has(`${resource}:${action}`))
+      roleNames.some((r) => roles.get(r)?.has(`${resource}:${action}`)),
     ),
     grantPermission: mock((roleName: string, resource: string, action: string) => {
       const perms = roles.get(roleName);
@@ -358,7 +406,9 @@ export function createMockConfigService(overrides: Record<string, string> = {}) 
   };
   return {
     getValue: mock(async (key: string) => defaults[key] ?? null),
-    setValue: mock(async (key: string, value: string) => { defaults[key] = value; }),
+    setValue: mock(async (key: string, value: string) => {
+      defaults[key] = value;
+    }),
     create: mock(async () => {}),
     update: mock(async () => {}),
     delete: mock(async () => {}),

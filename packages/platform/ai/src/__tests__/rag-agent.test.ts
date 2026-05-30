@@ -1,8 +1,8 @@
-import { describe, expect, test, mock } from "bun:test";
-import { createRAGAgent } from "../rag-agent";
-import { createKnowledgeBase } from "../rag";
+import { describe, expect, mock, test } from "bun:test";
 import { createContextManager } from "../context";
 import type { LLMClient } from "../llm";
+import { createKnowledgeBase } from "../rag";
+import { createRAGAgent } from "../rag-agent";
 
 describe("createRAGAgent", () => {
   test("throws on invalid topK", () => {

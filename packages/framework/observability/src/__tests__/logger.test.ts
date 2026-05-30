@@ -87,11 +87,7 @@ describe("createLogger", () => {
     logger.debug("debug-after");
     logger.info("info-after");
 
-    expect(entries.map((e) => e.message)).toEqual([
-      "warn-before",
-      "debug-after",
-      "info-after",
-    ]);
+    expect(entries.map((e) => e.message)).toEqual(["warn-before", "debug-after", "info-after"]);
   });
 
   test("includes meta in log entry", () => {

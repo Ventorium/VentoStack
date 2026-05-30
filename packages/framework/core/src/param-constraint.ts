@@ -39,12 +39,12 @@ export const paramTypes: {
   },
   int: {
     pattern: /^-?\d+$/,
-    coerce: (v) => parseInt(v, 10),
+    coerce: (v) => Number.parseInt(v, 10),
     message: "必须为整数",
   },
   float: {
     pattern: /^-?\d+(\.\d+)?$/,
-    coerce: (v) => parseFloat(v),
+    coerce: (v) => Number.parseFloat(v),
     message: "必须为数字",
   },
   bool: {

@@ -115,9 +115,7 @@ export function createHealthCheck(options?: HealthCheckOptions): HealthCheck {
 // ========== 内置基础设施检查 ==========
 
 /** SQL 执行器最小接口（鸭子类型，不依赖具体包） */
-export interface SqlCheckable {
-  (sql: string, params?: unknown[]): Promise<unknown>;
-}
+export type SqlCheckable = (sql: string, params?: unknown[]) => Promise<unknown>;
 
 /** Redis 客户端最小接口（鸭子类型，不依赖具体包） */
 export interface RedisCheckable {

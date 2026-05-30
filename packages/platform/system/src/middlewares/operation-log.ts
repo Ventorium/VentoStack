@@ -186,7 +186,11 @@ export function createOperationLogMiddleware(
     let sanitizedBody: unknown = null;
     try {
       const body = ctx.body;
-      if (body && typeof body === "object" && Object.keys(body as Record<string, unknown>).length > 0) {
+      if (
+        body &&
+        typeof body === "object" &&
+        Object.keys(body as Record<string, unknown>).length > 0
+      ) {
         sanitizedBody = sanitize(body, sensitiveSet);
       }
     } catch {
@@ -210,22 +214,24 @@ export function createOperationLogMiddleware(
       const paramsStr = sanitizedBody ? JSON.stringify(sanitizedBody) : null;
 
       // 异步写入内存审计链，不阻塞响应
-      auditLog.append({
-        actor,
-        action: `${method} ${ctx.path}`,
-        resource: "operation",
-        result: responseStatus < 400 ? "success" : "failure",
-        metadata: {
-          method,
-          url: ctx.path,
-          duration,
-          status: responseStatus,
-          ...(sanitizedBody ? { body: sanitizedBody } : {}),
-          ...(errorMsg ? { errorMsg } : {}),
-        },
-      }).catch(() => {
-        // 审计日志写入失败不应影响已发出的响应
-      });
+      auditLog
+        .append({
+          actor,
+          action: `${method} ${ctx.path}`,
+          resource: "operation",
+          result: responseStatus < 400 ? "success" : "failure",
+          metadata: {
+            method,
+            url: ctx.path,
+            duration,
+            status: responseStatus,
+            ...(sanitizedBody ? { body: sanitizedBody } : {}),
+            ...(errorMsg ? { errorMsg } : {}),
+          },
+        })
+        .catch(() => {
+          // 审计日志写入失败不应影响已发出的响应
+        });
 
       // 异步写入数据库持久化表，不阻塞响应
       if (saveToDb) {

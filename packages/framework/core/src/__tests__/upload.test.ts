@@ -57,7 +57,7 @@ describe("createUploadValidator", () => {
     const req = makeFileRequest([{ name: "shell.php.jpg", content: "data", type: "image/jpeg" }]);
     const result = await validator.validate(req);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain("Double extension");
+    expect(result.errors[0]).toContain("双扩展名");
   });
 
   test("rejects null bytes in filename", async () => {
@@ -65,7 +65,7 @@ describe("createUploadValidator", () => {
     const req = makeFileRequest([{ name: "file\0.txt", content: "data", type: "text/plain" }]);
     const result = await validator.validate(req);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain("Null byte");
+    expect(result.errors[0]).toContain("非法字符");
   });
 
   test("rejects files exceeding max size", async () => {
@@ -75,7 +75,7 @@ describe("createUploadValidator", () => {
     ]);
     const result = await validator.validate(req);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain("too large");
+    expect(result.errors[0]).toContain("文件过大");
   });
 
   test("rejects disallowed MIME types", async () => {
@@ -87,7 +87,7 @@ describe("createUploadValidator", () => {
     ]);
     const result = await validator.validate(req);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain("MIME type not allowed");
+    expect(result.errors[0]).toContain("不允许的文件类型");
   });
 
   test("rejects disallowed extensions", async () => {
@@ -99,7 +99,7 @@ describe("createUploadValidator", () => {
     ]);
     const result = await validator.validate(req);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain("Extension not allowed");
+    expect(result.errors[0]).toContain("不允许的文件扩展名");
   });
 
   test("rejects too many files", async () => {
@@ -111,7 +111,7 @@ describe("createUploadValidator", () => {
     ]);
     const result = await validator.validate(req);
     expect(result.valid).toBe(false);
-    expect(result.errors[0]).toContain("Too many files");
+    expect(result.errors[0]).toContain("文件数量过多");
   });
 
   test("handles request with no files", async () => {

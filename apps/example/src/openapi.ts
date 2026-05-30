@@ -1,5 +1,5 @@
-import { setupOpenAPI } from "@ventostack/openapi";
 import type { VentoStackApp } from "@ventostack/core";
+import { setupOpenAPI } from "@ventostack/openapi";
 
 export function setupExampleOpenAPI(app: VentoStackApp) {
   return setupOpenAPI(app, {

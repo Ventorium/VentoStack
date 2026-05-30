@@ -96,7 +96,8 @@ export function createDeptService(deps: { db: Database }): DeptService {
   }
 
   async function getTree(): Promise<DeptTreeNode[]> {
-    const rows = await db.query(DeptModel)
+    const rows = await db
+      .query(DeptModel)
       .select("id", "parent_id", "name", "sort", "leader", "phone", "email", "status", "created_at")
       .orderBy("sort", "asc")
       .orderBy("id", "asc")
@@ -111,7 +112,10 @@ export function createDeptService(deps: { db: Database }): DeptService {
       phone: row.phone ?? "",
       email: row.email ?? "",
       status: row.status ?? 1,
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ""),
       children: [],
     }));
 

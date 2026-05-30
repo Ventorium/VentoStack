@@ -50,9 +50,7 @@ export function createRedisClient(options: RedisClientOptions): RedisClientInsta
   const BunRedisClient = (globalThis as any).Bun?.RedisClient ?? (globalThis as any).RedisClient;
 
   if (typeof BunRedisClient !== "function") {
-    throw new Error(
-      "Bun.RedisClient is not available. Please run in Bun 1.2+ runtime.",
-    );
+    throw new Error("Bun.RedisClient is not available. Please run in Bun 1.2+ runtime.");
   }
 
   const client = new BunRedisClient(options.url);

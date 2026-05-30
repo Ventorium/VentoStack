@@ -6,8 +6,8 @@
  * 覆盖 session store、token revocation store 等直接使用 Redis client 的场景。
  */
 
-import type { Tracer, SpanContext } from "./tracing";
 import type { RedisClientInstance } from "@ventostack/cache";
+import type { SpanContext, Tracer } from "./tracing";
 
 export interface RedisTracingOptions {
   /** 获取当前请求的 SpanContext */

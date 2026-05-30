@@ -5,8 +5,8 @@
  * 记录操作类型、key、命中/未命中和耗时。
  */
 
-import type { Tracer, SpanContext } from "./tracing";
 import type { Cache, CacheOptions, TaggedCache } from "@ventostack/cache";
+import type { SpanContext, Tracer } from "./tracing";
 
 export interface CacheTracingOptions {
   /** 获取当前请求的 SpanContext */

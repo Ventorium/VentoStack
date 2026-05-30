@@ -38,9 +38,8 @@ describe("createDatabase", () => {
     expect(db.close).toBeFunction();
   });
 
-  test("throws without executor", () => {
-    const db = createDatabase({});
-    expect(() => db.raw("SELECT 1")).toThrow("No SQL executor configured");
+  test("throws without executor or url", () => {
+    expect(() => createDatabase({})).toThrow("No SQL executor configured");
   });
 });
 
@@ -178,7 +177,9 @@ describe("Database.query - count", () => {
     const total = await db.query(UserModel).where("active", "=", true).limit(10).offset(5).count();
 
     expect(total).toBe(5);
-    expect(executor).toHaveBeenCalledWith("SELECT COUNT(*) as count FROM users WHERE active = $1", [true]);
+    expect(executor).toHaveBeenCalledWith("SELECT COUNT(*) as count FROM users WHERE active = $1", [
+      true,
+    ]);
   });
 });
 

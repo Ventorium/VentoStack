@@ -1,6 +1,6 @@
+import { type JWTPayload, createJWT } from "@ventostack/auth";
 import type { Middleware } from "@ventostack/core";
-import { UnauthorizedError, ForbiddenError } from "@ventostack/core";
-import { createJWT, type JWTPayload } from "@ventostack/auth";
+import { ForbiddenError, UnauthorizedError } from "@ventostack/core";
 
 const jwt = createJWT();
 

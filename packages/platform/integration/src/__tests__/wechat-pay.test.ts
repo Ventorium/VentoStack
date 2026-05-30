@@ -37,12 +37,16 @@ describe("createWeChatPayVerifier", () => {
     const message = `${timestamp}\n${nonce}\n${body}\n`;
     const signature = await rsaSign(keys.privateKey, message);
 
-    const result = await verifier.verify(body, {
-      "wechatpay-signature": signature,
-      "wechatpay-timestamp": timestamp,
-      "wechatpay-nonce": nonce,
-      "wechatpay-serial": "test-serial-001",
-    }, { publicKey: keys.publicKeyPem });
+    const result = await verifier.verify(
+      body,
+      {
+        "wechatpay-signature": signature,
+        "wechatpay-timestamp": timestamp,
+        "wechatpay-nonce": nonce,
+        "wechatpay-serial": "test-serial-001",
+      },
+      { publicKey: keys.publicKeyPem },
+    );
 
     expect(result.valid).toBe(true);
     expect(result.metadata?.serial).toBe("test-serial-001");
@@ -57,20 +61,24 @@ describe("createWeChatPayVerifier", () => {
     const message = `${timestamp}\n${nonce}\n${body}\n`;
     const signature = await rsaSign(keys.privateKey, message);
 
-    const result = await verifier.verify(body, {
-      "wechatpay-signature": signature,
-      "wechatpay-timestamp": timestamp,
-      "wechatpay-nonce": nonce,
-      "wechatpay-serial": "serial-002",
-    }, {
-      publicKey: "wrong-key",
-      extra: {
-        certificates: {
-          "serial-001": "wrong-key",
-          "serial-002": keys.publicKeyPem,
+    const result = await verifier.verify(
+      body,
+      {
+        "wechatpay-signature": signature,
+        "wechatpay-timestamp": timestamp,
+        "wechatpay-nonce": nonce,
+        "wechatpay-serial": "serial-002",
+      },
+      {
+        publicKey: "wrong-key",
+        extra: {
+          certificates: {
+            "serial-001": "wrong-key",
+            "serial-002": keys.publicKeyPem,
+          },
         },
       },
-    });
+    );
 
     expect(result.valid).toBe(true);
   });
@@ -85,52 +93,72 @@ describe("createWeChatPayVerifier", () => {
     const message = `${timestamp}\n${nonce}\n${body}\n`;
     const signature = await rsaSign(keys.privateKey, message);
 
-    const result = await verifier.verify(body, {
-      "wechatpay-signature": signature,
-      "wechatpay-timestamp": timestamp,
-      "wechatpay-nonce": nonce,
-    }, { publicKey: wrongKeys.publicKeyPem });
+    const result = await verifier.verify(
+      body,
+      {
+        "wechatpay-signature": signature,
+        "wechatpay-timestamp": timestamp,
+        "wechatpay-nonce": nonce,
+      },
+      { publicKey: wrongKeys.publicKeyPem },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Signature mismatch");
   });
 
   test("rejects missing signature header", async () => {
-    const result = await verifier.verify("body", {
-      "wechatpay-timestamp": "123",
-      "wechatpay-nonce": "abc",
-    }, { publicKey: "key" });
+    const result = await verifier.verify(
+      "body",
+      {
+        "wechatpay-timestamp": "123",
+        "wechatpay-nonce": "abc",
+      },
+      { publicKey: "key" },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toContain("Missing");
   });
 
   test("rejects missing timestamp header", async () => {
-    const result = await verifier.verify("body", {
-      "wechatpay-signature": "sig",
-      "wechatpay-nonce": "abc",
-    }, { publicKey: "key" });
+    const result = await verifier.verify(
+      "body",
+      {
+        "wechatpay-signature": "sig",
+        "wechatpay-nonce": "abc",
+      },
+      { publicKey: "key" },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toContain("Missing");
   });
 
   test("rejects missing nonce header", async () => {
-    const result = await verifier.verify("body", {
-      "wechatpay-signature": "sig",
-      "wechatpay-timestamp": "123",
-    }, { publicKey: "key" });
+    const result = await verifier.verify(
+      "body",
+      {
+        "wechatpay-signature": "sig",
+        "wechatpay-timestamp": "123",
+      },
+      { publicKey: "key" },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toContain("Missing");
   });
 
   test("rejects missing public key", async () => {
-    const result = await verifier.verify("body", {
-      "wechatpay-signature": "sig",
-      "wechatpay-timestamp": "123",
-      "wechatpay-nonce": "abc",
-    }, {});
+    const result = await verifier.verify(
+      "body",
+      {
+        "wechatpay-signature": "sig",
+        "wechatpay-timestamp": "123",
+        "wechatpay-nonce": "abc",
+      },
+      {},
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Missing public key");

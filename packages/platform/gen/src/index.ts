@@ -5,26 +5,32 @@
  */
 
 // Models
-export { GenTableModel } from './models/gen-table';
-export { GenTableColumnModel } from './models/gen-table-column';
+export { GenTableModel } from "./models/gen-table";
+export { GenTableColumnModel } from "./models/gen-table-column";
 
 // Services
-export { createGenService } from './services/gen';
-export type { GenTableInfo, GenColumnInfo, GeneratedFile, PaginatedResult, GenService } from './services/gen';
+export { createGenService } from "./services/gen";
+export type {
+  GenTableInfo,
+  GenColumnInfo,
+  GeneratedFile,
+  PaginatedResult,
+  GenService,
+} from "./services/gen";
 
 // Templates
-export { renderModel } from './templates/model.ts.tmpl';
-export { renderService } from './templates/service.ts.tmpl';
-export { renderRoutes } from './templates/routes.ts.tmpl';
-export { renderTypes } from './templates/types.ts.tmpl';
-export { renderTest } from './templates/test.ts.tmpl';
+export { renderModel } from "./templates/model.ts.tmpl";
+export { renderService } from "./templates/service.ts.tmpl";
+export { renderRoutes } from "./templates/routes.ts.tmpl";
+export { renderTypes } from "./templates/types.ts.tmpl";
+export { renderTest } from "./templates/test.ts.tmpl";
 
 // Routes
-export { createGenRoutes } from './routes/gen';
+export { createGenRoutes } from "./routes/gen";
 
 // Module
-export { createGenModule } from './module';
-export type { GenModule, GenModuleDeps } from './module';
+export { createGenModule } from "./module";
+export type { GenModule, GenModuleDeps } from "./module";
 
 // Migrations
-export { createGenTables } from './migrations/001_create_gen_tables';
+export { createGenTables } from "./migrations/001_create_gen_tables";

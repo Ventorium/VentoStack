@@ -4,7 +4,12 @@
 
 import { describe, expect, test } from "bun:test";
 import { createPermissionLoader } from "../services/permission-loader";
-import { createMockExecutor, createMockDatabase, createMockRBAC, createMockRowFilter } from "./helpers";
+import {
+  createMockDatabase,
+  createMockExecutor,
+  createMockRBAC,
+  createMockRowFilter,
+} from "./helpers";
 
 function setup() {
   const mockExec = createMockExecutor();
@@ -15,7 +20,14 @@ function setup() {
   const rbac = createMockRBAC();
   const rowFilter = createMockRowFilter();
   const permissionLoader = createPermissionLoader({ db, rbac, rowFilter });
-  return { permissionLoader, executor: mockExec.executor, calls, results: mockExec.results, rbac, rowFilter };
+  return {
+    permissionLoader,
+    executor: mockExec.executor,
+    calls,
+    results: mockExec.results,
+    rbac,
+    rowFilter,
+  };
 }
 
 describe("PermissionLoader", () => {
@@ -24,7 +36,7 @@ describe("PermissionLoader", () => {
     // First query: get all enabled roles
     // Second query per role: get menu permissions
     // Third query: get data scope rules
-    let callCount = 0;
+    const callCount = 0;
     s.results.clear();
     const originalExecutor = s.executor;
 
@@ -40,9 +52,12 @@ describe("PermissionLoader", () => {
     ]);
     mockResults.set("data_scope", []);
 
-    let queryIndex = 0;
+    const queryIndex = 0;
     const orderedResults = [
-      [{ id: "r1", code: "admin" }, { id: "r2", code: "user" }], // loadAll role query
+      [
+        { id: "r1", code: "admin" },
+        { id: "r2", code: "user" },
+      ], // loadAll role query
       [{ permission: "system:user:list" }], // admin permissions
       [{ permission: "system:role:list" }], // user permissions
       [], // data scope rules
@@ -50,12 +65,8 @@ describe("PermissionLoader", () => {
 
     // We need to use the results Map approach but with sequential ordering
     // Use the pattern-based approach instead
-    s.results.set("sys_role WHERE status", [
-      { id: "r1", code: "admin" },
-    ]);
-    s.results.set("sys_role_menu", [
-      { permission: "system:user:list" },
-    ]);
+    s.results.set("sys_role WHERE status", [{ id: "r1", code: "admin" }]);
+    s.results.set("sys_role_menu", [{ permission: "system:user:list" }]);
     s.results.set("data_scope IS NOT NULL", []);
 
     await s.permissionLoader.loadAll();
@@ -74,9 +85,7 @@ describe("PermissionLoader", () => {
   test("reloadRole reloads specific role permissions", async () => {
     const s = setup();
     s.results.set("code = $1", [{ id: "r1" }]);
-    s.results.set("sys_role_menu", [
-      { permission: "system:user:create" },
-    ]);
+    s.results.set("sys_role_menu", [{ permission: "system:user:create" }]);
     await s.permissionLoader.reloadRole("admin");
     expect(s.rbac.addRole).toHaveBeenCalled();
   });
@@ -101,9 +110,7 @@ describe("PermissionLoader", () => {
 
   test("data_scope=4 adds created_by filter rule", async () => {
     const s = setup();
-    s.results.set("code, data_scope", [
-      { code: "self_only", data_scope: 4 },
-    ]);
+    s.results.set("code, data_scope", [{ code: "self_only", data_scope: 4 }]);
     s.results.set("id, code", []);
     await s.permissionLoader.loadAll();
     expect(s.rowFilter.addRule).toHaveBeenCalled();

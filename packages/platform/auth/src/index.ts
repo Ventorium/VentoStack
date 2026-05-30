@@ -60,7 +60,7 @@ export type {
 export { createMemoryRevocationStore, createRedisRevocationStore } from "./token-revocation-store";
 export type {
   TokenRevocationStore,
-  RedisRevocationClientLike as RedisRevocationClientLike,
+  RedisRevocationClientLike,
 } from "./token-revocation-store";
 
 /** 统一认证会话管理 - 聚合 Session、设备、Token 能力 */

@@ -4,9 +4,14 @@
  * 使用 @ventostack/cache 的 createRedisClient 创建 Redis 连接
  */
 
-import { createTagLogger } from "@ventostack/core";
-import { createCache, createMemoryAdapter, createRedisAdapter, createRedisClient } from "@ventostack/cache";
+import {
+  createCache,
+  createMemoryAdapter,
+  createRedisAdapter,
+  createRedisClient,
+} from "@ventostack/cache";
 import type { Cache, RedisClientInstance } from "@ventostack/cache";
+import { createTagLogger } from "@ventostack/core";
 import { env } from "../config";
 
 const logger = createTagLogger("cache");

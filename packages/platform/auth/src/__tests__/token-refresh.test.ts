@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { createJWT } from "../jwt";
 import { createTokenRefresh } from "../token-refresh";
 import { createMemoryRevocationStore } from "../token-revocation-store";
-import type { TokenRevocationStore } from "../token-revocation-store";
 
 const SECRET = "a]3Kf9$mPqR7wXyZ!bNcDe2GhJkLs5Tv"; // 32+ bytes
 const REFRESH_SECRET = "x9Y!kLm2NpQr3StUvWxYz4AbCdEfGhJk"; // separate 32+ bytes
@@ -51,7 +50,7 @@ describe("createTokenRefresh", () => {
   test("refresh rejects access token (wrong iss)", async () => {
     const manager = createTokenRefresh(jwt);
     const pair = await manager.generatePair({ sub: "user1" }, SECRET);
-    await expect(manager.refresh(pair.accessToken, SECRET)).rejects.toThrow("Invalid token type");
+    await expect(manager.refresh(pair.accessToken, SECRET)).rejects.toThrow("无效的令牌类型");
   });
 
   test("revoke and isRevoked work correctly", async () => {
@@ -67,9 +66,7 @@ describe("createTokenRefresh", () => {
     const pair = await manager.generatePair({ sub: "user1" }, SECRET);
     const refreshPayload = jwt.decode(pair.refreshToken)!;
     await manager.revoke(refreshPayload.jti!);
-    await expect(manager.refresh(pair.refreshToken, SECRET)).rejects.toThrow(
-      "Token has been revoked",
-    );
+    await expect(manager.refresh(pair.refreshToken, SECRET)).rejects.toThrow("令牌已被撤销");
   });
 
   test("old refresh token is revoked after refresh", async () => {
@@ -112,9 +109,7 @@ describe("createTokenRefresh", () => {
     const refreshPayload = jwt.decode(pair.refreshToken)!;
     await manager.revoke(refreshPayload.jti!);
     expect(await manager.isRevoked(refreshPayload.jti!)).toBe(true);
-    await expect(manager.refresh(pair.refreshToken, SECRET)).rejects.toThrow(
-      "Token has been revoked",
-    );
+    await expect(manager.refresh(pair.refreshToken, SECRET)).rejects.toThrow("令牌已被撤销");
   });
 
   test("revoked tokens persist across createTokenRefresh instances with same store", async () => {
@@ -131,9 +126,7 @@ describe("createTokenRefresh", () => {
       revocationStore: sharedStore,
     });
     expect(await manager2.isRevoked(refreshPayload.jti!)).toBe(true);
-    await expect(manager2.refresh(pair.refreshToken, SECRET)).rejects.toThrow(
-      "Token has been revoked",
-    );
+    await expect(manager2.refresh(pair.refreshToken, SECRET)).rejects.toThrow("令牌已被撤销");
   });
 
   test("default behavior without external store still works", async () => {

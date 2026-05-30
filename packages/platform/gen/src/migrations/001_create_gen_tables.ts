@@ -1,7 +1,7 @@
-import type { Migration } from '@ventostack/database';
+import type { Migration } from "@ventostack/database";
 
 export const createGenTables: Migration = {
-  name: '001_create_gen_tables',
+  name: "001_create_gen_tables",
 
   async up(executor) {
     await executor(`
@@ -39,11 +39,13 @@ export const createGenTables: Migration = {
       )
     `);
 
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_gen_col_table ON sys_gen_table_column (table_id)');
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_gen_col_table ON sys_gen_table_column (table_id)",
+    );
   },
 
   async down(executor) {
-    await executor('DROP TABLE IF EXISTS sys_gen_table_column');
-    await executor('DROP TABLE IF EXISTS sys_gen_table');
+    await executor("DROP TABLE IF EXISTS sys_gen_table_column");
+    await executor("DROP TABLE IF EXISTS sys_gen_table");
   },
 };

@@ -1,8 +1,8 @@
 import {
-  createConfig,
-  securityPrecheck,
   type ConfigSchema,
   type ConfigValue,
+  createConfig,
+  securityPrecheck,
 } from "@ventostack/core";
 
 const schema = {
@@ -50,7 +50,5 @@ const check = securityPrecheck({
 });
 
 if (config.env === "production" && !check.passed) {
-  throw new Error(
-    `Security precheck failed:\n${check.errors.map((e) => `  - ${e}`).join("\n")}`,
-  );
+  throw new Error(`Security precheck failed:\n${check.errors.map((e) => `  - ${e}`).join("\n")}`);
 }

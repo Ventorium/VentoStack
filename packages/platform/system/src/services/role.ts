@@ -5,9 +5,9 @@
 
 import type { Cache } from "@ventostack/cache";
 import type { Database } from "@ventostack/database";
-import type { PaginatedResult } from "./user";
-import { RoleModel } from "../models/role";
 import { RoleMenuModel } from "../models/menu";
+import { RoleModel } from "../models/role";
+import type { PaginatedResult } from "./user";
 
 /** 创建角色参数 */
 export interface CreateRoleParams {
@@ -54,11 +54,7 @@ export interface RoleService {
     status?: number;
   }): Promise<PaginatedResult<RoleListItem>>;
   assignMenus(roleId: string, menuIds: string[]): Promise<void>;
-  assignDataScope(
-    roleId: string,
-    scope: number,
-    deptIds?: string[],
-  ): Promise<void>;
+  assignDataScope(roleId: string, scope: number, deptIds?: string[]): Promise<void>;
 }
 
 /**
@@ -124,9 +120,20 @@ export function createRoleService(deps: {
       const cached = await cache.get<RoleDetail>(`role:detail:${id}`);
       if (cached) return cached;
 
-      const row = await db.query(RoleModel)
+      const row = await db
+        .query(RoleModel)
         .where("id", "=", id)
-        .select("id", "name", "code", "sort", "data_scope", "status", "remark", "created_at", "updated_at")
+        .select(
+          "id",
+          "name",
+          "code",
+          "sort",
+          "data_scope",
+          "status",
+          "remark",
+          "created_at",
+          "updated_at",
+        )
         .get();
 
       if (!row) return null;
@@ -139,8 +146,10 @@ export function createRoleService(deps: {
         dataScope: row.data_scope ?? null,
         status: row.status,
         remark: row.remark ?? null,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
-        updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        updatedAt:
+          row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
       };
 
       await cache.set(`role:detail:${id}`, detail, { ttl: 300 });
@@ -173,10 +182,17 @@ export function createRoleService(deps: {
         sort: row.sort,
         dataScope: row.data_scope ?? null,
         status: row.status,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
 
-      return { items: list, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items: list,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async assignMenus(roleId, menuIds) {
@@ -185,9 +201,9 @@ export function createRoleService(deps: {
 
       // 批量插入新关联
       if (menuIds.length > 0) {
-        await db.query(RoleMenuModel).batchInsert(
-          menuIds.map(menuId => ({ role_id: roleId, menu_id: menuId })),
-        );
+        await db
+          .query(RoleMenuModel)
+          .batchInsert(menuIds.map((menuId) => ({ role_id: roleId, menu_id: menuId })));
       }
 
       // 清除与角色相关的缓存

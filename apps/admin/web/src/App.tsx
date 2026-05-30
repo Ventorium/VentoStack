@@ -1,76 +1,73 @@
-import { useEffect, useState } from 'react'
-import { BrowserRouter, useNavigate, useLocation } from 'react-router-dom'
-import { Spin, ConfigProvider, App as AntApp, theme as antdTheme } from 'antd'
-import zhCN from 'antd/locale/zh_CN'
-import { Suspense } from 'react'
-import { useRoutes } from 'react-router'
-import { useAuth } from '@/store/useAuth'
-import { useMenu } from '@/store/useMenu'
-import { usePublicConfig } from '@/hooks/usePublicConfig'
-import GlobalHistory from '@/components/GlobalHistory'
-import GlobalMessage from '@/components/GlobalMessage'
-import { AppTheme } from '@/theme'
-import routes from '~react-pages'
+import GlobalHistory from "@/components/GlobalHistory";
+import GlobalMessage from "@/components/GlobalMessage";
+import { usePublicConfig } from "@/hooks/usePublicConfig";
+import { useAuth } from "@/store/useAuth";
+import { useMenu } from "@/store/useMenu";
+import { AppTheme } from "@/theme";
+import { App as AntApp, ConfigProvider, Spin, theme as antdTheme } from "antd";
+import zhCN from "antd/locale/zh_CN";
+import { useEffect, useState } from "react";
+import { Suspense } from "react";
+import { useRoutes } from "react-router";
+import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
+import routes from "~react-pages";
 
-console.log('routes', routes)
+console.log("routes", routes);
 
 const AppRoutes = () => {
-  return (
-    <Suspense fallback={<Spin size="large" fullscreen />}>
-      {useRoutes(routes)}
-    </Suspense>
-  )
-}
+  return <Suspense fallback={<Spin size="large" fullscreen />}>{useRoutes(routes)}</Suspense>;
+};
 
 const _App = () => {
-  const navigate = useNavigate()
-  const { pathname } = useLocation()
+  const navigate = useNavigate();
+  const { pathname } = useLocation();
   const {
     ready: authReady,
     computed: { logged },
-  } = useAuth()
-  const fetchRoutes = useMenu(s => s.fetchRoutes)
-  const menuReady = useMenu(s => s.ready)
+  } = useAuth();
+  const fetchRoutes = useMenu((s) => s.fetchRoutes);
+  const menuReady = useMenu((s) => s.ready);
 
   useEffect(() => {
     if (authReady) {
       if (logged) {
         // fetch menus when logged in and not already fetched
-        fetchRoutes()
-      } else if (pathname !== '/auth/login') {
-        navigate('/auth/login', { replace: true })
+        fetchRoutes();
+      } else if (pathname !== "/auth/login") {
+        navigate("/auth/login", { replace: true });
       }
     }
-  }, [authReady, logged, pathname, navigate, fetchRoutes])
+  }, [authReady, logged, pathname, navigate, fetchRoutes]);
 
   // show loading while auth is initializing or menus loading
-  if (!authReady || (logged && !menuReady && pathname.startsWith('/app'))) {
-    return <Spin size="large" fullscreen />
+  if (!authReady || (logged && !menuReady && pathname.startsWith("/app"))) {
+    return <Spin size="large" fullscreen />;
   }
 
-  return <AppRoutes />
-}
+  return <AppRoutes />;
+};
 
 function App() {
-  const { init: initAuth } = useAuth()
-  const { config: publicConfig, fetch: fetchPublicConfig } = usePublicConfig()
-  const [ready, setReady] = useState(false)
+  const { init: initAuth } = useAuth();
+  const { config: publicConfig, fetch: fetchPublicConfig } = usePublicConfig();
+  const [ready, setReady] = useState(false);
 
   useEffect(() => {
     Promise.all([initAuth(), fetchPublicConfig()])
       .catch(() => {})
       .then(() => {
-        setReady(true)
-      })
-  }, [])
+        setReady(true);
+      });
+  }, []);
 
   useEffect(() => {
     if (publicConfig.siteName) {
-      document.title = `${publicConfig.siteName} 管理后台`
+      document.title = `${publicConfig.siteName} 管理后台`;
     }
-  }, [publicConfig.siteName])
+  }, [publicConfig.siteName]);
 
-  const algorithm = publicConfig.theme === 'dark' ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm
+  const algorithm =
+    publicConfig.theme === "dark" ? antdTheme.darkAlgorithm : antdTheme.defaultAlgorithm;
 
   return (
     <BrowserRouter>
@@ -85,12 +82,10 @@ function App() {
           },
         }}
       >
-        <AntApp>
-          {ready ? <_App /> : <Spin size="large" fullscreen />}
-        </AntApp>
+        <AntApp>{ready ? <_App /> : <Spin size="large" fullscreen />}</AntApp>
       </ConfigProvider>
     </BrowserRouter>
-  )
+  );
 }
 
-export default App
+export default App;

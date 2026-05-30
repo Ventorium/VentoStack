@@ -141,7 +141,9 @@ describe("createOutboundWebhookManager", () => {
 
     test("marks delivery as failed on network error", async () => {
       const mgr = createOutboundWebhookManager({
-        fetch: async () => { throw new Error("network error"); },
+        fetch: async () => {
+          throw new Error("network error");
+        },
         maxRetries: 1,
       });
       mgr.subscribe({ url: "https://a.com", secret: "s1", events: [], active: true });
@@ -156,7 +158,12 @@ describe("createOutboundWebhookManager", () => {
     test("sends unified WebhookEvent", async () => {
       const mock = createMockFetch([{ status: 200 }]);
       const mgr = createOutboundWebhookManager({ fetch: mock.fn });
-      mgr.subscribe({ url: "https://a.com", secret: "s1", events: ["order.created"], active: true });
+      mgr.subscribe({
+        url: "https://a.com",
+        secret: "s1",
+        events: ["order.created"],
+        active: true,
+      });
 
       const event: WebhookEvent = {
         id: "evt-1",
@@ -177,7 +184,11 @@ describe("createOutboundWebhookManager", () => {
       let callCount = 0;
       const mock = createMockFetch([]);
       mock.fn = async (url: string, init: RequestInit) => {
-        mock.calls.push({ url, headers: init.headers as Record<string, string>, body: init.body as string });
+        mock.calls.push({
+          url,
+          headers: init.headers as Record<string, string>,
+          body: init.body as string,
+        });
         callCount++;
         if (callCount === 1) return { status: 500 } as Response;
         return { status: 200 } as Response;
@@ -258,7 +269,7 @@ describe("createOutboundWebhookManager", () => {
         secret: "s1",
         events: [],
         active: true,
-        headers: { "Authorization": "Bearer token123" },
+        headers: { Authorization: "Bearer token123" },
       });
 
       await mgr.send("test", {});
@@ -270,7 +281,12 @@ describe("createOutboundWebhookManager", () => {
     test("preserves full WebhookEvent context in delivery", async () => {
       const mock = createMockFetch([{ status: 200 }]);
       const mgr = createOutboundWebhookManager({ fetch: mock.fn });
-      mgr.subscribe({ url: "https://a.com", secret: "s1", events: ["order.created"], active: true });
+      mgr.subscribe({
+        url: "https://a.com",
+        secret: "s1",
+        events: ["order.created"],
+        active: true,
+      });
 
       const event: WebhookEvent = {
         id: "evt-original-123",

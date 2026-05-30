@@ -1,7 +1,7 @@
-import type { Migration } from '@ventostack/database';
+import type { Migration } from "@ventostack/database";
 
 export const createSchedulerTables: Migration = {
-  name: '001_create_scheduler_tables',
+  name: "001_create_scheduler_tables",
 
   async up(executor) {
     await executor(`
@@ -31,12 +31,16 @@ export const createSchedulerTables: Migration = {
       )
     `);
 
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_job_log_job ON sys_schedule_job_log (job_id)');
-    await executor('CREATE INDEX IF NOT EXISTS idx_sys_job_log_time ON sys_schedule_job_log (start_at)');
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_job_log_job ON sys_schedule_job_log (job_id)",
+    );
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_job_log_time ON sys_schedule_job_log (start_at)",
+    );
   },
 
   async down(executor) {
-    await executor('DROP TABLE IF EXISTS sys_schedule_job_log');
-    await executor('DROP TABLE IF EXISTS sys_schedule_job');
+    await executor("DROP TABLE IF EXISTS sys_schedule_job_log");
+    await executor("DROP TABLE IF EXISTS sys_schedule_job");
   },
 };

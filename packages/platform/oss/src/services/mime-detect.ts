@@ -17,8 +17,14 @@ const MAGIC_BYTES: Array<{ mime: string; signature: number[]; offset?: number }>
   // ZIP-based
   { mime: "application/zip", signature: [0x50, 0x4b, 0x03, 0x04] },
   // Office (OOXML)
-  { mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document", signature: [0x50, 0x4b, 0x03, 0x04] },
-  { mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", signature: [0x50, 0x4b, 0x03, 0x04] },
+  {
+    mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    signature: [0x50, 0x4b, 0x03, 0x04],
+  },
+  {
+    mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    signature: [0x50, 0x4b, 0x03, 0x04],
+  },
   // GZIP
   { mime: "application/gzip", signature: [0x1f, 0x8b] },
   // RAR

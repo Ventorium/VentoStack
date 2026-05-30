@@ -5,7 +5,7 @@
  */
 
 import { createTagLogger } from "@ventostack/core";
-import { createSeedRunner, type SqlExecutor } from "@ventostack/database";
+import { type SqlExecutor, createSeedRunner } from "@ventostack/database";
 import { initAdminSeed } from "./seeds/001_init_admin";
 import { initConfigSeed } from "./seeds/002_init_config";
 import { initDictSeed } from "./seeds/003_init_dict";

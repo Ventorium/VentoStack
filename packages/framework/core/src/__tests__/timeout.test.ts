@@ -24,7 +24,7 @@ describe("timeout", () => {
     );
     expect(response.status).toBe(408);
     const body = await response.json();
-    expect(body.error).toBe("Request Timeout");
+    expect(body.error).toBe("请求超时");
   });
 
   test("custom timeout message", async () => {

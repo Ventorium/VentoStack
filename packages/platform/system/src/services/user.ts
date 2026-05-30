@@ -3,13 +3,13 @@
  * 用户管理服务：创建、更新、删除、查询、密码重置、状态变更
  */
 
-import type { Cache } from "@ventostack/cache";
 import type { PasswordHasher } from "@ventostack/auth";
+import type { Cache } from "@ventostack/cache";
 import type { Database } from "@ventostack/database";
+import { DeptModel } from "../models/dept";
+import { UserModel } from "../models/user";
 import type { ConfigService } from "./config";
 import { validatePassword } from "./password-policy";
-import { UserModel } from "../models/user";
-import { DeptModel } from "../models/dept";
 
 /** 创建用户参数 */
 export interface CreateUserParams {
@@ -98,9 +98,7 @@ export interface UserService {
  * 递归收集指定部门及其所有子部门 ID
  */
 async function collectDescendantDeptIds(db: Database, parentId: string): Promise<string[]> {
-  const rows = await db.query(DeptModel)
-    .select("id", "parent_id")
-    .list();
+  const rows = await db.query(DeptModel).select("id", "parent_id").list();
 
   const childrenMap = new Map<string, string[]>();
   for (const row of rows) {
@@ -139,27 +137,20 @@ export function createUserService(deps: {
 
   return {
     async create(params) {
-      const {
-        username,
-        password,
-        email,
-        phone,
-        nickname,
-        deptId,
-        status,
-        remark,
-      } = params;
+      const { username, password, email, phone, nickname, deptId, status, remark } = params;
       const id = crypto.randomUUID();
 
       // 密码：若未提供则使用系统默认初始密码
       let actualPassword = password;
       if (!actualPassword) {
-        actualPassword = (await configService.getValue('sys_user_init_password')) || '123456';
+        actualPassword = (await configService.getValue("sys_user_init_password")) || "123456";
       }
 
       // 密码策略校验
-      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
-      const complexity = (await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high' || 'low';
+      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const complexity =
+        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
+        "low";
       const validation = validatePassword(actualPassword, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -221,10 +212,24 @@ export function createUserService(deps: {
       const cached = await cache.get<UserDetail>(`user:detail:${id}`);
       if (cached) return cached;
 
-      const row = await db.query(UserModel)
+      const row = await db
+        .query(UserModel)
         .where("id", "=", id)
-        .select("id", "username", "email", "phone", "nickname", "avatar", "gender",
-                "status", "dept_id", "mfa_enabled", "remark", "created_at", "updated_at")
+        .select(
+          "id",
+          "username",
+          "email",
+          "phone",
+          "nickname",
+          "avatar",
+          "gender",
+          "status",
+          "dept_id",
+          "mfa_enabled",
+          "remark",
+          "created_at",
+          "updated_at",
+        )
         .get();
 
       if (!row) return null;
@@ -241,8 +246,10 @@ export function createUserService(deps: {
         deptId: row.dept_id ?? null,
         mfaEnabled: row.mfa_enabled,
         remark: row.remark ?? null,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
-        updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        updatedAt:
+          row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
       };
 
       // 写入缓存
@@ -284,16 +291,25 @@ export function createUserService(deps: {
         phone: row.phone ?? null,
         status: row.status,
         deptId: row.dept_id ?? null,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
 
-      return { items: list, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items: list,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async resetPassword(id, newPassword) {
       // 密码策略校验
-      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
-      const complexity = (await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high' || 'low';
+      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const complexity =
+        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
+        "low";
       const validation = validatePassword(newPassword, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -334,7 +350,17 @@ export function createUserService(deps: {
       }
 
       const rows = await query
-        .select("id", "username", "nickname", "email", "phone", "status", "dept_id", "created_at", "updated_at")
+        .select(
+          "id",
+          "username",
+          "nickname",
+          "email",
+          "phone",
+          "status",
+          "dept_id",
+          "created_at",
+          "updated_at",
+        )
         .orderBy("created_at", "desc")
         .list();
 

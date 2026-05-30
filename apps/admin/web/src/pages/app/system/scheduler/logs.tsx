@@ -1,58 +1,93 @@
-import { useState, useEffect } from 'react'
-import { Card, Table, Button, Select, Form, Space, Tag } from 'antd'
-import type { ColumnsType } from 'antd/es/table'
-import { ReloadOutlined, ArrowLeftOutlined } from '@ant-design/icons'
-import { useNavigate, useSearchParams } from 'react-router'
-import { client } from '@/api'
-import type { ScheduleJobLog } from '@/api/types'
-import { cleanParams } from '@/utils/cleanParams'
-import { fmtDate } from '@/utils/fmtDate'
-import { SCHEDULER_API } from '@/constants'
+import { client } from "@/api";
+import type { ScheduleJobLog } from "@/api/types";
+import { SCHEDULER_API } from "@/constants";
+import { cleanParams } from "@/utils/cleanParams";
+import { fmtDate } from "@/utils/fmtDate";
+import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
+import { Button, Card, Form, Select, Space, Table, Tag } from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { useEffect, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
 
 const SchedulerLogsPage = () => {
-  const navigate = useNavigate()
-  const [searchParams] = useSearchParams()
-  const jobId = searchParams.get('jobId')
-  const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<ScheduleJobLog[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(10)
-  const [searchForm] = Form.useForm()
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const jobId = searchParams.get("jobId");
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<ScheduleJobLog[]>([]);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+  const [searchForm] = Form.useForm();
 
   const fetchData = async (params: Record<string, unknown>) => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const query = cleanParams({ ...params, ...(jobId ? { jobId } : {}) })
-      const { error, data } = await client.get(SCHEDULER_API.LOGS, { query })
+      const query = cleanParams({ ...params, ...(jobId ? { jobId } : {}) });
+      const { error, data } = await client.get(SCHEDULER_API.LOGS, { query });
       if (!error && data) {
-        setData(data.list || [])
-        setTotal(data.total || 0)
+        setData(data.list || []);
+        setTotal(data.total || 0);
       }
-    } finally { setLoading(false) }
-  }
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  useEffect(() => { fetchData({ page, pageSize }) }, [jobId])
+  useEffect(() => {
+    fetchData({ page, pageSize });
+  }, [jobId]);
 
   const handleSearch = () => {
-    const values = searchForm.getFieldsValue()
-    setPage(1)
-    fetchData({ page: 1, pageSize, ...values })
-  }
+    const values = searchForm.getFieldsValue();
+    setPage(1);
+    fetchData({ page: 1, pageSize, ...values });
+  };
   const onPageChange = (newPage: number, newPageSize: number) => {
-    setPage(newPage)
-    setPageSize(newPageSize)
-    fetchData({ page: newPage, pageSize: newPageSize, ...searchForm.getFieldsValue() })
-  }
+    setPage(newPage);
+    setPageSize(newPageSize);
+    fetchData({ page: newPage, pageSize: newPageSize, ...searchForm.getFieldsValue() });
+  };
 
   const columns: ColumnsType<ScheduleJobLog> = [
-    { title: '任务名称', dataIndex: 'jobName', key: 'jobName', width: 160 },
-    { title: '开始时间', dataIndex: 'startAt', key: 'startAt', width: 180, render: (_: unknown, r: ScheduleJobLog) => fmtDate(r.startAt) },
-    { title: '结束时间', dataIndex: 'endAt', key: 'endAt', width: 180, render: (_: unknown, r: ScheduleJobLog) => fmtDate(r.endAt) },
-    { title: '耗时', dataIndex: 'durationMs', key: 'durationMs', width: 100, render: (v: number) => `${v}ms` },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 100, render: (v: string) => v === 'SUCCESS' ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag> },
-    { title: '错误信息', dataIndex: 'error', key: 'error', ellipsis: true, render: (v: string) => v || '-' },
-  ]
+    { title: "任务名称", dataIndex: "jobName", key: "jobName", width: 160 },
+    {
+      title: "开始时间",
+      dataIndex: "startAt",
+      key: "startAt",
+      width: 180,
+      render: (_: unknown, r: ScheduleJobLog) => fmtDate(r.startAt),
+    },
+    {
+      title: "结束时间",
+      dataIndex: "endAt",
+      key: "endAt",
+      width: 180,
+      render: (_: unknown, r: ScheduleJobLog) => fmtDate(r.endAt),
+    },
+    {
+      title: "耗时",
+      dataIndex: "durationMs",
+      key: "durationMs",
+      width: 100,
+      render: (v: number) => `${v}ms`,
+    },
+    {
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
+      width: 100,
+      render: (v: string) =>
+        v === "SUCCESS" ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>,
+    },
+    {
+      title: "错误信息",
+      dataIndex: "error",
+      key: "error",
+      ellipsis: true,
+      render: (v: string) => v || "-",
+    },
+  ];
 
   return (
     <div>
@@ -66,19 +101,38 @@ const SchedulerLogsPage = () => {
             </Select>
           </Form.Item>
           <Space>
-            <Button type="primary" onClick={handleSearch}>搜索</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => fetchData({ page, pageSize })}>刷新</Button>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/system/scheduler')}>返回</Button>
+            <Button type="primary" onClick={handleSearch}>
+              搜索
+            </Button>
+            <Button icon={<ReloadOutlined />} onClick={() => fetchData({ page, pageSize })}>
+              刷新
+            </Button>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/app/system/scheduler")}>
+              返回
+            </Button>
           </Space>
         </Form>
       </Card>
       <Card title={`日志列表（${total}）`}>
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} size="small"
-          pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: t => `共 ${t} 条`, onChange: onPageChange }}
-          scroll={{ x: 1000 }} />
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          size="small"
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            showTotal: (t) => `共 ${t} 条`,
+            onChange: onPageChange,
+          }}
+          scroll={{ x: 1000 }}
+        />
       </Card>
     </div>
-  )
-}
+  );
+};
 
-export default SchedulerLogsPage
+export default SchedulerLogsPage;

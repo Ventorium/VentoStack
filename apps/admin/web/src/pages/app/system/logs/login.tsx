@@ -1,5 +1,5 @@
-import { Navigate } from 'react-router-dom'
+import { Navigate } from "react-router-dom";
 
-const LoginLogRedirect = () => <Navigate to="/app/system/logs" replace />
+const LoginLogRedirect = () => <Navigate to="/app/system/logs" replace />;
 
-export default LoginLogRedirect
+export default LoginLogRedirect;

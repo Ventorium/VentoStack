@@ -9,7 +9,7 @@ describe("success()", () => {
 
     const body: ApiResponse = await res.json();
     expect(body.code).toBe(0);
-    expect(body.message).toBe("ok");
+    expect(body.message).toBe("成功");
     expect(body.data).toBeUndefined();
   });
 
@@ -77,7 +77,7 @@ describe("paginated()", () => {
 
     const body: ApiResponse<PaginatedData<{ id: number }>> = await res.json();
     expect(body.code).toBe(0);
-    expect(body.message).toBe("ok");
+    expect(body.message).toBe("成功");
     expect(body.data!.items).toEqual(items);
     expect(body.data!.total).toBe(10);
     expect(body.data!.page).toBe(1);

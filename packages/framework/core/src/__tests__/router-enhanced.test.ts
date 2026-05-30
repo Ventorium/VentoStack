@@ -173,7 +173,12 @@ describe("Router - typed params with namedRoute & url()", () => {
 
   test("url() substitutes multiple typed params", () => {
     const router = createRouter();
-    router.namedRoute("post.comment", "GET", "/posts/:postId<int>/comments/:commentId<int>", dummyHandler);
+    router.namedRoute(
+      "post.comment",
+      "GET",
+      "/posts/:postId<int>/comments/:commentId<int>",
+      dummyHandler,
+    );
 
     expect(router.url("post.comment", { postId: "1", commentId: "2" })).toBe("/posts/1/comments/2");
   });

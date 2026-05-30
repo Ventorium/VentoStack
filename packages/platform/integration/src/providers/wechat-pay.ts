@@ -9,7 +9,11 @@
  * - certificates: Record<string, string> — 证书序列号 → PEM 公钥映射
  */
 
-import type { ProviderVerifyConfig, VerifyResult, WebhookProviderVerifier } from "@ventostack/webhook";
+import type {
+  ProviderVerifyConfig,
+  VerifyResult,
+  WebhookProviderVerifier,
+} from "@ventostack/webhook";
 import { rsaSha256Verify } from "@ventostack/webhook";
 
 /**

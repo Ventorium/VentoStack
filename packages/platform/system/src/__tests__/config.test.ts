@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createConfigService } from "../services/config";
-import { createMockExecutor, createMockDatabase, createTestCache } from "./helpers";
+import { createMockDatabase, createMockExecutor, createTestCache } from "./helpers";
 
 function setup() {
   const mockExec = createMockExecutor();
@@ -20,7 +20,10 @@ describe("ConfigService", () => {
     const s = setup();
     s.results.set("INSERT", [{ id: "cfg1" }]);
     const result = await s.configService.create({
-      name: "站点名称", key: "site_name", value: "VentoStack", type: 0,
+      name: "站点名称",
+      key: "site_name",
+      value: "VentoStack",
+      type: 0,
     });
     expect(result.id).toBeTruthy();
   });
@@ -41,13 +44,13 @@ describe("ConfigService", () => {
   test("update changes config value", async () => {
     const s = setup();
     await s.configService.update("site_name", { value: "NewName" });
-    expect(s.calls.some(c => c.text.includes("UPDATE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
   });
 
   test("delete removes config", async () => {
     const s = setup();
     await s.configService.delete("site_name");
-    expect(s.calls.some(c => c.text.includes("deleted_at"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("deleted_at"))).toBe(true);
   });
 
   test("refreshCache clears cached value", async () => {

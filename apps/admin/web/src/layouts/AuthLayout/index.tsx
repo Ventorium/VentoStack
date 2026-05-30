@@ -1,5 +1,5 @@
-import type { WithChildren } from '@/types'
-import loginBg from '@/assets/images/login-bg.webp'
+import loginBg from "@/assets/images/login-bg.webp";
+import type { WithChildren } from "@/types";
 
 const AuthLayout = ({ children }: WithChildren) => {
   return (
@@ -11,7 +11,7 @@ const AuthLayout = ({ children }: WithChildren) => {
     >
       {children}
     </div>
-  )
-}
+  );
+};
 
-export default AuthLayout
+export default AuthLayout;

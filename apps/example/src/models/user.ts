@@ -1,4 +1,4 @@
-import { defineModel, column, type ModelDefinition } from "@ventostack/database";
+import { type ModelDefinition, column, defineModel } from "@ventostack/database";
 
 export interface User extends Record<string, unknown> {
   id: string;

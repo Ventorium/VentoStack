@@ -2,8 +2,8 @@ import { Database as SQLiteDB } from "bun:sqlite";
 import { createDatabase, createMigrationRunner } from "@ventostack/database";
 import type { Database, SqlExecutor } from "@ventostack/database";
 import { migrations } from "../src/migrations";
-import { createUserService } from "../src/services/user-service";
 import { createAuthService } from "../src/services/auth-service";
+import { createUserService } from "../src/services/user-service";
 
 export function createTestExecutor(): { sqlite: SQLiteDB; executor: SqlExecutor } {
   const sqlite = new SQLiteDB(":memory:");

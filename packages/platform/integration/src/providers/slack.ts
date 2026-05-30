@@ -7,7 +7,11 @@
  * 默认 5 分钟时间容差
  */
 
-import type { ProviderVerifyConfig, VerifyResult, WebhookProviderVerifier } from "@ventostack/webhook";
+import type {
+  ProviderVerifyConfig,
+  VerifyResult,
+  WebhookProviderVerifier,
+} from "@ventostack/webhook";
 import { hmacSign, timingSafeEqual } from "@ventostack/webhook";
 
 const DEFAULT_TOLERANCE = 5 * 60 * 1000; // 5 分钟

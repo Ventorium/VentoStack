@@ -7,7 +7,7 @@
  * 这里只验证模块结构。
  */
 
-import { describe, it, expect } from "bun:test";
+import { describe, expect, it } from "bun:test";
 
 describe("Boot package", () => {
   it("should have correct package structure", () => {

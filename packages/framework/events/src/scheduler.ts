@@ -118,13 +118,15 @@ export function createScheduler(): Scheduler {
       if (!_running) return;
       const start = Date.now();
       try {
-        if (options.onBeforeExecute) await options.onBeforeExecute({ name: options.name, scheduledAt: start });
+        if (options.onBeforeExecute)
+          await options.onBeforeExecute({ name: options.name, scheduledAt: start });
         await handler();
         const duration = Date.now() - start;
         if (options.onAfterExecute) await options.onAfterExecute({ name: options.name, duration });
       } catch (err) {
         const duration = Date.now() - start;
-        if (options.onError) await options.onError({ name: options.name, error: err as Error, duration });
+        if (options.onError)
+          await options.onError({ name: options.name, error: err as Error, duration });
       }
     };
 

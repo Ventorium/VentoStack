@@ -1,14 +1,14 @@
-import { createApp, rateLimit, createMemoryRateLimitStore } from "@ventostack/core";
+import { createApp, createMemoryRateLimitStore, rateLimit } from "@ventostack/core";
+import type { Database } from "@ventostack/database";
 import { createEventBus } from "@ventostack/events";
 import { createHealthCheck, createLogger, createMetrics } from "@ventostack/observability";
-import type { Database } from "@ventostack/database";
-import { config as defaultConfig, type AppConfig } from "./config";
-import { createUserService } from "./services/user-service";
-import { createAuthService } from "./services/auth-service";
-import { requestLogger, errorHandler } from "./middleware/common";
-import { registerRoutes } from "./routes";
-import { setupExampleOpenAPI } from "./openapi";
+import { type AppConfig, config as defaultConfig } from "./config";
 import { userLoggedIn } from "./events/user-events";
+import { errorHandler, requestLogger } from "./middleware/common";
+import { setupExampleOpenAPI } from "./openapi";
+import { registerRoutes } from "./routes";
+import { createAuthService } from "./services/auth-service";
+import { createUserService } from "./services/user-service";
 
 export interface CreateAppOptions {
   db: Database;
@@ -23,7 +23,10 @@ export async function createExampleApp(options: CreateAppOptions) {
     env: options.config?.env ?? defaultConfig.env,
   };
 
-  const logger = createLogger({ level: config.env === "production" ? "warn" : "info", enabled: true });
+  const logger = createLogger({
+    level: config.env === "production" ? "warn" : "info",
+    enabled: true,
+  });
   const bus = createEventBus();
   const health = createHealthCheck();
   const metrics = createMetrics();
@@ -80,7 +83,13 @@ export async function createExampleApp(options: CreateAppOptions) {
     ctx.json({ name: "VentoStack Example", version: "1.0.0", env: config.env }),
   );
 
-  registerRoutes({ router: app.router, health, userService, authService, jwtSecret: config.jwtSecret });
+  registerRoutes({
+    router: app.router,
+    health,
+    userService,
+    authService,
+    jwtSecret: config.jwtSecret,
+  });
 
   setupExampleOpenAPI(app);
 

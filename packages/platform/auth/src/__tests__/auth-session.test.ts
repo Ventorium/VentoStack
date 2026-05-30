@@ -1,9 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { createJWT } from "../jwt";
-import { createTokenRefresh } from "../token-refresh";
-import { createSessionManager, createMemorySessionStore } from "../session";
-import { createMultiDeviceManager } from "../multi-device";
 import { createAuthSessionManager } from "../auth-session";
+import { createJWT } from "../jwt";
+import { createMultiDeviceManager } from "../multi-device";
+import { createMemorySessionStore, createSessionManager } from "../session";
+import { createTokenRefresh } from "../token-refresh";
 
 const SECRET = "a]3Kf9$mPqR7wXyZ!bNcDe2GhJkLs5Tv"; // 32+ bytes
 
@@ -138,9 +138,7 @@ describe("createAuthSessionManager", () => {
     await authSession.forceLogout("user1");
 
     // Trying to refresh with the old token should fail
-    await expect(tokenRefresh.refresh(result.refreshToken, SECRET)).rejects.toThrow(
-      "Token has been revoked",
-    );
+    await expect(tokenRefresh.refresh(result.refreshToken, SECRET)).rejects.toThrow("令牌已被撤销");
   });
 
   test("refreshTokens returns new pair and revokes old", async () => {

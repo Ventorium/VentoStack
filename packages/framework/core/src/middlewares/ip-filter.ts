@@ -1,7 +1,7 @@
 // @ventostack/core - IP 黑白名单中间件
 
-import type { Middleware } from "../middleware";
 import { getClientIPFromRequest } from "../client-ip";
+import type { Middleware } from "../middleware";
 
 /** IP 过滤配置选项 */
 export interface IPFilterOptions {

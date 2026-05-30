@@ -1,49 +1,55 @@
-import { createFetchClient } from '@doremijs/o2t/client'
-import { msg } from '@/components/GlobalMessage'
-import { getAccessToken, getRefreshToken, setAccessToken, setRefreshToken, clearToken } from '@/store/token'
-import { globalNavigate } from '@/components/GlobalHistory'
-import type { OpenAPIs } from './schema'
+import { globalNavigate } from "@/components/GlobalHistory";
+import { msg } from "@/components/GlobalMessage";
+import {
+  clearToken,
+  getAccessToken,
+  getRefreshToken,
+  setAccessToken,
+  setRefreshToken,
+} from "@/store/token";
+import { createFetchClient } from "@doremijs/o2t/client";
+import type { OpenAPIs } from "./schema";
 
 // ---------------------------------------------------------------------------
 // Token refresh state — module-level to coordinate concurrent 401 retries
 // ---------------------------------------------------------------------------
-let isRefreshing = false
-const refreshQueue: Array<() => void> = []
+let isRefreshing = false;
+const refreshQueue: Array<() => void> = [];
 
 async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = getRefreshToken()
-  if (!refreshToken) return false
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return false;
 
-  isRefreshing = true
+  isRefreshing = true;
   try {
-    const res = await fetch('/api/auth/refresh', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res = await fetch("/api/auth/refresh", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ refreshToken }),
-    })
-    const json = await res.json()
+    });
+    const json = await res.json();
     // Backend wraps responses in { code, message, data }
-    const data = json?.data ?? json
+    const data = json?.data ?? json;
     if (res.ok && data?.accessToken) {
-      setAccessToken(data.accessToken)
-      if (data.refreshToken) setRefreshToken(data.refreshToken)
+      setAccessToken(data.accessToken);
+      if (data.refreshToken) setRefreshToken(data.refreshToken);
       // Flush queued requests with the new token
-      const queue = refreshQueue.splice(0)
+      const queue = refreshQueue.splice(0);
       for (const resolve of queue) {
-        resolve()
+        resolve();
       }
-      return true
+      return true;
     }
     // Refresh itself failed — clean up and redirect
-    clearToken()
-    globalNavigate('/auth/login', { replace: true })
-    return false
+    clearToken();
+    globalNavigate("/auth/login", { replace: true });
+    return false;
   } catch {
-    clearToken()
-    globalNavigate('/auth/login', { replace: true })
-    return false
+    clearToken();
+    globalNavigate("/auth/login", { replace: true });
+    return false;
   } finally {
-    isRefreshing = false
+    isRefreshing = false;
   }
 }
 
@@ -53,169 +59,175 @@ async function refreshAccessToken(): Promise<boolean> {
 const rawClient = createFetchClient<OpenAPIs>({
   requestTimeoutMs: 10000,
   requestInterceptor(request) {
-    const token = getAccessToken()
-    if (!['/api/login', '/api/auth/refresh'].includes(request.url) && token) {
-      request.init.headers.Authorization = `Bearer ${token}`
+    const token = getAccessToken();
+    if (!["/api/login", "/api/auth/refresh"].includes(request.url) && token) {
+      request.init.headers.Authorization = `Bearer ${token}`;
     }
-    return request
+    return request;
   },
   async responseInterceptor(_request, response) {
     // 仅处理成功响应的信封解包 { code, message, data } → data
-    if (!response.ok) return response
+    if (!response.ok) return response;
 
-    const ct = response.headers.get('content-type')
-    if (!ct?.includes('application/json')) return response
+    const ct = response.headers.get("content-type");
+    if (!ct?.includes("application/json")) return response;
 
-    const json: unknown = await response.clone().json()
-    if (!json || typeof json !== 'object' || !('code' in json)) return response
+    const json: unknown = await response.clone().json();
+    if (!json || typeof json !== "object" || !("code" in json)) return response;
 
-    const envelope = json as { code: number; message?: string; data?: unknown }
+    const envelope = json as { code: number; message?: string; data?: unknown };
 
     // code !== 0 业务错误，转为 400 由 errorHandler 统一处理
     if (envelope.code !== 0) {
       return new Response(
-        JSON.stringify({ code: envelope.code, message: envelope.message || '请求失败' }),
-        { status: 400, headers: { 'Content-Type': 'application/json' } },
-      )
+        JSON.stringify({ code: envelope.code, message: envelope.message || "请求失败" }),
+        { status: 400, headers: { "Content-Type": "application/json" } },
+      );
     }
 
     // code=0 成功，解包 data
     return new Response(JSON.stringify(envelope.data ?? null), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
-    })
+      headers: { "Content-Type": "application/json" },
+    });
   },
   async errorHandler(_request, response, error) {
     // 网络错误
     if (error) {
       const msgMap: Record<string, string> = {
-        'Failed to fetch': '网络连接失败，请检查网络',
-        'The user aborted a request': '请求已取消',
-        'NetworkError': '网络连接失败，请检查网络',
-        'TimeoutError': '请求超时，请稍后重试',
-      }
-      const key = Object.keys(msgMap).find(k => error.message.includes(k))
-      msg.error(key ? msgMap[key] : '请求失败，请稍后重试')
-      return
+        "Failed to fetch": "网络连接失败，请检查网络",
+        "The user aborted a request": "请求已取消",
+        NetworkError: "网络连接失败，请检查网络",
+        TimeoutError: "请求超时，请稍后重试",
+      };
+      const key = Object.keys(msgMap).find((k) => error.message.includes(k));
+      msg.error(key ? msgMap[key] : "请求失败，请稍后重试");
+      return;
     }
 
-    if (!response) return
+    if (!response) return;
 
     // 401 — token 过期：由 requestWithRefresh 处理刷新，此处不显示错误
     if (response.status === 401) {
       // 有 refresh token 时，静默等待 requestWithRefresh 处理刷新
-      if (getRefreshToken()) return
+      if (getRefreshToken()) return;
       // 无 refresh token，走原有逻辑
       if (getAccessToken()) {
-        clearToken()
-        globalNavigate('/auth/login', { replace: true })
+        clearToken();
+        globalNavigate("/auth/login", { replace: true });
       }
-      return
+      return;
     }
 
     // 400 — 业务错误（code !== 0 被转为 400）
     if (response.status === 400) {
       try {
-        const json: unknown = await response.clone().json()
-        if (json && typeof json === 'object' && 'message' in json) {
-          msg.error((json as { message: string }).message)
+        const json: unknown = await response.clone().json();
+        if (json && typeof json === "object" && "message" in json) {
+          msg.error((json as { message: string }).message);
         }
       } catch {
-        msg.error('请求失败')
+        msg.error("请求失败");
       }
-      return
+      return;
     }
 
     // 403 — 登录接口的密码过期由业务层处理，其他 403 显示错误信息
     if (response.status === 403) {
       try {
-        const json: unknown = await response.clone().json()
-        if (json && typeof json === 'object' && 'data' in json) {
-          const data = (json as { data: unknown }).data
-          if (data && typeof data === 'object' && 'code' in data && (data as { code: string }).code === 'password_expired') {
-            return // 登录密码过期，由 useAuth.login() 处理
+        const json: unknown = await response.clone().json();
+        if (json && typeof json === "object" && "data" in json) {
+          const data = (json as { data: unknown }).data;
+          if (
+            data &&
+            typeof data === "object" &&
+            "code" in data &&
+            (data as { code: string }).code === "password_expired"
+          ) {
+            return; // 登录密码过期，由 useAuth.login() 处理
           }
         }
-        if ('message' in (json as object)) {
-          msg.error((json as { message: string }).message || '没有权限')
+        if ("message" in (json as object)) {
+          msg.error((json as { message: string }).message || "没有权限");
         }
       } catch {
-        msg.error('没有权限')
+        msg.error("没有权限");
       }
-      return
+      return;
     }
 
     // 其他服务端错误（500/502 等）
     try {
-      const contentType = response.headers.get('content-type')
-      if (contentType?.includes('application/json')) {
-        const resp: unknown = await response.clone().json()
-        if (resp && typeof resp === 'object' && 'message' in resp) {
-          msg.error((resp as { message: string }).message || '服务器错误')
+      const contentType = response.headers.get("content-type");
+      if (contentType?.includes("application/json")) {
+        const resp: unknown = await response.clone().json();
+        if (resp && typeof resp === "object" && "message" in resp) {
+          msg.error((resp as { message: string }).message || "服务器错误");
         } else {
-          msg.error('服务器错误')
+          msg.error("服务器错误");
         }
       } else {
-        const text = await response.text()
-        msg.error(text || '服务器错误')
+        const text = await response.text();
+        msg.error(text || "服务器错误");
       }
     } catch {
-      msg.error('服务器错误')
+      msg.error("服务器错误");
     }
   },
-})
+});
 
 // ---------------------------------------------------------------------------
 // Public client — wraps rawClient with automatic token refresh on 401
 // ---------------------------------------------------------------------------
 
-type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch'
+type HttpMethod = "get" | "post" | "put" | "delete" | "patch";
 
 function isAuthPath(url: string): boolean {
-  return url.startsWith('/api/auth/login')
-    || url.startsWith('/api/auth/register')
-    || url.startsWith('/api/auth/refresh')
-    || url.startsWith('/api/auth/passkey/')
+  return (
+    url.startsWith("/api/auth/login") ||
+    url.startsWith("/api/auth/register") ||
+    url.startsWith("/api/auth/refresh") ||
+    url.startsWith("/api/auth/passkey/")
+  );
 }
 
 /** Strip Authorization header so the request interceptor can re-add the fresh token. */
-function stripAuthHeader(options: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!options?.headers) return options
-  const { Authorization: _, ...rest } = options.headers as Record<string, string>
-  return { ...options, headers: Object.keys(rest).length > 0 ? rest : undefined }
+function stripAuthHeader(
+  options: Record<string, unknown> | undefined,
+): Record<string, unknown> | undefined {
+  if (!options?.headers) return options;
+  const { Authorization: _, ...rest } = options.headers as Record<string, string>;
+  return { ...options, headers: Object.keys(rest).length > 0 ? rest : undefined };
 }
 
-type ClientResult = { error: boolean; response?: Response; data: unknown }
+type ClientResult = { error: boolean; response?: Response; data: unknown };
 
 async function requestWithRefresh(
   method: HttpMethod,
   path: string,
   options?: Record<string, unknown>,
 ): Promise<ClientResult> {
-  const methodFn = rawClient[method] as (p: string, o?: unknown) => Promise<ClientResult>
-  const result = await methodFn(path, options)
+  const methodFn = rawClient[method] as (p: string, o?: unknown) => Promise<ClientResult>;
+  const result = await methodFn(path, options);
 
   // Only attempt refresh for 401 on non-auth paths when a refresh token exists
-  if (
-    result.error
-    && result.response?.status === 401
-    && !isAuthPath(path)
-    && getRefreshToken()
-  ) {
+  if (result.error && result.response?.status === 401 && !isAuthPath(path) && getRefreshToken()) {
     if (isRefreshing) {
       // Another request is already refreshing — queue this one
-      await new Promise<void>((resolve) => { refreshQueue.push(resolve) })
-      return methodFn(path, stripAuthHeader(options))
+      await new Promise<void>((resolve) => {
+        refreshQueue.push(resolve);
+      });
+      return methodFn(path, stripAuthHeader(options));
     }
 
     // Initiate refresh
-    const refreshed = await refreshAccessToken()
+    const refreshed = await refreshAccessToken();
     if (refreshed) {
-      return methodFn(path, stripAuthHeader(options))
+      return methodFn(path, stripAuthHeader(options));
     }
   }
 
-  return result
+  return result;
 }
 
 /**
@@ -228,10 +240,10 @@ async function requestWithRefresh(
  */
 export const client = new Proxy(rawClient, {
   get(target, prop: string) {
-    if (['get', 'post', 'put', 'delete', 'patch'].includes(prop)) {
+    if (["get", "post", "put", "delete", "patch"].includes(prop)) {
       return (path: string, options?: Record<string, unknown>) =>
-        requestWithRefresh(prop as HttpMethod, path, options)
+        requestWithRefresh(prop as HttpMethod, path, options);
     }
-    return Reflect.get(target, prop)
+    return Reflect.get(target, prop);
   },
-}) as typeof rawClient
+}) as typeof rawClient;

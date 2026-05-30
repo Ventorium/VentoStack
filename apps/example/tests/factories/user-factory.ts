@@ -1,4 +1,4 @@
-import { defineFactory, sequence, oneOf } from "@ventostack/testing";
+import { defineFactory, oneOf, sequence } from "@ventostack/testing";
 import type { User } from "../../src/models";
 
 export const userFactory = defineFactory<User>({

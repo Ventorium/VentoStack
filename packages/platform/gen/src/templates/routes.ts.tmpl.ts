@@ -2,7 +2,7 @@
  * Routes 代码模板
  */
 
-import type { GenTableInfo, GenColumnInfo } from "../services/gen";
+import type { GenColumnInfo, GenTableInfo } from "../services/gen";
 
 export function renderRoutes(table: GenTableInfo, _columns: GenColumnInfo[]): string {
   const basePath = `/api/${table.moduleName}/${toPlural(table.className.toLowerCase())}`;

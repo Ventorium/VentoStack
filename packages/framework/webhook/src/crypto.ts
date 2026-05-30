@@ -72,12 +72,7 @@ export async function rsaSha256Verify(
     const encoder = new TextEncoder();
     const sigBuffer = base64ToBuffer(signature);
 
-    return crypto.subtle.verify(
-      "RSASSA-PKCS1-v1_5",
-      key,
-      sigBuffer,
-      encoder.encode(payload),
-    );
+    return crypto.subtle.verify("RSASSA-PKCS1-v1_5", key, sigBuffer, encoder.encode(payload));
   } catch {
     return false;
   }

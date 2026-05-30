@@ -3,6 +3,7 @@
  * 支持订阅管理、HMAC 签名投递、指数退避重试、死信队列
  */
 
+import { exponentialBackoff, hmacSign } from "./crypto";
 import type {
   OutboundManagerOptions,
   OutboundWebhookManager,
@@ -10,7 +11,6 @@ import type {
   WebhookEvent,
   WebhookSubscription,
 } from "./types";
-import { exponentialBackoff, hmacSign } from "./crypto";
 
 /**
  * 创建出站 Webhook 管理器
@@ -34,9 +34,7 @@ export function createOutboundWebhookManager(
   const retryQueue: string[] = [];
   let retryTimer: ReturnType<typeof setTimeout> | null = null;
 
-  function subscribe(
-    config: Omit<WebhookSubscription, "id" | "createdAt">,
-  ): string {
+  function subscribe(config: Omit<WebhookSubscription, "id" | "createdAt">): string {
     const id = crypto.randomUUID();
     const sub: WebhookSubscription = {
       ...config,
@@ -61,9 +59,7 @@ export function createOutboundWebhookManager(
   }): WebhookSubscription[] {
     let result = Array.from(subscriptions.values());
     if (filter?.event) {
-      result = result.filter(
-        (s) => s.events.length === 0 || s.events.includes(filter.event!),
-      );
+      result = result.filter((s) => s.events.length === 0 || s.events.includes(filter.event!));
     }
     if (filter?.active !== undefined) {
       result = result.filter((s) => s.active === filter.active);
@@ -124,9 +120,7 @@ export function createOutboundWebhookManager(
     delivery.status = "pending";
 
     const body =
-      typeof delivery.payload === "string"
-        ? delivery.payload
-        : JSON.stringify(delivery.payload);
+      typeof delivery.payload === "string" ? delivery.payload : JSON.stringify(delivery.payload);
     const signature = hmacSign(body, sub.secret, algorithm);
     delivery.signature = `${algorithm}=${signature}`;
 
@@ -166,13 +160,15 @@ export function createOutboundWebhookManager(
     } else {
       delivery.status = "failed";
       delivery.nextRetryAt =
-        Date.now() +
-        exponentialBackoff(delivery.attempts - 1, retryInterval, maxRetryInterval);
+        Date.now() + exponentialBackoff(delivery.attempts - 1, retryInterval, maxRetryInterval);
       retryQueue.push(deliveryId);
       retryQueue.sort((a, b) => {
         const da = deliveries.get(a);
         const db = deliveries.get(b);
-        return (da?.nextRetryAt ?? Infinity) - (db?.nextRetryAt ?? Infinity);
+        return (
+          (da?.nextRetryAt ?? Number.POSITIVE_INFINITY) -
+          (db?.nextRetryAt ?? Number.POSITIVE_INFINITY)
+        );
       });
     }
   }
@@ -180,7 +176,12 @@ export function createOutboundWebhookManager(
   async function send(
     event: string,
     payload: unknown,
-    context?: { source?: string; metadata?: Record<string, unknown>; eventId?: string; eventTimestamp?: number },
+    context?: {
+      source?: string;
+      metadata?: Record<string, unknown>;
+      eventId?: string;
+      eventTimestamp?: number;
+    },
   ): Promise<string[]> {
     const matchingSubs = listSubscriptions({ event, active: true });
     const deliveryIds: string[] = [];
@@ -210,7 +211,12 @@ export function createOutboundWebhookManager(
   }
 
   async function sendEvent(event: WebhookEvent): Promise<string[]> {
-    const context: { source?: string; metadata?: Record<string, unknown>; eventId?: string; eventTimestamp?: number } = {
+    const context: {
+      source?: string;
+      metadata?: Record<string, unknown>;
+      eventId?: string;
+      eventTimestamp?: number;
+    } = {
       source: event.source,
       eventId: event.id,
       eventTimestamp: event.timestamp,
@@ -220,9 +226,7 @@ export function createOutboundWebhookManager(
   }
 
   async function retry(): Promise<number> {
-    const failed = Array.from(deliveries.values()).filter(
-      (d) => d.status === "failed",
-    );
+    const failed = Array.from(deliveries.values()).filter((d) => d.status === "failed");
     let retried = 0;
 
     for (const delivery of failed) {

@@ -1,40 +1,40 @@
-import { create } from 'zustand'
+import { create } from "zustand";
 
 export interface PublicConfig {
-  siteName: string
-  theme: 'light' | 'dark'
-  deptEnabled: boolean
-  mfaEnabled: boolean
-  mfaForce: boolean
-  passkeyEnabled: boolean
-  passwordMinLength: number
-  passwordComplexity: 'low' | 'medium' | 'high'
+  siteName: string;
+  theme: "light" | "dark";
+  deptEnabled: boolean;
+  mfaEnabled: boolean;
+  mfaForce: boolean;
+  passkeyEnabled: boolean;
+  passwordMinLength: number;
+  passwordComplexity: "low" | "medium" | "high";
 }
 
 interface PublicConfigState {
-  config: PublicConfig
-  loaded: boolean
-  fetch: () => Promise<void>
+  config: PublicConfig;
+  loaded: boolean;
+  fetch: () => Promise<void>;
 }
 
 const defaultConfig: PublicConfig = {
-  siteName: 'VentoStack',
-  theme: 'light',
+  siteName: "VentoStack",
+  theme: "light",
   deptEnabled: true,
   mfaEnabled: false,
   mfaForce: false,
   passkeyEnabled: true,
   passwordMinLength: 6,
-  passwordComplexity: 'low',
-}
+  passwordComplexity: "low",
+};
 
 export const usePublicConfig = create<PublicConfigState>((set) => ({
   config: defaultConfig,
   loaded: false,
   fetch: async () => {
     try {
-      const resp = await fetch('/api/system/configs/public')
-      const data = await resp.json()
+      const resp = await fetch("/api/system/configs/public");
+      const data = await resp.json();
       if (data?.data) {
         set({
           config: {
@@ -48,12 +48,12 @@ export const usePublicConfig = create<PublicConfigState>((set) => ({
             passwordComplexity: data.data.passwordComplexity ?? defaultConfig.passwordComplexity,
           },
           loaded: true,
-        })
+        });
       } else {
-        set({ loaded: true })
+        set({ loaded: true });
       }
     } catch {
-      set({ loaded: true })
+      set({ loaded: true });
     }
   },
-}))
+}));

@@ -1,15 +1,15 @@
-import { create } from 'zustand'
-import { client } from '@/api'
-import type { FrontendRoute } from '@/api/types'
+import { client } from "@/api";
+import type { FrontendRoute } from "@/api/types";
+import { create } from "zustand";
 
 export interface MenuState {
-  routes: FrontendRoute[]
-  permissions: string[]
-  ready: boolean
-  collapsed: boolean
-  fetchRoutes: () => Promise<void>
-  toggleCollapsed: () => void
-  hasPermission: (perm: string) => boolean
+  routes: FrontendRoute[];
+  permissions: string[];
+  ready: boolean;
+  collapsed: boolean;
+  fetchRoutes: () => Promise<void>;
+  toggleCollapsed: () => void;
+  hasPermission: (perm: string) => boolean;
 }
 
 export const useMenu = create<MenuState>((set, get) => ({
@@ -19,22 +19,29 @@ export const useMenu = create<MenuState>((set, get) => ({
   collapsed: false,
 
   async fetchRoutes() {
-    const { data: routes, error: routesErr } = await client.get('/api/system/user/routes') as { data?: FrontendRoute[]; error?: unknown }
-    const { data: permissions, error: permsErr } = await client.get('/api/system/user/permissions') as { data?: string[]; error?: unknown }
-    if (!routesErr) set({ routes: routes ?? [] })
-    if (!permsErr) set({ permissions: permissions ?? [] })
-    set({ ready: true })
+    const { data: routes, error: routesErr } = (await client.get("/api/system/user/routes")) as {
+      data?: FrontendRoute[];
+      error?: unknown;
+    };
+    const { data: permissions, error: permsErr } = (await client.get(
+      "/api/system/user/permissions",
+    )) as { data?: string[]; error?: unknown };
+    if (!routesErr) set({ routes: routes ?? [] });
+    if (!permsErr) set({ permissions: permissions ?? [] });
+    set({ ready: true });
   },
 
-  toggleCollapsed() { set(s => ({ collapsed: !s.collapsed })) },
+  toggleCollapsed() {
+    set((s) => ({ collapsed: !s.collapsed }));
+  },
 
   hasPermission(perm: string) {
-    const { permissions } = get()
-    if (permissions.includes('*') || permissions.includes('admin')) return true
-    return permissions.includes(perm)
+    const { permissions } = get();
+    if (permissions.includes("*") || permissions.includes("admin")) return true;
+    return permissions.includes(perm);
   },
-}))
+}));
 
 export function usePermission() {
-  return useMenu(s => ({ permissions: s.permissions, hasPermission: s.hasPermission }))
+  return useMenu((s) => ({ permissions: s.permissions, hasPermission: s.hasPermission }));
 }

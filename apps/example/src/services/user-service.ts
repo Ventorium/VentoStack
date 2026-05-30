@@ -1,6 +1,6 @@
-import type { Database } from "@ventostack/database";
 import { NotFoundError } from "@ventostack/core";
-import { userModel, type User } from "../models";
+import type { Database } from "@ventostack/database";
+import { type User, userModel } from "../models";
 
 export interface CreateUserInput {
   name: string;
@@ -36,10 +36,7 @@ export function createUserService(deps: UserServiceDeps) {
   }
 
   async function getUserByEmail(email: string): Promise<User | undefined> {
-    return (await db
-      .query<User>(userModel)
-      .where("email", "=", email)
-      .get()) as User | undefined;
+    return (await db.query<User>(userModel).where("email", "=", email).get()) as User | undefined;
   }
 
   async function createUser(input: CreateUserInput): Promise<User> {
@@ -48,18 +45,16 @@ export function createUserService(deps: UserServiceDeps) {
       algorithm: "bcrypt",
     });
 
-    const user = await db
-      .query<User>(userModel)
-      .insert(
-        {
-          id,
-          name: input.name,
-          email: input.email,
-          password_hash,
-          role: input.role ?? "viewer",
-        },
-        { returning: true },
-      );
+    const user = await db.query<User>(userModel).insert(
+      {
+        id,
+        name: input.name,
+        email: input.email,
+        password_hash,
+        role: input.role ?? "viewer",
+      },
+      { returning: true },
+    );
 
     if (!user) {
       throw new Error("Failed to create user");
@@ -67,10 +62,7 @@ export function createUserService(deps: UserServiceDeps) {
     return user as User;
   }
 
-  async function updateUser(
-    id: string,
-    input: UpdateUserInput,
-  ): Promise<User> {
+  async function updateUser(id: string, input: UpdateUserInput): Promise<User> {
     const existing = await getUserById(id);
 
     const data: Partial<User> = {};

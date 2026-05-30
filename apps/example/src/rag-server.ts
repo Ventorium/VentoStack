@@ -11,17 +11,17 @@
  * ```
  */
 
-import { createApp, createRouter } from "@ventostack/core";
 import {
-  createKnowledgeBase,
-  createContextManager,
   createAgentRegistry,
-  createToolRegistry,
-  createSandbox,
+  createContextManager,
+  createKnowledgeBase,
   createLLMClient,
   createRAGAgent,
+  createSandbox,
+  createToolRegistry,
   loadDocumentsFromDirectory,
 } from "@ventostack/ai";
+import { createApp, createRouter } from "@ventostack/core";
 
 // ── 配置 ─────────────────────────────────────────
 const PORT = Number(process.env.PORT ?? 4000);

@@ -1,15 +1,15 @@
-import { message } from 'antd'
-import type { MessageInstance } from 'antd/es/message/interface'
-import { useEffect } from 'react'
+import { message } from "antd";
+import type { MessageInstance } from "antd/es/message/interface";
+import { useEffect } from "react";
 
-export let msg: MessageInstance
+export let msg: MessageInstance;
 
 const GlobalMessage = () => {
-  const [_msg, messageHolder] = message.useMessage()
+  const [_msg, messageHolder] = message.useMessage();
   useEffect(() => {
-    msg = _msg
-  }, [_msg])
-  return messageHolder
-}
+    msg = _msg;
+  }, [_msg]);
+  return messageHolder;
+};
 
-export default GlobalMessage
+export default GlobalMessage;

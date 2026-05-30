@@ -12,7 +12,9 @@ export const createRoleDeptTable: Migration = {
       )
     `);
 
-    await executor("CREATE INDEX IF NOT EXISTS idx_sys_role_dept_dept_id ON sys_role_dept (dept_id)");
+    await executor(
+      "CREATE INDEX IF NOT EXISTS idx_sys_role_dept_dept_id ON sys_role_dept (dept_id)",
+    );
   },
 
   async down(executor) {

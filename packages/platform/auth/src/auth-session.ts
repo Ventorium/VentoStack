@@ -4,10 +4,10 @@
  * 提供完整的登录、登出、强制登出与 Token 刷新能力
  */
 
+import type { JWTManager } from "./jwt";
+import type { DeviceSession, MultiDeviceManager } from "./multi-device";
 import type { SessionManager } from "./session";
-import type { MultiDeviceManager, DeviceSession } from "./multi-device";
-import type { TokenRefreshManager, TokenPair } from "./token-refresh";
-import type { JWTManager, JWTPayload } from "./jwt";
+import type { TokenPair, TokenRefreshManager } from "./token-refresh";
 
 /**
  * 统一认证会话管理器接口

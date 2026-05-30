@@ -2,29 +2,32 @@
  * Service 代码模板 — 使用 ORM Query Builder
  */
 
-import type { GenTableInfo, GenColumnInfo } from "../services/gen";
+import type { GenColumnInfo, GenTableInfo } from "../services/gen";
 
 export function renderService(table: GenTableInfo, columns: GenColumnInfo[]): string {
-  const nonPrimaryCols = columns.filter(c => !c.isPrimary);
-  const insertableCols = nonPrimaryCols.filter(c => c.isInsert);
-  const updatableCols = nonPrimaryCols.filter(c => c.isUpdate);
-  const queryableCols = columns.filter(c => c.isQuery);
+  const nonPrimaryCols = columns.filter((c) => !c.isPrimary);
+  const insertableCols = nonPrimaryCols.filter((c) => c.isInsert);
+  const updatableCols = nonPrimaryCols.filter((c) => c.isUpdate);
+  const queryableCols = columns.filter((c) => c.isQuery);
 
-  const createParams = insertableCols.map(c =>
-    `  ${c.fieldName}${c.isNullable ? "?" : ""}: ${mapTsType(c.typescriptType)};`
-  ).join("\n");
+  const createParams = insertableCols
+    .map((c) => `  ${c.fieldName}${c.isNullable ? "?" : ""}: ${mapTsType(c.typescriptType)};`)
+    .join("\n");
 
-  const updateParams = updatableCols.map(c =>
-    `  ${c.fieldName}?: ${mapTsType(c.typescriptType)};`
-  ).join("\n");
+  const updateParams = updatableCols
+    .map((c) => `  ${c.fieldName}?: ${mapTsType(c.typescriptType)};`)
+    .join("\n");
 
-  const listParams = queryableCols.map(c =>
-    `  ${c.fieldName}?: ${mapTsType(c.typescriptType)};`
-  ).join("\n");
+  const listParams = queryableCols
+    .map((c) => `  ${c.fieldName}?: ${mapTsType(c.typescriptType)};`)
+    .join("\n");
 
-  const modelFields = columns.map(c =>
-    `  ${c.columnName}: column.${mapColumnType(c.typescriptType)}({${c.isPrimary ? " primary: true," : ""}${c.isNullable ? " nullable: true," : ""}}),`
-  ).join("\n");
+  const modelFields = columns
+    .map(
+      (c) =>
+        `  ${c.columnName}: column.${mapColumnType(c.typescriptType)}({${c.isPrimary ? " primary: true," : ""}${c.isNullable ? " nullable: true," : ""}}),`,
+    )
+    .join("\n");
 
   return `import { defineModel, column } from "@ventostack/database";
 import type { Database } from "@ventostack/database";
@@ -42,7 +45,7 @@ ${updateParams}
 }
 
 export interface ${table.className}ListItem {
-${columns.map(c => `  ${c.fieldName}: ${mapTsType(c.typescriptType)}${c.isNullable ? " | null" : ""};`).join("\n")}
+${columns.map((c) => `  ${c.fieldName}: ${mapTsType(c.typescriptType)}${c.isNullable ? " | null" : ""};`).join("\n")}
 }
 
 export interface ${table.className}ListParams {
@@ -75,14 +78,14 @@ export function create${table.className}Service(deps: { db: Database }): ${table
       const id = crypto.randomUUID();
       await db.query(${table.className}Model).insert({
         id,
-${insertableCols.map(c => `        ${c.fieldName}: params.${c.fieldName}${c.isNullable ? " ?? null" : ""},`).join("\n")}
+${insertableCols.map((c) => `        ${c.fieldName}: params.${c.fieldName}${c.isNullable ? " ?? null" : ""},`).join("\n")}
       });
       return { id };
     },
 
     async update(id, params) {
       const data: Record<string, unknown> = {};
-${updatableCols.map(c => `      if (params.${c.fieldName} !== undefined) data.${c.columnName} = params.${c.fieldName};`).join("\n")}
+${updatableCols.map((c) => `      if (params.${c.fieldName} !== undefined) data.${c.columnName} = params.${c.fieldName};`).join("\n")}
       if (Object.keys(data).length === 0) return;
       await db.query(${table.className}Model).where("id", "=", id).update(data);
     },
@@ -98,10 +101,10 @@ ${updatableCols.map(c => `      if (params.${c.fieldName} !== undefined) data.${
     },
 
     async list(params) {
-      const { page = 1, pageSize = 10${queryableCols.length > 0 ? ", " + queryableCols.map(c => c.fieldName).join(", ") : ""} } = params;
+      const { page = 1, pageSize = 10${queryableCols.length > 0 ? ", " + queryableCols.map((c) => c.fieldName).join(", ") : ""} } = params;
 
       let query = db.query(${table.className}Model);
-${queryableCols.map(c => `      if (${c.fieldName} !== undefined) query = query.where("${c.columnName}", "=", ${c.fieldName});`).join("\n")}
+${queryableCols.map((c) => `      if (${c.fieldName} !== undefined) query = query.where("${c.columnName}", "=", ${c.fieldName});`).join("\n")}
 
       const total = await query.count();
       const items = await query
@@ -125,24 +128,50 @@ ${queryableCols.map(c => `      if (${c.fieldName} !== undefined) query = query.
 
 function mapTsType(pgType: string): string {
   const map: Record<string, string> = {
-    varchar: "string", text: "string", char: "string",
-    int: "number", integer: "number", smallint: "number", bigint: "number", serial: "number",
-    boolean: "bool", bool: "boolean",
-    timestamp: "Date", timestamptz: "Date", date: "Date",
-    json: "Record<string, unknown>", jsonb: "Record<string, unknown>",
-    float: "number", double: "number", numeric: "number", decimal: "number",
+    varchar: "string",
+    text: "string",
+    char: "string",
+    int: "number",
+    integer: "number",
+    smallint: "number",
+    bigint: "number",
+    serial: "number",
+    boolean: "bool",
+    bool: "boolean",
+    timestamp: "Date",
+    timestamptz: "Date",
+    date: "Date",
+    json: "Record<string, unknown>",
+    jsonb: "Record<string, unknown>",
+    float: "number",
+    double: "number",
+    numeric: "number",
+    decimal: "number",
   };
   return map[pgType.toLowerCase()] ?? "unknown";
 }
 
 function mapColumnType(pgType: string): string {
   const map: Record<string, string> = {
-    varchar: "varchar", text: "text", char: "char",
-    int: "int", integer: "int", smallint: "int", bigint: "bigint", serial: "int",
-    boolean: "boolean", bool: "boolean",
-    timestamp: "timestamp", timestamptz: "timestamp", date: "timestamp",
-    json: "json", jsonb: "json",
-    float: "float", double: "double", numeric: "numeric", decimal: "decimal",
+    varchar: "varchar",
+    text: "text",
+    char: "char",
+    int: "int",
+    integer: "int",
+    smallint: "int",
+    bigint: "bigint",
+    serial: "int",
+    boolean: "boolean",
+    bool: "boolean",
+    timestamp: "timestamp",
+    timestamptz: "timestamp",
+    date: "timestamp",
+    json: "json",
+    jsonb: "json",
+    float: "float",
+    double: "double",
+    numeric: "numeric",
+    decimal: "decimal",
   };
   return map[pgType.toLowerCase()] ?? "varchar";
 }

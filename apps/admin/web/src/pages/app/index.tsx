@@ -1,25 +1,33 @@
-import { useEffect, useState } from 'react'
-import { Card, Col, Row, Statistic, Spin } from 'antd'
-import { TeamOutlined, SafetyCertificateOutlined, FileTextOutlined, BellOutlined } from '@ant-design/icons'
-import { client } from '@/api'
+import { client } from "@/api";
+import {
+  BellOutlined,
+  FileTextOutlined,
+  SafetyCertificateOutlined,
+  TeamOutlined,
+} from "@ant-design/icons";
+import { Card, Col, Row, Spin, Statistic } from "antd";
+import { useEffect, useState } from "react";
 
 interface DashboardStats {
-  userCount: number
-  roleCount: number
-  todayLogs: number
-  unreadNotices: number
+  userCount: number;
+  roleCount: number;
+  todayLogs: number;
+  unreadNotices: number;
 }
 
 const DashboardPage = () => {
-  const [stats, setStats] = useState<DashboardStats | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [stats, setStats] = useState<DashboardStats | null>(null);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    client.get('/api/system/dashboard/stats').then((res) => {
-      const data = (res as { data?: DashboardStats }).data
-      if (data) setStats(data)
-    }).finally(() => setLoading(false))
-  }, [])
+    client
+      .get("/api/system/dashboard/stats")
+      .then((res) => {
+        const data = (res as { data?: DashboardStats }).data;
+        if (data) setStats(data);
+      })
+      .finally(() => setLoading(false));
+  }, []);
 
   return (
     <div>
@@ -69,7 +77,7 @@ const DashboardPage = () => {
         </Row>
       </Spin>
     </div>
-  )
-}
+  );
+};
 
-export default DashboardPage
+export default DashboardPage;

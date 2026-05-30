@@ -5,7 +5,7 @@
 import { createRouter } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { GenService } from "../services/gen";
-import { ok, okPage, fail, parseBody, pageOf } from "./common";
+import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createGenRoutes(
   genService: GenService,

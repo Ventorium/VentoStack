@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createRoleService } from "../services/role";
-import { createMockExecutor, createMockDatabase, createTestCache } from "./helpers";
+import { createMockDatabase, createMockExecutor, createTestCache } from "./helpers";
 
 function setup() {
   const mockExec = createMockExecutor();
@@ -23,17 +23,21 @@ describe("RoleService", () => {
   test("create inserts role with generated id", async () => {
     const s = setup();
     const result = await s.roleService.create({
-      name: "管理员", code: "admin", sort: 1, dataScope: 1, remark: "系统管理员",
+      name: "管理员",
+      code: "admin",
+      sort: 1,
+      dataScope: 1,
+      remark: "系统管理员",
     });
     expect(result.id).toBeTruthy();
     expect(typeof result.id).toBe("string");
-    expect(s.calls.some(c => c.text.includes("INSERT"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("INSERT"))).toBe(true);
   });
 
   test("update executes UPDATE with changed fields", async () => {
     const s = setup();
     await s.roleService.update("r1", { name: "新名称", sort: 2 });
-    expect(s.calls.some(c => c.text.includes("UPDATE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
   });
 
   test("update with no fields does nothing", async () => {
@@ -54,10 +58,19 @@ describe("RoleService", () => {
 
   test("getById returns role detail from db", async () => {
     const s = setup();
-    s.results.set("SELECT", [{
-      id: "r1", name: "管理员", code: "admin", sort: 1,
-      data_scope: 1, status: 1, remark: "test", created_at: "2025-01-01", updated_at: "2025-01-01",
-    }]);
+    s.results.set("SELECT", [
+      {
+        id: "r1",
+        name: "管理员",
+        code: "admin",
+        sort: 1,
+        data_scope: 1,
+        status: 1,
+        remark: "test",
+        created_at: "2025-01-01",
+        updated_at: "2025-01-01",
+      },
+    ]);
     const role = await s.roleService.getById("r1");
     expect(role).not.toBeNull();
     expect(role!.name).toBe("管理员");
@@ -72,10 +85,19 @@ describe("RoleService", () => {
 
   test("getById returns cached role on second call", async () => {
     const s = setup();
-    s.results.set("SELECT", [{
-      id: "r1", name: "管理员", code: "admin", sort: 1,
-      data_scope: 1, status: 1, remark: null, created_at: "2025-01-01", updated_at: "2025-01-01",
-    }]);
+    s.results.set("SELECT", [
+      {
+        id: "r1",
+        name: "管理员",
+        code: "admin",
+        sort: 1,
+        data_scope: 1,
+        status: 1,
+        remark: null,
+        created_at: "2025-01-01",
+        updated_at: "2025-01-01",
+      },
+    ]);
     const role1 = await s.roleService.getById("r1");
     expect(role1).not.toBeNull();
 
@@ -90,8 +112,24 @@ describe("RoleService", () => {
     const s = setup();
     s.results.set("COUNT", [{ count: 2 }]);
     s.results.set("SELECT", [
-      { id: "r1", name: "管理员", code: "admin", sort: 1, data_scope: 1, status: 1, created_at: "2025-01-01" },
-      { id: "r2", name: "用户", code: "user", sort: 2, data_scope: null, status: 1, created_at: "2025-01-01" },
+      {
+        id: "r1",
+        name: "管理员",
+        code: "admin",
+        sort: 1,
+        data_scope: 1,
+        status: 1,
+        created_at: "2025-01-01",
+      },
+      {
+        id: "r2",
+        name: "用户",
+        code: "user",
+        sort: 2,
+        data_scope: null,
+        status: 1,
+        created_at: "2025-01-01",
+      },
     ]);
     const result = await s.roleService.list({ page: 1, pageSize: 10 });
     expect(result.items.length).toBe(2);
@@ -111,8 +149,8 @@ describe("RoleService", () => {
     const s = setup();
     await s.roleService.assignMenus("r1", ["m1", "m2"]);
     // First call: DELETE old associations, second: INSERT new ones
-    expect(s.calls.some(c => c.text.includes("DELETE"))).toBe(true);
-    expect(s.calls.some(c => c.text.includes("INSERT"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("DELETE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("INSERT"))).toBe(true);
   });
 
   test("assignMenus with empty list only deletes", async () => {
@@ -125,7 +163,7 @@ describe("RoleService", () => {
   test("assignDataScope updates role data_scope", async () => {
     const s = setup();
     await s.roleService.assignDataScope("r1", 4);
-    expect(s.calls.some(c => c.text.includes("data_scope"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("data_scope"))).toBe(true);
   });
 
   test("assignDataScope with deptIds also manages role_dept", async () => {
@@ -133,6 +171,6 @@ describe("RoleService", () => {
     await s.roleService.assignDataScope("r1", 5, ["d1", "d2"]);
     // UPDATE role + DELETE role_dept + INSERT role_dept
     expect(s.calls.length).toBe(3);
-    expect(s.calls.some(c => c.text.includes("sys_role_dept"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("sys_role_dept"))).toBe(true);
   });
 });

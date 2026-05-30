@@ -2,9 +2,9 @@
  * @ventostack/workflow - 工作流服务测试
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
-import { createWorkflowService, DefStatus, InstanceStatus, TaskStatus } from "../services/workflow";
-import { createMockExecutor } from "./helpers";
+import { beforeEach, describe, expect, it } from "bun:test";
+import { DefStatus, InstanceStatus, TaskStatus, createWorkflowService } from "../services/workflow";
+import { createMockDatabase, createMockExecutor } from "./helpers";
 
 describe("WorkflowService", () => {
   let executor: ReturnType<typeof createMockExecutor>["executor"];
@@ -13,8 +13,10 @@ describe("WorkflowService", () => {
   let service: ReturnType<typeof createWorkflowService>;
 
   beforeEach(() => {
-    ({ executor, calls, results } = createMockExecutor());
-    service = createWorkflowService({ executor });
+    const mockExec = createMockExecutor();
+    ({ executor, calls, results } = mockExec);
+    const { db } = createMockDatabase(mockExec);
+    service = createWorkflowService({ db });
   });
 
   describe("createDefinition", () => {
@@ -22,13 +24,17 @@ describe("WorkflowService", () => {
       const result = await service.createDefinition({ name: "请假审批", code: "leave_approval" });
 
       expect(result.id).toBeTruthy();
-      expect(calls.some(c => c.text.includes("INSERT INTO sys_workflow_definition"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("INSERT INTO sys_workflow_definition"))).toBe(true);
       expect(calls[0]!.params).toContain("请假审批");
       expect(calls[0]!.params).toContain("leave_approval");
     });
 
     it("should support description", async () => {
-      await service.createDefinition({ name: "报销", code: "expense", description: "报销审批流程" });
+      await service.createDefinition({
+        name: "报销",
+        code: "expense",
+        description: "报销审批流程",
+      });
 
       expect(calls[0]!.params).toContain("报销审批流程");
     });
@@ -38,7 +44,7 @@ describe("WorkflowService", () => {
     it("should update fields", async () => {
       await service.updateDefinition("def-1", { name: "Updated", status: DefStatus.DISABLED });
 
-      expect(calls.some(c => c.text.includes("UPDATE sys_workflow_definition SET"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("UPDATE sys_workflow_definition SET"))).toBe(true);
     });
 
     it("should skip when no fields", async () => {
@@ -49,12 +55,17 @@ describe("WorkflowService", () => {
 
   describe("deleteDefinition", () => {
     it("should delete definition and related data", async () => {
+      // Set up mock instances so cascade delete triggers task deletion
+      results.set("SELECT * FROM sys_workflow_instance WHERE definition_id", [
+        { id: "inst-1", definition_id: "def-1" },
+      ]);
+
       await service.deleteDefinition("def-1");
 
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_workflow_task"))).toBe(true);
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_workflow_instance"))).toBe(true);
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_workflow_node"))).toBe(true);
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_workflow_definition"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_workflow_task"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_workflow_instance"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_workflow_node"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_workflow_definition"))).toBe(true);
     });
   });
 
@@ -67,9 +78,16 @@ describe("WorkflowService", () => {
     });
 
     it("should return definition", async () => {
-      results.set("SELECT * FROM sys_workflow_definition WHERE id", [{
-        id: "d1", name: "请假", code: "leave", version: 1, description: null, status: 1,
-      }]);
+      results.set("SELECT * FROM sys_workflow_definition WHERE id", [
+        {
+          id: "d1",
+          name: "请假",
+          code: "leave",
+          version: 1,
+          description: null,
+          status: 1,
+        },
+      ]);
 
       const def = await service.getDefinition("d1");
       expect(def).not.toBeNull();
@@ -93,7 +111,7 @@ describe("WorkflowService", () => {
       results.set("SELECT COUNT(*)", [{ total: 0 }]);
 
       await service.listDefinitions({ status: DefStatus.ACTIVE });
-      expect(calls.some(c => c.text.includes("status = "))).toBe(true);
+      expect(calls.some((c) => c.text.includes("status = "))).toBe(true);
     });
   });
 
@@ -106,15 +124,33 @@ describe("WorkflowService", () => {
       ]);
 
       // Should delete existing + insert 3 new
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_workflow_node"))).toBe(true);
-      const insertCalls = calls.filter(c => c.text.includes("INSERT INTO sys_workflow_node"));
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_workflow_node"))).toBe(true);
+      const insertCalls = calls.filter((c) => c.text.includes("INSERT INTO sys_workflow_node"));
       expect(insertCalls.length).toBe(3);
     });
 
     it("should get nodes", async () => {
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
-        { id: "n1", definition_id: "d1", name: "开始", type: "start", assignee_type: null, assignee_id: null, sort: 0, config: null },
-        { id: "n2", definition_id: "d1", name: "审批", type: "approve", assignee_type: "user", assignee_id: "u1", sort: 1, config: null },
+        {
+          id: "n1",
+          definition_id: "d1",
+          name: "开始",
+          type: "start",
+          assignee_type: null,
+          assignee_id: null,
+          sort: 0,
+          config: null,
+        },
+        {
+          id: "n2",
+          definition_id: "d1",
+          name: "审批",
+          type: "approve",
+          assignee_type: "user",
+          assignee_id: "u1",
+          sort: 1,
+          config: null,
+        },
       ]);
 
       const nodes = await service.getNodes("d1");
@@ -127,28 +163,68 @@ describe("WorkflowService", () => {
     it("should throw when no nodes", async () => {
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", []);
 
-      await expect(service.startInstance({
-        definitionId: "d1",
-        initiatorId: "u1",
-      })).rejects.toThrow("No nodes defined");
+      await expect(
+        service.startInstance({
+          definitionId: "d1",
+          initiatorId: "u1",
+        }),
+      ).rejects.toThrow("未定义节点");
     });
 
     it("should throw when no start node", async () => {
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
-        { id: "n1", definition_id: "d1", name: "审批", type: "approve", assignee_type: "user", assignee_id: "u1", sort: 0, config: null },
+        {
+          id: "n1",
+          definition_id: "d1",
+          name: "审批",
+          type: "approve",
+          assignee_type: "user",
+          assignee_id: "u1",
+          sort: 0,
+          config: null,
+        },
       ]);
 
-      await expect(service.startInstance({
-        definitionId: "d1",
-        initiatorId: "u1",
-      })).rejects.toThrow("No start node found");
+      await expect(
+        service.startInstance({
+          definitionId: "d1",
+          initiatorId: "u1",
+        }),
+      ).rejects.toThrow("未找到开始节点");
     });
 
     it("should start instance and create first task", async () => {
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
-        { id: "n1", definition_id: "d1", name: "开始", type: "start", assignee_type: null, assignee_id: null, sort: 0, config: null },
-        { id: "n2", definition_id: "d1", name: "经理审批", type: "approve", assignee_type: "user", assignee_id: "mgr1", sort: 1, config: null },
-        { id: "n3", definition_id: "d1", name: "结束", type: "end", assignee_type: null, assignee_id: null, sort: 2, config: null },
+        {
+          id: "n1",
+          definition_id: "d1",
+          name: "开始",
+          type: "start",
+          assignee_type: null,
+          assignee_id: null,
+          sort: 0,
+          config: null,
+        },
+        {
+          id: "n2",
+          definition_id: "d1",
+          name: "经理审批",
+          type: "approve",
+          assignee_type: "user",
+          assignee_id: "mgr1",
+          sort: 1,
+          config: null,
+        },
+        {
+          id: "n3",
+          definition_id: "d1",
+          name: "结束",
+          type: "end",
+          assignee_type: null,
+          assignee_id: null,
+          sort: 2,
+          config: null,
+        },
       ]);
 
       const result = await service.startInstance({
@@ -159,8 +235,8 @@ describe("WorkflowService", () => {
       });
 
       expect(result.instanceId).toBeTruthy();
-      expect(calls.some(c => c.text.includes("INSERT INTO sys_workflow_instance"))).toBe(true);
-      expect(calls.some(c => c.text.includes("INSERT INTO sys_workflow_task"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("INSERT INTO sys_workflow_instance"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("INSERT INTO sys_workflow_task"))).toBe(true);
     });
   });
 
@@ -168,48 +244,86 @@ describe("WorkflowService", () => {
     it("should throw when task not found", async () => {
       results.set("SELECT * FROM sys_workflow_task WHERE id", []);
 
-      await expect(service.approveTask("t1", "u1")).rejects.toThrow("Task not found");
+      await expect(service.approveTask("t1", "u1")).rejects.toThrow("任务不存在");
     });
 
     it("should throw when task already processed", async () => {
-      results.set("SELECT * FROM sys_workflow_task WHERE id", [{
-        id: "t1", instance_id: "i1", node_id: "n1", assignee_id: "u1", status: TaskStatus.APPROVED,
-      }]);
+      results.set("SELECT * FROM sys_workflow_task WHERE id", [
+        {
+          id: "t1",
+          instance_id: "i1",
+          node_id: "n1",
+          assignee_id: "u1",
+          status: TaskStatus.APPROVED,
+        },
+      ]);
 
-      await expect(service.approveTask("t1", "u1")).rejects.toThrow("Task already processed");
+      await expect(service.approveTask("t1", "u1")).rejects.toThrow("任务已处理");
     });
 
     it("should approve and advance to next node", async () => {
-      results.set("SELECT * FROM sys_workflow_task WHERE id", [{
-        id: "t1", instance_id: "i1", node_id: "n2", assignee_id: "u1", status: TaskStatus.PENDING,
-      }]);
+      results.set("SELECT * FROM sys_workflow_task WHERE id", [
+        {
+          id: "t1",
+          instance_id: "i1",
+          node_id: "n2",
+          assignee_id: "u1",
+          status: TaskStatus.PENDING,
+        },
+      ]);
       // For advanceInstance
-      results.set("SELECT * FROM sys_workflow_instance WHERE id", [{
-        id: "i1", definition_id: "d1", status: InstanceStatus.RUNNING,
-      }]);
+      results.set("SELECT * FROM sys_workflow_instance WHERE id", [
+        {
+          id: "i1",
+          definition_id: "d1",
+          status: InstanceStatus.RUNNING,
+        },
+      ]);
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
         { id: "n1", definition_id: "d1", name: "开始", type: "start", sort: 0, assignee_id: null },
-        { id: "n2", definition_id: "d1", name: "审批1", type: "approve", sort: 1, assignee_id: "u1" },
-        { id: "n3", definition_id: "d1", name: "审批2", type: "approve", sort: 2, assignee_id: "u2" },
+        {
+          id: "n2",
+          definition_id: "d1",
+          name: "审批1",
+          type: "approve",
+          sort: 1,
+          assignee_id: "u1",
+        },
+        {
+          id: "n3",
+          definition_id: "d1",
+          name: "审批2",
+          type: "approve",
+          sort: 2,
+          assignee_id: "u2",
+        },
         { id: "n4", definition_id: "d1", name: "结束", type: "end", sort: 3, assignee_id: null },
       ]);
 
       await service.approveTask("t1", "u1", "同意");
 
-      expect(calls.some(c => c.text.includes("UPDATE sys_workflow_task SET status"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("UPDATE sys_workflow_task SET status"))).toBe(true);
     });
   });
 
   describe("rejectTask", () => {
     it("should reject and mark instance rejected", async () => {
-      results.set("SELECT * FROM sys_workflow_task WHERE id", [{
-        id: "t1", instance_id: "i1", node_id: "n2", assignee_id: "u1", status: TaskStatus.PENDING,
-      }]);
+      results.set("SELECT * FROM sys_workflow_task WHERE id", [
+        {
+          id: "t1",
+          instance_id: "i1",
+          node_id: "n2",
+          assignee_id: "u1",
+          status: TaskStatus.PENDING,
+        },
+      ]);
 
       await service.rejectTask("t1", "u1", "不同意");
 
-      expect(calls.some(c => c.text.includes("UPDATE sys_workflow_task SET status"))).toBe(true);
-      expect(calls.some(c => c.text.includes("UPDATE sys_workflow_instance SET status"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("UPDATE sys_workflow_task SET status"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("UPDATE sys_workflow_instance SET status"))).toBe(
+        true,
+      );
     });
   });
 
@@ -217,7 +331,17 @@ describe("WorkflowService", () => {
     it("should list tasks for user", async () => {
       results.set("SELECT COUNT(*)", [{ total: 1 }]);
       results.set("SELECT * FROM sys_workflow_task", [
-        { id: "t1", instance_id: "i1", node_id: "n1", assignee_id: "u1", action: null, comment: null, status: 0, acted_at: null, created_at: "2024-01-01" },
+        {
+          id: "t1",
+          instance_id: "i1",
+          node_id: "n1",
+          assignee_id: "u1",
+          action: null,
+          comment: null,
+          status: 0,
+          acted_at: null,
+          created_at: new Date("2024-01-01"),
+        },
       ]);
 
       const result = await service.getMyTasks("u1", { page: 1, pageSize: 10 });
@@ -235,15 +359,43 @@ describe("WorkflowService", () => {
     });
 
     it("should return instance detail with nodes and tasks", async () => {
-      results.set("SELECT * FROM sys_workflow_instance WHERE id", [{
-        id: "i1", definition_id: "d1", business_type: null, business_id: null,
-        initiator_id: "u1", current_node_id: "n2", status: 0, variables: null, created_at: "2024-01-01",
-      }]);
+      results.set("SELECT * FROM sys_workflow_instance WHERE id", [
+        {
+          id: "i1",
+          definition_id: "d1",
+          business_type: null,
+          business_id: null,
+          initiator_id: "u1",
+          current_node_id: "n2",
+          status: 0,
+          variables: null,
+          created_at: new Date("2024-01-01"),
+        },
+      ]);
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
-        { id: "n1", definition_id: "d1", name: "开始", type: "start", assignee_type: null, assignee_id: null, sort: 0, config: null },
+        {
+          id: "n1",
+          definition_id: "d1",
+          name: "开始",
+          type: "start",
+          assignee_type: null,
+          assignee_id: null,
+          sort: 0,
+          config: null,
+        },
       ]);
       results.set("SELECT * FROM sys_workflow_task WHERE instance_id", [
-        { id: "t1", instance_id: "i1", node_id: "n2", assignee_id: "u1", action: null, comment: null, status: 0, acted_at: null, created_at: "2024-01-01" },
+        {
+          id: "t1",
+          instance_id: "i1",
+          node_id: "n2",
+          assignee_id: "u1",
+          action: null,
+          comment: null,
+          status: 0,
+          acted_at: null,
+          created_at: new Date("2024-01-01"),
+        },
       ]);
 
       const detail = await service.getInstanceDetail("i1");

@@ -5,8 +5,8 @@
  * 响应结构对齐前端类型定义。
  */
 
-import type { HealthCheck, HealthStatus as FrameworkHealthStatus } from "@ventostack/observability";
 import type { Database } from "@ventostack/database";
+import type { HealthStatus as FrameworkHealthStatus, HealthCheck } from "@ventostack/observability";
 
 /** 在线用户 */
 export interface OnlineUser {
@@ -169,7 +169,7 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       if (!db) return [];
 
       // 查询最近 30 分钟内成功登录的记录作为在线用户近似
-      const rows = await db.raw(
+      const rows = (await db.raw(
         `SELECT l.id, l.user_id, l.username, l.ip, l.browser, l.os, l.login_at,
                 u.nickname
          FROM sys_login_log l
@@ -177,7 +177,7 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
          WHERE l.status = 1 AND l.login_at > NOW() - INTERVAL '30 minutes'
          ORDER BY l.login_at DESC
          LIMIT 100`,
-      ) as Array<{
+      )) as Array<{
         id: string;
         user_id: string;
         username: string;

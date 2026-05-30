@@ -35,8 +35,13 @@ export interface PaginatedResult<T> {
 /** 国际化服务接口 */
 export interface I18nService {
   // Locale CRUD
-  createLocale(params: { code: string; name: string; isDefault?: boolean }): Promise<{ id: string }>;
-  updateLocale(id: string, params: Partial<{ name: string; isDefault: boolean; status: number }>): Promise<void>;
+  createLocale(params: { code: string; name: string; isDefault?: boolean }): Promise<{
+    id: string;
+  }>;
+  updateLocale(
+    id: string,
+    params: Partial<{ name: string; isDefault: boolean; status: number }>,
+  ): Promise<void>;
   deleteLocale(id: string): Promise<void>;
   listLocales(): Promise<I18nLocale[]>;
 
@@ -44,11 +49,20 @@ export interface I18nService {
   setMessage(locale: string, code: string, value: string, module?: string): Promise<void>;
   getMessage(locale: string, code: string): Promise<string | null>;
   deleteMessage(id: string): Promise<void>;
-  listMessages(params: { locale?: string; module?: string; page?: number; pageSize?: number }): Promise<PaginatedResult<I18nMessage>>;
+  listMessages(params: {
+    locale?: string;
+    module?: string;
+    page?: number;
+    pageSize?: number;
+  }): Promise<PaginatedResult<I18nMessage>>;
 
   // Bulk operations
   getLocaleMessages(locale: string, module?: string): Promise<Record<string, string>>;
-  importMessages(locale: string, messages: Record<string, string>, module?: string): Promise<number>;
+  importMessages(
+    locale: string,
+    messages: Record<string, string>,
+    module?: string,
+  ): Promise<number>;
 }
 
 export interface I18nServiceDeps {
@@ -83,10 +97,7 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
 
     async deleteLocale(id) {
       // Also delete all messages for this locale
-      const locale = await db.query(I18nLocaleModel)
-        .where("id", "=", id)
-        .select("code")
-        .get();
+      const locale = await db.query(I18nLocaleModel).where("id", "=", id).select("code").get();
       if (locale) {
         await db.query(I18nMessageModel).where("locale", "=", locale.code).hardDelete();
       }
@@ -94,7 +105,8 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
     },
 
     async listLocales() {
-      const rows = await db.query(I18nLocaleModel)
+      const rows = await db
+        .query(I18nLocaleModel)
         .select("id", "code", "name", "is_default", "status")
         .orderBy("is_default", "desc")
         .orderBy("code", "asc")
@@ -121,7 +133,8 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
     },
 
     async getMessage(locale, code) {
-      const row = await db.query(I18nMessageModel)
+      const row = await db
+        .query(I18nMessageModel)
         .where("locale", "=", locale)
         .where("code", "=", code)
         .select("value")
@@ -157,13 +170,17 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
         module: row.module ?? null,
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async getLocaleMessages(locale, module) {
-      let query = db.query(I18nMessageModel)
-        .where("locale", "=", locale)
-        .select("code", "value");
+      let query = db.query(I18nMessageModel).where("locale", "=", locale).select("code", "value");
       if (module) query = query.where("module", "=", module);
 
       const rows = await query.list();

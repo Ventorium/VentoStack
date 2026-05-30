@@ -2,13 +2,13 @@
  * @ventostack/system - PasskeyService 测试
  */
 
-import { describe, expect, test, mock, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, mock, test } from "bun:test";
 import { createPasskeyService } from "../services/passkey";
 import {
-  createMockExecutor,
-  createMockDatabase,
-  createTestCache,
   createMockAuditStore,
+  createMockDatabase,
+  createMockExecutor,
+  createTestCache,
 } from "./helpers";
 
 // Mock @simplewebauthn/server
@@ -78,7 +78,14 @@ function setup() {
     auditStore,
   });
 
-  return { passkeyService, executor: mockExec.executor, calls, results: mockExec.results, cache, auditStore };
+  return {
+    passkeyService,
+    executor: mockExec.executor,
+    calls,
+    results: mockExec.results,
+    cache,
+    auditStore,
+  };
 }
 
 describe("PasskeyService", () => {
@@ -106,7 +113,9 @@ describe("PasskeyService", () => {
       const s = setup();
       s.results.set("COUNT", [{ count: 3 }]);
 
-      expect(s.passkeyService.beginRegistration("user-1")).rejects.toThrow("最多只能注册 3 个通行密钥");
+      expect(s.passkeyService.beginRegistration("user-1")).rejects.toThrow(
+        "最多只能注册 3 个通行密钥",
+      );
     });
 
     test("includes existing credentials in excludeCredentials", async () => {
@@ -136,7 +145,7 @@ describe("PasskeyService", () => {
     test("throws when challenge expired", async () => {
       const s = setup();
       await expect(
-        s.passkeyService.finishRegistration("user-1", "My Key", "nonexistent", {} as any)
+        s.passkeyService.finishRegistration("user-1", "My Key", "nonexistent", {} as any),
       ).rejects.toThrow("注册请求已过期");
     });
 
@@ -146,7 +155,9 @@ describe("PasskeyService", () => {
       await s.cache.set("passkey_reg:challenge-1", "reg-challenge-base64", { ttl: 120 });
 
       await expect(
-        s.passkeyService.finishRegistration("user-1", "My Key", "challenge-1", { id: "cred-123" } as any)
+        s.passkeyService.finishRegistration("user-1", "My Key", "challenge-1", {
+          id: "cred-123",
+        } as any),
       ).rejects.toThrow("通行密钥验证失败");
     });
 
@@ -155,14 +166,14 @@ describe("PasskeyService", () => {
       // Pre-store a challenge
       await s.cache.set("passkey_reg:challenge-1", "reg-challenge-base64", { ttl: 120 });
 
-      const result = await s.passkeyService.finishRegistration(
-        "user-1", "My Key", "challenge-1", { id: "cred-123" } as any
-      );
+      const result = await s.passkeyService.finishRegistration("user-1", "My Key", "challenge-1", {
+        id: "cred-123",
+      } as any);
 
       expect(result.name).toBe("My Key");
       expect(result.id).toBeDefined();
       // Verify INSERT was called
-      const insertCall = s.calls.find(c => c.text.includes("INSERT INTO sys_passkey"));
+      const insertCall = s.calls.find((c) => c.text.includes("INSERT INTO sys_passkey"));
       expect(insertCall).toBeDefined();
     });
 
@@ -170,11 +181,11 @@ describe("PasskeyService", () => {
       const s = setup();
       await s.cache.set("passkey_reg:challenge-1", "reg-challenge-base64", { ttl: 120 });
 
-      await s.passkeyService.finishRegistration(
-        "user-1", "My Key", "challenge-1", { id: "cred-123" } as any
-      );
+      await s.passkeyService.finishRegistration("user-1", "My Key", "challenge-1", {
+        id: "cred-123",
+      } as any);
 
-      const audit = s.auditStore._entries.find(e => e.action === "passkey.registered");
+      const audit = s.auditStore._entries.find((e) => e.action === "passkey.registered");
       expect(audit).toBeDefined();
       expect(audit.actor).toBe("user-1");
     });
@@ -185,7 +196,9 @@ describe("PasskeyService", () => {
       const s = setup();
       s.results.set("sys_user", []);
 
-      await expect(s.passkeyService.beginAuthentication("nobody")).rejects.toThrow("通行密钥登录失败");
+      await expect(s.passkeyService.beginAuthentication("nobody")).rejects.toThrow(
+        "通行密钥登录失败",
+      );
     });
 
     test("throws when user has no passkeys", async () => {
@@ -193,7 +206,9 @@ describe("PasskeyService", () => {
       s.results.set("sys_user", [{ id: "user-1" }]);
       s.results.set("sys_passkey WHERE user_id", []);
 
-      await expect(s.passkeyService.beginAuthentication("admin")).rejects.toThrow("通行密钥登录失败");
+      await expect(s.passkeyService.beginAuthentication("admin")).rejects.toThrow(
+        "通行密钥登录失败",
+      );
     });
 
     test("returns options and challengeId for valid user with passkeys", async () => {
@@ -221,57 +236,87 @@ describe("PasskeyService", () => {
   describe("finishAuthentication", () => {
     test("throws when challenge expired", async () => {
       const s = setup();
-      await expect(
-        s.passkeyService.finishAuthentication("nonexistent", {} as any)
-      ).rejects.toThrow("认证请求已过期");
+      await expect(s.passkeyService.finishAuthentication("nonexistent", {} as any)).rejects.toThrow(
+        "认证请求已过期",
+      );
     });
 
     test("throws and logs audit when verification fails", async () => {
       const s = setup();
       mockVerifyAuthenticationResponse.mockResolvedValueOnce({ verified: false } as any);
-      await s.cache.set("passkey_auth:challenge-1", JSON.stringify({
-        challenge: "auth-challenge-base64", userId: "user-1", username: "admin",
-      }), { ttl: 120 });
-      s.results.set("credential_id", [{
-        id: "pk-1", credential_id: "cred-123", public_key: Buffer.from("pubkey").toString("base64"), counter: 0,
-      }]);
+      await s.cache.set(
+        "passkey_auth:challenge-1",
+        JSON.stringify({
+          challenge: "auth-challenge-base64",
+          userId: "user-1",
+          username: "admin",
+        }),
+        { ttl: 120 },
+      );
+      s.results.set("credential_id", [
+        {
+          id: "pk-1",
+          credential_id: "cred-123",
+          public_key: Buffer.from("pubkey").toString("base64"),
+          counter: 0,
+        },
+      ]);
 
       await expect(
-        s.passkeyService.finishAuthentication("challenge-1", { id: "cred-123" } as any)
+        s.passkeyService.finishAuthentication("challenge-1", { id: "cred-123" } as any),
       ).rejects.toThrow("通行密钥验证失败");
 
-      const audit = s.auditStore._entries.find(e => e.action === "passkey.auth_failed");
+      const audit = s.auditStore._entries.find((e) => e.action === "passkey.auth_failed");
       expect(audit).toBeDefined();
     });
 
     test("throws when passkey not found", async () => {
       const s = setup();
-      await s.cache.set("passkey_auth:challenge-1", JSON.stringify({
-        challenge: "auth-challenge-base64", userId: "user-1", username: "admin",
-      }), { ttl: 120 });
+      await s.cache.set(
+        "passkey_auth:challenge-1",
+        JSON.stringify({
+          challenge: "auth-challenge-base64",
+          userId: "user-1",
+          username: "admin",
+        }),
+        { ttl: 120 },
+      );
       s.results.set("credential_id", []);
 
       await expect(
-        s.passkeyService.finishAuthentication("challenge-1", { id: "nonexistent" } as any)
+        s.passkeyService.finishAuthentication("challenge-1", { id: "nonexistent" } as any),
       ).rejects.toThrow("通行密钥未找到");
     });
 
     test("returns userId and username on success", async () => {
       const s = setup();
-      await s.cache.set("passkey_auth:challenge-1", JSON.stringify({
-        challenge: "auth-challenge-base64", userId: "user-1", username: "admin",
-      }), { ttl: 120 });
-      s.results.set("credential_id", [{
-        id: "pk-1", credential_id: "cred-123", public_key: "pubkey-abc", counter: 0,
-      }]);
+      await s.cache.set(
+        "passkey_auth:challenge-1",
+        JSON.stringify({
+          challenge: "auth-challenge-base64",
+          userId: "user-1",
+          username: "admin",
+        }),
+        { ttl: 120 },
+      );
+      s.results.set("credential_id", [
+        {
+          id: "pk-1",
+          credential_id: "cred-123",
+          public_key: "pubkey-abc",
+          counter: 0,
+        },
+      ]);
 
-      const result = await s.passkeyService.finishAuthentication("challenge-1", { id: "cred-123" } as any);
+      const result = await s.passkeyService.finishAuthentication("challenge-1", {
+        id: "cred-123",
+      } as any);
 
       expect(result.userId).toBe("user-1");
       expect(result.username).toBe("admin");
 
       // Verify counter update
-      const updateCall = s.calls.find(c => c.text.includes("UPDATE sys_passkey SET counter"));
+      const updateCall = s.calls.find((c) => c.text.includes("UPDATE sys_passkey SET counter"));
       expect(updateCall).toBeDefined();
     });
   });
@@ -280,20 +325,42 @@ describe("PasskeyService", () => {
     test("returns mapped passkey list without sensitive data", async () => {
       const s = setup();
       s.results.set("sys_passkey WHERE user_id", [
-        { id: "pk-1", name: "MacBook", device_type: "singleDevice", backed_up: false, created_at: "2025-01-01", last_used_at: null },
-        { id: "pk-2", name: "iPhone", device_type: "multiDevice", backed_up: true, created_at: "2025-01-02", last_used_at: "2025-01-03" },
+        {
+          id: "pk-1",
+          name: "MacBook",
+          device_type: "singleDevice",
+          backed_up: false,
+          created_at: "2025-01-01",
+          last_used_at: null,
+        },
+        {
+          id: "pk-2",
+          name: "iPhone",
+          device_type: "multiDevice",
+          backed_up: true,
+          created_at: "2025-01-02",
+          last_used_at: "2025-01-03",
+        },
       ]);
 
       const list = await s.passkeyService.listPasskeys("user-1");
 
       expect(list).toHaveLength(2);
       expect(list[0]).toEqual({
-        id: "pk-1", name: "MacBook", deviceType: "singleDevice",
-        backedUp: false, createdAt: "2025-01-01", lastUsedAt: null,
+        id: "pk-1",
+        name: "MacBook",
+        deviceType: "singleDevice",
+        backedUp: false,
+        createdAt: "2025-01-01",
+        lastUsedAt: null,
       });
       expect(list[1]).toEqual({
-        id: "pk-2", name: "iPhone", deviceType: "multiDevice",
-        backedUp: true, createdAt: "2025-01-02", lastUsedAt: "2025-01-03",
+        id: "pk-2",
+        name: "iPhone",
+        deviceType: "multiDevice",
+        backedUp: true,
+        createdAt: "2025-01-02",
+        lastUsedAt: "2025-01-03",
       });
     });
   });
@@ -303,7 +370,9 @@ describe("PasskeyService", () => {
       const s = setup();
       s.results.set("sys_passkey WHERE id", []);
 
-      await expect(s.passkeyService.removePasskey("user-1", "pk-other")).rejects.toThrow("通行密钥不存在或不属于当前用户");
+      await expect(s.passkeyService.removePasskey("user-1", "pk-other")).rejects.toThrow(
+        "通行密钥不存在或不属于当前用户",
+      );
     });
 
     test("deletes passkey and logs audit", async () => {
@@ -312,11 +381,11 @@ describe("PasskeyService", () => {
 
       await s.passkeyService.removePasskey("user-1", "pk-1");
 
-      const deleteCall = s.calls.find(c => c.text.includes("DELETE FROM sys_passkey"));
+      const deleteCall = s.calls.find((c) => c.text.includes("DELETE FROM sys_passkey"));
       expect(deleteCall).toBeDefined();
       expect(deleteCall!.params).toEqual(["pk-1"]);
 
-      const audit = s.auditStore._entries.find(e => e.action === "passkey.removed");
+      const audit = s.auditStore._entries.find((e) => e.action === "passkey.removed");
       expect(audit).toBeDefined();
     });
   });

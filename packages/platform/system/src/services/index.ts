@@ -121,4 +121,8 @@ export type { PasskeyService } from "./passkey";
 
 // PasswordPolicy
 export { validatePassword } from "./password-policy";
-export type { PasswordComplexity, PasswordPolicyOptions, PasswordValidationResult } from "./password-policy";
+export type {
+  PasswordComplexity,
+  PasswordPolicyOptions,
+  PasswordValidationResult,
+} from "./password-policy";

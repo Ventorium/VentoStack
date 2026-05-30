@@ -95,7 +95,10 @@ function isFieldDef(value: unknown): value is ConfigFieldDef {
   );
 }
 
-function attachConfigSchema<T extends ConfigSchema>(config: ConfigValue<T>, schema: T): ConfigValue<T> {
+function attachConfigSchema<T extends ConfigSchema>(
+  config: ConfigValue<T>,
+  schema: T,
+): ConfigValue<T> {
   Object.defineProperty(config, CONFIG_SCHEMA, {
     value: schema,
     enumerable: false,
@@ -406,7 +409,10 @@ export async function loadConfig<const T extends ConfigSchema>(
   const merged = deepMerge(baseConfig, envConfig);
 
   // 4. 通过 schema 解析，环境变量覆盖文件配置
-  return attachConfigInspection(schema, resolveConfigSchema(schema, env, "", merged) as ConfigValue<T>);
+  return attachConfigInspection(
+    schema,
+    resolveConfigSchema(schema, env, "", merged) as ConfigValue<T>,
+  );
 }
 
 // --- 安全预检 ---

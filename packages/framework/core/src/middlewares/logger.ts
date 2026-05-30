@@ -48,9 +48,7 @@ export interface RequestLoggerOptions {
  * @returns Middleware 实例
  */
 export function requestLogger(options?: RequestLoggerOptions): Middleware {
-  const logger = options?.silent
-    ? noopLogger
-    : (options?.logger ?? consoleLogger);
+  const logger = options?.silent ? noopLogger : (options?.logger ?? consoleLogger);
 
   return async (ctx: Context, next) => {
     const start = performance.now();

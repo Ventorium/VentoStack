@@ -4,7 +4,13 @@
 // ============================================================
 
 import { isRouteResponseConfig, isSchemaField } from "@ventostack/core";
-import type { RouteHandler, RouteResponseDefinition, Router, SchemaField, RouteSchemaConfig } from "@ventostack/core";
+import type {
+  RouteHandler,
+  RouteResponseDefinition,
+  RouteSchemaConfig,
+  Router,
+  SchemaField,
+} from "@ventostack/core";
 import type {
   OpenAPIGenerator,
   OpenAPIOperation,
@@ -179,7 +185,9 @@ function buildResponsesFromSchemaConfig(
 
   const responses: Record<string, OpenAPIResponse> = {};
 
-  for (const [statusCode, responseDef] of Object.entries(schemaConfig.responses as Record<string, RouteResponseDefinition>)) {
+  for (const [statusCode, responseDef] of Object.entries(
+    schemaConfig.responses as Record<string, RouteResponseDefinition>,
+  )) {
     const isConfiguredResponse = isRouteResponseConfig(responseDef);
     const contentType = isConfiguredResponse ? responseDef.contentType : "application/json";
     const description = isConfiguredResponse ? responseDef.description : undefined;
@@ -871,7 +879,9 @@ function extractReturnedExpression(source: string): string | undefined {
 
 function extractDirectCtxHelperCall(handler: RouteHandler): InferredHelperCall | undefined {
   const source = stripComments(handler.toString());
-  const returnedExpression = extractReturnedExpression(source)?.replace(/^await\s+/, "").trim();
+  const returnedExpression = extractReturnedExpression(source)
+    ?.replace(/^await\s+/, "")
+    .trim();
   if (!returnedExpression) {
     return undefined;
   }
@@ -933,7 +943,8 @@ function buildResponsesFromHandler(
       statusCode = parseNumericLiteral(helperCall.args[1]) ?? 200;
       break;
     case "stream": {
-      const inferredContentType = extractQuotedString(helperCall.args[1]) ?? "application/octet-stream";
+      const inferredContentType =
+        extractQuotedString(helperCall.args[1]) ?? "application/octet-stream";
       contentType = inferredContentType;
       schema = inferredContentType.startsWith("text/")
         ? { type: "string" }
@@ -983,11 +994,14 @@ export function syncRouterToOpenAPI(
 
     // 响应：openapiMeta > schemaConfig > 简单 handler 推断 > default
     const autoResponses = buildResponsesFromSchemaConfig(schemaConfig);
-    const inferredResponses = autoResponses === undefined ? buildResponsesFromHandler(route.handler) : undefined;
+    const inferredResponses =
+      autoResponses === undefined ? buildResponsesFromHandler(route.handler) : undefined;
     const operation: OpenAPIOperation = {
-      responses: openapiMeta?.responses ?? autoResponses ?? inferredResponses ?? {
-        "200": { description: "Success" },
-      },
+      responses: openapiMeta?.responses ??
+        autoResponses ??
+        inferredResponses ?? {
+          "200": { description: "Success" },
+        },
     };
 
     // 参数：合并 schemaConfig.query 与 openapiMeta.parameters（后者优先级更高）

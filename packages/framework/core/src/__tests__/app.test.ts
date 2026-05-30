@@ -209,7 +209,7 @@ describe("App HTTP integration", () => {
     const body = await res.json();
     expect(body.error).toBe("INTERNAL_ERROR");
     // Should NOT expose internal error message
-    expect(body.message).toBe("Internal Server Error");
+    expect(body.message).toBe("服务器内部错误");
   });
 
   test("plugin install is called before start", async () => {

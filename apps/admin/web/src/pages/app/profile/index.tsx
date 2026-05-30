@@ -1,263 +1,324 @@
-import { useState, useEffect } from 'react'
-import { Card, Form, Input, Button, Avatar, Upload, Tabs, Table, Switch, Tag, Space, Popconfirm, Modal, Typography, List, Alert } from 'antd'
-import { msg } from '@/components/GlobalMessage'
-import { UserOutlined, LockOutlined, SafetyOutlined, HistoryOutlined, CopyOutlined, UploadOutlined, KeyOutlined, PlusOutlined, DeleteOutlined } from '@ant-design/icons'
-import DictRadio from '@/components/DictRadio'
-import AvatarCropper from '@/components/AvatarCropper'
-import { startRegistration } from '@simplewebauthn/browser'
-import dayjs from 'dayjs'
-import { client } from '@/api'
-import type { LoginLogItem } from '@/api/types'
-import { useAuth } from '@/store/useAuth'
-import { useTable } from '@/hooks/useTable'
-import { usePublicConfig } from '@/hooks/usePublicConfig'
+import { client } from "@/api";
+import type { LoginLogItem } from "@/api/types";
+import AvatarCropper from "@/components/AvatarCropper";
+import DictRadio from "@/components/DictRadio";
+import { msg } from "@/components/GlobalMessage";
+import { usePublicConfig } from "@/hooks/usePublicConfig";
+import { useTable } from "@/hooks/useTable";
+import { useAuth } from "@/store/useAuth";
+import {
+  CopyOutlined,
+  DeleteOutlined,
+  HistoryOutlined,
+  KeyOutlined,
+  LockOutlined,
+  PlusOutlined,
+  SafetyOutlined,
+  UploadOutlined,
+  UserOutlined,
+} from "@ant-design/icons";
+import { startRegistration } from "@simplewebauthn/browser";
+import {
+  Alert,
+  Avatar,
+  Button,
+  Card,
+  Form,
+  Input,
+  List,
+  Modal,
+  Popconfirm,
+  Space,
+  Switch,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+  Upload,
+} from "antd";
+import dayjs from "dayjs";
+import { useEffect, useState } from "react";
 
-const { Title, Text, Paragraph } = Typography
+const { Title, Text, Paragraph } = Typography;
 
 interface UserProfile {
-  avatar?: string
-  nickname: string
-  email: string
-  phone: string
-  gender: string
+  avatar?: string;
+  nickname: string;
+  email: string;
+  phone: string;
+  gender: string;
 }
 
 interface MFASetupData {
-  secret: string
-  qrCodeUri: string
-  recoveryCodes: string[]
+  secret: string;
+  qrCodeUri: string;
+  recoveryCodes: string[];
 }
 
-const getPasswordRules = (minLength: number, complexity: 'low' | 'medium' | 'high') => {
-  const rules: Array<{ required: boolean; message: string } | { min: number; message: string } | { pattern: RegExp; message: string }> = [
-    { required: true, message: '请输入新密码' },
+const getPasswordRules = (minLength: number, complexity: "low" | "medium" | "high") => {
+  const rules: Array<
+    | { required: boolean; message: string }
+    | { min: number; message: string }
+    | { pattern: RegExp; message: string }
+  > = [
+    { required: true, message: "请输入新密码" },
     { min: minLength, message: `密码不能少于${minLength}位` },
-  ]
-  if (complexity === 'medium') {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码需包含字母和数字' })
-  } else if (complexity === 'high') {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/, message: '密码需包含字母、数字和特殊字符' })
+  ];
+  if (complexity === "medium") {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: "密码需包含字母和数字" });
+  } else if (complexity === "high") {
+    rules.push({
+      pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/,
+      message: "密码需包含字母、数字和特殊字符",
+    });
   }
-  return rules
-}
+  return rules;
+};
 
 export default function ProfilePage() {
-  const [profileForm] = Form.useForm()
-  const [passwordForm] = Form.useForm()
-  const [mfaForm] = Form.useForm()
-  const [avatarUrl, setAvatarUrl] = useState<string>('')
-  const [loading, setLoading] = useState(false)
-  const [cropperFile, setCropperFile] = useState<File | null>(null)
-  const [mfaEnabled, setMfaEnabled] = useState(false)
-  const [mfaSetupData, setMfaSetupData] = useState<MFASetupData | null>(null)
-  const [mfaStep, setMfaStep] = useState<'idle' | 'setup' | 'verify'>('idle')
+  const [profileForm] = Form.useForm();
+  const [passwordForm] = Form.useForm();
+  const [mfaForm] = Form.useForm();
+  const [avatarUrl, setAvatarUrl] = useState<string>("");
+  const [loading, setLoading] = useState(false);
+  const [cropperFile, setCropperFile] = useState<File | null>(null);
+  const [mfaEnabled, setMfaEnabled] = useState(false);
+  const [mfaSetupData, setMfaSetupData] = useState<MFASetupData | null>(null);
+  const [mfaStep, setMfaStep] = useState<"idle" | "setup" | "verify">("idle");
 
   // Passkey state
-  const [passkeys, setPasskeys] = useState<Array<{ id: string; name: string; deviceType: string; backedUp: boolean; createdAt: string; lastUsedAt: string | null }>>([])
-  const [passkeyLoading, setPasskeyLoading] = useState(false)
-  const [addPasskeyOpen, setAddPasskeyOpen] = useState(false)
-  const [newPasskeyName, setNewPasskeyName] = useState('')
+  const [passkeys, setPasskeys] = useState<
+    Array<{
+      id: string;
+      name: string;
+      deviceType: string;
+      backedUp: boolean;
+      createdAt: string;
+      lastUsedAt: string | null;
+    }>
+  >([]);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [addPasskeyOpen, setAddPasskeyOpen] = useState(false);
+  const [newPasskeyName, setNewPasskeyName] = useState("");
 
-  const mfaGloballyEnabled = usePublicConfig(s => s.config.mfaEnabled)
-  const mfaForce = usePublicConfig(s => s.config.mfaForce)
-  const passwordMinLength = usePublicConfig(s => s.config.passwordMinLength)
-  const passwordComplexity = usePublicConfig(s => s.config.passwordComplexity)
+  const mfaGloballyEnabled = usePublicConfig((s) => s.config.mfaEnabled);
+  const mfaForce = usePublicConfig((s) => s.config.mfaForce);
+  const passwordMinLength = usePublicConfig((s) => s.config.passwordMinLength);
+  const passwordComplexity = usePublicConfig((s) => s.config.passwordComplexity);
 
-  const { loading: logsLoading, data: logsData, total: logsTotal, page: logsPage, pageSize: logsPageSize, refresh, onPageChange } = useTable<LoginLogItem>(
+  const {
+    loading: logsLoading,
+    data: logsData,
+    total: logsTotal,
+    page: logsPage,
+    pageSize: logsPageSize,
+    refresh,
+    onPageChange,
+  } = useTable<LoginLogItem>(
     async (params) => {
-      const { error, data } = await client.get('/api/system/login-logs', { query: params })
+      const { error, data } = await client.get("/api/system/login-logs", { query: params });
       if (!error && data) {
-        return data
+        return data;
       }
-      return { items: [], total: 0 }
+      return { items: [], total: 0 };
     },
-    { defaultPageSize: 10 }
-  )
+    { defaultPageSize: 10 },
+  );
 
   const fetchProfile = async () => {
-    const { error, data } = await client.get('/api/system/user/profile')
+    const { error, data } = await client.get("/api/system/user/profile");
     if (!error && data) {
-      setAvatarUrl(data.avatar || '')
+      setAvatarUrl(data.avatar || "");
       // gender 从数字转字符串，匹配字典值
       profileForm.setFieldsValue({
         ...data,
-        gender: data.gender != null ? String(data.gender) : '0',
-      })
+        gender: data.gender != null ? String(data.gender) : "0",
+      });
     } else {
-      msg.error('获取用户信息失败')
+      msg.error("获取用户信息失败");
     }
-  }
+  };
 
   const fetchMFAStatus = async () => {
-    const { error, data } = await client.get('/api/auth/mfa/status')
+    const { error, data } = await client.get("/api/auth/mfa/status");
     if (!error && data) {
-      setMfaEnabled(data.enabled)
+      setMfaEnabled(data.enabled);
     } else {
-      msg.error('获取MFA状态失败')
+      msg.error("获取MFA状态失败");
     }
-  }
+  };
 
   const fetchPasskeys = async () => {
-    const { error, data } = await client.get('/api/auth/passkey/list' as unknown as '/api/system/users')
+    const { error, data } = await client.get(
+      "/api/auth/passkey/list" as unknown as "/api/system/users",
+    );
     if (!error && data) {
-      setPasskeys(data as typeof passkeys)
+      setPasskeys(data as typeof passkeys);
     }
-  }
+  };
 
   useEffect(() => {
-    fetchProfile()
+    fetchProfile();
     if (mfaGloballyEnabled) {
-      fetchMFAStatus()
+      fetchMFAStatus();
     }
-    fetchPasskeys()
-    refresh()
-  }, [])
+    fetchPasskeys();
+    refresh();
+  }, []);
 
   const handleProfileSubmit = async (values: UserProfile) => {
-    setLoading(true)
-    const { error } = await client.put('/api/system/user/profile', {
+    setLoading(true);
+    const { error } = await client.put("/api/system/user/profile", {
       body: {
         nickname: values.nickname,
         email: values.email,
         phone: values.phone,
         gender: Number(values.gender),
-      }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
     if (!error) {
-      msg.success('保存成功')
-      fetchProfile()
+      msg.success("保存成功");
+      fetchProfile();
       useAuth.getState().patchUser({
         nickname: values.nickname,
         email: values.email,
         phone: values.phone,
         gender: Number(values.gender),
-      })
+      });
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   const handleAvatarUpload = (options: any) => {
-    setCropperFile(options.file as File)
-  }
+    setCropperFile(options.file as File);
+  };
 
   const handleCropConfirm = async (blob: Blob) => {
-    setCropperFile(null)
-    const file = new File([blob], 'avatar.png', { type: 'image/png' })
-    const formData = new FormData()
-    formData.append('file', file)
+    setCropperFile(null);
+    const file = new File([blob], "avatar.png", { type: "image/png" });
+    const formData = new FormData();
+    formData.append("file", file);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await client.post('/api/system/user/profile/avatar', { body: formData } as any)
+    const result = await client.post("/api/system/user/profile/avatar", { body: formData } as any);
     if (!result.error) {
-      msg.success('头像上传成功')
-      fetchProfile()
+      msg.success("头像上传成功");
+      fetchProfile();
       if (result.data?.avatar) {
-        useAuth.getState().patchUser({ avatar: result.data.avatar })
+        useAuth.getState().patchUser({ avatar: result.data.avatar });
       }
     }
-  }
+  };
 
   const handlePasswordSubmit = async (values: { oldPassword: string; newPassword: string }) => {
-    setLoading(true)
-    const { error } = await client.put('/api/system/user/profile/password', {
+    setLoading(true);
+    const { error } = await client.put("/api/system/user/profile/password", {
       body: {
         oldPassword: values.oldPassword,
-        newPassword: values.newPassword
-      }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+        newPassword: values.newPassword,
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
     if (!error) {
-      msg.success('密码修改成功')
-      passwordForm.resetFields()
+      msg.success("密码修改成功");
+      passwordForm.resetFields();
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   const handleMFAEnable = async () => {
-    const { error, data } = await client.post('/api/auth/mfa/enable', {})
+    const { error, data } = await client.post("/api/auth/mfa/enable", {});
     if (!error && data) {
-      setMfaSetupData(data)
-      setMfaStep('setup')
+      setMfaSetupData(data);
+      setMfaStep("setup");
     }
-  }
+  };
 
   const handleMFADisable = async () => {
-    const password = mfaForm.getFieldValue('password')
+    const password = mfaForm.getFieldValue("password");
     if (!password) {
-      msg.warning('请输入密码确认')
-      return
+      msg.warning("请输入密码确认");
+      return;
     }
-    setLoading(true)
-    const { error } = await client.post('/api/auth/mfa/disable', { body: { code: password } })
+    setLoading(true);
+    const { error } = await client.post("/api/auth/mfa/disable", { body: { code: password } });
     if (!error) {
-      msg.success('MFA已禁用')
-      setMfaEnabled(false)
-      mfaForm.resetFields()
+      msg.success("MFA已禁用");
+      setMfaEnabled(false);
+      mfaForm.resetFields();
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   const handleMFAVerify = async (values: { code: string }) => {
-    setLoading(true)
-    const { error } = await client.post('/api/auth/mfa/verify', {
+    setLoading(true);
+    const { error } = await client.post("/api/auth/mfa/verify", {
       body: {
         code: values.code,
-      }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)
+      },
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any);
     if (!error) {
-      msg.success('MFA启用成功')
-      setMfaEnabled(true)
-      setMfaStep('idle')
-      setMfaSetupData(null)
-      mfaForm.resetFields()
+      msg.success("MFA启用成功");
+      setMfaEnabled(true);
+      setMfaStep("idle");
+      setMfaSetupData(null);
+      mfaForm.resetFields();
     }
-    setLoading(false)
-  }
+    setLoading(false);
+  };
 
   const copyRecoveryCode = (code: string) => {
-    navigator.clipboard.writeText(code)
-    msg.success('已复制到剪贴板')
-  }
+    navigator.clipboard.writeText(code);
+    msg.success("已复制到剪贴板");
+  };
 
   const handleAddPasskey = async () => {
     if (!newPasskeyName.trim()) {
-      msg.warning('请输入通行密钥名称')
-      return
+      msg.warning("请输入通行密钥名称");
+      return;
     }
-    setPasskeyLoading(true)
+    setPasskeyLoading(true);
     try {
-      const { error: beginError, data: beginData } = await client.post('/api/auth/passkey/register-begin' as unknown as '/api/system/users', { body: {} } as any)
+      const { error: beginError, data: beginData } = await client.post(
+        "/api/auth/passkey/register-begin" as unknown as "/api/system/users",
+        { body: {} } as any,
+      );
       if (beginError || !beginData) {
-        msg.error('获取注册信息失败')
-        return
+        msg.error("获取注册信息失败");
+        return;
       }
-      const credential = await startRegistration({ optionsJSON: beginData.options as any })
-      const { error: finishError } = await client.post('/api/auth/passkey/register-finish' as unknown as '/api/system/users', {
-        body: { name: newPasskeyName, challengeId: beginData.challengeId, credential },
-      } as any)
+      const credential = await startRegistration({ optionsJSON: beginData.options as any });
+      const { error: finishError } = await client.post(
+        "/api/auth/passkey/register-finish" as unknown as "/api/system/users",
+        {
+          body: { name: newPasskeyName, challengeId: beginData.challengeId, credential },
+        } as any,
+      );
       if (!finishError) {
-        msg.success('通行密钥添加成功')
-        setAddPasskeyOpen(false)
-        setNewPasskeyName('')
-        fetchPasskeys()
+        msg.success("通行密钥添加成功");
+        setAddPasskeyOpen(false);
+        setNewPasskeyName("");
+        fetchPasskeys();
       } else {
-        msg.error('通行密钥注册失败')
+        msg.error("通行密钥注册失败");
       }
     } catch {
-      msg.error('通行密钥注册已取消或失败')
+      msg.error("通行密钥注册已取消或失败");
     } finally {
-      setPasskeyLoading(false)
+      setPasskeyLoading(false);
     }
-  }
+  };
 
   const handleDeletePasskey = async (id: string) => {
-    const { error } = await client.delete(`/api/auth/passkey/${id}` as unknown as '/api/system/users/:id')
+    const { error } = await client.delete(
+      `/api/auth/passkey/${id}` as unknown as "/api/system/users/:id",
+    );
     if (!error) {
-      msg.success('通行密钥已删除')
-      fetchPasskeys()
+      msg.success("通行密钥已删除");
+      fetchPasskeys();
     }
-  }
+  };
 
   const basicInfoTab = (
     <Card>
@@ -265,33 +326,25 @@ export default function ProfilePage() {
         form={profileForm}
         layout="vertical"
         onFinish={handleProfileSubmit}
-        initialValues={{ gender: '0' }}
+        initialValues={{ gender: "0" }}
       >
         <Form.Item label="头像">
           <Space orientation="vertical" size="middle">
             <Avatar size={100} src={avatarUrl || undefined} icon={<UserOutlined />} />
-            <Upload
-              customRequest={handleAvatarUpload}
-              accept="image/*"
-              showUploadList={false}
-            >
+            <Upload customRequest={handleAvatarUpload} accept="image/*" showUploadList={false}>
               <Button icon={<UploadOutlined />}>上传头像</Button>
             </Upload>
           </Space>
         </Form.Item>
-        <Form.Item
-          label="昵称"
-          name="nickname"
-          rules={[{ required: true, message: '请输入昵称' }]}
-        >
+        <Form.Item label="昵称" name="nickname" rules={[{ required: true, message: "请输入昵称" }]}>
           <Input placeholder="请输入昵称" />
         </Form.Item>
         <Form.Item
           label="邮箱"
           name="email"
           rules={[
-            { required: true, message: '请输入邮箱' },
-            { type: 'email', message: '邮箱格式不正确' }
+            { required: true, message: "请输入邮箱" },
+            { type: "email", message: "邮箱格式不正确" },
           ]}
         >
           <Input placeholder="请输入邮箱" />
@@ -299,15 +352,11 @@ export default function ProfilePage() {
         <Form.Item
           label="手机号"
           name="phone"
-          rules={[{ pattern: /^1[3-9]\d{9}$/, message: '手机号格式不正确' }]}
+          rules={[{ pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" }]}
         >
           <Input placeholder="请输入手机号" />
         </Form.Item>
-        <Form.Item
-          label="性别"
-          name="gender"
-          rules={[{ required: true, message: '请选择性别' }]}
-        >
+        <Form.Item label="性别" name="gender" rules={[{ required: true, message: "请选择性别" }]}>
           <DictRadio typeCode="sys_gender" />
         </Form.Item>
         <Form.Item>
@@ -317,19 +366,15 @@ export default function ProfilePage() {
         </Form.Item>
       </Form>
     </Card>
-  )
+  );
 
   const passwordTab = (
     <Card>
-      <Form
-        form={passwordForm}
-        layout="vertical"
-        onFinish={handlePasswordSubmit}
-      >
+      <Form form={passwordForm} layout="vertical" onFinish={handlePasswordSubmit}>
         <Form.Item
           label="原密码"
           name="oldPassword"
-          rules={[{ required: true, message: '请输入原密码' }]}
+          rules={[{ required: true, message: "请输入原密码" }]}
         >
           <Input.Password placeholder="请输入原密码" />
         </Form.Item>
@@ -343,17 +388,17 @@ export default function ProfilePage() {
         <Form.Item
           label="确认密码"
           name="confirmPassword"
-          dependencies={['newPassword']}
+          dependencies={["newPassword"]}
           rules={[
-            { required: true, message: '请确认新密码' },
+            { required: true, message: "请确认新密码" },
             ({ getFieldValue }) => ({
               validator(_, value) {
-                if (!value || getFieldValue('newPassword') === value) {
-                  return Promise.resolve()
+                if (!value || getFieldValue("newPassword") === value) {
+                  return Promise.resolve();
                 }
-                return Promise.reject(new Error('两次输入的密码不一致'))
-              }
-            })
+                return Promise.reject(new Error("两次输入的密码不一致"));
+              },
+            }),
           ]}
         >
           <Input.Password placeholder="请再次输入新密码" />
@@ -365,12 +410,12 @@ export default function ProfilePage() {
         </Form.Item>
       </Form>
     </Card>
-  )
+  );
 
   const mfaTab = (
     <Card>
-      <Space orientation="vertical" size="large" style={{ width: '100%' }}>
-        {mfaForce && !mfaEnabled && mfaStep === 'idle' && (
+      <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+        {mfaForce && !mfaEnabled && mfaStep === "idle" && (
           <Alert
             message="安全要求"
             description="管理员已要求所有用户启用多因素认证，请尽快完成设置"
@@ -386,10 +431,10 @@ export default function ProfilePage() {
             checked={mfaEnabled}
             onChange={(checked) => {
               if (checked) {
-                handleMFAEnable()
+                handleMFAEnable();
               } else {
-                setMfaStep('idle')
-                mfaForm.resetFields()
+                setMfaStep("idle");
+                mfaForm.resetFields();
               }
             }}
             checkedChildren="已启用"
@@ -397,7 +442,7 @@ export default function ProfilePage() {
           />
         </div>
 
-        {mfaStep === 'setup' && mfaSetupData && (
+        {mfaStep === "setup" && mfaSetupData && (
           <>
             <div>
               <Title level={5}>步骤1: 扫描二维码</Title>
@@ -407,7 +452,7 @@ export default function ProfilePage() {
               <Text code copyable={{ text: mfaSetupData.secret }}>
                 {mfaSetupData.secret}
               </Text>
-              <pre style={{ marginTop: 16, padding: 16, background: '#f5f5f5', borderRadius: 4 }}>
+              <pre style={{ marginTop: 16, padding: 16, background: "#f5f5f5", borderRadius: 4 }}>
                 <code>{mfaSetupData.qrCodeUri}</code>
               </pre>
             </div>
@@ -428,7 +473,7 @@ export default function ProfilePage() {
                         onClick={() => copyRecoveryCode(code)}
                       >
                         复制
-                      </Button>
+                      </Button>,
                     ]}
                   >
                     <Text code>{code}</Text>
@@ -443,7 +488,7 @@ export default function ProfilePage() {
                 <Form.Item
                   label="验证码"
                   name="code"
-                  rules={[{ required: true, message: '请输入6位验证码' }]}
+                  rules={[{ required: true, message: "请输入6位验证码" }]}
                 >
                   <Input.OTP length={6} />
                 </Form.Item>
@@ -452,9 +497,7 @@ export default function ProfilePage() {
                     <Button type="primary" htmlType="submit" loading={loading}>
                       验证并启用
                     </Button>
-                    <Button onClick={() => setMfaStep('idle')}>
-                      取消
-                    </Button>
+                    <Button onClick={() => setMfaStep("idle")}>取消</Button>
                   </Space>
                 </Form.Item>
               </Form>
@@ -462,18 +505,28 @@ export default function ProfilePage() {
           </>
         )}
 
-        {!mfaEnabled && mfaStep === 'idle' && (
-          <Alert message="未启用MFA" description="启用多因素认证可以提高账户安全性" type="info" showIcon />
+        {!mfaEnabled && mfaStep === "idle" && (
+          <Alert
+            message="未启用MFA"
+            description="启用多因素认证可以提高账户安全性"
+            type="info"
+            showIcon
+          />
         )}
 
-        {mfaEnabled && mfaStep === 'idle' && (
+        {mfaEnabled && mfaStep === "idle" && (
           <>
-            <Alert message="已启用MFA" description="您的账户已受到多因素认证保护" type="success" showIcon />
+            <Alert
+              message="已启用MFA"
+              description="您的账户已受到多因素认证保护"
+              type="success"
+              showIcon
+            />
             <Form form={mfaForm} layout="vertical">
               <Form.Item
                 label="输入验证码以禁用MFA"
                 name="password"
-                rules={[{ required: true, message: '请输入验证码确认' }]}
+                rules={[{ required: true, message: "请输入验证码确认" }]}
               >
                 <Input placeholder="请输入认证器验证码" />
               </Form.Item>
@@ -487,60 +540,60 @@ export default function ProfilePage() {
         )}
       </Space>
     </Card>
-  )
+  );
 
   const loginHistoryColumns = [
     {
-      title: 'IP地址',
-      dataIndex: 'ip',
-      key: 'ip'
+      title: "IP地址",
+      dataIndex: "ip",
+      key: "ip",
     },
     {
-      title: '浏览器',
-      dataIndex: 'browser',
-      key: 'browser'
+      title: "浏览器",
+      dataIndex: "browser",
+      key: "browser",
     },
     {
-      title: '操作系统',
-      dataIndex: 'os',
-      key: 'os'
+      title: "操作系统",
+      dataIndex: "os",
+      key: "os",
     },
     {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
       render: (status: string) => (
-        <Tag color={status === 'success' ? 'success' : 'error'}>
-          {status === 'success' ? '成功' : '失败'}
+        <Tag color={status === "success" ? "success" : "error"}>
+          {status === "success" ? "成功" : "失败"}
         </Tag>
-      )
+      ),
     },
     {
-      title: '登录方式',
-      dataIndex: 'loginMethod',
-      key: 'loginMethod',
+      title: "登录方式",
+      dataIndex: "loginMethod",
+      key: "loginMethod",
       render: (method: string) => {
         const map: Record<string, { label: string; color: string }> = {
-          password: { label: '密码', color: 'default' },
-          mfa: { label: 'MFA', color: 'blue' },
-          passkey: { label: 'Passkey', color: 'green' },
-        }
-        const info = map[method] || { label: method, color: 'default' }
-        return <Tag color={info.color}>{info.label}</Tag>
-      }
+          password: { label: "密码", color: "default" },
+          mfa: { label: "MFA", color: "blue" },
+          passkey: { label: "Passkey", color: "green" },
+        };
+        const info = map[method] || { label: method, color: "default" };
+        return <Tag color={info.color}>{info.label}</Tag>;
+      },
     },
     {
-      title: '登录时间',
-      dataIndex: 'loginAt',
-      key: 'loginAt',
-      render: (date: string) => dayjs(date).format('YYYY-MM-DD HH:mm:ss')
-    }
-  ]
+      title: "登录时间",
+      dataIndex: "loginAt",
+      key: "loginAt",
+      render: (date: string) => dayjs(date).format("YYYY-MM-DD HH:mm:ss"),
+    },
+  ];
 
   const passkeyTab = (
     <Card>
-      <Space orientation="vertical" size="middle" style={{ width: '100%' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <Text strong>通行密钥管理</Text>
           <Button
             type="primary"
@@ -552,9 +605,7 @@ export default function ProfilePage() {
           </Button>
         </div>
 
-        {passkeys.length >= 3 && (
-          <Alert message="已达到通行密钥上限（3个）" type="info" showIcon />
-        )}
+        {passkeys.length >= 3 && <Alert message="已达到通行密钥上限（3个）" type="info" showIcon />}
 
         <Table
           dataSource={passkeys}
@@ -562,36 +613,41 @@ export default function ProfilePage() {
           size="small"
           pagination={false}
           columns={[
-            { title: '名称', dataIndex: 'name', key: 'name' },
-            { title: '设备类型', dataIndex: 'deviceType', key: 'deviceType' },
+            { title: "名称", dataIndex: "name", key: "name" },
+            { title: "设备类型", dataIndex: "deviceType", key: "deviceType" },
             {
-              title: '云端同步',
-              dataIndex: 'backedUp',
-              key: 'backedUp',
-              render: (v: boolean) => <Tag color={v ? 'blue' : 'default'}>{v ? '是' : '否'}</Tag>,
+              title: "云端同步",
+              dataIndex: "backedUp",
+              key: "backedUp",
+              render: (v: boolean) => <Tag color={v ? "blue" : "default"}>{v ? "是" : "否"}</Tag>,
             },
             {
-              title: '创建时间',
-              dataIndex: 'createdAt',
-              key: 'createdAt',
+              title: "创建时间",
+              dataIndex: "createdAt",
+              key: "createdAt",
               width: 180,
-              render: (v: string) => dayjs(v).format('YYYY-MM-DD HH:mm:ss'),
+              render: (v: string) => dayjs(v).format("YYYY-MM-DD HH:mm:ss"),
             },
             {
-              title: '最近使用',
-              dataIndex: 'lastUsedAt',
-              key: 'lastUsedAt',
+              title: "最近使用",
+              dataIndex: "lastUsedAt",
+              key: "lastUsedAt",
               width: 180,
-              render: (v: string | null) => v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : '-',
+              render: (v: string | null) => (v ? dayjs(v).format("YYYY-MM-DD HH:mm:ss") : "-"),
             },
             {
-              title: '操作',
-              key: 'action',
+              title: "操作",
+              key: "action",
               width: 80,
-              fixed: 'right' as const,
-              render: (_: unknown, record: typeof passkeys[number]) => (
-                <Popconfirm title="确定删除此通行密钥？" onConfirm={() => handleDeletePasskey(record.id)}>
-                  <Button type="link" danger icon={<DeleteOutlined />} size="small">删除</Button>
+              fixed: "right" as const,
+              render: (_: unknown, record: (typeof passkeys)[number]) => (
+                <Popconfirm
+                  title="确定删除此通行密钥？"
+                  onConfirm={() => handleDeletePasskey(record.id)}
+                >
+                  <Button type="link" danger icon={<DeleteOutlined />} size="small">
+                    删除
+                  </Button>
                 </Popconfirm>
               ),
             },
@@ -607,7 +663,10 @@ export default function ProfilePage() {
         title="添加通行密钥"
         open={addPasskeyOpen}
         onOk={handleAddPasskey}
-        onCancel={() => { setAddPasskeyOpen(false); setNewPasskeyName('') }}
+        onCancel={() => {
+          setAddPasskeyOpen(false);
+          setNewPasskeyName("");
+        }}
         confirmLoading={passkeyLoading}
         okText="添加"
         destroyOnHidden
@@ -620,7 +679,7 @@ export default function ProfilePage() {
         />
       </Modal>
     </Card>
-  )
+  );
 
   const loginHistoryTab = (
     <Card>
@@ -635,39 +694,68 @@ export default function ProfilePage() {
           total: logsTotal,
           showSizeChanger: true,
           showTotal: (total) => `共 ${total} 条`,
-          onChange: onPageChange
+          onChange: onPageChange,
         }}
       />
     </Card>
-  )
+  );
 
   const tabItems = [
     {
-      key: 'basic',
-      label: (<span className='flex-inline gap-1'><UserOutlined />基本信息</span>),
-      children: basicInfoTab
+      key: "basic",
+      label: (
+        <span className="flex-inline gap-1">
+          <UserOutlined />
+          基本信息
+        </span>
+      ),
+      children: basicInfoTab,
     },
     {
-      key: 'password',
-      label: (<span className='flex-inline gap-1'><LockOutlined />修改密码</span>),
-      children: passwordTab
+      key: "password",
+      label: (
+        <span className="flex-inline gap-1">
+          <LockOutlined />
+          修改密码
+        </span>
+      ),
+      children: passwordTab,
     },
-    ...(mfaGloballyEnabled ? [{
-      key: 'mfa',
-      label: (<span className='flex-inline gap-1'><SafetyOutlined />MFA设置</span>),
-      children: mfaTab
-    }] : []),
+    ...(mfaGloballyEnabled
+      ? [
+          {
+            key: "mfa",
+            label: (
+              <span className="flex-inline gap-1">
+                <SafetyOutlined />
+                MFA设置
+              </span>
+            ),
+            children: mfaTab,
+          },
+        ]
+      : []),
     {
-      key: 'passkey',
-      label: (<span className='flex-inline gap-1'><KeyOutlined />通行密钥</span>),
-      children: passkeyTab
+      key: "passkey",
+      label: (
+        <span className="flex-inline gap-1">
+          <KeyOutlined />
+          通行密钥
+        </span>
+      ),
+      children: passkeyTab,
     },
     {
-      key: 'history',
-      label: (<span className='flex-inline gap-1'><HistoryOutlined />登录记录</span>),
-      children: loginHistoryTab
+      key: "history",
+      label: (
+        <span className="flex-inline gap-1">
+          <HistoryOutlined />
+          登录记录
+        </span>
+      ),
+      children: loginHistoryTab,
     },
-  ]
+  ];
 
   return (
     <div style={{ padding: 24 }}>
@@ -682,5 +770,5 @@ export default function ProfilePage() {
         />
       )}
     </div>
-  )
+  );
 }

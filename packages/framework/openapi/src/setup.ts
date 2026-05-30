@@ -1,11 +1,11 @@
 import type { Plugin, VentoStackApp } from "@ventostack/core";
 import { syncRouterToOpenAPI } from "./decorators";
 import {
-  createOpenAPIGenerator,
   type OpenAPIGenerator,
   type OpenAPIInfo,
   type OpenAPIServer,
   type OpenAPITag,
+  createOpenAPIGenerator,
 } from "./generator";
 import { createScalarUIHandler } from "./scalar-ui";
 

@@ -57,7 +57,7 @@ describe("csrf", () => {
     const response = await mw(ctx, okHandler);
     expect(response.status).toBe(403);
     const body = await response.json();
-    expect(body.error).toContain("missing");
+    expect(body.error).toContain("缺少");
   });
 
   test("POST with cookie but no header token returns 403", async () => {
@@ -66,7 +66,7 @@ describe("csrf", () => {
     const response = await mw(ctx, okHandler);
     expect(response.status).toBe(403);
     const body = await response.json();
-    expect(body.error).toContain("mismatch");
+    expect(body.error).toContain("不匹配");
   });
 
   test("POST with mismatched tokens returns 403", async () => {

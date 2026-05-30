@@ -1,11 +1,11 @@
 // @ventostack/core - 应用入口
 
+import { COLORS, RESET, ansi } from "./color";
 import { VentoStackError } from "./errors";
 import { type Lifecycle, createLifecycle } from "./lifecycle";
 import type { Middleware } from "./middleware";
 import type { Plugin } from "./plugin";
 import { type CompiledRoutes, type Router, createRouter } from "./router";
-import { RESET, ansi, COLORS } from "./color";
 
 /**
  * 判断给定对象是否为 Router 实例
@@ -154,7 +154,10 @@ export function createApp(config?: AppConfig): VentoStackApp {
             if (addr) {
               const headers = new Headers(req.headers);
               headers.set("x-real-ip", addr.address);
-              req = new Request(req, { headers });
+              const newReq = new Request(req, { headers });
+              // Preserve Bun native route params
+              (newReq as any).params = (req as any).params;
+              req = newReq;
             }
           } catch {
             // requestIP 在非服务器请求（如测试）下可能失败

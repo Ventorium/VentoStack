@@ -64,7 +64,10 @@ export interface RouteResponseConfig {
 }
 
 /** 路由响应声明 */
-export type RouteResponseDefinition = Record<string, SchemaField> | SchemaField | RouteResponseConfig;
+export type RouteResponseDefinition =
+  | Record<string, SchemaField>
+  | SchemaField
+  | RouteResponseConfig;
 
 /** 路由级 OpenAPI 元数据 */
 export interface RouteOpenAPIConfig {
@@ -134,32 +137,41 @@ export type InferFieldType<T extends SchemaField> = T extends { required: true }
     : CoreType<T> | undefined;
 
 /** 从 Schema 对象推导 TypeScript 类型 */
-export type InferSchema<T extends Record<string, SchemaField> | undefined> =
-  T extends Record<string, SchemaField>
-    ? { [K in keyof T]: T[K] extends SchemaField ? InferFieldType<T[K]> : unknown }
-    : Record<string, unknown>;
+export type InferSchema<T extends Record<string, SchemaField> | undefined> = T extends Record<
+  string,
+  SchemaField
+>
+  ? { [K in keyof T]: T[K] extends SchemaField ? InferFieldType<T[K]> : unknown }
+  : Record<string, unknown>;
 
 type ResponseSchemaOf<T> = T extends { contentType: string; schema: infer S } ? S : T;
 
 /** 从响应 Schema 推导 TypeScript 类型（支持对象或单字段） */
-export type InferResponseType<T> =
-  ResponseSchemaOf<T> extends Record<string, SchemaField>
-    ? InferSchema<ResponseSchemaOf<T>>
-    : ResponseSchemaOf<T> extends SchemaField
-      ? InferFieldType<ResponseSchemaOf<T>>
-      : Record<string, unknown>;
+export type InferResponseType<T> = ResponseSchemaOf<T> extends Record<string, SchemaField>
+  ? InferSchema<ResponseSchemaOf<T>>
+  : ResponseSchemaOf<T> extends SchemaField
+    ? InferFieldType<ResponseSchemaOf<T>>
+    : Record<string, unknown>;
 
 export function isSchemaField(value: unknown): value is SchemaField {
   return typeof value === "object" && value !== null && !Array.isArray(value) && "type" in value;
 }
 
 export function isRouteResponseConfig(value: unknown): value is RouteResponseConfig {
-  return typeof value === "object" && value !== null && !Array.isArray(value) && "contentType" in value && "schema" in value;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    "contentType" in value &&
+    "schema" in value
+  );
 }
 
-export function resolveRouteResponseDefinition(
-  definition: RouteResponseDefinition,
-): { contentType: string; schema: Record<string, SchemaField> | SchemaField; description?: string } {
+export function resolveRouteResponseDefinition(definition: RouteResponseDefinition): {
+  contentType: string;
+  schema: Record<string, SchemaField> | SchemaField;
+  description?: string;
+} {
   if (isRouteResponseConfig(definition)) {
     return {
       contentType: definition.contentType,
@@ -186,12 +198,12 @@ function coerceValue(value: unknown, field: SchemaField): unknown {
     case "number":
       return typeof value === "number" ? value : Number(value);
     case "int": {
-      const intVal = typeof value === "number" ? value : parseInt(String(value), 10);
+      const intVal = typeof value === "number" ? value : Number.parseInt(String(value), 10);
       if (!Number.isFinite(intVal)) throw new Error("必须为整数");
       return intVal;
     }
     case "float": {
-      const floatVal = typeof value === "number" ? value : parseFloat(String(value));
+      const floatVal = typeof value === "number" ? value : Number.parseFloat(String(value));
       if (!Number.isFinite(floatVal)) throw new Error("必须为数字");
       return floatVal;
     }
@@ -239,14 +251,16 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
       if (typeof value !== "number") errors.push(`${path} must be a number`);
       break;
     case "int":
-      if (typeof value !== "number" || !Number.isInteger(value)) errors.push(`${path} must be an integer`);
+      if (typeof value !== "number" || !Number.isInteger(value))
+        errors.push(`${path} must be an integer`);
       break;
     case "boolean":
     case "bool":
       if (typeof value !== "boolean") errors.push(`${path} must be a boolean`);
       break;
     case "date":
-      if (!(value instanceof Date) || Number.isNaN(value.getTime())) errors.push(`${path} must be a valid date`);
+      if (!(value instanceof Date) || Number.isNaN(value.getTime()))
+        errors.push(`${path} must be a valid date`);
       break;
     case "file":
       if (!(value instanceof File)) errors.push(`${path} must be a file`);
@@ -255,7 +269,8 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
       if (!Array.isArray(value)) errors.push(`${path} must be an array`);
       break;
     case "object":
-      if (typeof value !== "object" || value === null || Array.isArray(value)) errors.push(`${path} must be an object`);
+      if (typeof value !== "object" || value === null || Array.isArray(value))
+        errors.push(`${path} must be an object`);
       break;
   }
 
@@ -263,24 +278,36 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
 
   // string / uuid checks
   if ((field.type === "string" || field.type === "uuid") && typeof value === "string") {
-    if (field.min !== undefined && value.length < field.min) errors.push(`${path} must have at least ${field.min} characters`);
-    if (field.max !== undefined && value.length > field.max) errors.push(`${path} must have at most ${field.max} characters`);
+    if (field.min !== undefined && value.length < field.min)
+      errors.push(`${path} must have at least ${field.min} characters`);
+    if (field.max !== undefined && value.length > field.max)
+      errors.push(`${path} must have at most ${field.max} characters`);
     if (field.pattern && !field.pattern.test(value)) errors.push(`${path} does not match pattern`);
-    if (field.type === "uuid" && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    if (
+      field.type === "uuid" &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ) {
       errors.push(`${path} must be a valid UUID`);
     }
   }
 
   // number / int / float checks
-  if ((field.type === "number" || field.type === "int" || field.type === "float") && typeof value === "number") {
-    if (field.min !== undefined && value < field.min) errors.push(`${path} must be at least ${field.min}`);
-    if (field.max !== undefined && value > field.max) errors.push(`${path} must be at most ${field.max}`);
+  if (
+    (field.type === "number" || field.type === "int" || field.type === "float") &&
+    typeof value === "number"
+  ) {
+    if (field.min !== undefined && value < field.min)
+      errors.push(`${path} must be at least ${field.min}`);
+    if (field.max !== undefined && value > field.max)
+      errors.push(`${path} must be at most ${field.max}`);
   }
 
   // array checks
   if (field.type === "array" && Array.isArray(value)) {
-    if (field.min !== undefined && value.length < field.min) errors.push(`${path} must have at least ${field.min} items`);
-    if (field.max !== undefined && value.length > field.max) errors.push(`${path} must have at most ${field.max} items`);
+    if (field.min !== undefined && value.length < field.min)
+      errors.push(`${path} must have at least ${field.min} items`);
+    if (field.max !== undefined && value.length > field.max)
+      errors.push(`${path} must have at most ${field.max} items`);
     if (field.items) {
       for (let i = 0; i < value.length; i++) {
         try {
@@ -294,7 +321,13 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
   }
 
   // object checks
-  if (field.type === "object" && field.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
+  if (
+    field.type === "object" &&
+    field.properties &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
     const obj = value as Record<string, unknown>;
     for (const [propKey, propField] of Object.entries(field.properties)) {
       try {
@@ -308,7 +341,8 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
 
   // file checks
   if (field.type === "file" && value instanceof File) {
-    if (field.maxSize !== undefined && value.size > field.maxSize) errors.push(`${path} exceeds max size of ${field.maxSize} bytes`);
+    if (field.maxSize !== undefined && value.size > field.maxSize)
+      errors.push(`${path} exceeds max size of ${field.maxSize} bytes`);
     if (field.allowedMimeTypes && !field.allowedMimeTypes.includes(value.type)) {
       errors.push(`${path} MIME type not allowed: ${value.type}`);
     }
@@ -351,14 +385,16 @@ function validateStrictValue(value: unknown, field: SchemaField, path: string): 
       if (typeof value !== "number") errors.push(`${path} must be a number`);
       break;
     case "int":
-      if (typeof value !== "number" || !Number.isInteger(value)) errors.push(`${path} must be an integer`);
+      if (typeof value !== "number" || !Number.isInteger(value))
+        errors.push(`${path} must be an integer`);
       break;
     case "boolean":
     case "bool":
       if (typeof value !== "boolean") errors.push(`${path} must be a boolean`);
       break;
     case "date":
-      if (!(value instanceof Date) || Number.isNaN(value.getTime())) errors.push(`${path} must be a valid date`);
+      if (!(value instanceof Date) || Number.isNaN(value.getTime()))
+        errors.push(`${path} must be a valid date`);
       break;
     case "file":
       if (!(value instanceof File)) errors.push(`${path} must be a file`);
@@ -367,29 +403,42 @@ function validateStrictValue(value: unknown, field: SchemaField, path: string): 
       if (!Array.isArray(value)) errors.push(`${path} must be an array`);
       break;
     case "object":
-      if (typeof value !== "object" || value === null || Array.isArray(value)) errors.push(`${path} must be an object`);
+      if (typeof value !== "object" || value === null || Array.isArray(value))
+        errors.push(`${path} must be an object`);
       break;
   }
 
   if (errors.length > 0) return errors;
 
   if ((field.type === "string" || field.type === "uuid") && typeof value === "string") {
-    if (field.min !== undefined && value.length < field.min) errors.push(`${path} must have at least ${field.min} characters`);
-    if (field.max !== undefined && value.length > field.max) errors.push(`${path} must have at most ${field.max} characters`);
+    if (field.min !== undefined && value.length < field.min)
+      errors.push(`${path} must have at least ${field.min} characters`);
+    if (field.max !== undefined && value.length > field.max)
+      errors.push(`${path} must have at most ${field.max} characters`);
     if (field.pattern && !field.pattern.test(value)) errors.push(`${path} does not match pattern`);
-    if (field.type === "uuid" && !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)) {
+    if (
+      field.type === "uuid" &&
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+    ) {
       errors.push(`${path} must be a valid UUID`);
     }
   }
 
-  if ((field.type === "number" || field.type === "int" || field.type === "float") && typeof value === "number") {
-    if (field.min !== undefined && value < field.min) errors.push(`${path} must be at least ${field.min}`);
-    if (field.max !== undefined && value > field.max) errors.push(`${path} must be at most ${field.max}`);
+  if (
+    (field.type === "number" || field.type === "int" || field.type === "float") &&
+    typeof value === "number"
+  ) {
+    if (field.min !== undefined && value < field.min)
+      errors.push(`${path} must be at least ${field.min}`);
+    if (field.max !== undefined && value > field.max)
+      errors.push(`${path} must be at most ${field.max}`);
   }
 
   if (field.type === "array" && Array.isArray(value)) {
-    if (field.min !== undefined && value.length < field.min) errors.push(`${path} must have at least ${field.min} items`);
-    if (field.max !== undefined && value.length > field.max) errors.push(`${path} must have at most ${field.max} items`);
+    if (field.min !== undefined && value.length < field.min)
+      errors.push(`${path} must have at least ${field.min} items`);
+    if (field.max !== undefined && value.length > field.max)
+      errors.push(`${path} must have at most ${field.max} items`);
     if (field.items) {
       for (let i = 0; i < value.length; i += 1) {
         errors.push(...validateStrictValue(value[i], field.items, `${path}[${i}]`));
@@ -397,7 +446,13 @@ function validateStrictValue(value: unknown, field: SchemaField, path: string): 
     }
   }
 
-  if (field.type === "object" && field.properties && typeof value === "object" && value !== null && !Array.isArray(value)) {
+  if (
+    field.type === "object" &&
+    field.properties &&
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value)
+  ) {
     const obj = value as Record<string, unknown>;
     for (const [propKey, propField] of Object.entries(field.properties)) {
       errors.push(...validateStrictValue(obj[propKey], propField, `${path}.${propKey}`));
@@ -405,7 +460,8 @@ function validateStrictValue(value: unknown, field: SchemaField, path: string): 
   }
 
   if (field.type === "file" && value instanceof File) {
-    if (field.maxSize !== undefined && value.size > field.maxSize) errors.push(`${path} exceeds max size of ${field.maxSize} bytes`);
+    if (field.maxSize !== undefined && value.size > field.maxSize)
+      errors.push(`${path} exceeds max size of ${field.maxSize} bytes`);
     if (field.allowedMimeTypes && !field.allowedMimeTypes.includes(value.type)) {
       errors.push(`${path} MIME type not allowed: ${value.type}`);
     }
@@ -601,7 +657,10 @@ export async function coerceAndValidateFormDataBody(
       const files = Array.isArray(val) ? val : val !== undefined ? [val] : [];
       const fileCount = files.filter((f) => f instanceof File).length;
       if (fileCount > field.maxFiles) {
-        return { data: {}, errors: [`${key}: too many files (${fileCount}, max: ${field.maxFiles})`] };
+        return {
+          data: {},
+          errors: [`${key}: too many files (${fileCount}, max: ${field.maxFiles})`],
+        };
       }
     }
   }

@@ -1,1 +1,1 @@
-export { OSSFileModel } from './oss-file';
+export { OSSFileModel } from "./oss-file";

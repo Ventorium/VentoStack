@@ -5,22 +5,41 @@
  * 替代手动逐个创建和注册模块的模式。
  */
 
-import { createApp, createRouter, requestId, requestLogger, errorHandler, cors, createTagLogger, createStaticMiddleware, rateLimit } from "@ventostack/core";
-import type { Middleware, VentoStackApp } from "@ventostack/core";
-import { setupOpenAPI } from "@ventostack/openapi";
 import { AsyncLocalStorage } from "node:async_hooks";
-import { createAuditLog, createDefaultHealthCheck, createMetrics, createTracer, createTracingMiddleware, wrapExecutorWithTracing, wrapCacheWithTracing, wrapRedisClientWithTracing } from "@ventostack/observability";
-import type { SpanContext } from "@ventostack/observability";
-import { createEventBus, createScheduler } from "@ventostack/events";
-import { readTableSchema, listTables, createDatabase } from "@ventostack/database";
 import { createPlatform } from "@ventostack/boot";
+import {
+  cors,
+  createApp,
+  createRouter,
+  createStaticMiddleware,
+  errorHandler,
+  rateLimit,
+  requestId,
+  requestLogger,
+} from "@ventostack/core";
+import type { Middleware, VentoStackApp } from "@ventostack/core";
+import { createDatabase, listTables, readTableSchema } from "@ventostack/database";
+import { createEventBus, createScheduler } from "@ventostack/events";
+import {
+  createAuditLog,
+  createDefaultHealthCheck,
+  createMetrics,
+  createTracer,
+  createTracingMiddleware,
+  wrapCacheWithTracing,
+  wrapExecutorWithTracing,
+  wrapRedisClientWithTracing,
+} from "@ventostack/observability";
+import type { SpanContext } from "@ventostack/observability";
+import { setupOpenAPI } from "@ventostack/openapi";
+import { createInAppChannel } from "@ventostack/notification";
 
+import { assembleAuthEngines } from "./auth";
+import { createCacheInstance } from "./cache";
 import { env } from "./config";
 import { createDatabaseConnection, runMigrations, runSeeds } from "./database";
-import { createCacheInstance } from "./cache";
-import { createStorageAdapter } from "./storage";
-import { assembleAuthEngines } from "./auth";
 import { serverLogger } from "./logger";
+import { createStorageAdapter } from "./storage";
 
 export interface AppContext {
   /** VentoStack 应用实例 */
@@ -61,7 +80,9 @@ export async function buildApp(): Promise<AppContext> {
   const tracedRedisClient = cacheInstance.redisClient
     ? wrapRedisClientWithTracing(cacheInstance.redisClient, tracer, { getSpanContext: getSpanCtx })
     : undefined;
-  const tracedCache = wrapCacheWithTracing(cacheInstance.cache, tracer, { getSpanContext: getSpanCtx });
+  const tracedCache = wrapCacheWithTracing(cacheInstance.cache, tracer, {
+    getSpanContext: getSpanCtx,
+  });
 
   // 1f. 存储适配器
   const storage = createStorageAdapter();
@@ -117,13 +138,13 @@ export async function buildApp(): Promise<AppContext> {
       system: true,
       gen: true,
       monitor: true,
-      notification: false, // 需配置 notifyChannels 后启用
+      notification: true,
       i18n: true,
       workflow: true,
       oss: true,
       scheduler: true,
     },
-    // notifyChannels: new Map(), // 配置通知通道后启用 notification 模块
+    notifyChannels: new Map([["in_app", createInAppChannel()]]),
     // jobHandlers: { ... }, // 注册定时任务处理器
   });
 
@@ -139,11 +160,13 @@ export async function buildApp(): Promise<AppContext> {
   // 4a. 全局中间件（顺序敏感）
   app.use(requestId());
   app.use(createTracingMiddleware(tracer, { traceStore }));
-  app.use(cors({
-    origin: env.ALLOWED_ORIGINS,
-    credentials: true,
-    maxAge: 86400,
-  }));
+  app.use(
+    cors({
+      origin: env.ALLOWED_ORIGINS,
+      credentials: true,
+      maxAge: 86400,
+    }),
+  );
   app.use(requestLogger());
 
   // 4b. 健康检查（无需认证）
@@ -176,10 +199,41 @@ export async function buildApp(): Promise<AppContext> {
 
   // 4d. 静态文件服务（仅本地存储模式）
   if (env.STORAGE_DRIVER === "local") {
-    app.use(createStaticMiddleware({
-      root: env.STORAGE_LOCAL_PATH,
-      prefix: "/uploads",
-    }));
+    app.use(
+      createStaticMiddleware({
+        root: env.STORAGE_LOCAL_PATH,
+        prefix: "/uploads",
+      }),
+    );
+  }
+
+  // 4d-2. SPA 前端静态文件服务（生产模式：前端 dist 已复制到 public/）
+  if (env.NODE_ENV === "production") {
+    const { resolve } = await import("node:path");
+    const publicDir = resolve(import.meta.dir, "../public");
+    const spaMiddleware: Middleware = async (ctx, next) => {
+      const pathname = new URL(ctx.request.url).pathname;
+      // API/健康检查/指标/OpenAPI 路径跳过
+      if (
+        pathname.startsWith("/api/") ||
+        pathname.startsWith("/health") ||
+        pathname.startsWith("/metrics") ||
+        pathname.startsWith("/openapi") ||
+        pathname.startsWith("/docs") ||
+        pathname.startsWith("/uploads/")
+      ) {
+        return next();
+      }
+      // 尝试返回静态文件
+      const filePath = resolve(publicDir, pathname.slice(1) || "index.html");
+      const file = Bun.file(filePath);
+      if (await file.exists()) {
+        return new Response(file);
+      }
+      // SPA fallback: 返回 index.html
+      return new Response(Bun.file(resolve(publicDir, "index.html")));
+    };
+    app.use(spaMiddleware);
   }
 
   // 4e. 认证端点限流（防暴力破解）
@@ -188,7 +242,11 @@ export async function buildApp(): Promise<AppContext> {
     max: 20,
     message: "登录尝试过于频繁，请稍后再试",
   });
-  const authRateLimitPaths = new Set(["/api/auth/login", "/api/auth/register", "/api/auth/refresh"]);
+  const authRateLimitPaths = new Set([
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/auth/refresh",
+  ]);
   const authRateLimitMiddleware: Middleware = (ctx, next) => {
     const pathname = new URL(ctx.request.url).pathname;
     return authRateLimitPaths.has(pathname) ? authRateLimit(ctx, next) : next();

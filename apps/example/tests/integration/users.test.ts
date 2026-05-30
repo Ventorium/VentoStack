@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { setupIntegrationTest, teardownIntegrationTest } from "./setup";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { TestAppInstance, TestClient } from "@ventostack/testing";
+import { setupIntegrationTest, teardownIntegrationTest } from "./setup";
 
 describe("users endpoints", () => {
   let testApp: TestAppInstance;
@@ -33,9 +33,9 @@ describe("users endpoints", () => {
       role: "viewer",
     });
 
-    adminToken = (await setup.authService.createToken(admin));
-    editorToken = (await setup.authService.createToken(editor));
-    viewerToken = (await setup.authService.createToken(viewer));
+    adminToken = await setup.authService.createToken(admin);
+    editorToken = await setup.authService.createToken(editor);
+    viewerToken = await setup.authService.createToken(viewer);
   });
 
   afterAll(async () => {

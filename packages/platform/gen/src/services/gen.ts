@@ -5,12 +5,12 @@
  */
 
 import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
-import { GenTableModel, GenTableColumnModel } from "../models";
+import { GenTableColumnModel, GenTableModel } from "../models";
 import { renderModel } from "../templates/model.ts.tmpl";
-import { renderService } from "../templates/service.ts.tmpl";
 import { renderRoutes } from "../templates/routes.ts.tmpl";
-import { renderTypes } from "../templates/types.ts.tmpl";
+import { renderService } from "../templates/service.ts.tmpl";
 import { renderTest } from "../templates/test.ts.tmpl";
+import { renderTypes } from "../templates/types.ts.tmpl";
 
 /** 导入的表信息 */
 export interface GenTableInfo {
@@ -61,8 +61,21 @@ export interface PaginatedResult<T> {
 /** 代码生成服务接口 */
 export interface GenService {
   importTable(tableName: string, moduleName: string, author?: string): Promise<{ tableId: string }>;
-  updateTable(id: string, params: Partial<Pick<GenTableInfo, "className" | "moduleName" | "functionName" | "functionAuthor" | "remark">>): Promise<void>;
-  updateColumn(id: string, params: Partial<Pick<GenColumnInfo, "isList" | "isInsert" | "isUpdate" | "isQuery" | "queryType" | "fieldComment">>): Promise<void>;
+  updateTable(
+    id: string,
+    params: Partial<
+      Pick<GenTableInfo, "className" | "moduleName" | "functionName" | "functionAuthor" | "remark">
+    >,
+  ): Promise<void>;
+  updateColumn(
+    id: string,
+    params: Partial<
+      Pick<
+        GenColumnInfo,
+        "isList" | "isInsert" | "isUpdate" | "isQuery" | "queryType" | "fieldComment"
+      >
+    >,
+  ): Promise<void>;
   getTable(id: string): Promise<GenTableInfo | null>;
   listTables(params?: { page?: number; pageSize?: number }): Promise<PaginatedResult<GenTableInfo>>;
   getColumns(tableId: string): Promise<GenColumnInfo[]>;
@@ -74,7 +87,17 @@ export interface GenService {
 function sqlTypeToTs(sqlType: string): string {
   const t = sqlType.toLowerCase();
   if (t.includes("varchar") || t.includes("text") || t.includes("char")) return "string";
-  if (t.includes("int") || t.includes("serial") || t.includes("float") || t.includes("double") || t.includes("numeric") || t.includes("decimal") || t.includes("bigint") || t.includes("smallint")) return "number";
+  if (
+    t.includes("int") ||
+    t.includes("serial") ||
+    t.includes("float") ||
+    t.includes("double") ||
+    t.includes("numeric") ||
+    t.includes("decimal") ||
+    t.includes("bigint") ||
+    t.includes("smallint")
+  )
+    return "number";
   if (t.includes("bool")) return "boolean";
   if (t.includes("timestamp") || t.includes("date") || t.includes("time")) return "string";
   if (t.includes("json") || t.includes("jsonb")) return "Record<string, unknown>";
@@ -90,7 +113,7 @@ function toCamelCase(s: string): string {
 function toPascalCase(s: string): string {
   return s
     .split("_")
-    .map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
     .join("");
 }
 
@@ -171,9 +194,19 @@ export function createGenService(deps: {
     },
 
     async getTable(id) {
-      const row = await db.query(GenTableModel)
+      const row = await db
+        .query(GenTableModel)
         .where("id", "=", id)
-        .select("id", "table_name", "class_name", "module_name", "function_name", "function_author", "remark", "status")
+        .select(
+          "id",
+          "table_name",
+          "class_name",
+          "module_name",
+          "function_name",
+          "function_author",
+          "remark",
+          "status",
+        )
         .get();
       if (!row) return null;
       return {
@@ -193,8 +226,19 @@ export function createGenService(deps: {
 
       const total = await db.query(GenTableModel).count();
 
-      const rows = await db.query(GenTableModel)
-        .select("id", "table_name", "class_name", "module_name", "function_name", "function_author", "remark", "status", "created_at")
+      const rows = await db
+        .query(GenTableModel)
+        .select(
+          "id",
+          "table_name",
+          "class_name",
+          "module_name",
+          "function_name",
+          "function_author",
+          "remark",
+          "status",
+          "created_at",
+        )
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -209,16 +253,42 @@ export function createGenService(deps: {
         functionAuthor: row.function_author ?? null,
         remark: row.remark ?? null,
         status: row.status,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+        createdAt:
+          row.created_at instanceof Date
+            ? row.created_at.toISOString()
+            : String(row.created_at ?? ""),
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async getColumns(tableId) {
-      const rows = await db.query(GenTableColumnModel)
+      const rows = await db
+        .query(GenTableColumnModel)
         .where("table_id", "=", tableId)
-        .select("id", "table_id", "column_name", "column_type", "typescript_type", "field_name", "field_comment", "is_primary", "is_nullable", "is_list", "is_insert", "is_update", "is_query", "query_type", "sort")
+        .select(
+          "id",
+          "table_id",
+          "column_name",
+          "column_type",
+          "typescript_type",
+          "field_name",
+          "field_comment",
+          "is_primary",
+          "is_nullable",
+          "is_list",
+          "is_insert",
+          "is_update",
+          "is_query",
+          "query_type",
+          "sort",
+        )
         .orderBy("sort", "asc")
         .list();
 
@@ -248,10 +318,19 @@ export function createGenService(deps: {
 
       return [
         { filename: `models/${toKebab(table.className)}.ts`, content: renderModel(table, columns) },
-        { filename: `services/${toKebab(table.className)}.ts`, content: renderService(table, columns) },
-        { filename: `routes/${toKebab(table.className)}.ts`, content: renderRoutes(table, columns) },
+        {
+          filename: `services/${toKebab(table.className)}.ts`,
+          content: renderService(table, columns),
+        },
+        {
+          filename: `routes/${toKebab(table.className)}.ts`,
+          content: renderRoutes(table, columns),
+        },
         { filename: `types/${toKebab(table.className)}.ts`, content: renderTypes(table, columns) },
-        { filename: `__tests__/${toKebab(table.className)}.test.ts`, content: renderTest(table, columns) },
+        {
+          filename: `__tests__/${toKebab(table.className)}.test.ts`,
+          content: renderTest(table, columns),
+        },
       ];
     },
 

@@ -13,10 +13,14 @@ describe("createDingTalkVerifier", () => {
     const sign = Buffer.from(hasher.digest()).toString("base64");
     const encodedSign = encodeURIComponent(sign);
 
-    const result = await verifier.verify("", {}, {
-      secret,
-      extra: { timestamp, sign: encodedSign },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        secret,
+        extra: { timestamp, sign: encodedSign },
+      },
+    );
 
     expect(result.valid).toBe(true);
   });
@@ -28,10 +32,14 @@ describe("createDingTalkVerifier", () => {
     hasher.update(stringToSign);
     const sign = Buffer.from(hasher.digest()).toString("base64");
 
-    const result = await verifier.verify("", {}, {
-      secret,
-      extra: { timestamp: oldTimestamp, sign: encodeURIComponent(sign) },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        secret,
+        extra: { timestamp: oldTimestamp, sign: encodeURIComponent(sign) },
+      },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Timestamp outside tolerance");
@@ -44,10 +52,14 @@ describe("createDingTalkVerifier", () => {
     hasher.update(stringToSign);
     const sign = Buffer.from(hasher.digest()).toString("base64");
 
-    const result = await verifier.verify("", {}, {
-      secret: "SEC_wrong_secret",
-      extra: { timestamp, sign: encodeURIComponent(sign) },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        secret: "SEC_wrong_secret",
+        extra: { timestamp, sign: encodeURIComponent(sign) },
+      },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Signature mismatch");
@@ -60,9 +72,13 @@ describe("createDingTalkVerifier", () => {
   });
 
   test("rejects missing secret", async () => {
-    const result = await verifier.verify("", {}, {
-      extra: { timestamp: "123", sign: "abc" },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        extra: { timestamp: "123", sign: "abc" },
+      },
+    );
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Missing secret");
   });

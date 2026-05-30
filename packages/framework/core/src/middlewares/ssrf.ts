@@ -131,7 +131,9 @@ function isBlockedIP(ip: string, blockedV4: string[], blockedV6: string[]): bool
 }
 
 function isBlockedHostname(hostname: string): boolean {
-  return LOCALHOST_HOSTS.has(hostname.toLowerCase()) || hostname.toLowerCase().endsWith(".localhost");
+  return (
+    LOCALHOST_HOSTS.has(hostname.toLowerCase()) || hostname.toLowerCase().endsWith(".localhost")
+  );
 }
 
 /**
@@ -212,7 +214,9 @@ export function createSSRFGuard(options: SSRFOptions = {}): {
         throw new Error(`SSRF blocked: Unable to resolve hostname: ${hostname}`);
       }
 
-      const blockedAddress = resolved.find((record) => isBlockedIP(record.address, blockedV4, blockedV6));
+      const blockedAddress = resolved.find((record) =>
+        isBlockedIP(record.address, blockedV4, blockedV6),
+      );
       if (blockedAddress) {
         throw new Error(
           `SSRF blocked: Hostname ${hostname} resolved to blocked IP ${blockedAddress.address}`,

@@ -2,9 +2,9 @@
  * @ventostack/i18n - 国际化服务测试
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { createI18nService } from "../services/i18n";
-import { createMockExecutor } from "./helpers";
+import { createMockDatabase, createMockExecutor } from "./helpers";
 
 describe("I18nService", () => {
   let executor: ReturnType<typeof createMockExecutor>["executor"];
@@ -13,8 +13,10 @@ describe("I18nService", () => {
   let service: ReturnType<typeof createI18nService>;
 
   beforeEach(() => {
-    ({ executor, calls, results } = createMockExecutor());
-    service = createI18nService({ executor });
+    const mockExec = createMockExecutor();
+    ({ executor: executor, calls, results } = mockExec);
+    const { db } = createMockDatabase(mockExec);
+    service = createI18nService({ db });
   });
 
   describe("createLocale", () => {
@@ -22,7 +24,7 @@ describe("I18nService", () => {
       const result = await service.createLocale({ code: "zh-CN", name: "简体中文" });
 
       expect(result.id).toBeTruthy();
-      expect(calls.some(c => c.text.includes("INSERT INTO sys_i18n_locale"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("INSERT INTO sys_i18n_locale"))).toBe(true);
     });
 
     it("should support default locale", async () => {
@@ -36,7 +38,7 @@ describe("I18nService", () => {
     it("should update locale fields", async () => {
       await service.updateLocale("loc-1", { name: "Updated", isDefault: true });
 
-      expect(calls.some(c => c.text.includes("UPDATE sys_i18n_locale SET"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("UPDATE sys_i18n_locale SET"))).toBe(true);
     });
 
     it("should skip when no fields", async () => {
@@ -47,12 +49,14 @@ describe("I18nService", () => {
 
   describe("deleteLocale", () => {
     it("should delete locale and its messages", async () => {
-      results.set("SELECT code FROM sys_i18n_locale WHERE id", [{ code: "zh-CN" }]);
+      results.set("SELECT * FROM sys_i18n_locale WHERE id", [{ code: "zh-CN" }]);
 
       await service.deleteLocale("loc-1");
 
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_i18n_message WHERE locale"))).toBe(true);
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_i18n_locale WHERE id"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_i18n_message WHERE locale"))).toBe(
+        true,
+      );
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_i18n_locale WHERE id"))).toBe(true);
     });
   });
 
@@ -74,8 +78,8 @@ describe("I18nService", () => {
     it("should set a message", async () => {
       await service.setMessage("zh-CN", "user.login.title", "登录");
 
-      expect(calls.some(c => c.text.includes("INSERT INTO sys_i18n_message"))).toBe(true);
-      expect(calls.some(c => c.text.includes("ON CONFLICT"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("INSERT INTO sys_i18n_message"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("ON CONFLICT"))).toBe(true);
     });
 
     it("should support module parameter", async () => {
@@ -87,14 +91,14 @@ describe("I18nService", () => {
 
   describe("getMessage", () => {
     it("should return message value", async () => {
-      results.set("SELECT value FROM sys_i18n_message", [{ value: "登录" }]);
+      results.set("SELECT * FROM sys_i18n_message", [{ value: "登录" }]);
 
       const value = await service.getMessage("zh-CN", "user.login.title");
       expect(value).toBe("登录");
     });
 
     it("should return null when not found", async () => {
-      results.set("SELECT value FROM sys_i18n_message", []);
+      results.set("SELECT * FROM sys_i18n_message", []);
 
       const value = await service.getMessage("zh-CN", "nonexistent");
       expect(value).toBeNull();
@@ -105,7 +109,9 @@ describe("I18nService", () => {
     it("should delete message", async () => {
       await service.deleteMessage("msg-1");
 
-      expect(calls.some(c => c.text.includes("DELETE FROM sys_i18n_message WHERE id"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("DELETE FROM sys_i18n_message WHERE id"))).toBe(
+        true,
+      );
     });
   });
 
@@ -125,13 +131,13 @@ describe("I18nService", () => {
       results.set("SELECT COUNT(*)", [{ total: 0 }]);
 
       await service.listMessages({ module: "user" });
-      expect(calls.some(c => c.text.includes("module = "))).toBe(true);
+      expect(calls.some((c) => c.text.includes("module = "))).toBe(true);
     });
   });
 
   describe("getLocaleMessages", () => {
     it("should return code-value map", async () => {
-      results.set("SELECT code, value FROM sys_i18n_message", [
+      results.set("SELECT * FROM sys_i18n_message", [
         { code: "user.login.title", value: "登录" },
         { code: "user.login.submit", value: "提交" },
       ]);
@@ -142,10 +148,10 @@ describe("I18nService", () => {
     });
 
     it("should filter by module", async () => {
-      results.set("SELECT code, value FROM sys_i18n_message", []);
+      results.set("SELECT * FROM sys_i18n_message", []);
 
       await service.getLocaleMessages("zh-CN", "user");
-      expect(calls.some(c => c.text.includes("module = "))).toBe(true);
+      expect(calls.some((c) => c.text.includes("module = "))).toBe(true);
     });
   });
 
@@ -158,12 +164,12 @@ describe("I18nService", () => {
       });
 
       expect(count).toBe(3);
-      const insertCalls = calls.filter(c => c.text.includes("INSERT INTO sys_i18n_message"));
+      const insertCalls = calls.filter((c) => c.text.includes("INSERT INTO sys_i18n_message"));
       expect(insertCalls.length).toBe(3);
     });
 
     it("should support module parameter", async () => {
-      await service.importMessages("en-US", { "hello": "Hello" }, "common");
+      await service.importMessages("en-US", { hello: "Hello" }, "common");
 
       expect(calls[0]!.params).toContain("common");
     });

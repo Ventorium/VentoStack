@@ -1,9 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { routeConfigToOpenAPIOperation, schemaFieldToOpenAPI, schemaToOpenAPIObject } from "../from-router";
+import { routeConfigToOpenAPIOperation, schemaFieldToOpenAPI } from "../from-router";
 
 describe("schemaFieldToOpenAPI", () => {
   test("converts string field", () => {
-    const schema = schemaFieldToOpenAPI({ type: "string", min: 1, max: 100, description: "用户名" });
+    const schema = schemaFieldToOpenAPI({
+      type: "string",
+      min: 1,
+      max: 100,
+      description: "用户名",
+    });
     expect(schema).toEqual({
       type: "string",
       minLength: 1,

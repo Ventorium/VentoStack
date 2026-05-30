@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeEach } from "bun:test";
-import { createTestDatabase, createTestUserService } from "../setup";
+import { beforeEach, describe, expect, test } from "bun:test";
 import type { Database } from "@ventostack/database";
+import { createTestDatabase, createTestUserService } from "../setup";
 
 describe("user-service", () => {
   let db: Database;

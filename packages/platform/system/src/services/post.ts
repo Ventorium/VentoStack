@@ -126,7 +126,10 @@ export function createPostService(deps: { db: Database }): PostService {
       sort: row.sort ?? 0,
       status: row.status ?? 1,
       remark: row.remark ?? "",
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ""),
     }));
 
     return {

@@ -48,7 +48,13 @@ describe("rateLimit", () => {
 
   test("custom message on 429", async () => {
     const store = createMemoryRateLimitStore();
-    const mw = rateLimit({ max: 1, windowMs: 60_000, store, message: "Slow down", trustProxyHeaders: true });
+    const mw = rateLimit({
+      max: 1,
+      windowMs: 60_000,
+      store,
+      message: "Slow down",
+      trustProxyHeaders: true,
+    });
 
     const ctx1 = makeCtx();
     await mw(ctx1, okHandler(ctx1));
@@ -134,7 +140,9 @@ describe("rateLimit", () => {
 });
 
 describe("createRedisRateLimitStore", () => {
-  function createMockRedisClient(): RedisClientLike & { data: Map<string, { value: number; resetAt: number }> } {
+  function createMockRedisClient(): RedisClientLike & {
+    data: Map<string, { value: number; resetAt: number }>;
+  } {
     const data = new Map<string, { value: number; resetAt: number }>();
 
     return {
@@ -216,9 +224,13 @@ describe("createRedisRateLimitStore", () => {
   test("uses Lua script when client supports eval", async () => {
     let evalCalled = false;
     const client: RedisClientLike & { eval: typeof eval } = {
-      async incr() { return 0; },
+      async incr() {
+        return 0;
+      },
       async pexpire() {},
-      async pttl() { return 0; },
+      async pttl() {
+        return 0;
+      },
       async del() {},
       async eval(script: string, keys: number, ...args: string[]) {
         evalCalled = true;
@@ -226,7 +238,7 @@ describe("createRedisRateLimitStore", () => {
         expect(script).toContain("PEXPIRE");
         expect(keys).toBe(1);
         expect(args[0]).toBe("ratelimit:test"); // key
-        expect(args[1]).toBe("60000");           // windowMs
+        expect(args[1]).toBe("60000"); // windowMs
         return [3, 50_000] as unknown as [number, number];
       },
     };

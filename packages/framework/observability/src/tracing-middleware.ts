@@ -7,9 +7,9 @@
 
 import type { Context } from "@ventostack/core";
 import type { Middleware } from "@ventostack/core";
-import type { Tracer, SpanContext } from "./tracing";
 import { createW3CTraceContextPropagator } from "./trace-context";
 import type { TraceContextPropagator } from "./trace-context";
+import type { SpanContext, Tracer } from "./tracing";
 
 export interface TracingMiddlewareOptions {
   /** 自定义传播器，默认使用 W3C TraceContext */
@@ -54,9 +54,7 @@ export function createTracingMiddleware(
 
     // 5. 在 AsyncLocalStorage 上下文中执行下游中间件
     const run = <T>(fn: () => Promise<T>): Promise<T> => {
-      return options?.traceStore
-        ? options.traceStore.run(spanCtx, fn)
-        : fn();
+      return options?.traceStore ? options.traceStore.run(spanCtx, fn) : fn();
     };
 
     try {

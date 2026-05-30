@@ -14,14 +14,13 @@
  */
 
 import { createTagLogger } from "@ventostack/core";
+import { type AppContext, buildApp } from "./app";
 import { env } from "./config";
-import { buildApp, type AppContext } from "./app";
 import { serverLogger } from "./logger";
 
 let appCtx: AppContext | null = null;
 
 async function main(): Promise<void> {
-
   appCtx = await buildApp();
 
   // 框架 createApp.listen() 内部注册了 SIGTERM/SIGINT 处理：

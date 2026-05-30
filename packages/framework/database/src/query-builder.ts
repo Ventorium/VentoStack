@@ -28,17 +28,13 @@ function assertValidIdentifier(name: string, context: string): void {
  */
 function assertValidLimit(n: number, maxLimit: number): void {
   if (!Number.isFinite(n) || Number.isNaN(n) || !Number.isInteger(n) || n < 0 || n > maxLimit) {
-    throw new RangeError(
-      `limit must be a non-negative integer <= ${maxLimit}, got ${n}`,
-    );
+    throw new RangeError(`limit must be a non-negative integer <= ${maxLimit}, got ${n}`);
   }
 }
 
 function assertValidOffset(n: number): void {
   if (!Number.isFinite(n) || Number.isNaN(n) || !Number.isInteger(n) || n < 0) {
-    throw new RangeError(
-      `offset must be a non-negative integer, got ${n}`,
-    );
+    throw new RangeError(`offset must be a non-negative integer, got ${n}`);
   }
 }
 
@@ -102,10 +98,18 @@ export type WhereOp = WhereCondition["op"];
 export interface QueryBuilder<T = unknown> {
   // WHERE
   where(field: keyof T, op: "IS NULL" | "IS NOT NULL"): QueryBuilder<T>;
-  where(field: keyof T, op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">, value: unknown): QueryBuilder<T>;
+  where(
+    field: keyof T,
+    op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">,
+    value: unknown,
+  ): QueryBuilder<T>;
   where(field: keyof T, op: WhereOp, value?: unknown): QueryBuilder<T>;
   orWhere(field: keyof T, op: "IS NULL" | "IS NOT NULL"): QueryBuilder<T>;
-  orWhere(field: keyof T, op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">, value: unknown): QueryBuilder<T>;
+  orWhere(
+    field: keyof T,
+    op: Exclude<WhereOp, "IS NULL" | "IS NOT NULL">,
+    value: unknown,
+  ): QueryBuilder<T>;
   orWhere(field: keyof T, op: WhereOp, value?: unknown): QueryBuilder<T>;
 
   // 排序与分页
@@ -284,9 +288,9 @@ function buildConditionGroup(
     for (let i = 0; i < group.items.length; i++) {
       const item = group.items[i]!;
       let expr: string;
-      if (item.op === "IS NULL") {
+      if (item.op === "IS NULL" || (item.op === "IS" && item.value === null)) {
         expr = `${item.field} IS NULL`;
-      } else if (item.op === "IS NOT NULL") {
+      } else if (item.op === "IS NOT NULL" || (item.op === "IS NOT" && item.value === null)) {
         expr = `${item.field} IS NOT NULL`;
       } else if (item.op === "IN") {
         const values = item.value as unknown[];
@@ -335,10 +339,8 @@ function buildWhereClause(
     return { clause: "", params, nextParamIndex: startParamIndex };
   }
 
-  const { text, nextParamIndex } = buildConditionGroup(
-    allWheres,
-    startParamIndex,
-    (...vals) => params.push(...vals),
+  const { text, nextParamIndex } = buildConditionGroup(allWheres, startParamIndex, (...vals) =>
+    params.push(...vals),
   );
 
   return { clause: ` WHERE ${text}`, params, nextParamIndex };
@@ -451,7 +453,9 @@ function buildInsertSQL(tableName: string, state: QueryState): { text: string; p
   // 单行插入
   const data = state.insertValues;
   if (!data || Object.keys(data).length === 0) {
-    throw new TypeError("INSERT operation requires insert data. Call insertData() or batchInsert() before toSQL().");
+    throw new TypeError(
+      "INSERT operation requires insert data. Call insertData() or batchInsert() before toSQL().",
+    );
   }
 
   const keys = Object.keys(data);

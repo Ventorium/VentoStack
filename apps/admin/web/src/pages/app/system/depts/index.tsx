@@ -1,146 +1,282 @@
-import { useEffect, useState, useCallback } from 'react'
-import { Card, Table, Button, Form, Input, InputNumber, Modal, Tag, Row, Col, TreeSelect, Space } from 'antd'
-import { msg } from '@/components/GlobalMessage'
-import type { ColumnsType } from 'antd/es/table'
-import { PlusOutlined } from '@ant-design/icons'
-import { client } from '@/api'
-import type { DeptItem } from '@/api/types'
-import ActionColumn from '@/components/ActionColumn'
-import DictSelect from '@/components/DictSelect'
-import { fmtDate } from '@/utils/fmtDate'
+import { client } from "@/api";
+import type { DeptItem } from "@/api/types";
+import ActionColumn from "@/components/ActionColumn";
+import DictSelect from "@/components/DictSelect";
+import { msg } from "@/components/GlobalMessage";
+import { fmtDate } from "@/utils/fmtDate";
+import { PlusOutlined } from "@ant-design/icons";
+import {
+  Button,
+  Card,
+  Col,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Space,
+  Table,
+  Tag,
+  TreeSelect,
+} from "antd";
+import type { ColumnsType } from "antd/es/table";
+import { useCallback, useEffect, useState } from "react";
 
 function toTreeSelectData(items: DeptItem[]): any[] {
-  return items.map(item => ({
+  return items.map((item) => ({
     value: item.id,
     title: item.name,
     children: item.children?.length ? toTreeSelectData(item.children) : undefined,
-  }))
+  }));
 }
 
 const DeptPage = () => {
-  const [loading, setLoading] = useState(false)
-  const [data, setData] = useState<DeptItem[]>([])
-  const [modalOpen, setModalOpen] = useState(false)
-  const [editingDept, setEditingDept] = useState<DeptItem | null>(null)
-  const [modalLoading, setModalLoading] = useState(false)
-  const [form] = Form.useForm()
-  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([])
-  const [selectedRows, setSelectedRows] = useState<DeptItem[]>([])
-  const hasSelected = selectedRowKeys.length > 0
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<DeptItem[]>([]);
+  const [modalOpen, setModalOpen] = useState(false);
+  const [editingDept, setEditingDept] = useState<DeptItem | null>(null);
+  const [modalLoading, setModalLoading] = useState(false);
+  const [form] = Form.useForm();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
+  const [selectedRows, setSelectedRows] = useState<DeptItem[]>([]);
+  const hasSelected = selectedRowKeys.length > 0;
 
   const fetchData = useCallback(async () => {
-    setLoading(true)
+    setLoading(true);
     try {
-      const { error, data } = await client.get('/api/system/depts/tree') as { error?: unknown; data?: DeptItem[] }
-      if (!error) { setData(data ?? []) }
-    } finally { setLoading(false) }
-  }, [])
+      const { error, data } = (await client.get("/api/system/depts/tree")) as {
+        error?: unknown;
+        data?: DeptItem[];
+      };
+      if (!error) {
+        setData(data ?? []);
+      }
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  useEffect(() => { fetchData() }, [fetchData])
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
 
   const openCreate = (parent?: DeptItem) => {
-    setEditingDept(null); form.resetFields(); form.setFieldsValue({ sort: 0, status: 1, parentId: parent?.id })
-    setModalOpen(true)
-  }
+    setEditingDept(null);
+    form.resetFields();
+    form.setFieldsValue({ sort: 0, status: 1, parentId: parent?.id });
+    setModalOpen(true);
+  };
 
   const openEdit = (r: DeptItem) => {
-    setEditingDept(r)
-    form.setFieldsValue({ parentId: r.parentId, name: r.name, sort: r.sort, leader: r.leader, phone: r.phone, email: r.email, status: r.status })
-    setModalOpen(true)
-  }
+    setEditingDept(r);
+    form.setFieldsValue({
+      parentId: r.parentId,
+      name: r.name,
+      sort: r.sort,
+      leader: r.leader,
+      phone: r.phone,
+      email: r.email,
+      status: r.status,
+    });
+    setModalOpen(true);
+  };
 
   const handleOk = async () => {
-    const values = await form.validateFields()
-    setModalLoading(true)
+    const values = await form.validateFields();
+    setModalLoading(true);
     try {
       if (editingDept) {
-        const { error } = await client.put('/api/system/depts/:id', { params: { id: editingDept.id }, body: values })
-        if (!error) { msg.success('更新成功'); setModalOpen(false); fetchData() }
+        const { error } = await client.put("/api/system/depts/:id", {
+          params: { id: editingDept.id },
+          body: values,
+        });
+        if (!error) {
+          msg.success("更新成功");
+          setModalOpen(false);
+          fetchData();
+        }
       } else {
-        const { error } = await client.post('/api/system/depts', { body: values })
-        if (!error) { msg.success('创建成功'); setModalOpen(false); fetchData() }
+        const { error } = await client.post("/api/system/depts", { body: values });
+        if (!error) {
+          msg.success("创建成功");
+          setModalOpen(false);
+          fetchData();
+        }
       }
-    } finally { setModalLoading(false) }
-  }
+    } finally {
+      setModalLoading(false);
+    }
+  };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete('/api/system/depts/:id', { params: { id } })
-    if (!error) { msg.success('删除成功'); fetchData() }
-  }
+    const { error } = await client.delete("/api/system/depts/:id", { params: { id } });
+    if (!error) {
+      msg.success("删除成功");
+      fetchData();
+    }
+  };
 
   const handleBatchDelete = () => {
-    const names = selectedRows.map(r => r.name).join('、')
+    const names = selectedRows.map((r) => r.name).join("、");
     Modal.confirm({
-      title: '批量删除',
+      title: "批量删除",
       content: `确定要删除以下 ${selectedRowKeys.length} 个部门吗？此操作不可恢复。\n${names}`,
-      okType: 'danger',
-      okText: '确定删除',
+      okType: "danger",
+      okText: "确定删除",
       onOk: async () => {
-        const { error, data } = await client.post('/api/system/depts/batch-delete', { body: { ids: selectedRowKeys as string[] } })
+        const { error, data } = await client.post("/api/system/depts/batch-delete", {
+          body: { ids: selectedRowKeys as string[] },
+        });
         if (!error) {
-          const result = data as { success: number; skipped: number }
+          const result = data as { success: number; skipped: number };
           if (result.skipped > 0) {
-            msg.success(`删除完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`)
+            msg.success(`删除完成：成功 ${result.success} 项，跳过 ${result.skipped} 项`);
           } else {
-            msg.success(`删除成功，共 ${result.success} 项`)
+            msg.success(`删除成功，共 ${result.success} 项`);
           }
-          setSelectedRowKeys([]); setSelectedRows([])
-          fetchData()
+          setSelectedRowKeys([]);
+          setSelectedRows([]);
+          fetchData();
         }
       },
-    })
-  }
+    });
+  };
 
   const columns: ColumnsType<DeptItem> = [
-    { title: '部门名称', dataIndex: 'name', key: 'name' },
-    { title: '负责人', dataIndex: 'leader', key: 'leader', width: 120 },
-    { title: '电话', dataIndex: 'phone', key: 'phone', width: 140 },
-    { title: '邮箱', dataIndex: 'email', key: 'email', width: 200 },
-    { title: '状态', dataIndex: 'status', key: 'status', width: 80, render: (_: unknown, r: DeptItem) => <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag> },
-    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
-    { title: '创建时间', dataIndex: 'createdAt', key: 'createdAt', width: 180, render: (_: unknown, r: DeptItem) => fmtDate(r.createdAt) },
-    { title: '操作', key: 'action', width: 180, fixed: 'right' as const,
+    { title: "部门名称", dataIndex: "name", key: "name" },
+    { title: "负责人", dataIndex: "leader", key: "leader", width: 120 },
+    { title: "电话", dataIndex: "phone", key: "phone", width: 140 },
+    { title: "邮箱", dataIndex: "email", key: "email", width: 200 },
+    {
+      title: "状态",
+      dataIndex: "status",
+      key: "status",
+      width: 80,
       render: (_: unknown, r: DeptItem) => (
-        <ActionColumn items={[
-          { label: '编辑', onClick: () => openEdit(r) },
-          { label: '新增子部门', onClick: () => openCreate(r) },
-          { label: '删除', onClick: () => handleDelete(r.id), danger: true, confirm: '确定删除该部门？' },
-        ]} />
-      ) },
-  ]
+        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+      ),
+    },
+    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
+    {
+      title: "创建时间",
+      dataIndex: "createdAt",
+      key: "createdAt",
+      width: 180,
+      render: (_: unknown, r: DeptItem) => fmtDate(r.createdAt),
+    },
+    {
+      title: "操作",
+      key: "action",
+      width: 180,
+      fixed: "right" as const,
+      render: (_: unknown, r: DeptItem) => (
+        <ActionColumn
+          items={[
+            { label: "编辑", onClick: () => openEdit(r) },
+            { label: "新增子部门", onClick: () => openCreate(r) },
+            {
+              label: "删除",
+              onClick: () => handleDelete(r.id),
+              danger: true,
+              confirm: "确定删除该部门？",
+            },
+          ]}
+        />
+      ),
+    },
+  ];
 
   return (
     <div>
       <h3 className="text-lg font-semibold mb-4">部门管理</h3>
-      <Card title="部门列表" extra={
-        <Space>
-          {hasSelected && <Button size="small" danger onClick={handleBatchDelete}>批量删除</Button>}
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>新增部门</Button>
-        </Space>
-      }>
-        {hasSelected && <div className="mb-2 text-sm text-gray-500">已选 {selectedRowKeys.length} 项 <Button type="link" size="small" onClick={() => { setSelectedRowKeys([]); setSelectedRows([]) }}>取消选择</Button></div>}
-        <Table rowKey="id" columns={columns} dataSource={data} loading={loading} pagination={false} scroll={{ x: 1100 }} defaultExpandAllRows size="small"
-          rowSelection={{ selectedRowKeys, onChange: (keys, rows) => { setSelectedRowKeys(keys); setSelectedRows(rows as DeptItem[]) } }} />
+      <Card
+        title="部门列表"
+        extra={
+          <Space>
+            {hasSelected && (
+              <Button size="small" danger onClick={handleBatchDelete}>
+                批量删除
+              </Button>
+            )}
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openCreate()}>
+              新增部门
+            </Button>
+          </Space>
+        }
+      >
+        {hasSelected && (
+          <div className="mb-2 text-sm text-gray-500">
+            已选 {selectedRowKeys.length} 项{" "}
+            <Button
+              type="link"
+              size="small"
+              onClick={() => {
+                setSelectedRowKeys([]);
+                setSelectedRows([]);
+              }}
+            >
+              取消选择
+            </Button>
+          </div>
+        )}
+        <Table
+          rowKey="id"
+          columns={columns}
+          dataSource={data}
+          loading={loading}
+          pagination={false}
+          scroll={{ x: 1100 }}
+          defaultExpandAllRows
+          size="small"
+          rowSelection={{
+            selectedRowKeys,
+            onChange: (keys, rows) => {
+              setSelectedRowKeys(keys);
+              setSelectedRows(rows as DeptItem[]);
+            },
+          }}
+        />
       </Card>
-      <Modal title={editingDept ? '编辑部门' : '新增部门'} open={modalOpen} onOk={handleOk} onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnHidden width={640}>
+      <Modal
+        title={editingDept ? "编辑部门" : "新增部门"}
+        open={modalOpen}
+        onOk={handleOk}
+        onCancel={() => setModalOpen(false)}
+        confirmLoading={modalLoading}
+        destroyOnHidden
+        width={640}
+      >
         <Form form={form} layout="vertical" preserve={false}>
           <Form.Item name="parentId" label="上级部门">
-            <TreeSelect allowClear treeDefaultExpandAll placeholder="留空为顶级部门" treeData={toTreeSelectData(data)} />
+            <TreeSelect
+              allowClear
+              treeDefaultExpandAll
+              placeholder="留空为顶级部门"
+              treeData={toTreeSelectData(data)}
+            />
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="name" label="部门名称" rules={[{ required: true }]}><Input /></Form.Item>
+              <Form.Item name="name" label="部门名称" rules={[{ required: true }]}>
+                <Input />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="leader" label="负责人"><Input /></Form.Item>
+              <Form.Item name="leader" label="负责人">
+                <Input />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="phone" label="电话"><Input /></Form.Item>
+              <Form.Item name="phone" label="电话">
+                <Input />
+              </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="email" label="邮箱"><Input /></Form.Item>
+              <Form.Item name="email" label="邮箱">
+                <Input />
+              </Form.Item>
             </Col>
           </Row>
           <Row gutter={16}>
@@ -150,13 +286,15 @@ const DeptPage = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="sort" label="排序" initialValue={0}><InputNumber className="w-full" /></Form.Item>
+              <Form.Item name="sort" label="排序" initialValue={0}>
+                <InputNumber className="w-full" />
+              </Form.Item>
             </Col>
           </Row>
         </Form>
       </Modal>
     </div>
-  )
-}
+  );
+};
 
-export default DeptPage
+export default DeptPage;

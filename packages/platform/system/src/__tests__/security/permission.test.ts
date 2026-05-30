@@ -5,10 +5,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { createMockExecutor, createMockDatabase, createTestCache, createMockRBAC, createMockRowFilter } from "../helpers";
-import { createRoleService } from "../../services/role";
-import { createPermissionLoader } from "../../services/permission-loader";
 import { createMenuTreeBuilder } from "../../services/menu-tree-builder";
+import { createPermissionLoader } from "../../services/permission-loader";
+import { createRoleService } from "../../services/role";
+import {
+  createMockDatabase,
+  createMockExecutor,
+  createMockRBAC,
+  createMockRowFilter,
+  createTestCache,
+} from "../helpers";
 
 function setupRole() {
   const mockExec = createMockExecutor();
@@ -86,7 +92,7 @@ describe("Security: Permission", () => {
     test("assignDataScope 更新角色数据范围", async () => {
       const s = setupRole();
       await s.roleService.assignDataScope("r1", 2); // 2 = 自定义数据权限
-      expect(s.calls.some(c => c.text.includes("data_scope"))).toBe(true);
+      expect(s.calls.some((c) => c.text.includes("data_scope"))).toBe(true);
     });
 
     test("assignDataScope 自定义范围时关联部门", async () => {
@@ -94,8 +100,8 @@ describe("Security: Permission", () => {
       await s.roleService.assignDataScope("r1", 5, ["d1", "d2", "d3"]);
       // UPDATE role + DELETE role_dept + INSERT role_dept
       expect(s.calls.length).toBe(3);
-      expect(s.calls.some(c => c.text.includes("sys_role_dept"))).toBe(true);
-      expect(s.calls.some(c => c.text.includes("INSERT"))).toBe(true);
+      expect(s.calls.some((c) => c.text.includes("sys_role_dept"))).toBe(true);
+      expect(s.calls.some((c) => c.text.includes("INSERT"))).toBe(true);
     });
 
     test("assignDataScope 不提供 deptIds 时不操作关联表", async () => {
@@ -157,11 +163,21 @@ describe("Security: Permission", () => {
       const s = setupMenuTreeBuilder();
       s.results.set("sys_user_role", [{ role_id: "r1" }]);
       s.results.set("sys_role_menu", [{ menu_id: "m1" }]);
-      s.results.set("sys_menu", [{
-        id: "m1", parent_id: "0", name: "系统管理", path: "/system",
-        component: "Layout", icon: "setting", sort: 1, menu_type: "M",
-        visible: 1, status: 1, perms: "",
-      }]);
+      s.results.set("sys_menu", [
+        {
+          id: "m1",
+          parent_id: "0",
+          name: "系统管理",
+          path: "/system",
+          component: "Layout",
+          icon: "setting",
+          sort: 1,
+          menu_type: "M",
+          visible: 1,
+          status: 1,
+          perms: "",
+        },
+      ]);
 
       const routes = await s.builder.buildRoutesForUser("u1");
       expect(Array.isArray(routes)).toBe(true);
@@ -199,7 +215,7 @@ describe("Security: Permission", () => {
       await userService.list({ username: "'; DROP TABLE sys_user; --" });
 
       // 验证参数化传递，而非字符串拼接
-      const selectCall = calls.find(c => c.text.includes("LIKE"));
+      const selectCall = calls.find((c) => c.text.includes("LIKE"));
       if (selectCall) {
         expect(selectCall.params).toContain("%'; DROP TABLE sys_user; --%");
       }

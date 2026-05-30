@@ -89,7 +89,11 @@ describe("ipFilter", () => {
   });
 
   test("custom status code", async () => {
-    const middleware = ipFilter({ denylist: ["1.2.3.4"], statusCode: 451, trustProxyHeaders: true });
+    const middleware = ipFilter({
+      denylist: ["1.2.3.4"],
+      statusCode: 451,
+      trustProxyHeaders: true,
+    });
     const ctx = createContext(makeReq("1.2.3.4"));
     const response = await middleware(ctx, async () => new Response("ok"));
     expect(response.status).toBe(451);

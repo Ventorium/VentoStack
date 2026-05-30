@@ -58,7 +58,9 @@ describe("MIME Detection", () => {
     test("文档扩展名", () => {
       expect(mimeFromExtension(".pdf")).toBe("application/pdf");
       expect(mimeFromExtension(".doc")).toBe("application/msword");
-      expect(mimeFromExtension(".docx")).toBe("application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+      expect(mimeFromExtension(".docx")).toBe(
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      );
     });
 
     test("代码文件扩展名", () => {

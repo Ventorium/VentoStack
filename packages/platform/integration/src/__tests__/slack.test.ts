@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createSlackVerifier } from "../providers/slack";
 import { hmacSign } from "@ventostack/webhook";
+import { createSlackVerifier } from "../providers/slack";
 
 describe("createSlackVerifier", () => {
   const secret = "8f742231b10e1498f0ac3ebcbegging-your-pardon";
@@ -12,10 +12,14 @@ describe("createSlackVerifier", () => {
     const sigBaseString = `v0:${timestamp}:${body}`;
     const signature = `v0=${hmacSign(sigBaseString, secret, "sha256")}`;
 
-    const result = await verifier.verify(body, {
-      "x-slack-signature": signature,
-      "x-slack-request-timestamp": timestamp,
-    }, { secret });
+    const result = await verifier.verify(
+      body,
+      {
+        "x-slack-signature": signature,
+        "x-slack-request-timestamp": timestamp,
+      },
+      { secret },
+    );
 
     expect(result.valid).toBe(true);
   });
@@ -26,10 +30,14 @@ describe("createSlackVerifier", () => {
     const sigBaseString = `v0:${oldTimestamp}:${body}`;
     const signature = `v0=${hmacSign(sigBaseString, secret, "sha256")}`;
 
-    const result = await verifier.verify(body, {
-      "x-slack-signature": signature,
-      "x-slack-request-timestamp": oldTimestamp,
-    }, { secret });
+    const result = await verifier.verify(
+      body,
+      {
+        "x-slack-signature": signature,
+        "x-slack-request-timestamp": oldTimestamp,
+      },
+      { secret },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Timestamp outside tolerance");
@@ -38,10 +46,14 @@ describe("createSlackVerifier", () => {
   test("rejects invalid signature", async () => {
     const timestamp = String(Math.floor(Date.now() / 1000));
 
-    const result = await verifier.verify("body", {
-      "x-slack-signature": "v0=invalid",
-      "x-slack-request-timestamp": timestamp,
-    }, { secret });
+    const result = await verifier.verify(
+      "body",
+      {
+        "x-slack-signature": "v0=invalid",
+        "x-slack-request-timestamp": timestamp,
+      },
+      { secret },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Signature mismatch");
@@ -55,10 +67,14 @@ describe("createSlackVerifier", () => {
   test("rejects invalid format", async () => {
     const timestamp = String(Math.floor(Date.now() / 1000));
 
-    const result = await verifier.verify("body", {
-      "x-slack-signature": "invalid-no-v0-prefix",
-      "x-slack-request-timestamp": timestamp,
-    }, { secret });
+    const result = await verifier.verify(
+      "body",
+      {
+        "x-slack-signature": "invalid-no-v0-prefix",
+        "x-slack-request-timestamp": timestamp,
+      },
+      { secret },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Invalid signature format");

@@ -125,7 +125,7 @@ describe("createJWT", () => {
         .replace(/=+$/, "");
       const fakeToken = `${header}.${payload}.fakesig`;
 
-      await expect(jwt.verify(fakeToken, SECRET_32)).rejects.toThrow("Unsupported algorithm");
+      await expect(jwt.verify(fakeToken, SECRET_32)).rejects.toThrow("不支持的算法");
     });
 
     test("rejects algorithm mismatch", async () => {
@@ -133,7 +133,7 @@ describe("createJWT", () => {
         algorithm: "HS256",
       });
       await expect(jwt.verify(token, SECRET_32, { algorithm: "HS512" })).rejects.toThrow(
-        "Algorithm mismatch",
+        "算法不匹配",
       );
     });
 
@@ -193,7 +193,7 @@ describe("createJWT", () => {
         .replace(/=+$/, "");
       const fakeToken = `${signingInput}.${sigB64}`;
 
-      await expect(jwt.verify(fakeToken, SECRET_32)).rejects.toThrow("Invalid token type");
+      await expect(jwt.verify(fakeToken, SECRET_32)).rejects.toThrow("无效的令牌类型");
     });
 
     test("token without typ field passes verify (backward compat)", async () => {

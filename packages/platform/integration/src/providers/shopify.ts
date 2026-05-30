@@ -6,7 +6,11 @@
  * 无时间戳/重放保护
  */
 
-import type { ProviderVerifyConfig, VerifyResult, WebhookProviderVerifier } from "@ventostack/webhook";
+import type {
+  ProviderVerifyConfig,
+  VerifyResult,
+  WebhookProviderVerifier,
+} from "@ventostack/webhook";
 import { timingSafeEqual } from "@ventostack/webhook";
 
 /**

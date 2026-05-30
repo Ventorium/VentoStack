@@ -2,7 +2,7 @@
  * @ventostack/system - AuthGuard 中间件测试
  */
 
-import { describe, expect, test, mock } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import { createAuthMiddleware, createPermMiddleware } from "../middlewares/auth-guard";
 import { createMockJWTManager, createMockRBAC } from "./helpers";
 
@@ -25,7 +25,10 @@ function createContext(overrides: Record<string, any> = {}) {
     startTime: performance.now(),
     user: undefined as unknown,
     tenant: undefined as unknown,
-    json: mock((data: any) => new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } })),
+    json: mock(
+      (data: any) =>
+        new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }),
+    ),
     ...overrides,
   };
 }
@@ -41,7 +44,10 @@ describe("createAuthMiddleware", () => {
     });
 
     let nextCalled = false;
-    const next = async () => { nextCalled = true; return new Response("ok"); };
+    const next = async () => {
+      nextCalled = true;
+      return new Response("ok");
+    };
 
     const response = await middleware(ctx as any, next);
     expect(nextCalled).toBe(true);
@@ -55,7 +61,7 @@ describe("createAuthMiddleware", () => {
     const ctx = createContext({ headers: {} });
     const next = async () => new Response("ok");
 
-    const response = await middleware(ctx as any, next) as Response;
+    const response = (await middleware(ctx as any, next)) as Response;
     expect(response.status).toBe(401);
     const body = await response.json();
     expect(body.code).toBe(401);
@@ -71,7 +77,7 @@ describe("createAuthMiddleware", () => {
     });
     const next = async () => new Response("ok");
 
-    const response = await middleware(ctx as any, next) as Response;
+    const response = (await middleware(ctx as any, next)) as Response;
     expect(response.status).toBe(401);
   });
 
@@ -84,7 +90,7 @@ describe("createAuthMiddleware", () => {
     });
     const next = async () => new Response("ok");
 
-    const response = await middleware(ctx as any, next) as Response;
+    const response = (await middleware(ctx as any, next)) as Response;
     expect(response.status).toBe(401);
   });
 });
@@ -100,7 +106,10 @@ describe("createPermMiddleware", () => {
     ctx.user = { id: "u1", roles: ["admin"], username: "admin" };
 
     let nextCalled = false;
-    const next = async () => { nextCalled = true; return new Response("ok"); };
+    const next = async () => {
+      nextCalled = true;
+      return new Response("ok");
+    };
 
     await middleware(ctx as any, next);
     expect(nextCalled).toBe(true);
@@ -116,7 +125,7 @@ describe("createPermMiddleware", () => {
     ctx.user = { id: "u1", roles: ["viewer"], username: "viewer" };
     const next = async () => new Response("ok");
 
-    const response = await middleware(ctx as any, next) as Response;
+    const response = (await middleware(ctx as any, next)) as Response;
     expect(response.status).toBe(403);
     const body = await response.json();
     expect(body.message).toContain("system:user:delete");
@@ -131,7 +140,7 @@ describe("createPermMiddleware", () => {
     // ctx.user is undefined
     const next = async () => new Response("ok");
 
-    const response = await middleware(ctx as any, next) as Response;
+    const response = (await middleware(ctx as any, next)) as Response;
     expect(response.status).toBe(401);
   });
 });

@@ -300,14 +300,17 @@ describe("parseRoutePath", () => {
   test("parses multiple untyped params", () => {
     const parsed = parseRoutePath("/orgs/:orgId/repos/:repoId");
     expect(parsed.strippedPath).toBe("/orgs/:orgId/repos/:repoId");
-    expect(parsed.params).toHaveLength(0);
+    expect(parsed.params).toHaveLength(2);
+    expect(parsed.params[0]).toEqual({ name: "orgId", type: "string" });
+    expect(parsed.params[1]).toEqual({ name: "repoId", type: "string" });
   });
 
   test("parses mixed typed and untyped params", () => {
     const parsed = parseRoutePath("/users/:userId<int>/posts/:postId");
     expect(parsed.strippedPath).toBe("/users/:userId/posts/:postId");
-    expect(parsed.params).toHaveLength(1);
+    expect(parsed.params).toHaveLength(2);
     expect(parsed.params[0]).toEqual({ name: "userId", type: "int" });
+    expect(parsed.params[1]).toEqual({ name: "postId", type: "string" });
   });
 
   test("parses untyped params with custom regex", () => {
@@ -366,7 +369,8 @@ describe("parseRoutePath", () => {
   test("leaves untyped params unchanged", () => {
     const parsed = parseRoutePath("/users/:id");
     expect(parsed.strippedPath).toBe("/users/:id");
-    expect(parsed.params).toHaveLength(0);
+    expect(parsed.params).toHaveLength(1);
+    expect(parsed.params[0]).toEqual({ name: "id", type: "string" });
   });
 
   test("throws on unknown param type", () => {
@@ -398,7 +402,9 @@ describe("Router - typed params runtime coercion", () => {
 
   test("coerces int param to number", async () => {
     const router = createRouter();
-    router.get("/users/:id<int>", (ctx) => ctx.json({ id: ctx.params.id, type: typeof ctx.params.id }));
+    router.get("/users/:id<int>", (ctx) =>
+      ctx.json({ id: ctx.params.id, type: typeof ctx.params.id }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/users/:id"] as Record<string, RouteHandler>).GET!;
@@ -412,7 +418,9 @@ describe("Router - typed params runtime coercion", () => {
 
   test("coerces bool param to boolean", async () => {
     const router = createRouter();
-    router.get("/flags/:enabled<bool>", (ctx) => ctx.json({ enabled: ctx.params.enabled, type: typeof ctx.params.enabled }));
+    router.get("/flags/:enabled<bool>", (ctx) =>
+      ctx.json({ enabled: ctx.params.enabled, type: typeof ctx.params.enabled }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/flags/:enabled"] as Record<string, RouteHandler>).GET!;
@@ -426,7 +434,9 @@ describe("Router - typed params runtime coercion", () => {
 
   test("coerces date param to Date", async () => {
     const router = createRouter();
-    router.get("/events/:at<date>", (ctx) => ctx.json({ at: (ctx.params.at as Date).toISOString() }));
+    router.get("/events/:at<date>", (ctx) =>
+      ctx.json({ at: (ctx.params.at as Date).toISOString() }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/events/:at"] as Record<string, RouteHandler>).GET!;
@@ -586,7 +596,11 @@ describe("Router - typed params runtime coercion", () => {
     Object.defineProperty(reqOk, "params", { value: { userId: "11", postId: "eyaaaaaaaa==" } });
     const resOk = await handler(reqOk);
     expect(resOk.status).toBe(200);
-    expect(await resOk.json()).toEqual({ userId: "11", postId: "eyaaaaaaaa==", types: ["string", "string"] });
+    expect(await resOk.json()).toEqual({
+      userId: "11",
+      postId: "eyaaaaaaaa==",
+      types: ["string", "string"],
+    });
 
     const reqBad = new Request("http://localhost:3000/users/abc/posts/eyaaaaaaaa==");
     Object.defineProperty(reqBad, "params", { value: { userId: "abc", postId: "eyaaaaaaaa==" } });
@@ -616,16 +630,21 @@ describe("Router - duplicate detection with stripped paths", () => {
 describe("Router - query schema", () => {
   test("coerces query params by schema", async () => {
     const router = createRouter();
-    router.get("/users", {
-      query: {
-        page: { type: "int", default: 1 },
-        limit: { type: "int", default: 20 },
+    router.get(
+      "/users",
+      {
+        query: {
+          page: { type: "int", default: 1 },
+          limit: { type: "int", default: 20 },
+        },
       },
-    }, (ctx) => ctx.json({
-      page: ctx.query.page,
-      limit: ctx.query.limit,
-      types: [typeof ctx.query.page, typeof ctx.query.limit],
-    }));
+      (ctx) =>
+        ctx.json({
+          page: ctx.query.page,
+          limit: ctx.query.limit,
+          types: [typeof ctx.query.page, typeof ctx.query.limit],
+        }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/users"] as Record<string, RouteHandler>).GET!;
@@ -637,15 +656,20 @@ describe("Router - query schema", () => {
 
   test("applies default values for missing query params", async () => {
     const router = createRouter();
-    router.get("/users", {
-      query: {
-        page: { type: "int", default: 1 },
-        limit: { type: "int", default: 20 },
+    router.get(
+      "/users",
+      {
+        query: {
+          page: { type: "int", default: 1 },
+          limit: { type: "int", default: 20 },
+        },
       },
-    }, (ctx) => ctx.json({
-      page: ctx.query.page,
-      limit: ctx.query.limit,
-    }));
+      (ctx) =>
+        ctx.json({
+          page: ctx.query.page,
+          limit: ctx.query.limit,
+        }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/users"] as Record<string, RouteHandler>).GET!;
@@ -657,11 +681,15 @@ describe("Router - query schema", () => {
 
   test("returns 400 for invalid query params", async () => {
     const router = createRouter();
-    router.get("/users", {
-      query: {
-        page: { type: "int", required: true },
+    router.get(
+      "/users",
+      {
+        query: {
+          page: { type: "int", required: true },
+        },
       },
-    }, (ctx) => ctx.json({ page: ctx.query.page }));
+      (ctx) => ctx.json({ page: ctx.query.page }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/users"] as Record<string, RouteHandler>).GET!;
@@ -677,16 +705,21 @@ describe("Router - query schema", () => {
 describe("Router - body schema", () => {
   test("parses and validates JSON body", async () => {
     const router = createRouter();
-    router.post("/users", {
-      body: {
-        name: { type: "string", required: true },
-        age: { type: "int" },
+    router.post(
+      "/users",
+      {
+        body: {
+          name: { type: "string", required: true },
+          age: { type: "int" },
+        },
       },
-    }, (ctx) => ctx.json({
-      name: ctx.body.name,
-      age: ctx.body.age,
-      types: [typeof ctx.body.name, typeof ctx.body.age],
-    }));
+      (ctx) =>
+        ctx.json({
+          name: ctx.body.name,
+          age: ctx.body.age,
+          types: [typeof ctx.body.name, typeof ctx.body.age],
+        }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/users"] as Record<string, RouteHandler>).POST!;
@@ -702,11 +735,15 @@ describe("Router - body schema", () => {
 
   test("returns 400 for invalid JSON body", async () => {
     const router = createRouter();
-    router.post("/users", {
-      body: {
-        name: { type: "string", required: true },
+    router.post(
+      "/users",
+      {
+        body: {
+          name: { type: "string", required: true },
+        },
       },
-    }, (ctx) => ctx.json({ name: ctx.body.name }));
+      (ctx) => ctx.json({ name: ctx.body.name }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/users"] as Record<string, RouteHandler>).POST!;
@@ -725,16 +762,21 @@ describe("Router - body schema", () => {
 describe("Router - formData schema", () => {
   test("parses and validates formData text fields", async () => {
     const router = createRouter();
-    router.post("/upload", {
-      formData: {
-        title: { type: "string", required: true },
-        count: { type: "int" },
+    router.post(
+      "/upload",
+      {
+        formData: {
+          title: { type: "string", required: true },
+          count: { type: "int" },
+        },
       },
-    }, (ctx) => ctx.json({
-      title: ctx.formData.title,
-      count: ctx.formData.count,
-      types: [typeof ctx.formData.title, typeof ctx.formData.count],
-    }));
+      (ctx) =>
+        ctx.json({
+          title: ctx.formData.title,
+          count: ctx.formData.count,
+          types: [typeof ctx.formData.title, typeof ctx.formData.count],
+        }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/upload"] as Record<string, RouteHandler>).POST!;
@@ -752,16 +794,24 @@ describe("Router - formData schema", () => {
 
   test("formData schema does not consume body stream - handler can re-read request.formData()", async () => {
     const router = createRouter();
-    router.post("/upload", {
-      formData: {
-        title: { type: "string", required: true },
+    router.post(
+      "/upload",
+      {
+        formData: {
+          title: { type: "string", required: true },
+        },
       },
-    }, async (ctx) => {
-      // handler 里重新读取 formData 不应报错
-      const formData = await ctx.request.formData();
-      const file = formData.get("file") as File;
-      return ctx.json({ title: ctx.formData.title, hasFile: file instanceof File, fileName: file?.name });
-    });
+      async (ctx) => {
+        // handler 里重新读取 formData 不应报错
+        const formData = await ctx.request.formData();
+        const file = formData.get("file") as File;
+        return ctx.json({
+          title: ctx.formData.title,
+          hasFile: file instanceof File,
+          fileName: file?.name,
+        });
+      },
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/upload"] as Record<string, RouteHandler>).POST!;
@@ -782,11 +832,15 @@ describe("Router - formData schema", () => {
 describe("Router - headers schema", () => {
   test("validates headers by schema", async () => {
     const router = createRouter();
-    router.get("/protected", {
-      headers: {
-        authorization: { type: "string", required: true },
+    router.get(
+      "/protected",
+      {
+        headers: {
+          authorization: { type: "string", required: true },
+        },
       },
-    }, (ctx) => ctx.json({ ok: true }));
+      (ctx) => ctx.json({ ok: true }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/protected"] as Record<string, RouteHandler>).GET!;
@@ -800,11 +854,15 @@ describe("Router - headers schema", () => {
 
   test("returns 400 for missing required headers", async () => {
     const router = createRouter();
-    router.get("/protected", {
-      headers: {
-        authorization: { type: "string", required: true },
+    router.get(
+      "/protected",
+      {
+        headers: {
+          authorization: { type: "string", required: true },
+        },
       },
-    }, (ctx) => ctx.json({ ok: true }));
+      (ctx) => ctx.json({ ok: true }),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/protected"] as Record<string, RouteHandler>).GET!;
@@ -819,23 +877,26 @@ describe("Router - headers schema", () => {
 describe("Router - response schema", () => {
   test("returns 500 when JSON response body does not match declared schema", async () => {
     const router = createRouter();
-    router.get("/things", {
-      query: {
-        page: { type: "int", required: true, default: 1 },
-        limit: { type: "int", default: 10 },
-      },
-      responses: {
-        200: {
-          page: { type: "int" },
-          limit: { type: "string" },
+    router.get(
+      "/things",
+      {
+        query: {
+          page: { type: "int", required: true, default: 1 },
+          limit: { type: "int", default: 10 },
+        },
+        responses: {
+          200: {
+            page: { type: "int" },
+            limit: { type: "string" },
+          },
         },
       },
-    }, (ctx) =>
-      ctx.json({
-        page: ctx.query.page,
-        // @ts-ignore 已知问题，故意这么测试的
-        limit: ctx.query.limit,
-      }),
+      (ctx) =>
+        ctx.json({
+          page: ctx.query.page,
+          // @ts-ignore 已知问题，故意这么测试的
+          limit: ctx.query.limit,
+        }),
     );
 
     const compiled = router.compile();
@@ -851,19 +912,22 @@ describe("Router - response schema", () => {
 
   test("validates platform response envelope data against declared schema", async () => {
     const router = createRouter();
-    router.get("/public-config", {
-      responses: {
-        200: {
-          siteName: { type: "string" },
-          mfaEnabled: { type: "boolean" },
+    router.get(
+      "/public-config",
+      {
+        responses: {
+          200: {
+            siteName: { type: "string" },
+            mfaEnabled: { type: "boolean" },
+          },
         },
       },
-    }, (ctx) =>
-      ctx.json({
-        code: 200,
-        message: "ok",
-        data: { siteName: "VentoStack", mfaEnabled: true },
-      }),
+      (ctx) =>
+        ctx.json({
+          code: 200,
+          message: "ok",
+          data: { siteName: "VentoStack", mfaEnabled: true },
+        }),
     );
 
     const compiled = router.compile();
@@ -880,14 +944,18 @@ describe("Router - response schema", () => {
 
   test("supports declared non-json text responses", async () => {
     const router = createRouter();
-    router.get("/health", {
-      responses: {
-        200: {
-          contentType: "text/plain",
-          schema: { type: "string" },
+    router.get(
+      "/health",
+      {
+        responses: {
+          200: {
+            contentType: "text/plain",
+            schema: { type: "string" },
+          },
         },
       },
-    }, (ctx) => ctx.text("ok"));
+      (ctx) => ctx.text("ok"),
+    );
 
     const compiled = router.compile();
     const handler = (compiled["/health"] as Record<string, RouteHandler>).GET!;
@@ -903,11 +971,15 @@ describe("Router - response schema", () => {
 describe("Router - merge preserves schemaConfig", () => {
   test("merged router keeps query schema validation", async () => {
     const sub = createRouter();
-    sub.get("/items", {
-      query: {
-        page: { type: "int", required: true },
+    sub.get(
+      "/items",
+      {
+        query: {
+          page: { type: "int", required: true },
+        },
       },
-    }, (ctx) => ctx.json({ page: ctx.query.page }));
+      (ctx) => ctx.json({ page: ctx.query.page }),
+    );
 
     const main = createRouter();
     main.merge(sub);

@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createMenuTreeBuilder } from "../services/menu-tree-builder";
-import { createMockExecutor, createMockDatabase } from "./helpers";
+import { createMockDatabase, createMockExecutor } from "./helpers";
 
 function setup() {
   const mockExec = createMockExecutor();
@@ -34,8 +34,32 @@ describe("MenuTreeBuilder", () => {
     s.results.set("FROM sys_role_menu", [{ menu_id: "m1" }, { menu_id: "m2" }]);
     // 4. all menus
     s.results.set("FROM sys_menu WHERE status", [
-      { id: "m1", parent_id: null, name: "系统管理", path: "/system", component: "Layout", redirect: "", type: 1, permission: "", icon: "setting", sort: 1, visible: true },
-      { id: "m2", parent_id: "m1", name: "用户管理", path: "/system/user", component: "UserList", redirect: "", type: 2, permission: "system:user:list", icon: "user", sort: 1, visible: true },
+      {
+        id: "m1",
+        parent_id: null,
+        name: "系统管理",
+        path: "/system",
+        component: "Layout",
+        redirect: "",
+        type: 1,
+        permission: "",
+        icon: "setting",
+        sort: 1,
+        visible: true,
+      },
+      {
+        id: "m2",
+        parent_id: "m1",
+        name: "用户管理",
+        path: "/system/user",
+        component: "UserList",
+        redirect: "",
+        type: 2,
+        permission: "system:user:list",
+        icon: "user",
+        sort: 1,
+        visible: true,
+      },
     ]);
 
     const routes = await s.menuTreeBuilder.buildRoutesForUser("u1");
@@ -51,9 +75,45 @@ describe("MenuTreeBuilder", () => {
     s.results.set("FROM sys_role WHERE", [{ id: "r1" }]);
     s.results.set("FROM sys_role_menu", [{ menu_id: "m1" }, { menu_id: "m2" }, { menu_id: "m3" }]);
     s.results.set("FROM sys_menu WHERE status", [
-      { id: "m1", parent_id: null, name: "系统管理", path: "/system", component: "Layout", redirect: "", type: 1, permission: "", icon: "", sort: 1, visible: true },
-      { id: "m2", parent_id: "m1", name: "用户管理", path: "/system/user", component: "UserList", redirect: "", type: 2, permission: "system:user:list", icon: "", sort: 1, visible: true },
-      { id: "m3", parent_id: "m2", name: "新增用户", path: "", component: "", redirect: "", type: 3, permission: "system:user:create", icon: "", sort: 1, visible: true },
+      {
+        id: "m1",
+        parent_id: null,
+        name: "系统管理",
+        path: "/system",
+        component: "Layout",
+        redirect: "",
+        type: 1,
+        permission: "",
+        icon: "",
+        sort: 1,
+        visible: true,
+      },
+      {
+        id: "m2",
+        parent_id: "m1",
+        name: "用户管理",
+        path: "/system/user",
+        component: "UserList",
+        redirect: "",
+        type: 2,
+        permission: "system:user:list",
+        icon: "",
+        sort: 1,
+        visible: true,
+      },
+      {
+        id: "m3",
+        parent_id: "m2",
+        name: "新增用户",
+        path: "",
+        component: "",
+        redirect: "",
+        type: 3,
+        permission: "system:user:create",
+        icon: "",
+        sort: 1,
+        visible: true,
+      },
     ]);
 
     const routes = await s.menuTreeBuilder.buildRoutesForUser("u1");
@@ -74,7 +134,19 @@ describe("MenuTreeBuilder", () => {
     s.results.set("FROM sys_role WHERE", [{ id: "r1" }]);
     s.results.set("FROM sys_role_menu", [{ menu_id: "m1" }]);
     s.results.set("FROM sys_menu WHERE status", [
-      { id: "m1", parent_id: null, name: "新增", path: "", component: "", redirect: "", type: 3, permission: "system:user:create", icon: "", sort: 1, visible: true },
+      {
+        id: "m1",
+        parent_id: null,
+        name: "新增",
+        path: "",
+        component: "",
+        redirect: "",
+        type: 3,
+        permission: "system:user:create",
+        icon: "",
+        sort: 1,
+        visible: true,
+      },
     ]);
 
     const permissions = await s.menuTreeBuilder.buildPermissionsForUser("u1");
@@ -88,8 +160,32 @@ describe("MenuTreeBuilder", () => {
     // User only has access to a child menu (m2), parent (m1) should be auto-included
     s.results.set("FROM sys_role_menu", [{ menu_id: "m2" }]);
     s.results.set("FROM sys_menu WHERE status", [
-      { id: "m1", parent_id: null, name: "系统管理", path: "/system", component: "Layout", redirect: "", type: 1, permission: "", icon: "", sort: 1, visible: true },
-      { id: "m2", parent_id: "m1", name: "用户管理", path: "/system/user", component: "UserList", redirect: "", type: 2, permission: "", icon: "", sort: 1, visible: true },
+      {
+        id: "m1",
+        parent_id: null,
+        name: "系统管理",
+        path: "/system",
+        component: "Layout",
+        redirect: "",
+        type: 1,
+        permission: "",
+        icon: "",
+        sort: 1,
+        visible: true,
+      },
+      {
+        id: "m2",
+        parent_id: "m1",
+        name: "用户管理",
+        path: "/system/user",
+        component: "UserList",
+        redirect: "",
+        type: 2,
+        permission: "",
+        icon: "",
+        sort: 1,
+        visible: true,
+      },
     ]);
 
     const routes = await s.menuTreeBuilder.buildRoutesForUser("u1");

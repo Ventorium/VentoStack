@@ -7,16 +7,16 @@
 import { describe, expect, test } from "bun:test";
 import { createAuthService } from "../../services/auth";
 import {
-  createMockExecutor,
+  createMockAuditStore,
+  createMockAuthSessionManager,
+  createMockConfigService,
   createMockDatabase,
-  createTestCache,
+  createMockEventBus,
+  createMockExecutor,
   createMockJWTManager,
   createMockPasswordHasher,
   createMockTOTPManager,
-  createMockAuthSessionManager,
-  createMockAuditStore,
-  createMockEventBus,
-  createMockConfigService,
+  createTestCache,
 } from "../helpers";
 
 function setup(configOverrides: Record<string, string> = {}) {
@@ -51,16 +51,38 @@ function setup(configOverrides: Record<string, string> = {}) {
     configService,
   });
 
-  return { authService, executor: mockExec.executor, calls, results: mockExec.results, cache, jwt, passwordHasher, totp, authSessionManager, auditLog, eventBus, configService };
+  return {
+    authService,
+    executor: mockExec.executor,
+    calls,
+    results: mockExec.results,
+    cache,
+    jwt,
+    passwordHasher,
+    totp,
+    authSessionManager,
+    auditLog,
+    eventBus,
+    configService,
+  };
 }
 
 function loginResult(overrides: Record<string, unknown> = {}) {
-  return [{
-    id: "u1", username: "admin", password_hash: "hashed_admin123",
-    status: 1, mfa_enabled: false, mfa_secret: null, blacklisted: false,
-    locked_until: null, login_attempts: 0, password_changed_at: null,
-    ...overrides,
-  }];
+  return [
+    {
+      id: "u1",
+      username: "admin",
+      password_hash: "hashed_admin123",
+      status: 1,
+      mfa_enabled: false,
+      mfa_secret: null,
+      blacklisted: false,
+      locked_until: null,
+      login_attempts: 0,
+      password_changed_at: null,
+      ...overrides,
+    },
+  ];
 }
 
 describe("Security: Auth", () => {
@@ -74,7 +96,10 @@ describe("Security: Auth", () => {
       for (let i = 0; i < 5; i++) {
         try {
           await s.authService.login({
-            username: "admin", password: "wrong", ip: "1.2.3.4", userAgent: "test",
+            username: "admin",
+            password: "wrong",
+            ip: "1.2.3.4",
+            userAgent: "test",
           });
         } catch {
           // expected
@@ -82,9 +107,14 @@ describe("Security: Auth", () => {
       }
 
       // 第 6 次应被锁定
-      await expect(s.authService.login({
-        username: "admin", password: "wrong", ip: "1.2.3.4", userAgent: "test",
-      })).rejects.toThrow(/锁定|locked/i);
+      await expect(
+        s.authService.login({
+          username: "admin",
+          password: "wrong",
+          ip: "1.2.3.4",
+          userAgent: "test",
+        }),
+      ).rejects.toThrow(/锁定|locked/i);
     });
 
     test("不同 IP 的失败计数互相独立", async () => {
@@ -96,7 +126,10 @@ describe("Security: Auth", () => {
       for (let i = 0; i < 4; i++) {
         try {
           await s.authService.login({
-            username: "admin", password: "wrong", ip: "1.1.1.1", userAgent: "test",
+            username: "admin",
+            password: "wrong",
+            ip: "1.1.1.1",
+            userAgent: "test",
           });
         } catch {
           // expected
@@ -106,7 +139,10 @@ describe("Security: Auth", () => {
       // IP-B 第 1 次应正常（不会被锁定）
       try {
         await s.authService.login({
-          username: "admin", password: "wrong", ip: "2.2.2.2", userAgent: "test",
+          username: "admin",
+          password: "wrong",
+          ip: "2.2.2.2",
+          userAgent: "test",
         });
       } catch {
         // expected failure, but not due to lockout
@@ -119,24 +155,37 @@ describe("Security: Auth", () => {
       for (let i = 0; i < 5; i++) {
         try {
           await s.authService.login({
-            username: "admin", password: "wrong", ip: "1.1.1.1", userAgent: "test",
+            username: "admin",
+            password: "wrong",
+            ip: "1.1.1.1",
+            userAgent: "test",
           });
         } catch {
           // expected
         }
       }
 
-      await expect(s.authService.login({
-        username: "admin", password: "wrong", ip: "1.1.1.1", userAgent: "test",
-      })).rejects.toThrow(/锁定|locked/i);
+      await expect(
+        s.authService.login({
+          username: "admin",
+          password: "wrong",
+          ip: "1.1.1.1",
+          userAgent: "test",
+        }),
+      ).rejects.toThrow(/锁定|locked/i);
     });
 
     test("不存在的用户名也递增失败计数（防枚举探测）", async () => {
       const s = setup();
       // 空结果 = 用户不存在
-      await expect(s.authService.login({
-        username: "nonexistent", password: "x", ip: "1.2.3.4", userAgent: "test",
-      })).rejects.toThrow();
+      await expect(
+        s.authService.login({
+          username: "nonexistent",
+          password: "x",
+          ip: "1.2.3.4",
+          userAgent: "test",
+        }),
+      ).rejects.toThrow();
 
       // 验证审计日志记录了 user_not_found
       const entries = s.auditLog._entries;
@@ -154,14 +203,22 @@ describe("Security: Auth", () => {
       // 成功登录 20 次
       for (let i = 0; i < 20; i++) {
         await s.authService.login({
-          username: "admin", password: "admin123", ip: "10.0.0.1", userAgent: "test",
+          username: "admin",
+          password: "admin123",
+          ip: "10.0.0.1",
+          userAgent: "test",
         });
       }
 
       // 第 21 次应被限流
-      await expect(s.authService.login({
-        username: "admin", password: "admin123", ip: "10.0.0.1", userAgent: "test",
-      })).rejects.toThrow(/频繁|Too many/i);
+      await expect(
+        s.authService.login({
+          username: "admin",
+          password: "admin123",
+          ip: "10.0.0.1",
+          userAgent: "test",
+        }),
+      ).rejects.toThrow(/频繁|Too many/i);
     });
   });
 
@@ -173,7 +230,10 @@ describe("Security: Auth", () => {
 
       try {
         await s.authService.login({
-          username: "admin", password: "wrong", ip: "1.2.3.4", userAgent: "test",
+          username: "admin",
+          password: "wrong",
+          ip: "1.2.3.4",
+          userAgent: "test",
         });
         expect.unreachable("Should have thrown");
       } catch (e) {
@@ -191,7 +251,10 @@ describe("Security: Auth", () => {
 
       try {
         await s.authService.login({
-          username: "nobody", password: "x", ip: "1.2.3.4", userAgent: "test",
+          username: "nobody",
+          password: "x",
+          ip: "1.2.3.4",
+          userAgent: "test",
         });
         expect.unreachable("Should have thrown");
       } catch (e) {
@@ -224,9 +287,12 @@ describe("Security: Auth", () => {
   describe("MFA 防重放", () => {
     test("verifyMFA 调用 totp.verifyAndConsume（防重放）", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        mfa_secret: "JBSWY3DPEHPK3PXP", mfa_enabled: true,
-      }]);
+      s.results.set("SELECT", [
+        {
+          mfa_secret: "JBSWY3DPEHPK3PXP",
+          mfa_enabled: true,
+        },
+      ]);
 
       await s.authService.verifyMFA("u1", "123456");
       expect(s.totp.verifyAndConsume).toHaveBeenCalled();
@@ -236,9 +302,11 @@ describe("Security: Auth", () => {
 
     test("disableMFA 使用普通 verify（无需防重放）", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        mfa_secret: "JBSWY3DPEHPK3PXP",
-      }]);
+      s.results.set("SELECT", [
+        {
+          mfa_secret: "JBSWY3DPEHPK3PXP",
+        },
+      ]);
 
       await s.authService.disableMFA("u1", "123456");
       expect(s.totp.verify).toHaveBeenCalled();
@@ -247,9 +315,12 @@ describe("Security: Auth", () => {
     test("completeMFALogin 使用 verifyAndConsume（防重放）", async () => {
       const s = setup();
       s.jwt.verify.mockResolvedValue({ sub: "u1", iss: "mfa-pending", username: "admin" } as any);
-      s.results.set("SELECT", [{
-        mfa_secret: "JBSWY3DPEHPK3PXP", mfa_enabled: true,
-      }]);
+      s.results.set("SELECT", [
+        {
+          mfa_secret: "JBSWY3DPEHPK3PXP",
+          mfa_enabled: true,
+        },
+      ]);
 
       await s.authService.completeMFALogin("valid-token", "123456", "1.2.3.4", "test");
       expect(s.totp.verifyAndConsume).toHaveBeenCalled();
@@ -266,9 +337,13 @@ describe("Security: Auth", () => {
 
     test("重置 token 使用后立即失效", async () => {
       const s = setup();
-      s.results.set("SELECT", [{
-        id: "u1", username: "admin", email: "admin@test.com",
-      }]);
+      s.results.set("SELECT", [
+        {
+          id: "u1",
+          username: "admin",
+          email: "admin@test.com",
+        },
+      ]);
 
       const { resetToken } = await s.authService.forgotPassword("admin@test.com");
 
@@ -277,14 +352,16 @@ describe("Security: Auth", () => {
       await s.authService.resetPasswordByToken(resetToken, "newpwd");
 
       // 第二次使用应失败（token 已删除）
-      await expect(s.authService.resetPasswordByToken(resetToken, "newpwd2"))
-        .rejects.toThrow("重置令牌无效或已过期");
+      await expect(s.authService.resetPasswordByToken(resetToken, "newpwd2")).rejects.toThrow(
+        "重置令牌无效或已过期",
+      );
     });
 
     test("无效 token 拒绝重置", async () => {
       const s = setup();
-      await expect(s.authService.resetPasswordByToken("fake-token", "newpwd"))
-        .rejects.toThrow("重置令牌无效或已过期");
+      await expect(s.authService.resetPasswordByToken("fake-token", "newpwd")).rejects.toThrow(
+        "重置令牌无效或已过期",
+      );
     });
   });
 
@@ -295,11 +372,14 @@ describe("Security: Auth", () => {
       s.passwordHasher.verify.mockResolvedValue(true as any);
 
       await s.authService.login({
-        username: "admin", password: "admin123", ip: "1.2.3.4", userAgent: "test",
+        username: "admin",
+        password: "admin123",
+        ip: "1.2.3.4",
+        userAgent: "test",
       });
 
       const entries = s.auditLog._entries;
-      const loginEntry = entries.find(e => e.action === "login.success");
+      const loginEntry = entries.find((e) => e.action === "login.success");
       expect(loginEntry).toBeTruthy();
       expect(loginEntry?.metadata?.ip).toBe("1.2.3.4");
     });
@@ -311,14 +391,17 @@ describe("Security: Auth", () => {
 
       try {
         await s.authService.login({
-          username: "admin", password: "wrong", ip: "1.2.3.4", userAgent: "test",
+          username: "admin",
+          password: "wrong",
+          ip: "1.2.3.4",
+          userAgent: "test",
         });
       } catch {
         // expected
       }
 
       const entries = s.auditLog._entries;
-      const failEntry = entries.find(e => e.action === "login.failed");
+      const failEntry = entries.find((e) => e.action === "login.failed");
       expect(failEntry).toBeTruthy();
       expect(failEntry?.result).toBe("failure");
     });

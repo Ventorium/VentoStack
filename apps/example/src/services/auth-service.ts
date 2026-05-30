@@ -1,4 +1,4 @@
-import { createJWT, type JWTPayload } from "@ventostack/auth";
+import { type JWTPayload, createJWT } from "@ventostack/auth";
 import { UnauthorizedError } from "@ventostack/core";
 import type { User } from "../models";
 import type { createUserService } from "./user-service";
@@ -28,10 +28,7 @@ export function createAuthService(deps: AuthServiceDeps) {
     return Bun.password.hash(password, { algorithm: "bcrypt" });
   }
 
-  async function verifyPassword(
-    password: string,
-    hash: string,
-  ): Promise<boolean> {
+  async function verifyPassword(password: string, hash: string): Promise<boolean> {
     return Bun.password.verify(password, hash);
   }
 

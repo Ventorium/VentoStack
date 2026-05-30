@@ -3,9 +3,9 @@
  * 提供字典类型与字典数据的 CRUD，带缓存策略
  */
 
-import type { Database } from "@ventostack/database";
 import type { Cache } from "@ventostack/cache";
-import { DictTypeModel, DictDataModel } from "../models/dict";
+import type { Database } from "@ventostack/database";
+import { DictDataModel, DictTypeModel } from "../models/dict";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -140,13 +140,16 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
     await cache.del(cacheKey(code));
   }
 
-  async function listTypes(params?: { page?: number; pageSize?: number }): Promise<PaginatedResult<DictTypeItem>> {
+  async function listTypes(params?: { page?: number; pageSize?: number }): Promise<
+    PaginatedResult<DictTypeItem>
+  > {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
 
     const total = await db.query(DictTypeModel).count();
 
-    const rows = await db.query(DictTypeModel)
+    const rows = await db
+      .query(DictTypeModel)
       .select("id", "name", "code", "status", "remark", "created_at")
       .orderBy("id", "asc")
       .limit(pageSize)
@@ -159,7 +162,10 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
       code: row.code,
       status: row.status ?? 1,
       remark: row.remark ?? "",
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ""),
     }));
 
     return {
@@ -192,10 +198,7 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
 
   async function updateData(id: string, params: UpdateDictDataParams): Promise<void> {
     // 先查出当前记录的 type_code 以便刷新缓存
-    const existing = await db.query(DictDataModel)
-      .where("id", "=", id)
-      .select("type_code")
-      .get();
+    const existing = await db.query(DictDataModel).where("id", "=", id).select("type_code").get();
 
     const updates: Record<string, unknown> = {};
     if (params.label !== undefined) updates.label = params.label;
@@ -217,10 +220,7 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
 
   async function deleteData(id: string): Promise<void> {
     // 先查出当前记录的 type_code 以便刷新缓存
-    const existing = await db.query(DictDataModel)
-      .where("id", "=", id)
-      .select("type_code")
-      .get();
+    const existing = await db.query(DictDataModel).where("id", "=", id).select("type_code").get();
 
     await db.query(DictDataModel).where("id", "=", id).hardDelete();
 
@@ -230,7 +230,8 @@ export function createDictService(deps: { db: Database; cache: Cache }): DictSer
   }
 
   async function queryDataByType(typeCode: string): Promise<DictDataItem[]> {
-    const rows = await db.query(DictDataModel)
+    const rows = await db
+      .query(DictDataModel)
       .where("type_code", "=", typeCode)
       .where("status", "=", 1)
       .select("id", "type_code", "label", "value", "sort", "css_class", "status", "remark")

@@ -5,7 +5,7 @@
  */
 
 import type { Database } from "@ventostack/database";
-import { UserRoleModel, RoleModel, RoleMenuModel, MenuModel } from "../models";
+import { MenuModel, RoleMenuModel, RoleModel, UserRoleModel } from "../models";
 
 /** 前端路由元信息 */
 export interface RouteMeta {
@@ -138,7 +138,8 @@ export function createMenuTreeBuilder(deps: {
    */
   async function queryUserMenuIds(userId: string): Promise<Set<string>> {
     // 查询用户的角色 ID
-    const userRoles = await db.query(UserRoleModel)
+    const userRoles = await db
+      .query(UserRoleModel)
       .where("user_id", "=", userId)
       .select("role_id")
       .list();
@@ -147,7 +148,8 @@ export function createMenuTreeBuilder(deps: {
     if (roleIds.length === 0) return new Set();
 
     // 过滤出启用的角色
-    const activeRoles = await db.query(RoleModel)
+    const activeRoles = await db
+      .query(RoleModel)
       .where("id", "IN", roleIds)
       .where("status", "=", 1)
       .select("id")
@@ -157,7 +159,8 @@ export function createMenuTreeBuilder(deps: {
     if (activeRoleIds.length === 0) return new Set();
 
     // 查询角色关联的菜单 ID
-    const roleMenus = await db.query(RoleMenuModel)
+    const roleMenus = await db
+      .query(RoleMenuModel)
       .where("role_id", "IN", activeRoleIds)
       .select("menu_id")
       .list();
@@ -170,9 +173,22 @@ export function createMenuTreeBuilder(deps: {
    * @returns 菜单行记录列表
    */
   async function queryAllMenus(): Promise<MenuRow[]> {
-    const rows = await db.query(MenuModel)
+    const rows = await db
+      .query(MenuModel)
       .where("status", "=", 1)
-      .select("id", "parent_id", "name", "path", "component", "redirect", "type", "permission", "icon", "sort", "visible")
+      .select(
+        "id",
+        "parent_id",
+        "name",
+        "path",
+        "component",
+        "redirect",
+        "type",
+        "permission",
+        "icon",
+        "sort",
+        "visible",
+      )
       .orderBy("sort", "asc")
       .list();
 
@@ -249,10 +265,7 @@ export function createMenuTreeBuilder(deps: {
  * @param accessibleIds 可访问的菜单 ID 集合
  * @returns 可访问的菜单列表（包含必要的父级目录）
  */
-function filterAccessibleMenus(
-  allMenus: MenuRow[],
-  accessibleIds: Set<string>,
-): MenuRow[] {
+function filterAccessibleMenus(allMenus: MenuRow[], accessibleIds: Set<string>): MenuRow[] {
   // 收集所有需要包含的 ID（包括祖先链）
   const includedIds = new Set<string>();
 

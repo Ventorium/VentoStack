@@ -1,139 +1,151 @@
-import { Button, Checkbox, Divider, Form, Input, Modal } from 'antd'
-import { msg } from '@/components/GlobalMessage'
-import type { OTPRef } from 'antd/es/input/Otp'
-import { useState, useRef, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
-import { useAuth, type LoginForm, type PasswordExpiredInfo, type MfaRequiredInfo } from '@/store/useAuth'
-import { usePublicConfig } from '@/hooks/usePublicConfig'
-import { client } from '@/api'
-import { STORAGE_KEYS } from '@/constants'
+import { client } from "@/api";
+import { msg } from "@/components/GlobalMessage";
+import { STORAGE_KEYS } from "@/constants";
+import { usePublicConfig } from "@/hooks/usePublicConfig";
+import {
+  type LoginForm,
+  type MfaRequiredInfo,
+  type PasswordExpiredInfo,
+  useAuth,
+} from "@/store/useAuth";
+import { Button, Checkbox, Divider, Form, Input, Modal } from "antd";
+import type { OTPRef } from "antd/es/input/Otp";
+import { useEffect, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 
-const getPasswordRules = (minLength: number, complexity: 'low' | 'medium' | 'high') => {
-  const rules: Array<{ required: boolean; message: string } | { min: number; message: string } | { pattern: RegExp; message: string }> = [
-    { required: true, message: '请输入新密码' },
+const getPasswordRules = (minLength: number, complexity: "low" | "medium" | "high") => {
+  const rules: Array<
+    | { required: boolean; message: string }
+    | { min: number; message: string }
+    | { pattern: RegExp; message: string }
+  > = [
+    { required: true, message: "请输入新密码" },
     { min: minLength, message: `密码不能少于${minLength}位` },
-  ]
-  if (complexity === 'medium') {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: '密码需包含字母和数字' })
-  } else if (complexity === 'high') {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/, message: '密码需包含字母、数字和特殊字符' })
+  ];
+  if (complexity === "medium") {
+    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: "密码需包含字母和数字" });
+  } else if (complexity === "high") {
+    rules.push({
+      pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/,
+      message: "密码需包含字母、数字和特殊字符",
+    });
   }
-  return rules
-}
+  return rules;
+};
 
 const LoginPage = () => {
-  const navigate = useNavigate()
-  const { login, completeMFALogin, passkeyLogin } = useAuth()
-  const siteName = usePublicConfig(s => s.config.siteName)
-  const passkeyEnabled = usePublicConfig(s => s.config.passkeyEnabled)
-  const passwordMinLength = usePublicConfig(s => s.config.passwordMinLength)
-  const passwordComplexity = usePublicConfig(s => s.config.passwordComplexity)
-  const [form] = Form.useForm<LoginForm>()
-  const [loading, setLoading] = useState(false)
-  const [passkeyLoading, setPasskeyLoading] = useState(false)
-  const [loginMode, setLoginMode] = useState<'password' | 'passkey'>('password')
-  const [expiredInfo, setExpiredInfo] = useState<PasswordExpiredInfo | null>(null)
-  const [pwdForm] = Form.useForm()
-  const [pwdLoading, setPwdLoading] = useState(false)
+  const navigate = useNavigate();
+  const { login, completeMFALogin, passkeyLogin } = useAuth();
+  const siteName = usePublicConfig((s) => s.config.siteName);
+  const passkeyEnabled = usePublicConfig((s) => s.config.passkeyEnabled);
+  const passwordMinLength = usePublicConfig((s) => s.config.passwordMinLength);
+  const passwordComplexity = usePublicConfig((s) => s.config.passwordComplexity);
+  const [form] = Form.useForm<LoginForm>();
+  const [loading, setLoading] = useState(false);
+  const [passkeyLoading, setPasskeyLoading] = useState(false);
+  const [loginMode, setLoginMode] = useState<"password" | "passkey">("password");
+  const [expiredInfo, setExpiredInfo] = useState<PasswordExpiredInfo | null>(null);
+  const [pwdForm] = Form.useForm();
+  const [pwdLoading, setPwdLoading] = useState(false);
 
   // MFA state
-  const [mfaInfo, setMfaInfo] = useState<MfaRequiredInfo | null>(null)
-  const [mfaLoading, setMfaLoading] = useState(false)
-  const [mfaCode, setMfaCode] = useState('')
-  const inputRef = useRef<OTPRef>(null)
+  const [mfaInfo, setMfaInfo] = useState<MfaRequiredInfo | null>(null);
+  const [mfaLoading, setMfaLoading] = useState(false);
+  const [mfaCode, setMfaCode] = useState("");
+  const inputRef = useRef<OTPRef>(null);
 
   useEffect(() => {
     if (mfaInfo) {
-      inputRef.current?.focus()
+      inputRef.current?.focus();
     }
-  }, [mfaInfo])
+  }, [mfaInfo]);
 
   useEffect(() => {
-    const savedUsername = localStorage.getItem(STORAGE_KEYS.REMEMBERED_USERNAME)
+    const savedUsername = localStorage.getItem(STORAGE_KEYS.REMEMBERED_USERNAME);
     if (savedUsername) {
-      form.setFieldsValue({ username: savedUsername, remember: true })
+      form.setFieldsValue({ username: savedUsername, remember: true });
     }
-  }, [])
+  }, []);
 
   const onFinish = async (values: LoginForm) => {
-    if (loginMode === 'passkey') {
-      handlePasskeyLogin()
-      return
+    if (loginMode === "passkey") {
+      handlePasskeyLogin();
+      return;
     }
-    setLoading(true)
+    setLoading(true);
     if (values.remember) {
-      localStorage.setItem(STORAGE_KEYS.REMEMBERED_USERNAME, values.username)
+      localStorage.setItem(STORAGE_KEYS.REMEMBERED_USERNAME, values.username);
     } else {
-      localStorage.removeItem(STORAGE_KEYS.REMEMBERED_USERNAME)
+      localStorage.removeItem(STORAGE_KEYS.REMEMBERED_USERNAME);
     }
-    const result = await login(values)
-    setLoading(false)
-    if (result && 'id' in result) {
-      msg.success('登录成功')
-      const user = result as { id: string; mfaSetupRequired?: boolean }
+    const result = await login(values);
+    setLoading(false);
+    if (result && "id" in result) {
+      msg.success("登录成功");
+      const user = result as { id: string; mfaSetupRequired?: boolean };
       if (user.mfaSetupRequired) {
-        msg.warning('请尽快在个人中心设置多因素认证')
+        msg.warning("请尽快在个人中心设置多因素认证");
       }
-      navigate('/app', { replace: true })
-    } else if (result && 'code' in result && result.code === 'mfa_required') {
-      setMfaInfo(result as MfaRequiredInfo)
-    } else if (result && 'code' in result && result.code === 'password_expired') {
-      setExpiredInfo(result as PasswordExpiredInfo)
+      navigate("/app", { replace: true });
+    } else if (result && "code" in result && result.code === "mfa_required") {
+      setMfaInfo(result as MfaRequiredInfo);
+    } else if (result && "code" in result && result.code === "password_expired") {
+      setExpiredInfo(result as PasswordExpiredInfo);
     }
-  }
+  };
 
   const handleMfaSubmit = async () => {
-    if (!mfaInfo || !mfaCode) return
-    setMfaLoading(true)
-    const result = await completeMFALogin(mfaInfo.mfaToken, mfaCode)
-    setMfaLoading(false)
-    if (result && 'id' in result) {
-      msg.success('登录成功')
-      setMfaInfo(null)
-      setMfaCode('')
-      navigate('/app', { replace: true })
+    if (!mfaInfo || !mfaCode) return;
+    setMfaLoading(true);
+    const result = await completeMFALogin(mfaInfo.mfaToken, mfaCode);
+    setMfaLoading(false);
+    if (result && "id" in result) {
+      msg.success("登录成功");
+      setMfaInfo(null);
+      setMfaCode("");
+      navigate("/app", { replace: true });
     } else {
-      setMfaCode('')
-      inputRef.current?.focus()
+      setMfaCode("");
+      inputRef.current?.focus();
     }
-  }
+  };
 
   const handlePasswordChange = async () => {
-    const values = await pwdForm.validateFields()
+    const values = await pwdForm.validateFields();
     if (values.newPassword !== values.confirmPassword) {
-      msg.error('两次密码不一致')
-      return
+      msg.error("两次密码不一致");
+      return;
     }
-    setPwdLoading(true)
-    const { error } = await client.post('/api/auth/reset-password-by-token', {
+    setPwdLoading(true);
+    const { error } = (await client.post("/api/auth/reset-password-by-token", {
       body: { token: expiredInfo?.tempToken, newPassword: values.newPassword },
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any) as { error?: unknown }
-    setPwdLoading(false)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } as any)) as { error?: unknown };
+    setPwdLoading(false);
     if (!error) {
-      msg.success('密码修改成功，请重新登录')
-      setExpiredInfo(null)
-      pwdForm.resetFields()
+      msg.success("密码修改成功，请重新登录");
+      setExpiredInfo(null);
+      pwdForm.resetFields();
     }
-  }
+  };
 
   const handlePasskeyLogin = async () => {
-    setLoginMode('passkey')
+    setLoginMode("passkey");
     try {
-      await form.validateFields(['username'])
+      await form.validateFields(["username"]);
     } catch {
-      form.focusField('username')
-      return
+      form.focusField("username");
+      return;
     }
-    const username = form.getFieldValue('username')
-    setPasskeyLoading(true)
-    const result = await passkeyLogin(username)
-    setPasskeyLoading(false)
-    if (result && 'id' in result) {
-      msg.success('登录成功')
-      navigate('/app', { replace: true })
+    const username = form.getFieldValue("username");
+    setPasskeyLoading(true);
+    const result = await passkeyLogin(username);
+    setPasskeyLoading(false);
+    if (result && "id" in result) {
+      msg.success("登录成功");
+      navigate("/app", { replace: true });
     }
-  }
+  };
 
   return (
     <div className="min-h-screen flex items-center justify-center">
@@ -141,7 +153,7 @@ const LoginPage = () => {
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-dark">{siteName} 管理后台</h1>
           <p className="text-gray-500 mt-2">
-            {loginMode === 'password' ? '请输入账号和密码登录' : '请输入账号后使用通行密钥登录'}
+            {loginMode === "password" ? "请输入账号和密码登录" : "请输入账号后使用通行密钥登录"}
           </p>
         </div>
 
@@ -153,25 +165,36 @@ const LoginPage = () => {
           autoComplete="off"
           layout="vertical"
         >
-          <Form.Item name="username" rules={[{ required: true, message: '请输入账号' }]}>
+          <Form.Item name="username" rules={[{ required: true, message: "请输入账号" }]}>
             <Input placeholder="请输入账号" size="large" />
           </Form.Item>
 
-          {loginMode === 'password' && (
-            <Form.Item name="password" rules={[{ required: true, message: '请输入密码' }]}>
+          {loginMode === "password" && (
+            <Form.Item name="password" rules={[{ required: true, message: "请输入密码" }]}>
               <Input.Password placeholder="请输入密码" size="large" />
             </Form.Item>
           )}
 
-          {loginMode === 'password' && (
-            <Form.Item name="remember" valuePropName="checked" initialValue={true} className="!mb-3">
+          {loginMode === "password" && (
+            <Form.Item
+              name="remember"
+              valuePropName="checked"
+              initialValue={true}
+              className="!mb-3"
+            >
               <Checkbox>记住用户名</Checkbox>
             </Form.Item>
           )}
 
           <Form.Item>
-            {loginMode === 'password' ? (
-              <Button type="primary" htmlType="submit" loading={loading} size="large" className="w-full">
+            {loginMode === "password" ? (
+              <Button
+                type="primary"
+                htmlType="submit"
+                loading={loading}
+                size="large"
+                className="w-full"
+              >
                 登 录
               </Button>
             ) : (
@@ -187,7 +210,7 @@ const LoginPage = () => {
             )}
           </Form.Item>
 
-          {loginMode === 'password' && passkeyEnabled && (
+          {loginMode === "password" && passkeyEnabled && (
             <>
               <Divider plain>其他登录方式</Divider>
               <Button
@@ -201,31 +224,19 @@ const LoginPage = () => {
             </>
           )}
 
-          {loginMode === 'passkey' && (
+          {loginMode === "passkey" && (
             <div className="text-center">
-              <a onClick={() => setLoginMode('password')}>返回密码登录</a>
+              <a onClick={() => setLoginMode("password")}>返回密码登录</a>
             </div>
           )}
         </Form>
       </div>
 
       {/* MFA 验证弹窗 */}
-      <Modal
-        title="多因素认证验证"
-        open={!!mfaInfo}
-        closable={false}
-        footer={null}
-        destroyOnHidden
-      >
+      <Modal title="多因素认证验证" open={!!mfaInfo} closable={false} footer={null} destroyOnHidden>
         <p className="text-gray-500 mb-4">请输入您的认证器应用中显示的6位验证码</p>
         <div className="flex flex-col items-center gap-4">
-          <Input.OTP
-            ref={inputRef}
-            length={6}
-            size="large"
-            value={mfaCode}
-            onChange={setMfaCode}
-          />
+          <Input.OTP ref={inputRef} length={6} size="large" value={mfaCode} onChange={setMfaCode} />
           <Button
             type="primary"
             size="large"
@@ -250,16 +261,24 @@ const LoginPage = () => {
       >
         <p className="text-gray-500 mb-4">您的密码已过期，请修改密码后重新登录。</p>
         <Form form={pwdForm} layout="vertical">
-          <Form.Item name="newPassword" label="新密码" rules={getPasswordRules(passwordMinLength, passwordComplexity)}>
+          <Form.Item
+            name="newPassword"
+            label="新密码"
+            rules={getPasswordRules(passwordMinLength, passwordComplexity)}
+          >
             <Input.Password placeholder="请输入新密码" />
           </Form.Item>
-          <Form.Item name="confirmPassword" label="确认密码" rules={[{ required: true, message: '请确认密码' }]}>
+          <Form.Item
+            name="confirmPassword"
+            label="确认密码"
+            rules={[{ required: true, message: "请确认密码" }]}
+          >
             <Input.Password placeholder="请再次输入新密码" />
           </Form.Item>
         </Form>
       </Modal>
     </div>
-  )
-}
+  );
+};
 
-export default LoginPage
+export default LoginPage;

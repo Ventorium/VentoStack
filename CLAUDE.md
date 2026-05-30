@@ -403,3 +403,248 @@ To use a skill, reference it in your task description or ask the AI to follow th
 8. **系统级思考**。修改前先理解架构、数据流和依赖关系。
 9. **第一性原理**。质疑每个抽象的必要性，简单优于复杂。
 10. **正确性优先**。先做对，再做快，最后做漂亮。
+
+---
+
+## 14. Monorepo Structure
+
+```
+VentoStack/
+├── packages/framework/     ← 自研框架层（零第三方运行时依赖）
+│   ├── core/               ← 路由/中间件/Context/生命周期/配置/安全中间件 (101 files)
+│   ├── database/           ← 链式查询构建器/迁移/事务/连接池 (27 files)
+│   ├── cache/              ← Redis 封装/内存适配器 (16 files)
+│   ├── events/             ← 事件总线/消息队列/调度器 (25 files)
+│   ├── observability/      ← 日志/指标/链路追踪/健康检查/审计 (36 files)
+│   ├── openapi/            ← OpenAPI 3.1 文档生成 + 请求校验 (22 files)
+│   ├── testing/            ← 测试工具/Mock/测试应用封装 (15 files)
+│   ├── webhook/            ← Webhook 入站/出站/签名校验 (8 files)
+│   └── cli/                ← 脚手架/代码生成/迁移命令 (12 files)
+│
+├── packages/platform/      ← 业务平台层（依赖 framework）
+│   ├── auth/               ← JWT/RBAC/ABAC/TOTP/OAuth/Session/Token吊销 (30 files)
+│   ├── system/             ← 用户/角色/菜单/部门/岗位/字典/配置/公告 (56 files)
+│   ├── boot/               ← createPlatform() 聚合器 (3 files)
+│   ├── gen/                ← 代码生成（表导入/模板渲染）(18 files)
+│   ├── i18n/               ← 国际化（语言包/运行时翻译）(14 files)
+│   ├── monitor/            ← 服务器/缓存/健康监控 (10 files)
+│   ├── notification/       ← 通知（站内信/SMTP/SMS/Webhook）(19 files)
+│   ├── oss/                ← 对象存储（本地/S3）(18 files)
+│   ├── scheduler/          ← 定时任务管理 (13 files)
+│   ├── workflow/           ← 工作流（状态机/审批链）(16 files)
+│   ├── ai/                 ← AI 集成（LLM/RAG/Tool/Sandbox）(17 files)
+│   └── integration/        ← 第三方集成 (15 files)
+│
+├── apps/
+│   ├── admin/api/          ← 管理后台后端（Composition Root 模式）
+│   ├── admin/web/          ← 管理后台前端（React + Ant Design + Zustand）
+│   ├── docs/               ← 文档站（Astro Starlight → Cloudflare）
+│   └── example/            ← 示例应用
+│
+├── docs/                   ← 需求文档/设计文档/路线图
+│   ├── specs/              ← 原始需求规格
+│   ├── roadmaps/           ← 路线图（backend/platform/docs）
+│   └── designs/            ← 技术架构分析
+│
+├── .claude/skills/         ← Claude Code 技能文件
+├── CLAUDE.md               ← 本文件（项目全局开发约束）
+├── AGENTS.md               → CLAUDE.md（symlink）
+├── BUN_SKILL.md            ← Bun 运行时完整参考
+└── biome.json              ← Lint + Format 配置
+```
+
+---
+
+## 15. Platform Layer Conventions
+
+### 模块标准结构
+```
+packages/platform/xxx/
+├── src/
+│   ├── models/         ← 表定义（defineModel）
+│   ├── services/       ← 业务逻辑（createXxxService 工厂函数）
+│   ├── routes/         ← API 路由（标准 CRUD + 自定义）
+│   ├── middlewares/    ← 模块级中间件
+│   ├── migrations/     ← 数据库迁移
+│   ├── seeds/          ← 种子数据
+│   ├── __tests__/      ← 测试文件
+│   ├── module.ts       ← 模块聚合（createXxxModule 工厂）
+│   └── index.ts        ← 统一导出
+└── package.json
+```
+
+### 模块注册到 boot
+新增模块必须在 `packages/platform/boot/src/create-platform.ts` 中：
+1. 导入 `createXxxModule`
+2. 在 `PlatformConfig` 接口添加依赖配置
+3. 在 `createPlatform()` 中创建并挂载
+4. 在 `modules` 开关中添加 `xxx?: boolean`
+
+---
+
+## 16. Admin Backend Conventions
+
+### Composition Root 模式
+- `index.ts` — 入口：顶层错误边界
+- `app.ts` — 装配：基础设施 → 认证引擎 → createPlatform → 中间件 → 路由
+
+### 新增实体流程
+1. Migration → `packages/platform/system/src/migrations/`
+2. Model → `packages/platform/system/src/models/`
+3. Service → `packages/platform/system/src/services/`
+4. Routes → 在 `module.ts` 中用 `createCrudRoutes()` 或自定义
+5. 注册 Migration → `apps/admin/api/src/database/migrations.ts`
+
+### 响应封装
+```typescript
+import { ok, okPage, fail } from "./routes/common";
+return ok(data);           // 成功
+return okPage(list, total, page, pageSize);  // 分页
+return fail("错误消息", 400);  // 失败
+```
+
+---
+
+## 17. Admin Frontend Conventions
+
+### API 调用
+```typescript
+import { client } from '@/api';
+const { error, data } = await client.get('/api/system/users/:id', { params: { id } });
+const { error, data } = await client.get('/api/system/users', { query: cleanParams(params) });
+// ❌ 禁止模板字符串拼接 URL
+```
+
+### CRUD 页面模板
+使用 `useTable` hook + `ActionColumn` + `DictSelect` 组合。
+参考 `.claude/skills/admin-crud-page/SKILL.md`。
+
+### 类型定义
+所有业务类型从 `@/api/types` 导入。禁止手写 `XxxItem` 接口。
+
+---
+
+## 18. Test Status
+
+- **2579 tests, 0 failures** (100% pass rate)
+- 框架层: 119 test files, 平台层: 56 test files, 示例: 6 test files, 前端: 23 test files
+- Mock Database: 平台模块测试使用 `createMockDatabase(mockExec)` 创建 mock db
+- 测试 helper 中的 executor 支持灵活 SQL 模式匹配（精确匹配 + 表名模糊匹配）
+
+---
+
+## 19. Key Bug Fixes Applied
+
+1. **Router params 丢失**: `wrapHandler` 在注入 IP 时创建新 `Request` 丢失了 Bun 原生 `params` — 已修复（`app.ts`）
+2. **parseRoutePath 跳过无类型参数**: `else { continue; }` 改为 `else { type = "string"; }` — 已修复（`router.ts`）
+3. **IS + null 查询**: `where("age", "IS", null)` 生成 `IS $1` 而非 `IS NULL` — 已修复（`query-builder.ts`）
+
+---
+
+## 20. Permission Middleware Pattern
+
+所有平台模块统一使用 `createPermMiddleware` 工厂函数，定义在各模块的 `middlewares/auth-guard.ts` 中：
+
+```typescript
+// auth-guard.ts
+export function createPermMiddleware(rbac?: RBAC): (resource: string, action: string) => Middleware {
+  return (resource: string, action: string): Middleware => {
+    return async (ctx, next) => {
+      const user = ctx.user as AuthUser | undefined;
+      if (!user) return unauthorized();
+      if (rbac) {
+        if (user.roles.includes("admin")) return next(); // 超管跳过
+        if (!user.roles.some(role => rbac.hasPermission(role, resource, action))) {
+          return forbidden();
+        }
+      }
+      return next();
+    };
+  };
+}
+```
+
+```typescript
+// module.ts
+const perm = createPermMiddleware(rbac);
+router.post("/api/system/xxx", perm("system:xxx:create"), handler);
+```
+
+**禁止**在 `module.ts` 中内联 `(ctx: any, next: any)` 权限中间件。
+
+---
+
+## 21. Notification Module
+
+通知模块已启用，使用 `createInAppChannel()` 作为默认站内信通道：
+
+```typescript
+import { createInAppChannel } from "@ventostack/notification";
+
+notifyChannels: new Map([
+  ["in_app", createInAppChannel()],
+])
+```
+
+扩展通知通道（如 SMTP/SMS/Webhook）时，在 `apps/admin/api/src/app.ts` 中添加：
+
+```typescript
+import { createSMTPChannel } from "@ventostack/notification";
+notifyChannels: new Map([
+  ["in_app", createInAppChannel()],
+  ["smtp", createSMTPChannel({ host: "smtp.example.com", port: 465, from: "noreply@example.com" })],
+])
+```
+
+---
+
+## 22. Docker & Deployment
+
+### 生产 Dockerfile（多阶段构建）
+```
+1. 安装依赖 → 2. 构建前端 → 3. 复制 dist 到后端 public/ → 4. 打包后端 → 5. 最小化镜像
+```
+
+### docker-compose.yaml
+- `postgres:16-alpine` — 数据库
+- `redis:7-alpine` — 缓存
+- `admin` — VentoStack Admin 应用
+
+### 环境变量
+参考 `.env.example`，必填项：`DATABASE_URL`、`JWT_SECRET`
+
+---
+
+## 23. Documentation Requirements
+
+- 框架模块变更 → `apps/docs/src/content/docs/framework/`
+- 平台模块变更 → `apps/docs/src/content/docs/platform/`
+- Admin 应用变更 → `apps/docs/src/content/docs/admin/`
+- 文档使用中文
+- 代码示例必须可运行
+
+---
+
+## 24. Skills Reference
+
+| Skill | 文件 | 用途 |
+|-------|------|------|
+| admin-backend-entity | `.claude/skills/admin-backend-entity/SKILL.md` | 新增后端实体全流程 |
+| admin-crud-page | `.claude/skills/admin-crud-page/SKILL.md` | 新增前端 CRUD 页面 |
+| admin-shared-components | `.claude/skills/admin-shared-components/SKILL.md` | 共享组件速查 |
+| bun-runtime | `.claude/skills/bun/SKILL.md` | Bun API 参考 |
+| security-review | `.claude/skills/security-review-expert/SKILL.md` | 安全审查清单 |
+| ai-collaboration | `.claude/skills/ai-collaboration/SKILL.md` | AI 协作规范 |
+| platform-module | `.claude/skills/platform-module/SKILL.md` | 新增平台模块全流程 |
+
+---
+
+## 25. Current Tech Debt (Updated)
+
+| 优先级 | 项目 | 状态 |
+|--------|------|------|
+| ~~P0~~ | ~~修复 140 个失败测试~~ | ✅ 已修复（2579/2579 通过） |
+| ~~P1~~ | ~~Dockerfile + docker-compose~~ | ✅ 已添加 |
+| P2 | 前端 `types.ts` 手写接口 → OpenAPI 自动生成 | 待处理 |
+| P2 | `schema.ts` 中 `any` 类型优化 | 待处理 |
+| P3 | workflow 模块增强（可视化设计器） | 待规划 |

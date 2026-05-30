@@ -4,13 +4,21 @@
 
 import { describe, expect, test } from "bun:test";
 import { createOSSService } from "../services/oss";
-import { createMockExecutor, createMockStorage } from "./helpers";
+import { createMockDatabase, createMockExecutor, createMockStorage } from "./helpers";
 
 function setup() {
-  const { executor, calls, results } = createMockExecutor();
+  const mockExec = createMockExecutor();
+  const { db } = createMockDatabase(mockExec);
   const storage = createMockStorage();
-  const ossService = createOSSService({ executor, storage });
-  return { ossService, executor, calls, results, storage };
+  const ossService = createOSSService({ db, storage });
+  return {
+    ossService,
+    executor: mockExec.executor,
+    calls: mockExec.calls,
+    results: mockExec.results,
+    storage,
+    db,
+  };
 }
 
 describe("OSS Service", () => {
@@ -19,11 +27,14 @@ describe("OSS Service", () => {
       const s = setup();
       const data = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
 
-      const result = await s.ossService.upload({
-        filename: "test.png",
-        data,
-        bucket: "default",
-      }, "user-1");
+      const result = await s.ossService.upload(
+        {
+          filename: "test.png",
+          data,
+          bucket: "default",
+        },
+        "user-1",
+      );
 
       expect(result.id).toBeTruthy();
       expect(result.originalName).toBe("test.png");
@@ -37,7 +48,7 @@ describe("OSS Service", () => {
       expect(s.storage.write).toHaveBeenCalled();
 
       // SQL INSERT should have been called
-      const insertCall = s.calls.find(c => c.text.includes("INSERT"));
+      const insertCall = s.calls.find((c) => c.text.includes("INSERT"));
       expect(insertCall).toBeTruthy();
     });
 
@@ -45,11 +56,14 @@ describe("OSS Service", () => {
       const s = setup();
       const data = Buffer.from("hello");
 
-      const result = await s.ossService.upload({
-        filename: "test.txt",
-        data,
-        contentType: "text/plain",
-      }, "user-1");
+      const result = await s.ossService.upload(
+        {
+          filename: "test.txt",
+          data,
+          contentType: "text/plain",
+        },
+        "user-1",
+      );
 
       expect(result.mimeType).toBe("text/plain");
     });
@@ -58,10 +72,13 @@ describe("OSS Service", () => {
       const s = setup();
       const data = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0, 0, 0, 0, 0, 0, 0]);
 
-      const result = await s.ossService.upload({
-        filename: "document",
-        data,
-      }, "user-1");
+      const result = await s.ossService.upload(
+        {
+          filename: "document",
+          data,
+        },
+        "user-1",
+      );
 
       expect(result.mimeType).toBe("application/pdf");
       expect(result.extension).toBeNull();
@@ -74,19 +91,24 @@ describe("OSS Service", () => {
       const data = Buffer.from("file content");
 
       // First upload
-      const uploaded = await s.ossService.upload({
-        filename: "test.txt",
-        data,
-        contentType: "text/plain",
-      }, "user-1");
+      const uploaded = await s.ossService.upload(
+        {
+          filename: "test.txt",
+          data,
+          contentType: "text/plain",
+        },
+        "user-1",
+      );
 
       // Mock DB result
-      s.results.set("SELECT", [{
-        id: uploaded.id,
-        original_name: "test.txt",
-        storage_path: uploaded.storagePath,
-        mime_type: "text/plain",
-      }]);
+      s.results.set("SELECT", [
+        {
+          id: uploaded.id,
+          original_name: "test.txt",
+          storage_path: uploaded.storagePath,
+          mime_type: "text/plain",
+        },
+      ]);
 
       const result = await s.ossService.download(uploaded.id);
       expect(result).toBeTruthy();
@@ -107,15 +129,20 @@ describe("OSS Service", () => {
       const s = setup();
       const data = Buffer.from("to delete");
 
-      const uploaded = await s.ossService.upload({
-        filename: "delete-me.txt",
-        data,
-      }, "user-1");
+      const uploaded = await s.ossService.upload(
+        {
+          filename: "delete-me.txt",
+          data,
+        },
+        "user-1",
+      );
 
       // Mock DB result for delete lookup
-      s.results.set("SELECT", [{
-        storage_path: uploaded.storagePath,
-      }]);
+      s.results.set("SELECT", [
+        {
+          storage_path: uploaded.storagePath,
+        },
+      ]);
 
       await s.ossService.delete(uploaded.id);
 
@@ -123,7 +150,7 @@ describe("OSS Service", () => {
       expect(s.storage.delete).toHaveBeenCalled();
 
       // SQL DELETE should have been called
-      const deleteCall = s.calls.find(c => c.text.includes("DELETE"));
+      const deleteCall = s.calls.find((c) => c.text.includes("DELETE"));
       expect(deleteCall).toBeTruthy();
     });
 
@@ -157,8 +184,28 @@ describe("OSS Service", () => {
       const s = setup();
       s.results.set("COUNT", [{ total: 2 }]);
       s.results.set("SELECT", [
-        { id: "f1", original_name: "a.png", storage_path: "p1", size: 100, mime_type: "image/png", extension: ".png", bucket: "default", uploader_id: "u1", created_at: "2024-01-01" },
-        { id: "f2", original_name: "b.jpg", storage_path: "p2", size: 200, mime_type: "image/jpeg", extension: ".jpg", bucket: "default", uploader_id: "u1", created_at: "2024-01-02" },
+        {
+          id: "f1",
+          original_name: "a.png",
+          storage_path: "p1",
+          size: 100,
+          mime_type: "image/png",
+          extension: ".png",
+          bucket: "default",
+          uploader_id: "u1",
+          created_at: "2024-01-01",
+        },
+        {
+          id: "f2",
+          original_name: "b.jpg",
+          storage_path: "p2",
+          size: 200,
+          mime_type: "image/jpeg",
+          extension: ".jpg",
+          bucket: "default",
+          uploader_id: "u1",
+          created_at: "2024-01-02",
+        },
       ]);
 
       const result = await s.ossService.list({ page: 1, pageSize: 10 });
@@ -171,7 +218,7 @@ describe("OSS Service", () => {
       s.results.set("COUNT", [{ total: 0 }]);
 
       await s.ossService.list({ bucket: "avatars" });
-      const countCall = s.calls.find(c => c.text.includes("COUNT"));
+      const countCall = s.calls.find((c) => c.text.includes("COUNT"));
       expect(countCall?.params).toContain("avatars");
     });
   });

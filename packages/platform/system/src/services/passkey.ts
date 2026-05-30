@@ -4,23 +4,23 @@
  * 基于 WebAuthn (FIDO2) 协议，使用 @simplewebauthn/server 实现服务端验证
  */
 
-import type { Database } from "@ventostack/database";
+import {
+  generateAuthenticationOptions,
+  generateRegistrationOptions,
+  verifyAuthenticationResponse,
+  verifyRegistrationResponse,
+} from "@simplewebauthn/server";
+import type {
+  AuthenticationResponseJSON,
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+} from "@simplewebauthn/server";
 import type { Cache } from "@ventostack/cache";
+import type { Database } from "@ventostack/database";
 import type { AuditStore } from "@ventostack/observability";
 import { PasskeyModel } from "../models/passkey";
 import { UserModel } from "../models/user";
-import {
-  generateRegistrationOptions,
-  verifyRegistrationResponse,
-  generateAuthenticationOptions,
-  verifyAuthenticationResponse,
-} from "@simplewebauthn/server";
-import type {
-  PublicKeyCredentialCreationOptionsJSON,
-  RegistrationResponseJSON,
-  PublicKeyCredentialRequestOptionsJSON,
-  AuthenticationResponseJSON,
-} from "@simplewebauthn/server";
 
 /** 通行密钥列表项（不含敏感数据） */
 export interface PasskeyListItem {
@@ -54,12 +54,20 @@ export interface PasskeyService {
     options: PublicKeyCredentialCreationOptionsJSON;
     challengeId: string;
   }>;
-  finishRegistration(userId: string, name: string, challengeId: string, credential: RegistrationResponseJSON): Promise<PasskeyListItem>;
+  finishRegistration(
+    userId: string,
+    name: string,
+    challengeId: string,
+    credential: RegistrationResponseJSON,
+  ): Promise<PasskeyListItem>;
   beginAuthentication(username: string): Promise<{
     options: PublicKeyCredentialRequestOptionsJSON;
     challengeId: string;
   }>;
-  finishAuthentication(challengeId: string, assertion: AuthenticationResponseJSON): Promise<{
+  finishAuthentication(
+    challengeId: string,
+    assertion: AuthenticationResponseJSON,
+  ): Promise<{
     userId: string;
     username: string;
   }>;
@@ -86,19 +94,18 @@ export function createPasskeyService(deps: {
   return {
     async beginRegistration(userId) {
       // 检查数量限制
-      const count = await db.query(PasskeyModel)
-        .where("user_id", "=", userId)
-        .count();
+      const count = await db.query(PasskeyModel).where("user_id", "=", userId).count();
       if (count >= MAX_PASSKEYS) {
         throw new Error(`最多只能注册 ${MAX_PASSKEYS} 个通行密钥`);
       }
 
       // 查询已有凭证用于排除重复注册
-      const existingRows = await db.query(PasskeyModel)
+      const existingRows = await db
+        .query(PasskeyModel)
         .where("user_id", "=", userId)
         .select("credential_id")
         .list();
-      const excludeCredentials = existingRows.map(r => ({
+      const excludeCredentials = existingRows.map((r) => ({
         id: r.credential_id,
         type: "public-key" as const,
       }));
@@ -182,7 +189,8 @@ export function createPasskeyService(deps: {
 
     async beginAuthentication(username) {
       // 查找用户
-      const authUser = await db.query(UserModel)
+      const authUser = await db
+        .query(UserModel)
         .where("username", "=", username)
         .where("status", "=", 1)
         .select("id")
@@ -194,7 +202,8 @@ export function createPasskeyService(deps: {
       const userId = authUser.id;
 
       // 查找用户的 passkeys
-      const passkeyRows = await db.query(PasskeyModel)
+      const passkeyRows = await db
+        .query(PasskeyModel)
         .where("user_id", "=", userId)
         .select("credential_id", "transports")
         .list();
@@ -202,7 +211,7 @@ export function createPasskeyService(deps: {
         throw new Error("通行密钥登录失败");
       }
 
-      const allowCredentials = passkeyRows.map(pk => ({
+      const allowCredentials = passkeyRows.map((pk) => ({
         id: pk.credential_id,
         type: "public-key" as const,
         transports: pk.transports ? JSON.parse(pk.transports) : undefined,
@@ -216,11 +225,15 @@ export function createPasskeyService(deps: {
 
       // 存储 challenge + userId 映射
       const challengeId = crypto.randomUUID();
-      await cache.set(`passkey_auth:${challengeId}`, JSON.stringify({
-        challenge: options.challenge,
-        userId,
-        username,
-      }), { ttl: CHALLENGE_TTL });
+      await cache.set(
+        `passkey_auth:${challengeId}`,
+        JSON.stringify({
+          challenge: options.challenge,
+          userId,
+          username,
+        }),
+        { ttl: CHALLENGE_TTL },
+      );
 
       return { options, challengeId };
     },
@@ -240,7 +253,8 @@ export function createPasskeyService(deps: {
       };
 
       // 查找 passkey
-      const passkey = await db.query(PasskeyModel)
+      const passkey = await db
+        .query(PasskeyModel)
         .where("user_id", "=", userId)
         .where("credential_id", "=", assertion.id)
         .select("id", "credential_id", "public_key", "counter")
@@ -277,10 +291,13 @@ export function createPasskeyService(deps: {
 
       // 更新 counter 和最后使用时间
       const newCounter = verification.authenticationInfo.newCounter;
-      await db.query(PasskeyModel).where("id", "=", passkey.id).update({
-        counter: BigInt(newCounter),
-        last_used_at: new Date(),
-      });
+      await db
+        .query(PasskeyModel)
+        .where("id", "=", passkey.id)
+        .update({
+          counter: BigInt(newCounter),
+          last_used_at: new Date(),
+        });
 
       await auditStore.append({
         actor: userId,
@@ -294,24 +311,28 @@ export function createPasskeyService(deps: {
     },
 
     async listPasskeys(userId) {
-      const rows = await db.query(PasskeyModel)
+      const rows = await db
+        .query(PasskeyModel)
         .where("user_id", "=", userId)
         .select("id", "name", "device_type", "backed_up", "created_at", "last_used_at")
         .orderBy("created_at", "desc")
         .list();
 
-      return rows.map(r => ({
+      return rows.map((r) => ({
         id: r.id,
         name: r.name,
         deviceType: r.device_type ?? null,
         backedUp: r.backed_up,
-        createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
-        lastUsedAt: r.last_used_at instanceof Date ? r.last_used_at.toISOString() : r.last_used_at ?? null,
+        createdAt:
+          r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
+        lastUsedAt:
+          r.last_used_at instanceof Date ? r.last_used_at.toISOString() : (r.last_used_at ?? null),
       }));
     },
 
     async removePasskey(userId, passkeyId) {
-      const existing = await db.query(PasskeyModel)
+      const existing = await db
+        .query(PasskeyModel)
         .where("id", "=", passkeyId)
         .where("user_id", "=", userId)
         .select("id")

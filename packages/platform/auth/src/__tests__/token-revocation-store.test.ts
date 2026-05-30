@@ -1,8 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import {
-  createMemoryRevocationStore,
-  createRedisRevocationStore,
-} from "../token-revocation-store";
+import { createMemoryRevocationStore, createRedisRevocationStore } from "../token-revocation-store";
 import type { RedisRevocationClientLike } from "../token-revocation-store";
 
 describe("createMemoryRevocationStore", () => {

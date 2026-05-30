@@ -3,18 +3,18 @@
  */
 
 import { createTagLogger } from "@ventostack/core";
-import { createMigrationRunner, type SqlExecutor } from "@ventostack/database";
+import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
+import { createGenTables } from "@ventostack/gen";
+import { createI18nTables } from "@ventostack/i18n";
+import { createOssTables } from "@ventostack/oss";
+import { createSchedulerTables } from "@ventostack/scheduler";
+import { createWorkflowTables } from "@ventostack/workflow";
 import { createSysTables } from "./migrations/001_create_sys_tables";
 import { addPasswordChangedAt } from "./migrations/003_password_changed_at";
 import { addPasskeySupport } from "./migrations/004_passkey_support";
 import { addLoginMethodColumn } from "./migrations/005_login_method_column";
 import { addDictDataUnique } from "./migrations/006_dict_data_unique";
 import { createRoleDeptTable } from "./migrations/007_create_role_dept_table";
-import { createOssTables } from "@ventostack/oss";
-import { createGenTables } from "@ventostack/gen";
-import { createI18nTables } from "@ventostack/i18n";
-import { createWorkflowTables } from "@ventostack/workflow";
-import { createSchedulerTables } from "@ventostack/scheduler";
 
 const logger = createTagLogger("migrations");
 

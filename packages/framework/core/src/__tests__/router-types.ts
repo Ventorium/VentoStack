@@ -1,8 +1,8 @@
 import type { InferParams } from "../router";
 
 type Assert<T extends true> = T;
-type IsEqual<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2)
-  ? (<T>() => T extends B ? 1 : 2) extends (<T>() => T extends A ? 1 : 2)
+type IsEqual<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2
+  ? (<T>() => T extends B ? 1 : 2) extends <T>() => T extends A ? 1 : 2
     ? true
     : false
   : false;
@@ -20,8 +20,8 @@ type _RegexUserId = Assert<IsEqual<RegexParams["userId"], number>>;
 type _RegexPostId = Assert<IsEqual<RegexParams["postId"], string>>;
 type _NoParams = Assert<IsEqual<NoParams, Record<string, never>>>;
 
-import type { InferFieldType, InferSchema } from "../schema-types";
 import { createRouter, defineRouteConfig } from "../router";
+import type { InferFieldType, InferSchema } from "../schema-types";
 
 // ---------- InferFieldType 测试 ----------
 
@@ -79,43 +79,55 @@ const _assertSchemaActive: AssertSchemaActive = true;
 const router = createRouter();
 
 // query schema 推导
-router.get("/users", {
-  query: {
-    page: { type: "int", default: 1 },
-    limit: { type: "int", default: 20 },
-    search: { type: "string" },
+router.get(
+  "/users",
+  {
+    query: {
+      page: { type: "int", default: 1 },
+      limit: { type: "int", default: 20 },
+      search: { type: "string" },
+    },
   },
-}, (ctx) => {
-  const page: number = ctx.query.page;
-  const limit: number = ctx.query.limit;
-  const search: string | undefined = ctx.query.search;
-  const bodyCheck: Record<string, unknown> = ctx.body;
-  return new Response();
-});
+  (ctx) => {
+    const page: number = ctx.query.page;
+    const limit: number = ctx.query.limit;
+    const search: string | undefined = ctx.query.search;
+    const bodyCheck: Record<string, unknown> = ctx.body;
+    return new Response();
+  },
+);
 
 // body schema 推导
-router.post("/users", {
-  body: {
-    name: { type: "string", required: true },
-    age: { type: "int" },
+router.post(
+  "/users",
+  {
+    body: {
+      name: { type: "string", required: true },
+      age: { type: "int" },
+    },
   },
-}, (ctx) => {
-  const name: string = ctx.body.name;
-  const age: number | undefined = ctx.body.age;
-  return new Response();
-});
+  (ctx) => {
+    const name: string = ctx.body.name;
+    const age: number | undefined = ctx.body.age;
+    return new Response();
+  },
+);
 
 // formData schema 推导
-router.post("/upload", {
-  formData: {
-    title: { type: "string", required: true },
-    count: { type: "int", default: 0 },
+router.post(
+  "/upload",
+  {
+    formData: {
+      title: { type: "string", required: true },
+      count: { type: "int", default: 0 },
+    },
   },
-}, (ctx) => {
-  const title: string = ctx.formData.title;
-  const count: number = ctx.formData.count;
-  return new Response();
-});
+  (ctx) => {
+    const title: string = ctx.formData.title;
+    const count: number = ctx.formData.count;
+    return new Response();
+  },
+);
 
 // 不传 schema 时兼容现有 API
 router.get("/legacy", (ctx) => {
@@ -126,19 +138,23 @@ router.get("/legacy", (ctx) => {
 });
 
 // 混合 params + query + body
-router.post("/users/:id<int>", {
-  query: {
-    force: { type: "bool" },
+router.post(
+  "/users/:id<int>",
+  {
+    query: {
+      force: { type: "bool" },
+    },
+    body: {
+      name: { type: "string", required: true },
+    },
   },
-  body: {
-    name: { type: "string", required: true },
+  (ctx) => {
+    const id: number = ctx.params.id;
+    const force: boolean | undefined = ctx.query.force;
+    const name: string = ctx.body.name;
+    return new Response();
   },
-}, (ctx) => {
-  const id: number = ctx.params.id;
-  const force: boolean | undefined = ctx.query.force;
-  const name: string = ctx.body.name;
-  return new Response();
-});
+);
 
 // defineRouteConfig 保留 schema 推导
 const hintedConfig = defineRouteConfig({
@@ -161,33 +177,39 @@ router.get("/hinted", hintedConfig, (ctx) => {
 // ---------- response schema 类型约束测试 ----------
 
 // 1. ctx.json 的 data 必须符合 response schema 声明的类型
-router.get("/typed-response", defineRouteConfig({
-  responses: {
-    200: {
-      page: { type: "int" },
-      limit: { type: "int" },
+router.get(
+  "/typed-response",
+  defineRouteConfig({
+    responses: {
+      200: {
+        page: { type: "int" },
+        limit: { type: "int" },
+      },
     },
+  }),
+  (ctx) => {
+    // 正确：page 和 limit 都是 number
+    return ctx.json({ page: 1, limit: 10 });
   },
-}), (ctx) => {
-  // 正确：page 和 limit 都是 number
-  return ctx.json({ page: 1, limit: 10 });
-});
+);
 
-router.get("/bad-response", defineRouteConfig({
-  responses: {
-    200: {
-      page: { type: "int" },
-      limit: { type: "int" },
+router.get(
+  "/bad-response",
+  defineRouteConfig({
+    responses: {
+      200: {
+        page: { type: "int" },
+        limit: { type: "int" },
+      },
     },
+  }),
+  (ctx) => {
+    // @ts-expect-error limit 声明为 int，返回 string 应该报错
+    return ctx.json({ page: 1, limit: "10" });
   },
-}), (ctx) => {
-  // @ts-expect-error limit 声明为 int，返回 string 应该报错
-  return ctx.json({ page: 1, limit: "10" });
-});
+);
 
 // 2. 无 schema 的路由不应约束 ctx.json 的类型
 router.get("/free-response", (ctx) => {
   return ctx.json({ anything: "goes" });
 });
-
-export {};

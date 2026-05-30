@@ -4,31 +4,41 @@
  * 一键创建完整的 VentoStack 平台，聚合所有业务模块。
  */
 
-import type { Router } from "@ventostack/core";
-import type { SqlExecutor, TableSchemaInfo, Database } from "@ventostack/database";
-import { createDatabase } from "@ventostack/database";
+import type {
+  AuthSessionManager,
+  JWTManager,
+  MultiDeviceManager,
+  PasswordHasher,
+  RBAC,
+  RowFilter,
+  SessionManager,
+  TOTPManager,
+  TokenRefreshManager,
+} from "@ventostack/auth";
 import type { Cache } from "@ventostack/cache";
-import type { JWTManager, PasswordHasher, TOTPManager, RBAC, RowFilter, AuthSessionManager, TokenRefreshManager, SessionManager, MultiDeviceManager } from "@ventostack/auth";
+import type { Router } from "@ventostack/core";
+import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
+import { createDatabase } from "@ventostack/database";
 import type { EventBus } from "@ventostack/events";
 import type { AuditStore, HealthCheck } from "@ventostack/observability";
 
-import { createSystemModule } from "@ventostack/system";
-import type { SystemModule } from "@ventostack/system";
+import type { Scheduler } from "@ventostack/events";
 import { createGenModule } from "@ventostack/gen";
 import type { GenModule } from "@ventostack/gen";
+import { createI18nModule } from "@ventostack/i18n";
+import type { I18nModule } from "@ventostack/i18n";
 import { createMonitorModule } from "@ventostack/monitor";
 import type { MonitorModule } from "@ventostack/monitor";
 import { createNotificationModule } from "@ventostack/notification";
 import type { NotificationModule, NotifyChannel } from "@ventostack/notification";
-import { createI18nModule } from "@ventostack/i18n";
-import type { I18nModule } from "@ventostack/i18n";
-import { createWorkflowModule } from "@ventostack/workflow";
-import type { WorkflowModule } from "@ventostack/workflow";
 import { createOSSModule } from "@ventostack/oss";
 import type { OSSModule, StorageAdapter } from "@ventostack/oss";
 import { createSchedulerModule } from "@ventostack/scheduler";
-import type { SchedulerModule, JobHandlerMap } from "@ventostack/scheduler";
-import type { Scheduler } from "@ventostack/events";
+import type { JobHandlerMap, SchedulerModule } from "@ventostack/scheduler";
+import { createSystemModule } from "@ventostack/system";
+import type { SystemModule } from "@ventostack/system";
+import { createWorkflowModule } from "@ventostack/workflow";
+import type { WorkflowModule } from "@ventostack/workflow";
 
 /** 平台配置 */
 export interface PlatformConfig {
@@ -126,13 +136,32 @@ export interface Platform {
  */
 export async function createPlatform(config: PlatformConfig): Promise<Platform> {
   const {
-    executor, readTableSchema, listTables, cache,
+    executor,
+    readTableSchema,
+    listTables,
+    cache,
     db: providedDb,
-    jwt, jwtSecret, passwordHasher, totpManager, rbac, rowFilter,
-    authSessionManager, tokenRefreshManager, sessionManager, multiDeviceManager,
-    auditStore, eventBus, healthCheck, scheduler,
+    jwt,
+    jwtSecret,
+    passwordHasher,
+    totpManager,
+    rbac,
+    rowFilter,
+    authSessionManager,
+    tokenRefreshManager,
+    sessionManager,
+    multiDeviceManager,
+    auditStore,
+    eventBus,
+    healthCheck,
+    scheduler,
     modules: moduleFlags,
-    storageAdapter, notifyChannels, jobHandlers, rpID, rpName, rpOrigins,
+    storageAdapter,
+    notifyChannels,
+    jobHandlers,
+    rpID,
+    rpName,
+    rpOrigins,
   } = config;
 
   const db = providedDb ?? createDatabase({ executor });
@@ -150,42 +179,97 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   // Create modules
   const systemDeps = {
-    db, cache, jwt, jwtSecret, passwordHasher, totp: totpManager,
-    rbac, rowFilter, authSessionManager, tokenRefresh: tokenRefreshManager,
-    sessionManager, deviceManager: multiDeviceManager, auditLog: auditStore, eventBus,
+    db,
+    cache,
+    jwt,
+    jwtSecret,
+    passwordHasher,
+    totp: totpManager,
+    rbac,
+    rowFilter,
+    authSessionManager,
+    tokenRefresh: tokenRefreshManager,
+    sessionManager,
+    deviceManager: multiDeviceManager,
+    auditLog: auditStore,
+    eventBus,
     ...(rpID !== undefined ? { rpID } : {}),
     ...(rpName !== undefined ? { rpName } : {}),
     ...(rpOrigins !== undefined ? { rpOrigins } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
 
-  const gen = enabled.gen ? createGenModule({
-    db, executor, readTableSchema, jwt, jwtSecret, rbac,
-  }) : undefined;
+  const gen = enabled.gen
+    ? createGenModule({
+        db,
+        executor,
+        readTableSchema,
+        jwt,
+        jwtSecret,
+        rbac,
+      })
+    : undefined;
 
-  const monitor = enabled.monitor ? createMonitorModule({
-    healthCheck, jwt, jwtSecret, rbac, db,
-  }) : undefined;
+  const monitor = enabled.monitor
+    ? createMonitorModule({
+        healthCheck,
+        jwt,
+        jwtSecret,
+        rbac,
+        db,
+      })
+    : undefined;
 
-  const notification = enabled.notification && notifyChannels ? createNotificationModule({
-    db, jwt, jwtSecret, rbac, channels: notifyChannels,
-  }) : undefined;
+  const notification =
+    enabled.notification && notifyChannels
+      ? createNotificationModule({
+          db,
+          jwt,
+          jwtSecret,
+          rbac,
+          channels: notifyChannels,
+        })
+      : undefined;
 
-  const i18n = enabled.i18n ? createI18nModule({
-    db, jwt, jwtSecret, rbac,
-  }) : undefined;
+  const i18n = enabled.i18n
+    ? createI18nModule({
+        db,
+        jwt,
+        jwtSecret,
+        rbac,
+      })
+    : undefined;
 
-  const workflow = enabled.workflow ? createWorkflowModule({
-    db, jwt, jwtSecret, rbac,
-  }) : undefined;
+  const workflow = enabled.workflow
+    ? createWorkflowModule({
+        db,
+        jwt,
+        jwtSecret,
+        rbac,
+      })
+    : undefined;
 
-  const oss = enabled.oss && storageAdapter ? createOSSModule({
-    db, storage: storageAdapter, jwt, jwtSecret, rbac,
-  }) : undefined;
+  const oss =
+    enabled.oss && storageAdapter
+      ? createOSSModule({
+          db,
+          storage: storageAdapter,
+          jwt,
+          jwtSecret,
+          rbac,
+        })
+      : undefined;
 
-  const schedulerMod = enabled.scheduler ? createSchedulerModule({
-    db, scheduler, jwt, jwtSecret, rbac, handlers: jobHandlers ?? {},
-  }) : undefined;
+  const schedulerMod = enabled.scheduler
+    ? createSchedulerModule({
+        db,
+        scheduler,
+        jwt,
+        jwtSecret,
+        rbac,
+        handlers: jobHandlers ?? {},
+      })
+    : undefined;
 
   // Aggregate routers
   const { createRouter } = await import("@ventostack/core");

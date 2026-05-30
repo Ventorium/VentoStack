@@ -179,7 +179,9 @@ describe("createTransactionManager", () => {
     await tm.begin();
     await tm.savepoint("sp1");
     await tm.savepoint("sp2");
-    await expect(tm.releaseSavepoint("sp1")).rejects.toThrow("Savepoint sp1 is not the most recent savepoint");
+    await expect(tm.releaseSavepoint("sp1")).rejects.toThrow(
+      "Savepoint sp1 is not the most recent savepoint",
+    );
   });
 
   test("deep nesting: begin > begin > begin > commit > commit > commit", async () => {
@@ -237,8 +239,6 @@ describe("createTransactionManager", () => {
   test("nested helper outside transaction throws", async () => {
     const { executor } = mockExecutor();
     const tm = createTransactionManager(executor);
-    await expect(
-      tm.nested(async () => 42),
-    ).rejects.toThrow("No active transaction");
+    await expect(tm.nested(async () => 42)).rejects.toThrow("No active transaction");
   });
 });

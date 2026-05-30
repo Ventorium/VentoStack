@@ -84,6 +84,20 @@ describe("createQueryBuilder", () => {
       expect(params).toEqual([]);
     });
 
+    test("where with IS and null value", () => {
+      const qb = createQueryBuilder(UserModel).where("age", "IS", null);
+      const { text, params } = qb.toSQL();
+      expect(text).toBe("SELECT * FROM users WHERE age IS NULL");
+      expect(params).toEqual([]);
+    });
+
+    test("where with IS NOT and null value", () => {
+      const qb = createQueryBuilder(UserModel).where("age", "IS NOT", null);
+      const { text, params } = qb.toSQL();
+      expect(text).toBe("SELECT * FROM users WHERE age IS NOT NULL");
+      expect(params).toEqual([]);
+    });
+
     test("multiple where conditions (AND)", () => {
       const qb = createQueryBuilder(UserModel).where("name", "=", "john").where("age", ">", 20);
       const { text, params } = qb.toSQL();

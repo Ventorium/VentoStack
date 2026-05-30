@@ -3,7 +3,12 @@
  */
 
 import type { Database } from "@ventostack/database";
-import { WorkflowDefModel, WorkflowNodeModel, WorkflowInstanceModel, WorkflowTaskModel } from "../models";
+import {
+  WorkflowDefModel,
+  WorkflowInstanceModel,
+  WorkflowNodeModel,
+  WorkflowTaskModel,
+} from "../models";
 
 /** 定义状态 */
 export const DefStatus = {
@@ -103,14 +108,31 @@ export interface PaginatedResult<T> {
 /** 工作流服务接口 */
 export interface WorkflowService {
   // Definition CRUD
-  createDefinition(params: { name: string; code: string; description?: string }): Promise<{ id: string }>;
-  updateDefinition(id: string, params: Partial<{ name: string; description: string; status: number }>): Promise<void>;
+  createDefinition(params: { name: string; code: string; description?: string }): Promise<{
+    id: string;
+  }>;
+  updateDefinition(
+    id: string,
+    params: Partial<{ name: string; description: string; status: number }>,
+  ): Promise<void>;
   deleteDefinition(id: string): Promise<void>;
   getDefinition(id: string): Promise<WorkflowDefinition | null>;
-  listDefinitions(params?: { status?: number; page?: number; pageSize?: number }): Promise<PaginatedResult<WorkflowDefinition>>;
+  listDefinitions(params?: { status?: number; page?: number; pageSize?: number }): Promise<
+    PaginatedResult<WorkflowDefinition>
+  >;
 
   // Node management
-  setNodes(definitionId: string, nodes: Array<{ name: string; type: string; assigneeType?: string; assigneeId?: string; sort?: number; config?: Record<string, unknown> }>): Promise<void>;
+  setNodes(
+    definitionId: string,
+    nodes: Array<{
+      name: string;
+      type: string;
+      assigneeType?: string;
+      assigneeId?: string;
+      sort?: number;
+      config?: Record<string, unknown>;
+    }>,
+  ): Promise<void>;
   getNodes(definitionId: string): Promise<WorkflowNode[]>;
 
   // Instance operations
@@ -126,7 +148,10 @@ export interface WorkflowService {
   rejectTask(taskId: string, userId: string, comment?: string): Promise<void>;
 
   // Query
-  getMyTasks(userId: string, params?: { status?: number; page?: number; pageSize?: number }): Promise<PaginatedResult<WorkflowTask>>;
+  getMyTasks(
+    userId: string,
+    params?: { status?: number; page?: number; pageSize?: number },
+  ): Promise<PaginatedResult<WorkflowTask>>;
   getInstanceDetail(instanceId: string): Promise<WorkflowInstanceDetail | null>;
 }
 
@@ -138,9 +163,19 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
   const { db } = deps;
 
   async function getNodesByDefinition(definitionId: string): Promise<WorkflowNode[]> {
-    const rows = await db.query(WorkflowNodeModel)
+    const rows = await db
+      .query(WorkflowNodeModel)
       .where("definition_id", "=", definitionId)
-      .select("id", "definition_id", "name", "type", "assignee_type", "assignee_id", "sort", "config")
+      .select(
+        "id",
+        "definition_id",
+        "name",
+        "type",
+        "assignee_type",
+        "assignee_id",
+        "sort",
+        "config",
+      )
       .orderBy("sort", "asc")
       .list();
 
@@ -158,7 +193,8 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
 
   async function advanceInstance(instanceId: string, currentNodeId: string) {
     // Get instance
-    const instance = await db.query(WorkflowInstanceModel)
+    const instance = await db
+      .query(WorkflowInstanceModel)
       .where("id", "=", instanceId)
       .select("id", "definition_id", "status")
       .get();
@@ -168,17 +204,20 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
     const nodes = await getNodesByDefinition(instance.definition_id);
 
     // Find current node index
-    const currentIdx = nodes.findIndex(n => n.id === currentNodeId);
+    const currentIdx = nodes.findIndex((n) => n.id === currentNodeId);
     if (currentIdx === -1) return;
 
     const nextNode = nodes[currentIdx + 1];
 
     if (!nextNode || nextNode.type === NodeType.END) {
       // Workflow completed
-      await db.query(WorkflowInstanceModel).where("id", "=", instanceId).update({
-        status: InstanceStatus.COMPLETED,
-        current_node_id: nextNode?.id ?? null,
-      });
+      await db
+        .query(WorkflowInstanceModel)
+        .where("id", "=", instanceId)
+        .update({
+          status: InstanceStatus.COMPLETED,
+          current_node_id: nextNode?.id ?? null,
+        });
       return;
     }
 
@@ -230,12 +269,13 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
 
     async deleteDefinition(id) {
       // Cascade delete: tasks → instances → nodes → definition
-      const instances = await db.query(WorkflowInstanceModel)
+      const instances = await db
+        .query(WorkflowInstanceModel)
         .where("definition_id", "=", id)
         .select("id")
         .list();
       if (instances.length > 0) {
-        const instanceIds = instances.map(i => i.id);
+        const instanceIds = instances.map((i) => i.id);
         await db.query(WorkflowTaskModel).where("instance_id", "IN", instanceIds).hardDelete();
         await db.query(WorkflowInstanceModel).where("definition_id", "=", id).hardDelete();
       }
@@ -244,7 +284,8 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
     },
 
     async getDefinition(id) {
-      const row = await db.query(WorkflowDefModel)
+      const row = await db
+        .query(WorkflowDefModel)
         .where("id", "=", id)
         .select("id", "name", "code", "version", "description", "status")
         .get();
@@ -283,7 +324,13 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
         status: row.status,
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async setNodes(definitionId, nodes) {
@@ -317,7 +364,7 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
       const nodes = await getNodesByDefinition(params.definitionId);
       if (nodes.length === 0) throw new Error("未定义节点");
 
-      const startNode = nodes.find(n => n.type === NodeType.START);
+      const startNode = nodes.find((n) => n.type === NodeType.START);
       if (!startNode) throw new Error("未找到开始节点");
 
       // Find next node after start
@@ -350,7 +397,8 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
     },
 
     async approveTask(taskId, userId, comment) {
-      const task = await db.query(WorkflowTaskModel)
+      const task = await db
+        .query(WorkflowTaskModel)
         .where("id", "=", taskId)
         .select("id", "instance_id", "node_id", "status")
         .get();
@@ -360,19 +408,23 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
         throw new Error("任务已处理");
       }
 
-      await db.query(WorkflowTaskModel).where("id", "=", taskId).update({
-        status: TaskStatus.APPROVED,
-        action: "approve",
-        comment: comment ?? null,
-        acted_at: new Date(),
-      });
+      await db
+        .query(WorkflowTaskModel)
+        .where("id", "=", taskId)
+        .update({
+          status: TaskStatus.APPROVED,
+          action: "approve",
+          comment: comment ?? null,
+          acted_at: new Date(),
+        });
 
       // Move to next node
       await advanceInstance(task.instance_id, task.node_id);
     },
 
     async rejectTask(taskId, userId, comment) {
-      const task = await db.query(WorkflowTaskModel)
+      const task = await db
+        .query(WorkflowTaskModel)
         .where("id", "=", taskId)
         .select("id", "instance_id", "status")
         .get();
@@ -382,12 +434,15 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
         throw new Error("任务已处理");
       }
 
-      await db.query(WorkflowTaskModel).where("id", "=", taskId).update({
-        status: TaskStatus.REJECTED,
-        action: "reject",
-        comment: comment ?? null,
-        acted_at: new Date(),
-      });
+      await db
+        .query(WorkflowTaskModel)
+        .where("id", "=", taskId)
+        .update({
+          status: TaskStatus.REJECTED,
+          action: "reject",
+          comment: comment ?? null,
+          acted_at: new Date(),
+        });
 
       // Mark instance as rejected
       await db.query(WorkflowInstanceModel).where("id", "=", task.instance_id).update({
@@ -404,7 +459,17 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
       const total = await query.count();
 
       const rows = await query
-        .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "acted_at", "created_at")
+        .select(
+          "id",
+          "instance_id",
+          "node_id",
+          "assignee_id",
+          "action",
+          "comment",
+          "status",
+          "acted_at",
+          "created_at",
+        )
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -422,13 +487,30 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
         createdAt: row.created_at.toISOString(),
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async getInstanceDetail(instanceId) {
-      const inst = await db.query(WorkflowInstanceModel)
+      const inst = await db
+        .query(WorkflowInstanceModel)
         .where("id", "=", instanceId)
-        .select("id", "definition_id", "business_type", "business_id", "initiator_id", "current_node_id", "status", "variables", "created_at")
+        .select(
+          "id",
+          "definition_id",
+          "business_type",
+          "business_id",
+          "initiator_id",
+          "current_node_id",
+          "status",
+          "variables",
+          "created_at",
+        )
         .get();
       if (!inst) return null;
 
@@ -446,9 +528,20 @@ export function createWorkflowService(deps: WorkflowServiceDeps): WorkflowServic
 
       const nodes = await getNodesByDefinition(instance.definitionId);
 
-      const taskRows = await db.query(WorkflowTaskModel)
+      const taskRows = await db
+        .query(WorkflowTaskModel)
         .where("instance_id", "=", instanceId)
-        .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "acted_at", "created_at")
+        .select(
+          "id",
+          "instance_id",
+          "node_id",
+          "assignee_id",
+          "action",
+          "comment",
+          "status",
+          "acted_at",
+          "created_at",
+        )
         .orderBy("created_at", "asc")
         .list();
 

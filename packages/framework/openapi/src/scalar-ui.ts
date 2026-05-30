@@ -5,7 +5,7 @@
  * 无需本地依赖，直接通过 CDN 加载 Scalar。
  */
 
-import type { VentoStackApp, Plugin } from "@ventostack/core";
+import type { Plugin, VentoStackApp } from "@ventostack/core";
 
 /** Scalar UI 配置选项 */
 export interface ScalarUIOptions {

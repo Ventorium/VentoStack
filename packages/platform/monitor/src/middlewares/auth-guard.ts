@@ -1,5 +1,5 @@
-import type { Middleware } from "@ventostack/core";
 import type { JWTManager } from "@ventostack/auth";
+import type { Middleware } from "@ventostack/core";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
@@ -7,7 +7,10 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
   return async (ctx, next) => {
     const authHeader = ctx.request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(JSON.stringify({ code: 401, message: "缺少认证令牌" }), { status: 401, headers: JSON_HEADERS });
+      return new Response(JSON.stringify({ code: 401, message: "缺少认证令牌" }), {
+        status: 401,
+        headers: JSON_HEADERS,
+      });
     }
     const token = authHeader.slice(7);
     try {
@@ -19,7 +22,10 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
       };
       return next();
     } catch {
-      return new Response(JSON.stringify({ code: 401, message: "无效的认证令牌" }), { status: 401, headers: JSON_HEADERS });
+      return new Response(JSON.stringify({ code: 401, message: "无效的认证令牌" }), {
+        status: 401,
+        headers: JSON_HEADERS,
+      });
     }
   };
 }

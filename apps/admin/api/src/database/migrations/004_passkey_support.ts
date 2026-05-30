@@ -1,7 +1,7 @@
-import type { Migration } from '@ventostack/database';
+import type { Migration } from "@ventostack/database";
 
 export const addPasskeySupport: Migration = {
-  name: '004_passkey_support',
+  name: "004_passkey_support",
   async up(executor) {
     // 通行密钥表
     await executor(`
@@ -24,7 +24,9 @@ export const addPasskeySupport: Migration = {
     await executor(`CREATE INDEX IF NOT EXISTS idx_sys_passkey_user_id ON sys_passkey (user_id)`);
 
     // 登录日志添加登录方式列
-    await executor(`ALTER TABLE sys_login_log ADD COLUMN IF NOT EXISTS login_method VARCHAR(16) DEFAULT 'password'`);
+    await executor(
+      `ALTER TABLE sys_login_log ADD COLUMN IF NOT EXISTS login_method VARCHAR(16) DEFAULT 'password'`,
+    );
 
     // 回填现有数据
     await executor(`UPDATE sys_login_log SET login_method = 'password' WHERE login_method IS NULL`);

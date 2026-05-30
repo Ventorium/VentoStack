@@ -5,7 +5,7 @@
 import { createRouter } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { WorkflowService } from "../services/workflow";
-import { ok, okPage, fail, parseBody, pageOf } from "./common";
+import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createWorkflowRoutes(
   workflowService: WorkflowService,
@@ -49,37 +49,53 @@ export function createWorkflowRoutes(
     return ok(def);
   });
 
-  router.put("/api/workflow/definitions/:id", perm("workflow", "definition:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    const body = await parseBody(ctx.request);
-    await workflowService.updateDefinition(id, body);
-    return ok(null);
-  });
+  router.put(
+    "/api/workflow/definitions/:id",
+    perm("workflow", "definition:update"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const body = await parseBody(ctx.request);
+      await workflowService.updateDefinition(id, body);
+      return ok(null);
+    },
+  );
 
-  router.delete("/api/workflow/definitions/:id", perm("workflow", "definition:delete"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    await workflowService.deleteDefinition(id);
-    return ok(null);
-  });
+  router.delete(
+    "/api/workflow/definitions/:id",
+    perm("workflow", "definition:delete"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      await workflowService.deleteDefinition(id);
+      return ok(null);
+    },
+  );
 
   // === Node management ===
 
-  router.put("/api/workflow/definitions/:id/nodes", perm("workflow", "definition:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    const body = await parseBody(ctx.request);
-    try {
-      await workflowService.setNodes(id, body.nodes as any[]);
-      return ok(null);
-    } catch (e) {
-      return fail(e instanceof Error ? e.message : "设置节点失败", 400);
-    }
-  });
+  router.put(
+    "/api/workflow/definitions/:id/nodes",
+    perm("workflow", "definition:update"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const body = await parseBody(ctx.request);
+      try {
+        await workflowService.setNodes(id, body.nodes as any[]);
+        return ok(null);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "设置节点失败", 400);
+      }
+    },
+  );
 
-  router.get("/api/workflow/definitions/:id/nodes", perm("workflow", "definition:query"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    const nodes = await workflowService.getNodes(id);
-    return ok(nodes);
-  });
+  router.get(
+    "/api/workflow/definitions/:id/nodes",
+    perm("workflow", "definition:query"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const nodes = await workflowService.getNodes(id);
+      return ok(nodes);
+    },
+  );
 
   // === Instance operations ===
 

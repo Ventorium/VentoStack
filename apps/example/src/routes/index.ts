@@ -1,12 +1,11 @@
 import type { Router } from "@ventostack/core";
 import type { HealthCheck } from "@ventostack/observability";
-import type { createUserService } from "../services/user-service";
-import type { createAuthService } from "../services/auth-service";
 import { requireAuth } from "../middleware/auth";
-import { config } from "../config";
+import type { createAuthService } from "../services/auth-service";
+import type { createUserService } from "../services/user-service";
+import { registerAuthRoutes } from "./auth";
 import { registerHealthRoutes } from "./health";
 import { registerUserRoutes } from "./users";
-import { registerAuthRoutes } from "./auth";
 
 export interface RegisterRoutesDeps {
   router: Router;

@@ -64,7 +64,11 @@ export interface Context<
    * @param status - HTTP 状态码，默认 200
    * @returns Response 对象
    */
-  json(data: TResponse, status?: number, headers?: Record<string, string>): TypedResponse<TResponse>;
+  json(
+    data: TResponse,
+    status?: number,
+    headers?: Record<string, string>,
+  ): TypedResponse<TResponse>;
   /**
    * 返回纯文本响应
    * @param data - 文本内容

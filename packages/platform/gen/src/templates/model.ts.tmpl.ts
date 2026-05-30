@@ -2,15 +2,17 @@
  * Model 代码模板
  */
 
-import type { GenTableInfo, GenColumnInfo } from "../services/gen";
+import type { GenColumnInfo, GenTableInfo } from "../services/gen";
 
 export function renderModel(table: GenTableInfo, columns: GenColumnInfo[]): string {
-  const fields = columns.map(col => {
-    const nullable = col.isNullable ? "{ nullable: true }" : "";
-    const primary = col.isPrimary ? "{ primary: true }" : "";
-    const opts = [primary, nullable].filter(Boolean).join(", ");
-    return `  ${col.fieldName}: column.${col.typescriptType}(${opts}),`;
-  }).join("\n");
+  const fields = columns
+    .map((col) => {
+      const nullable = col.isNullable ? "{ nullable: true }" : "";
+      const primary = col.isPrimary ? "{ primary: true }" : "";
+      const opts = [primary, nullable].filter(Boolean).join(", ");
+      return `  ${col.fieldName}: column.${col.typescriptType}(${opts}),`;
+    })
+    .join("\n");
 
   return `import { defineModel, column } from '@ventostack/database';
 

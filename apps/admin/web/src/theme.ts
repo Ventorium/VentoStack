@@ -1,3 +1,3 @@
 export const AppTheme = {
-  primaryColor: '#004FC6'
-}
+  primaryColor: "#004FC6",
+};

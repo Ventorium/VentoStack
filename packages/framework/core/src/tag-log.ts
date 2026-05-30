@@ -27,7 +27,7 @@ function formatMeta(meta?: Record<string, unknown>): string {
   }
 }
 
-import { RESET, ansi, COLORS } from "./color";
+import { COLORS, RESET, ansi } from "./color";
 
 /** ANSI 着色：tag 始终紫色 */
 const colorTag = (tag: string): string => `${ansi(COLORS.tag)}[${tag}]${RESET}`;

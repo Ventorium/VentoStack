@@ -89,7 +89,10 @@ export type { TracingMiddlewareOptions } from "./tracing-middleware";
 
 /** SQL Executor 追踪包装器 */
 export { wrapExecutorWithTracing } from "./tracing-executor";
-export type { ExecutorTracingOptions, SqlExecutor as TraceableSqlExecutor } from "./tracing-executor";
+export type {
+  ExecutorTracingOptions,
+  SqlExecutor as TraceableSqlExecutor,
+} from "./tracing-executor";
 
 /** Cache 追踪包装器 */
 export { wrapCacheWithTracing } from "./cache-tracing";

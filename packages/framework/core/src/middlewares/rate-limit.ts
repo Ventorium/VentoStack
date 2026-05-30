@@ -1,8 +1,8 @@
 // @ventostack/core - 限流中间件
 
+import { getClientIPFromRequest } from "../client-ip";
 import type { Context } from "../context";
 import type { Middleware } from "../middleware";
-import { getClientIPFromRequest } from "../client-ip";
 
 /** 限流存储接口 */
 export interface RateLimitStore {
@@ -155,13 +155,15 @@ export function createRedisRateLimitStore(options: RedisRateLimitStoreOptions): 
     async increment(key: string, windowMs: number) {
       const fullKey = `${keyPrefix}${key}`;
       // 如果客户端支持 eval（Bun Redis），使用原子 Lua 脚本
-      if ("eval" in client && typeof (client as unknown as Record<string, unknown>).eval === "function") {
-        const result = await (client as unknown as { eval(script: string, keys: number, ...args: string[]): Promise<[number, number]> }).eval(
-          luaScript,
-          1,
-          fullKey,
-          String(windowMs),
-        );
+      if (
+        "eval" in client &&
+        typeof (client as unknown as Record<string, unknown>).eval === "function"
+      ) {
+        const result = await (
+          client as unknown as {
+            eval(script: string, keys: number, ...args: string[]): Promise<[number, number]>;
+          }
+        ).eval(luaScript, 1, fullKey, String(windowMs));
         const [count, ttlMs] = result;
         const resetAt = Date.now() + ttlMs;
         return { count, resetAt };

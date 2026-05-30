@@ -1,7 +1,7 @@
 // @ventostack/core - 内置错误处理中间件
 
-import { VentoStackError, ValidationError } from "../errors";
 import type { Context } from "../context";
+import { ValidationError, VentoStackError } from "../errors";
 import type { Middleware } from "../middleware";
 import type { LoggerLike } from "./logger";
 
@@ -37,9 +37,7 @@ export interface ErrorHandlerOptions {
  * @returns Middleware 实例
  */
 export function errorHandler(options?: ErrorHandlerOptions): Middleware {
-  const logger = options?.silent
-    ? noopLogger
-    : (options?.logger ?? consoleLogger);
+  const logger = options?.silent ? noopLogger : (options?.logger ?? consoleLogger);
   const fallbackMessage = options?.fallbackMessage ?? "服务器内部错误";
 
   return async (ctx: Context, next) => {

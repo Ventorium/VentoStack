@@ -310,14 +310,34 @@ describe("setupOpenAPI", () => {
 
     const openAPIResponse = await fetch(`http://localhost:${port}/openapi.json`);
     const document = (await openAPIResponse.json()) as {
-      paths: Record<string, { post?: { requestBody?: { content: Record<string, { schema: { type: string; required?: string[]; properties?: Record<string, { format?: string; type: string }> } }> } } }>;
+      paths: Record<
+        string,
+        {
+          post?: {
+            requestBody?: {
+              content: Record<
+                string,
+                {
+                  schema: {
+                    type: string;
+                    required?: string[];
+                    properties?: Record<string, { format?: string; type: string }>;
+                  };
+                }
+              >;
+            };
+          };
+        }
+      >;
     };
 
     const requestBody = document.paths["/upload"]?.post?.requestBody;
     expect(requestBody?.content["multipart/form-data"]).toBeDefined();
     expect(requestBody?.content["multipart/form-data"]?.schema.type).toBe("object");
     expect(requestBody?.content["multipart/form-data"]?.schema.required).toEqual(["file", "name"]);
-    expect(requestBody?.content["multipart/form-data"]?.schema.properties?.file?.format).toBe("binary");
+    expect(requestBody?.content["multipart/form-data"]?.schema.properties?.file?.format).toBe(
+      "binary",
+    );
   });
 
   test("infers simple helper responses when no explicit response schema is provided", async () => {
@@ -327,17 +347,15 @@ describe("setupOpenAPI", () => {
     app.router.get("/html", (ctx) => ctx.html("<p>hi</p>", 201));
     app.router.get("/json", (ctx) => ctx.json({ ok: true }));
     app.router.get("/redirect", (ctx) => ctx.redirect("/next", 307));
-    app.router.get(
-      "/events",
-      (ctx) =>
-        ctx.stream(
-          new ReadableStream({
-            start(controller) {
-              controller.close();
-            },
-          }),
-          "text/event-stream",
-        ),
+    app.router.get("/events", (ctx) =>
+      ctx.stream(
+        new ReadableStream({
+          start(controller) {
+            controller.close();
+          },
+        }),
+        "text/event-stream",
+      ),
     );
 
     setupOpenAPI(app, {
@@ -369,11 +387,19 @@ describe("setupOpenAPI", () => {
       >;
     };
 
-    expect(document.paths["/text"]?.get?.responses["200"]?.content?.["text/plain"]?.schema.type).toBe("string");
-    expect(document.paths["/html"]?.get?.responses["201"]?.content?.["text/html"]?.schema.type).toBe("string");
-    expect(document.paths["/json"]?.get?.responses["200"]?.content?.["application/json"]?.schema.type).toBe("object");
+    expect(
+      document.paths["/text"]?.get?.responses["200"]?.content?.["text/plain"]?.schema.type,
+    ).toBe("string");
+    expect(
+      document.paths["/html"]?.get?.responses["201"]?.content?.["text/html"]?.schema.type,
+    ).toBe("string");
+    expect(
+      document.paths["/json"]?.get?.responses["200"]?.content?.["application/json"]?.schema.type,
+    ).toBe("object");
     expect(document.paths["/redirect"]?.get?.responses["307"]?.description).toBe("Redirect");
-    expect(document.paths["/events"]?.get?.responses["200"]?.content?.["text/event-stream"]?.schema.type).toBe("string");
+    expect(
+      document.paths["/events"]?.get?.responses["200"]?.content?.["text/event-stream"]?.schema.type,
+    ).toBe("string");
   });
 
   test("infers null JSON responses and ignores commented helper calls", async () => {
@@ -414,8 +440,13 @@ describe("setupOpenAPI", () => {
       >;
     };
 
-    expect(document.paths["/null-json"]?.get?.responses["200"]?.content?.["application/json"]?.schema.nullable).toBe(true);
-    expect(document.paths["/commented-redirect"]?.get?.responses["308"]?.description).toBe("Redirect");
+    expect(
+      document.paths["/null-json"]?.get?.responses["200"]?.content?.["application/json"]?.schema
+        .nullable,
+    ).toBe(true);
+    expect(document.paths["/commented-redirect"]?.get?.responses["308"]?.description).toBe(
+      "Redirect",
+    );
   });
 
   test("does not infer helper responses from non-returned helper calls", async () => {

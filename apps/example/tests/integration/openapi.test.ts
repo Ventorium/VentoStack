@@ -1,6 +1,6 @@
-import { describe, test, expect, beforeAll, afterAll } from "bun:test";
-import { setupIntegrationTest, teardownIntegrationTest } from "./setup";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import type { TestAppInstance, TestClient } from "@ventostack/testing";
+import { setupIntegrationTest, teardownIntegrationTest } from "./setup";
 
 describe("openapi endpoints", () => {
   let testApp: TestAppInstance;

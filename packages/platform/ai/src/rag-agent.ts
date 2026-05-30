@@ -5,11 +5,11 @@
  * 和上下文管理（ContextManager）编排为可调用智能体。
  */
 
-import type { KnowledgeBase, SearchResult } from "./rag";
 import type { ContextManager } from "./context";
-import type { LLMClient, ChatMessage } from "./llm";
-import type { ToolRegistry } from "./tool-registry";
+import type { ChatMessage, LLMClient } from "./llm";
+import type { KnowledgeBase, SearchResult } from "./rag";
 import type { Sandbox } from "./sandbox";
+import type { ToolRegistry } from "./tool-registry";
 
 /** RAG 智能体配置 */
 export interface RAGAgentConfig {
@@ -210,8 +210,9 @@ export function createRAGAgent(deps: RAGAgentDeps, config: RAGAgentConfig): RAGA
     // 获取历史消息（排除 system/tool 消息）
     const allHistory = contextManager.getHistory(convId, maxHistory);
     const history = allHistory
-      .filter((m): m is typeof m & { role: "user" | "assistant" } =>
-        m.role === "user" || m.role === "assistant",
+      .filter(
+        (m): m is typeof m & { role: "user" | "assistant" } =>
+          m.role === "user" || m.role === "assistant",
       )
       .map((m) => ({ role: m.role, content: m.content }));
 

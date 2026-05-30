@@ -3,8 +3,8 @@
  * 提供系统配置的 CRUD、按 key 查值（带缓存）与缓存刷新
  */
 
-import type { Database } from "@ventostack/database";
 import type { Cache } from "@ventostack/cache";
+import type { Database } from "@ventostack/database";
 import { ConfigModel } from "../models/config";
 
 /** 分页查询结果 */
@@ -140,7 +140,10 @@ export function createConfigService(deps: { db: Database; cache: Cache }): Confi
       type: row.type ?? 0,
       group: row.group ?? "",
       remark: row.remark ?? "",
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ""),
     }));
 
     return {
@@ -154,10 +157,7 @@ export function createConfigService(deps: { db: Database; cache: Cache }): Confi
 
   async function getValue(key: string): Promise<string | null> {
     return cache.remember<string | null>(cacheKey(key), 3600, async () => {
-      const row = await db.query(ConfigModel)
-        .where("key", "=", key)
-        .select("value")
-        .get();
+      const row = await db.query(ConfigModel).where("key", "=", key).select("value").get();
       if (!row) return null;
       return row.value as string;
     });

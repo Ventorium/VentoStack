@@ -4,7 +4,7 @@
  */
 
 import type { Database } from "@ventostack/database";
-import { NoticeModel, UserNoticeModel } from "../models/notice";
+import { NoticeModel } from "../models/notice";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -123,7 +123,16 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
     const total = await query.count();
 
     const rows = await query
-      .select("id", "title", "content", "type", "status", "publisher_id", "publish_at", "created_at")
+      .select(
+        "id",
+        "title",
+        "content",
+        "type",
+        "status",
+        "publisher_id",
+        "publish_at",
+        "created_at",
+      )
       .orderBy("id", "desc")
       .limit(pageSize)
       .offset((page - 1) * pageSize)
@@ -137,7 +146,10 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
       status: row.status ?? 0,
       publisherId: row.publisher_id ?? "",
       publishAt: row.publish_at ? String(row.publish_at) : null,
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at ?? ""),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ""),
     }));
 
     return {
@@ -174,10 +186,10 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
 
   async function getUnreadCount(userId: string): Promise<number> {
     // NOT EXISTS subquery — use db.raw
-    const rows = await db.raw(
+    const rows = (await db.raw(
       `SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.deleted_at IS NULL AND n.status = 1 AND NOT EXISTS (SELECT 1 FROM sys_user_notice un WHERE un.user_id = $1 AND un.notice_id = n.id)`,
       [userId],
-    ) as Array<Record<string, unknown>>;
+    )) as Array<Record<string, unknown>>;
     return Number(rows[0]?.cnt ?? 0);
   }
 

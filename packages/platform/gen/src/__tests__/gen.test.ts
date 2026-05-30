@@ -2,9 +2,9 @@
  * @ventostack/gen - 代码生成服务测试
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { createGenService } from "../services/gen";
-import { createMockExecutor, createMockReadTableSchema } from "./helpers";
+import { createMockDatabase, createMockExecutor, createMockReadTableSchema } from "./helpers";
 
 describe("GenService", () => {
   let executor: ReturnType<typeof createMockExecutor>["executor"];
@@ -12,11 +12,17 @@ describe("GenService", () => {
   let results: ReturnType<typeof createMockExecutor>["results"];
   let readTableSchema: ReturnType<typeof createMockReadTableSchema>;
   let service: ReturnType<typeof createGenService>;
+  let db: ReturnType<typeof createMockDatabase>["db"];
 
   beforeEach(() => {
-    ({ executor, calls, results } = createMockExecutor());
+    const mockExec = createMockExecutor();
+    executor = mockExec.executor;
+    calls = mockExec.calls;
+    results = mockExec.results;
     readTableSchema = createMockReadTableSchema();
-    service = createGenService({ executor, readTableSchema });
+    const mockDb = createMockDatabase(mockExec);
+    db = mockDb.db;
+    service = createGenService({ db, executor, readTableSchema });
   });
 
   describe("importTable", () => {
@@ -125,16 +131,18 @@ describe("GenService", () => {
     });
 
     it("should return table info", async () => {
-      results.set("SELECT * FROM sys_gen_table WHERE id", [{
-        id: "t1",
-        table_name: "sys_user",
-        class_name: "User",
-        module_name: "system",
-        function_name: "用户管理",
-        function_author: "admin",
-        remark: null,
-        status: 0,
-      }]);
+      results.set("SELECT * FROM sys_gen_table WHERE id", [
+        {
+          id: "t1",
+          table_name: "sys_user",
+          class_name: "User",
+          module_name: "system",
+          function_name: "用户管理",
+          function_author: "admin",
+          remark: null,
+          status: 0,
+        },
+      ]);
 
       const table = await service.getTable("t1");
       expect(table).not.toBeNull();
@@ -148,8 +156,26 @@ describe("GenService", () => {
     it("should list tables with pagination", async () => {
       results.set("SELECT COUNT(*)", [{ total: 2 }]);
       results.set("SELECT * FROM sys_gen_table ORDER BY", [
-        { id: "t1", table_name: "sys_user", class_name: "User", module_name: "system", function_name: "用户管理", function_author: null, remark: null, status: 0 },
-        { id: "t2", table_name: "sys_role", class_name: "Role", module_name: "system", function_name: "角色管理", function_author: null, remark: null, status: 0 },
+        {
+          id: "t1",
+          table_name: "sys_user",
+          class_name: "User",
+          module_name: "system",
+          function_name: "用户管理",
+          function_author: null,
+          remark: null,
+          status: 0,
+        },
+        {
+          id: "t2",
+          table_name: "sys_role",
+          class_name: "Role",
+          module_name: "system",
+          function_name: "角色管理",
+          function_author: null,
+          remark: null,
+          status: 0,
+        },
       ]);
 
       const result = await service.listTables({ page: 1, pageSize: 10 });
@@ -172,8 +198,40 @@ describe("GenService", () => {
   describe("getColumns", () => {
     it("should return columns for a table", async () => {
       results.set("SELECT * FROM sys_gen_table_column WHERE table_id", [
-        { id: "c1", table_id: "t1", column_name: "id", column_type: "VARCHAR(36)", typescript_type: "string", field_name: "id", field_comment: null, is_primary: true, is_nullable: false, is_list: false, is_insert: false, is_update: false, is_query: false, query_type: null, sort: 0 },
-        { id: "c2", table_id: "t1", column_name: "name", column_type: "VARCHAR(128)", typescript_type: "string", field_name: "name", field_comment: "名称", is_primary: false, is_nullable: false, is_list: true, is_insert: true, is_update: true, is_query: false, query_type: null, sort: 1 },
+        {
+          id: "c1",
+          table_id: "t1",
+          column_name: "id",
+          column_type: "VARCHAR(36)",
+          typescript_type: "string",
+          field_name: "id",
+          field_comment: null,
+          is_primary: true,
+          is_nullable: false,
+          is_list: false,
+          is_insert: false,
+          is_update: false,
+          is_query: false,
+          query_type: null,
+          sort: 0,
+        },
+        {
+          id: "c2",
+          table_id: "t1",
+          column_name: "name",
+          column_type: "VARCHAR(128)",
+          typescript_type: "string",
+          field_name: "name",
+          field_comment: "名称",
+          is_primary: false,
+          is_nullable: false,
+          is_list: true,
+          is_insert: true,
+          is_update: true,
+          is_query: false,
+          query_type: null,
+          sort: 1,
+        },
       ]);
 
       const columns = await service.getColumns("t1");
@@ -187,29 +245,63 @@ describe("GenService", () => {
     it("should throw when table not found", async () => {
       results.set("SELECT * FROM sys_gen_table WHERE id", []);
 
-      await expect(service.preview("nonexistent")).rejects.toThrow("Table not found");
+      await expect(service.preview("nonexistent")).rejects.toThrow("表不存在");
     });
 
     it("should generate 5 files", async () => {
-      results.set("SELECT * FROM sys_gen_table WHERE id", [{
-        id: "t1",
-        table_name: "sys_user",
-        class_name: "User",
-        module_name: "system",
-        function_name: "用户管理",
-        function_author: "admin",
-        remark: null,
-        status: 0,
-      }]);
+      results.set("SELECT * FROM sys_gen_table WHERE id", [
+        {
+          id: "t1",
+          table_name: "sys_user",
+          class_name: "User",
+          module_name: "system",
+          function_name: "用户管理",
+          function_author: "admin",
+          remark: null,
+          status: 0,
+        },
+      ]);
       results.set("SELECT * FROM sys_gen_table_column WHERE table_id", [
-        { id: "c1", table_id: "t1", column_name: "id", column_type: "VARCHAR(36)", typescript_type: "string", field_name: "id", field_comment: "主键", is_primary: true, is_nullable: false, is_list: false, is_insert: false, is_update: false, is_query: false, query_type: null, sort: 0 },
-        { id: "c2", table_id: "t1", column_name: "name", column_type: "VARCHAR(128)", typescript_type: "string", field_name: "name", field_comment: "名称", is_primary: false, is_nullable: false, is_list: true, is_insert: true, is_update: true, is_query: false, query_type: null, sort: 1 },
+        {
+          id: "c1",
+          table_id: "t1",
+          column_name: "id",
+          column_type: "VARCHAR(36)",
+          typescript_type: "string",
+          field_name: "id",
+          field_comment: "主键",
+          is_primary: true,
+          is_nullable: false,
+          is_list: false,
+          is_insert: false,
+          is_update: false,
+          is_query: false,
+          query_type: null,
+          sort: 0,
+        },
+        {
+          id: "c2",
+          table_id: "t1",
+          column_name: "name",
+          column_type: "VARCHAR(128)",
+          typescript_type: "string",
+          field_name: "name",
+          field_comment: "名称",
+          is_primary: false,
+          is_nullable: false,
+          is_list: true,
+          is_insert: true,
+          is_update: true,
+          is_query: false,
+          query_type: null,
+          sort: 1,
+        },
       ]);
 
       const files = await service.preview("t1");
       expect(files.length).toBe(5);
 
-      const filenames = files.map(f => f.filename);
+      const filenames = files.map((f) => f.filename);
       expect(filenames).toContain("models/user.ts");
       expect(filenames).toContain("services/user.ts");
       expect(filenames).toContain("routes/user.ts");
@@ -223,18 +315,36 @@ describe("GenService", () => {
     });
 
     it("generate should produce same result as preview", async () => {
-      results.set("SELECT * FROM sys_gen_table WHERE id", [{
-        id: "t1",
-        table_name: "sys_role",
-        class_name: "Role",
-        module_name: "system",
-        function_name: "角色管理",
-        function_author: null,
-        remark: null,
-        status: 0,
-      }]);
+      results.set("SELECT * FROM sys_gen_table WHERE id", [
+        {
+          id: "t1",
+          table_name: "sys_role",
+          class_name: "Role",
+          module_name: "system",
+          function_name: "角色管理",
+          function_author: null,
+          remark: null,
+          status: 0,
+        },
+      ]);
       results.set("SELECT * FROM sys_gen_table_column WHERE table_id", [
-        { id: "c1", table_id: "t1", column_name: "id", column_type: "VARCHAR(36)", typescript_type: "string", field_name: "id", field_comment: null, is_primary: true, is_nullable: false, is_list: false, is_insert: false, is_update: false, is_query: false, query_type: null, sort: 0 },
+        {
+          id: "c1",
+          table_id: "t1",
+          column_name: "id",
+          column_type: "VARCHAR(36)",
+          typescript_type: "string",
+          field_name: "id",
+          field_comment: null,
+          is_primary: true,
+          is_nullable: false,
+          is_list: false,
+          is_insert: false,
+          is_update: false,
+          is_query: false,
+          query_type: null,
+          sort: 0,
+        },
       ]);
 
       const preview = await service.preview("t1");
@@ -252,45 +362,97 @@ describe("GenService", () => {
 
   describe("template rendering", () => {
     it("model template should produce defineModel code", async () => {
-      results.set("SELECT * FROM sys_gen_table WHERE id", [{
-        id: "t1",
-        table_name: "sys_user",
-        class_name: "User",
-        module_name: "system",
-        function_name: "用户管理",
-        function_author: null,
-        remark: null,
-        status: 0,
-      }]);
+      results.set("SELECT * FROM sys_gen_table WHERE id", [
+        {
+          id: "t1",
+          table_name: "sys_user",
+          class_name: "User",
+          module_name: "system",
+          function_name: "用户管理",
+          function_author: null,
+          remark: null,
+          status: 0,
+        },
+      ]);
       results.set("SELECT * FROM sys_gen_table_column WHERE table_id", [
-        { id: "c1", table_id: "t1", column_name: "id", column_type: "VARCHAR(36)", typescript_type: "string", field_name: "id", field_comment: null, is_primary: true, is_nullable: false, is_list: false, is_insert: false, is_update: false, is_query: false, query_type: null, sort: 0 },
-        { id: "c2", table_id: "t1", column_name: "name", column_type: "VARCHAR(128)", typescript_type: "string", field_name: "name", field_comment: null, is_primary: false, is_nullable: false, is_list: true, is_insert: true, is_update: true, is_query: false, query_type: null, sort: 1 },
+        {
+          id: "c1",
+          table_id: "t1",
+          column_name: "id",
+          column_type: "VARCHAR(36)",
+          typescript_type: "string",
+          field_name: "id",
+          field_comment: null,
+          is_primary: true,
+          is_nullable: false,
+          is_list: false,
+          is_insert: false,
+          is_update: false,
+          is_query: false,
+          query_type: null,
+          sort: 0,
+        },
+        {
+          id: "c2",
+          table_id: "t1",
+          column_name: "name",
+          column_type: "VARCHAR(128)",
+          typescript_type: "string",
+          field_name: "name",
+          field_comment: null,
+          is_primary: false,
+          is_nullable: false,
+          is_list: true,
+          is_insert: true,
+          is_update: true,
+          is_query: false,
+          query_type: null,
+          sort: 1,
+        },
       ]);
 
       const files = await service.preview("t1");
-      const modelFile = files.find(f => f.filename.includes("model"))!;
+      const modelFile = files.find((f) => f.filename.includes("model"))!;
       expect(modelFile.content).toContain("defineModel('sys_user'");
       expect(modelFile.content).toContain("id: column.string({ primary: true })");
       expect(modelFile.content).toContain("name: column.string()");
     });
 
     it("routes template should produce CRUD routes", async () => {
-      results.set("SELECT * FROM sys_gen_table WHERE id", [{
-        id: "t1",
-        table_name: "sys_user",
-        class_name: "User",
-        module_name: "system",
-        function_name: "用户管理",
-        function_author: null,
-        remark: null,
-        status: 0,
-      }]);
+      results.set("SELECT * FROM sys_gen_table WHERE id", [
+        {
+          id: "t1",
+          table_name: "sys_user",
+          class_name: "User",
+          module_name: "system",
+          function_name: "用户管理",
+          function_author: null,
+          remark: null,
+          status: 0,
+        },
+      ]);
       results.set("SELECT * FROM sys_gen_table_column WHERE table_id", [
-        { id: "c1", table_id: "t1", column_name: "id", column_type: "VARCHAR(36)", typescript_type: "string", field_name: "id", field_comment: null, is_primary: true, is_nullable: false, is_list: false, is_insert: false, is_update: false, is_query: false, query_type: null, sort: 0 },
+        {
+          id: "c1",
+          table_id: "t1",
+          column_name: "id",
+          column_type: "VARCHAR(36)",
+          typescript_type: "string",
+          field_name: "id",
+          field_comment: null,
+          is_primary: true,
+          is_nullable: false,
+          is_list: false,
+          is_insert: false,
+          is_update: false,
+          is_query: false,
+          query_type: null,
+          sort: 0,
+        },
       ]);
 
       const files = await service.preview("t1");
-      const routesFile = files.find(f => f.filename.includes("routes"))!;
+      const routesFile = files.find((f) => f.filename.includes("routes"))!;
       expect(routesFile.content).toContain("createUserRoutes");
       expect(routesFile.content).toContain("router.get(");
       expect(routesFile.content).toContain("router.post(");
@@ -299,23 +461,57 @@ describe("GenService", () => {
     });
 
     it("types template should produce interfaces", async () => {
-      results.set("SELECT * FROM sys_gen_table WHERE id", [{
-        id: "t1",
-        table_name: "sys_user",
-        class_name: "User",
-        module_name: "system",
-        function_name: "用户管理",
-        function_author: null,
-        remark: null,
-        status: 0,
-      }]);
+      results.set("SELECT * FROM sys_gen_table WHERE id", [
+        {
+          id: "t1",
+          table_name: "sys_user",
+          class_name: "User",
+          module_name: "system",
+          function_name: "用户管理",
+          function_author: null,
+          remark: null,
+          status: 0,
+        },
+      ]);
       results.set("SELECT * FROM sys_gen_table_column WHERE table_id", [
-        { id: "c1", table_id: "t1", column_name: "id", column_type: "VARCHAR(36)", typescript_type: "string", field_name: "id", field_comment: null, is_primary: true, is_nullable: false, is_list: false, is_insert: false, is_update: false, is_query: false, query_type: null, sort: 0 },
-        { id: "c2", table_id: "t1", column_name: "name", column_type: "VARCHAR(128)", typescript_type: "string", field_name: "name", field_comment: null, is_primary: false, is_nullable: true, is_list: true, is_insert: true, is_update: true, is_query: false, query_type: null, sort: 1 },
+        {
+          id: "c1",
+          table_id: "t1",
+          column_name: "id",
+          column_type: "VARCHAR(36)",
+          typescript_type: "string",
+          field_name: "id",
+          field_comment: null,
+          is_primary: true,
+          is_nullable: false,
+          is_list: false,
+          is_insert: false,
+          is_update: false,
+          is_query: false,
+          query_type: null,
+          sort: 0,
+        },
+        {
+          id: "c2",
+          table_id: "t1",
+          column_name: "name",
+          column_type: "VARCHAR(128)",
+          typescript_type: "string",
+          field_name: "name",
+          field_comment: null,
+          is_primary: false,
+          is_nullable: true,
+          is_list: true,
+          is_insert: true,
+          is_update: true,
+          is_query: false,
+          query_type: null,
+          sort: 1,
+        },
       ]);
 
       const files = await service.preview("t1");
-      const typesFile = files.find(f => f.filename.includes("types"))!;
+      const typesFile = files.find((f) => f.filename.includes("types"))!;
       expect(typesFile.content).toContain("CreateUserParams");
       expect(typesFile.content).toContain("UpdateUserParams");
       expect(typesFile.content).toContain("UserListParams");

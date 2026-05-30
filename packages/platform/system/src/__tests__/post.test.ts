@@ -4,7 +4,7 @@
 
 import { describe, expect, test } from "bun:test";
 import { createPostService } from "../services/post";
-import { createMockExecutor, createMockDatabase } from "./helpers";
+import { createMockDatabase, createMockExecutor } from "./helpers";
 
 function setup() {
   const mockExec = createMockExecutor();
@@ -17,15 +17,20 @@ function setup() {
 describe("PostService", () => {
   test("create inserts post with generated id", async () => {
     const s = setup();
-    const result = await s.postService.create({ name: "总经理", code: "ceo", sort: 1, remark: "最高管理岗" });
+    const result = await s.postService.create({
+      name: "总经理",
+      code: "ceo",
+      sort: 1,
+      remark: "最高管理岗",
+    });
     expect(result.id).toBeTruthy();
-    expect(s.calls.some(c => c.text.includes("INSERT"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("INSERT"))).toBe(true);
   });
 
   test("update executes UPDATE with changed fields", async () => {
     const s = setup();
     await s.postService.update("p1", { name: "副总经理", sort: 2 });
-    expect(s.calls.some(c => c.text.includes("UPDATE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
   });
 
   test("update with no fields does nothing", async () => {
@@ -37,7 +42,7 @@ describe("PostService", () => {
   test("delete performs soft delete", async () => {
     const s = setup();
     await s.postService.delete("p1");
-    expect(s.calls.some(c => c.text.includes("deleted_at"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("deleted_at"))).toBe(true);
   });
 
   test("list returns paginated results", async () => {
@@ -70,7 +75,7 @@ describe("PostService", () => {
     const result = await s.postService.list({ status: 1 });
     expect(result.items.length).toBe(1);
     // Verify the status filter was passed as a parameter
-    const selectCall = s.calls.find(c => c.text.includes("COUNT"));
+    const selectCall = s.calls.find((c) => c.text.includes("COUNT"));
     expect(selectCall!.params).toBeDefined();
   });
 });

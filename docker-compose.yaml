@@ -1,0 +1,98 @@
+# =============================================================
+# VentoStack Admin — 生产环境 Docker Compose
+#
+# 使用方式：
+#   1. 复制 .env.example 为 .env 并填写配置
+#   2. docker compose up -d
+#   3. 访问 http://localhost:9320
+#
+# 中间件服务：
+#   - PostgreSQL 16 (端口 5432)
+#   - Redis 7 (端口 6379)
+#   - Admin 应用 (端口 9320)
+# =============================================================
+
+services:
+  # ---- 数据库 ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: ventostack-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER:-vento}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-ventostack}
+      POSTGRES_DB: ${DB_NAME:-ventostack}
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vento} -d ${DB_NAME:-ventostack}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks:
+      - ventostack
+
+  # ---- 缓存 ----
+  redis:
+    image: redis:7-alpine
+    container_name: ventostack-redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - ventostack
+
+  # ---- 应用 ----
+  admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ventostack-admin
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 9320
+      HOST: 0.0.0.0
+      DATABASE_URL: postgres://${DB_USER:-vento}:${DB_PASSWORD:-ventostack}@postgres:5432/${DB_NAME:-ventostack}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      CACHE_DRIVER: redis
+      REDIS_URL: redis://redis:6379
+      ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:9320}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      STORAGE_DRIVER: local
+      STORAGE_LOCAL_PATH: /app/uploads
+    ports:
+      - "${APP_PORT:-9320}:9320"
+    volumes:
+      - upload_data:/app/uploads
+    networks:
+      - ventostack
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  upload_data:
+    driver: local
+
+networks:
+  ventostack:
+    driver: bridge

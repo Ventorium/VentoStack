@@ -4,7 +4,13 @@
 
 import { describe, expect, test } from "bun:test";
 import { createUserService } from "../services/user";
-import { createMockExecutor, createMockDatabase, createTestCache, createMockPasswordHasher, createMockConfigService } from "./helpers";
+import {
+  createMockConfigService,
+  createMockDatabase,
+  createMockExecutor,
+  createMockPasswordHasher,
+  createTestCache,
+} from "./helpers";
 
 function setup(configOverrides: Record<string, string> = {}) {
   const mockExec = createMockExecutor();
@@ -16,7 +22,14 @@ function setup(configOverrides: Record<string, string> = {}) {
   const passwordHasher = createMockPasswordHasher();
   const configService = createMockConfigService(configOverrides);
   const userService = createUserService({ db, passwordHasher, cache, configService });
-  return { userService, executor: mockExec.executor, calls, results: mockExec.results, passwordHasher, configService };
+  return {
+    userService,
+    executor: mockExec.executor,
+    calls,
+    results: mockExec.results,
+    passwordHasher,
+    configService,
+  };
 }
 
 describe("UserService", () => {
@@ -24,7 +37,9 @@ describe("UserService", () => {
     const s = setup();
     s.results.set("INSERT", [{ id: "u-new" }]);
     const result = await s.userService.create({
-      username: "alice", password: "pass123", nickname: "Alice",
+      username: "alice",
+      password: "pass123",
+      nickname: "Alice",
     });
     expect(result.id).toBeTruthy();
     expect(typeof result.id).toBe("string");
@@ -37,7 +52,8 @@ describe("UserService", () => {
     const s = setup();
     s.results.set("INSERT", [{ id: "u-new" }]);
     await s.userService.create({
-      username: "alice", password: "",
+      username: "alice",
+      password: "",
     });
     // Should have used config default "123456"
     expect(s.passwordHasher.hash).toHaveBeenCalledWith("123456");
@@ -46,20 +62,26 @@ describe("UserService", () => {
   test("update user executes UPDATE", async () => {
     const s = setup();
     await s.userService.update("u1", { nickname: "Bob" });
-    expect(s.calls.some(c => c.text.includes("UPDATE") || c.text.includes("update"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE") || c.text.includes("update"))).toBe(true);
   });
 
   test("delete user performs soft delete", async () => {
     const s = setup();
     await s.userService.delete("u1");
-    expect(s.calls.some(c => c.text.includes("UPDATE") || c.text.includes("DELETE"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE") || c.text.includes("DELETE"))).toBe(true);
   });
 
   test("getById returns user detail", async () => {
     const s = setup();
-    s.results.set("SELECT", [{
-      id: "u1", username: "admin", nickname: "Admin", status: 1, email: "a@b.com",
-    }]);
+    s.results.set("SELECT", [
+      {
+        id: "u1",
+        username: "admin",
+        nickname: "Admin",
+        status: 1,
+        email: "a@b.com",
+      },
+    ]);
     const user = await s.userService.getById("u1");
     expect(user).not.toBeNull();
     expect(user!.username).toBe("admin");
@@ -91,13 +113,12 @@ describe("UserService", () => {
 
   test("resetPassword rejects weak password based on config", async () => {
     const s = setup({ sys_password_min_length: "8" });
-    await expect(s.userService.resetPassword("u1", "short"))
-      .rejects.toThrow();
+    await expect(s.userService.resetPassword("u1", "short")).rejects.toThrow();
   });
 
   test("updateStatus changes user status", async () => {
     const s = setup();
     await s.userService.updateStatus("u1", 0);
-    expect(s.calls.some(c => c.text.includes("UPDATE") || c.text.includes("status"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes("UPDATE") || c.text.includes("status"))).toBe(true);
   });
 });

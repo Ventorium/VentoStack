@@ -40,7 +40,7 @@ describe("createTenantMiddleware", () => {
       const res = await middleware(ctx, makeNext());
       expect(res.status).toBe(400);
       const body = await res.json();
-      expect(body.error).toBe("Missing tenant identifier");
+      expect(body.error).toBe("缺少租户标识");
     });
   });
 
@@ -161,7 +161,7 @@ describe("createTenantMiddleware", () => {
       const res = await middleware(ctx, makeNext());
       expect(res.status).toBe(403);
       const body = await res.json();
-      expect(body.error).toBe("Access denied to tenant");
+      expect(body.error).toBe("无权访问该租户");
     });
 
     it("should return 500 when validateTenant throws", async () => {
@@ -175,7 +175,7 @@ describe("createTenantMiddleware", () => {
       const res = await middleware(ctx, makeNext());
       expect(res.status).toBe(500);
       const body = await res.json();
-      expect(body.error).toBe("Internal server error");
+      expect(body.error).toBe("服务器内部错误");
     });
 
     it("should maintain existing behavior when validateTenant is not provided", async () => {
@@ -195,7 +195,9 @@ describe("createTenantMiddleware", () => {
           return true;
         },
       });
-      const ctx = createContext(makeRequest("http://localhost/api", { "x-tenant-id": "my-tenant" }));
+      const ctx = createContext(
+        makeRequest("http://localhost/api", { "x-tenant-id": "my-tenant" }),
+      );
       await middleware(ctx, makeNext());
       expect(receivedId).toBe("my-tenant");
     });

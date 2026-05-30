@@ -5,7 +5,7 @@
 import { createRouter } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { I18nService } from "../services/i18n";
-import { ok, okPage, fail, parseBody, pageOf } from "./common";
+import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createI18nRoutes(
   i18nService: I18nService,

@@ -2,7 +2,7 @@
  * Test 代码模板
  */
 
-import type { GenTableInfo, GenColumnInfo } from "../services/gen";
+import type { GenColumnInfo, GenTableInfo } from "../services/gen";
 
 export function renderTest(table: GenTableInfo, columns: GenColumnInfo[]): string {
   const className = table.className;
@@ -21,7 +21,11 @@ function setup() {
 describe("${className} Service", () => {
   test("create 返回 ID", async () => {
     const s = setup();
-    const result = await s.service.create({${columns.filter(c => !c.isPrimary && c.isInsert).slice(0, 2).map(c => `\n      ${c.fieldName}: ${mockValue(c.typescriptType)},`).join("")}
+    const result = await s.service.create({${columns
+      .filter((c) => !c.isPrimary && c.isInsert)
+      .slice(0, 2)
+      .map((c) => `\n      ${c.fieldName}: ${mockValue(c.typescriptType)},`)
+      .join("")}
     });
     expect(result.id).toBeTruthy();
     expect(s.calls.some(c => c.text.includes("INSERT"))).toBe(true);
@@ -50,7 +54,9 @@ function toKebab(str: string): string {
 
 function mockValue(tsType: string): string {
   const map: Record<string, string> = {
-    string: '"test"', number: "1", boolean: "true",
+    string: '"test"',
+    number: "1",
+    boolean: "true",
   };
   return map[tsType] ?? '"test"';
 }

@@ -3,7 +3,9 @@ import { createRedisSessionStore } from "../redis-session-store";
 import type { RedisSessionClientLike } from "../redis-session-store";
 
 /** 创建内存 mock Redis 客户端 */
-function createMockRedisClient(): RedisSessionClientLike & { store: Map<string, { value: string; timer?: Timer }> } {
+function createMockRedisClient(): RedisSessionClientLike & {
+  store: Map<string, { value: string; timer?: Timer }>;
+} {
   const store = new Map<string, { value: string; timer?: Timer }>();
 
   return {

@@ -5,8 +5,8 @@
 
 import type { Database } from "@ventostack/database";
 import type { StorageAdapter } from "../adapters/storage";
-import { detectMIME, mimeFromExtension } from "./mime-detect";
 import { OSSFileModel } from "../models";
+import { detectMIME, mimeFromExtension } from "./mime-detect";
 
 /** 上传参数 */
 export interface UploadParams {
@@ -49,7 +49,9 @@ export interface ListParams {
 /** OSS 服务接口 */
 export interface OSSService {
   upload(params: UploadParams, uploaderId: string): Promise<OSSFileRecord>;
-  download(fileId: string): Promise<{ stream: ReadableStream; contentType: string; filename: string } | null>;
+  download(
+    fileId: string,
+  ): Promise<{ stream: ReadableStream; contentType: string; filename: string } | null>;
   delete(fileId: string): Promise<void>;
   getSignedUrl(fileId: string, expiresIn?: number): Promise<string | null>;
   getById(fileId: string): Promise<OSSFileRecord | null>;
@@ -105,7 +107,8 @@ export function createOSSService(deps: {
     },
 
     async download(fileId) {
-      const file = await db.query(OSSFileModel)
+      const file = await db
+        .query(OSSFileModel)
         .where("id", "=", fileId)
         .select("id", "original_name", "storage_path", "mime_type")
         .get();
@@ -122,7 +125,8 @@ export function createOSSService(deps: {
     },
 
     async delete(fileId) {
-      const file = await db.query(OSSFileModel)
+      const file = await db
+        .query(OSSFileModel)
         .where("id", "=", fileId)
         .select("storage_path")
         .get();
@@ -133,7 +137,8 @@ export function createOSSService(deps: {
     },
 
     async getSignedUrl(fileId, expiresIn = 3600) {
-      const file = await db.query(OSSFileModel)
+      const file = await db
+        .query(OSSFileModel)
         .where("id", "=", fileId)
         .select("storage_path")
         .get();
@@ -143,9 +148,20 @@ export function createOSSService(deps: {
     },
 
     async getById(fileId) {
-      const row = await db.query(OSSFileModel)
+      const row = await db
+        .query(OSSFileModel)
         .where("id", "=", fileId)
-        .select("id", "original_name", "storage_path", "size", "mime_type", "extension", "bucket", "uploader_id", "created_at")
+        .select(
+          "id",
+          "original_name",
+          "storage_path",
+          "size",
+          "mime_type",
+          "extension",
+          "bucket",
+          "uploader_id",
+          "created_at",
+        )
         .get();
       if (!row) return null;
 
@@ -158,7 +174,8 @@ export function createOSSService(deps: {
         extension: row.extension ?? null,
         bucket: row.bucket,
         uploaderId: row.uploader_id ?? null,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       };
     },
 
@@ -172,7 +189,17 @@ export function createOSSService(deps: {
       const total = await query.count();
 
       const rows = await query
-        .select("id", "original_name", "storage_path", "size", "mime_type", "extension", "bucket", "uploader_id", "created_at")
+        .select(
+          "id",
+          "original_name",
+          "storage_path",
+          "size",
+          "mime_type",
+          "extension",
+          "bucket",
+          "uploader_id",
+          "created_at",
+        )
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -187,10 +214,17 @@ export function createOSSService(deps: {
         extension: row.extension ?? null,
         bucket: row.bucket,
         uploaderId: row.uploader_id ?? null,
-        createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        createdAt:
+          row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
   };
 }

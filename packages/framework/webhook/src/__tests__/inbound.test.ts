@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { createGenericHmacVerifier, createInboundVerifier } from "../inbound";
 import { hmacSign } from "../crypto";
+import { createGenericHmacVerifier, createInboundVerifier } from "../inbound";
 
 describe("createGenericHmacVerifier", () => {
   test("validates correct HMAC signature", async () => {
@@ -69,9 +69,9 @@ describe("createInboundVerifier", () => {
       config: { secret: "my-secret" },
     });
 
-    await expect(
-      verifier.verifyAndConvert("body", { "x-signature": "wrong" }),
-    ).rejects.toThrow("Webhook verification failed");
+    await expect(verifier.verifyAndConvert("body", { "x-signature": "wrong" })).rejects.toThrow(
+      "Webhook verification failed",
+    );
   });
 
   test("uses custom source name", async () => {

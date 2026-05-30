@@ -184,7 +184,9 @@ export function createJWT(config?: JWTConfig): JWTManager {
   function resolveSecret(secret?: string): string {
     const s = secret ?? defaultSecret;
     if (!s) {
-      throw new Error("JWT secret is required. Provide it via createJWT({ secret }) or sign()/verify().");
+      throw new Error(
+        "JWT secret is required. Provide it via createJWT({ secret }) or sign()/verify().",
+      );
     }
     return s;
   }
@@ -275,9 +277,7 @@ export function createJWT(config?: JWTConfig): JWTManager {
       const algorithm = header.alg as JWTAlgorithm;
       const expectedAlgorithm = merged.algorithm ?? algorithm;
       if (algorithm !== expectedAlgorithm) {
-        throw new UnauthorizedError(
-          `算法不匹配：期望 ${expectedAlgorithm}，实际 ${algorithm}`,
-        );
+        throw new UnauthorizedError(`算法不匹配：期望 ${expectedAlgorithm}，实际 ${algorithm}`);
       }
 
       // Verify signature using crypto.subtle.verify (constant-time)

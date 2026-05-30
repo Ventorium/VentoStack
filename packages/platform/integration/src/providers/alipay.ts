@@ -9,7 +9,11 @@
  * - bodyParams: Record<string, string> — 解析后的请求体参数
  */
 
-import type { ProviderVerifyConfig, VerifyResult, WebhookProviderVerifier } from "@ventostack/webhook";
+import type {
+  ProviderVerifyConfig,
+  VerifyResult,
+  WebhookProviderVerifier,
+} from "@ventostack/webhook";
 import { rsaSha256Verify } from "@ventostack/webhook";
 
 /**
@@ -47,9 +51,7 @@ export function createAlipayVerifier(): WebhookProviderVerifier {
         .filter((key) => key !== "sign" && key !== "sign_type" && bodyParams[key] !== "")
         .sort();
 
-      const signString = sortedKeys
-        .map((key) => `${key}=${bodyParams[key]}`)
-        .join("&");
+      const signString = sortedKeys.map((key) => `${key}=${bodyParams[key]}`).join("&");
 
       const isValid = await rsaSha256Verify(signString, sign, config.publicKey);
 

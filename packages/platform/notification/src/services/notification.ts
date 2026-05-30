@@ -3,12 +3,15 @@
  */
 
 import type { Database } from "@ventostack/database";
-import { NotifyTemplateModel, NotifyMessageModel, NotifyUserReadModel } from "../models";
+import { NotifyMessageModel, NotifyTemplateModel } from "../models";
 
 /** 通知通道接口 */
 export interface NotifyChannel {
   name: string;
-  send(params: { to: string; title: string; content: string }): Promise<{ success: boolean; error?: string }>;
+  send(params: { to: string; title: string; content: string }): Promise<{
+    success: boolean;
+    error?: string;
+  }>;
 }
 
 /** 通知模板 */
@@ -93,9 +96,14 @@ export interface NotificationService {
     content: string;
   }): Promise<{ id: string }>;
 
-  updateTemplate(id: string, params: Partial<{ name: string; title: string; content: string; status: number }>): Promise<void>;
+  updateTemplate(
+    id: string,
+    params: Partial<{ name: string; title: string; content: string; status: number }>,
+  ): Promise<void>;
   deleteTemplate(id: string): Promise<void>;
-  listTemplates(params?: { channel?: string; page?: number; pageSize?: number }): Promise<PaginatedResult<NotifyTemplate>>;
+  listTemplates(params?: { channel?: string; page?: number; pageSize?: number }): Promise<
+    PaginatedResult<NotifyTemplate>
+  >;
 }
 
 /** 通知服务依赖 */
@@ -107,8 +115,12 @@ export interface NotificationServiceDeps {
 export function createNotificationService(deps: NotificationServiceDeps): NotificationService {
   const { db, channels } = deps;
 
-  async function renderTemplate(templateId: string, variables?: Record<string, unknown>): Promise<{ title: string; content: string } | null> {
-    const tpl = await db.query(NotifyTemplateModel)
+  async function renderTemplate(
+    templateId: string,
+    variables?: Record<string, unknown>,
+  ): Promise<{ title: string; content: string } | null> {
+    const tpl = await db
+      .query(NotifyTemplateModel)
       .where("id", "=", templateId)
       .select("title", "content")
       .get();
@@ -187,7 +199,20 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       const total = await query.count();
 
       const rows = await query
-        .select("id", "template_id", "channel", "receiver_id", "title", "content", "variables", "status", "retry_count", "send_at", "error", "created_at")
+        .select(
+          "id",
+          "template_id",
+          "channel",
+          "receiver_id",
+          "title",
+          "content",
+          "variables",
+          "status",
+          "retry_count",
+          "send_at",
+          "error",
+          "created_at",
+        )
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -208,17 +233,23 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
         createdAt: row.created_at.toISOString(),
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
 
     async getUnreadCount(userId) {
       // NOT EXISTS subquery — keep as db.raw
-      const rows = await db.raw(
+      const rows = (await db.raw(
         `SELECT COUNT(*) as total FROM sys_notify_message m
          WHERE m.receiver_id = $1 AND m.status = ${MessageStatus.SENT}
          AND NOT EXISTS (SELECT 1 FROM sys_notify_user_read r WHERE r.user_id = $1 AND r.message_id = m.id)`,
         [userId],
-      ) as Array<{ total: number }>;
+      )) as Array<{ total: number }>;
       return Number(rows[0]?.total ?? 0);
     },
 
@@ -244,7 +275,8 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
     },
 
     async retry(messageId) {
-      const msg = await db.query(NotifyMessageModel)
+      const msg = await db
+        .query(NotifyMessageModel)
         .where("id", "=", messageId)
         .select("id", "channel", "receiver_id", "title", "content")
         .get();
@@ -268,11 +300,14 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       const status = result.success ? MessageStatus.SENT : MessageStatus.FAILED;
       const sendAt = result.success ? new Date() : null;
 
-      await db.query(NotifyMessageModel).where("id", "=", messageId).update({
-        status,
-        send_at: sendAt,
-        error: result.error ?? null,
-      });
+      await db
+        .query(NotifyMessageModel)
+        .where("id", "=", messageId)
+        .update({
+          status,
+          send_at: sendAt,
+          error: result.error ?? null,
+        });
     },
 
     async createTemplate(params) {
@@ -329,7 +364,13 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
         status: row.status,
       }));
 
-      return { items, total, page, pageSize, totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0 };
+      return {
+        items,
+        total,
+        page,
+        pageSize,
+        totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+      };
     },
   };
 }

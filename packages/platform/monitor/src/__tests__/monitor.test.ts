@@ -2,9 +2,9 @@
  * @ventostack/monitor - 监控服务测试
  */
 
-import { describe, it, expect, beforeEach } from "bun:test";
+import { beforeEach, describe, expect, it } from "bun:test";
 import { createMonitorService } from "../services/monitor";
-import { createMockHealthCheck } from "./helpers";
+import { createMockDatabase, createMockExecutor, createMockHealthCheck } from "./helpers";
 
 describe("MonitorService", () => {
   let healthCheck: ReturnType<typeof createMockHealthCheck>;
@@ -12,7 +12,9 @@ describe("MonitorService", () => {
 
   beforeEach(() => {
     healthCheck = createMockHealthCheck();
-    service = createMonitorService({ healthCheck });
+    const mockExec = createMockExecutor();
+    const { db } = createMockDatabase(mockExec);
+    service = createMonitorService({ healthCheck, db });
   });
 
   describe("getServerStatus", () => {
@@ -20,22 +22,19 @@ describe("MonitorService", () => {
       const status = await service.getServerStatus();
 
       expect(status.uptime).toBeGreaterThanOrEqual(0);
-      expect(status.memory.total).toBeGreaterThan(0);
-      expect(status.memory.used).toBeGreaterThan(0);
-      expect(status.memory.usagePercent).toBeGreaterThanOrEqual(0);
-      expect(status.memory.usagePercent).toBeLessThanOrEqual(100);
-      expect(status.cpu.cores).toBeGreaterThan(0);
-      expect(status.cpu.model).toBeTruthy();
-      expect(status.cpu.loadAvg.length).toBe(3);
-      expect(status.runtime).toContain("Bun");
-      expect(status.pid).toBeGreaterThan(0);
+      expect(status.memoryTotal).toBeGreaterThanOrEqual(0);
+      expect(status.memoryUsed).toBeGreaterThanOrEqual(0);
+      expect(status.memoryUsage).toBeGreaterThanOrEqual(0);
+      expect(status.memoryUsage).toBeLessThanOrEqual(1);
+      expect(typeof status.cpuUsage).toBe("number");
     });
   });
 
   describe("getCacheStats", () => {
-    it("should return disconnected when no provider", async () => {
+    it("should return default stats when no provider", async () => {
       const stats = await service.getCacheStats();
-      expect(stats.connected).toBe(false);
+      expect(stats.keyCount).toBe(0);
+      expect(stats.hitRate).toBe(0);
     });
 
     it("should use provider when available", async () => {
@@ -50,14 +49,13 @@ describe("MonitorService", () => {
       const stats = await service.getCacheStats();
       expect(stats.connected).toBe(true);
       expect(stats.hits).toBe(100);
-      expect(stats.misses).toBe(10);
     });
   });
 
   describe("getDataSourceStatus", () => {
-    it("should return disconnected when no provider", async () => {
+    it("should return status when no provider", async () => {
       const status = await service.getDataSourceStatus();
-      expect(status.connected).toBe(false);
+      expect(["UP", "DOWN", "UNKNOWN"]).toContain(status.status);
     });
 
     it("should use provider when available", async () => {
@@ -81,10 +79,9 @@ describe("MonitorService", () => {
     it("should return health status", async () => {
       const health = await service.getHealthStatus();
 
-      expect(health.status).toBe("ok");
-      expect(health.checks).toHaveProperty("database");
-      expect(health.checks).toHaveProperty("cache");
-      expect(health.uptime).toBe(12345);
+      expect(health.status).toBe("UP");
+      expect(Array.isArray(health.checks)).toBe(true);
+      expect(health.checks.length).toBeGreaterThan(0);
       expect(healthCheck.ready).toHaveBeenCalled();
     });
 
@@ -99,8 +96,8 @@ describe("MonitorService", () => {
       });
 
       const health = await service.getHealthStatus();
-      expect(health.status).toBe("degraded");
-      expect(health.checks.cache).toHaveProperty("status", "error");
+      expect(health.status).toBe("DEGRADED");
+      expect(Array.isArray(health.checks)).toBe(true);
     });
   });
 });

@@ -9,7 +9,11 @@
  * config.extra = { timestamp: string, sign: string }
  */
 
-import type { ProviderVerifyConfig, VerifyResult, WebhookProviderVerifier } from "@ventostack/webhook";
+import type {
+  ProviderVerifyConfig,
+  VerifyResult,
+  WebhookProviderVerifier,
+} from "@ventostack/webhook";
 import { timingSafeEqual } from "@ventostack/webhook";
 
 const DEFAULT_TOLERANCE = 60 * 60 * 1000; // 1 小时

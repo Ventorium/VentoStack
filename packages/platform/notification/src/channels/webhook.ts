@@ -27,9 +27,7 @@ export function createWebhookChannel(options: WebhookChannelOptions): NotifyChan
             title: params.title,
             content: params.content,
           }),
-          signal: options.timeout
-            ? AbortSignal.timeout(options.timeout)
-            : undefined,
+          signal: options.timeout ? AbortSignal.timeout(options.timeout) : undefined,
         });
 
         if (!response.ok) {

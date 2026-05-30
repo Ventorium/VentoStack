@@ -3,9 +3,9 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { inspect } from "node:util";
-import { loadYAMLConfig, parseYAML, stringifyYAML } from "../yaml-config";
 import { safeConfig } from "../config";
 import type { ConfigSchema } from "../config";
+import { loadYAMLConfig, parseYAML, stringifyYAML } from "../yaml-config";
 
 let tmpDir: string;
 
@@ -117,7 +117,7 @@ describe("loadYAMLConfig", () => {
     const configDir = join(tmpDir, "env-override");
     mkdirSync(configDir, { recursive: true });
     const filePath = join(configDir, "app.yaml");
-    writeFileSync(filePath, "server:\n  host: \"{SERVER_HOST}\"\n");
+    writeFileSync(filePath, 'server:\n  host: "{SERVER_HOST}"\n');
 
     process.env.SERVER_HOST = "from-process";
 
@@ -132,7 +132,7 @@ describe("loadYAMLConfig", () => {
     const configDir = join(tmpDir, "missing-env");
     mkdirSync(configDir, { recursive: true });
     const filePath = join(configDir, "app.yaml");
-    writeFileSync(filePath, "server:\n  host: \"{SERVER_HOST}\"\n");
+    writeFileSync(filePath, 'server:\n  host: "{SERVER_HOST}"\n');
 
     await expect(loadYAMLConfig(filePath)).rejects.toThrow(
       'Missing environment variable "SERVER_HOST"',
@@ -162,7 +162,7 @@ describe("loadYAMLConfig", () => {
     const filePath = join(configDir, "app.yaml");
     writeFileSync(
       filePath,
-      "server:\n  host: \"{SERVER_HOST}\"\n  port: 3000\n  token: secret-token\n",
+      'server:\n  host: "{SERVER_HOST}"\n  port: 3000\n  token: secret-token\n',
     );
 
     const schema: ConfigSchema = {
@@ -188,7 +188,7 @@ describe("loadYAMLConfig", () => {
     const filePath = join(configDir, "app.yaml");
     writeFileSync(
       filePath,
-      "server:\n  host: \"{SERVER_HOST}\"\n  port: 3000\n  token: secret-token\n",
+      'server:\n  host: "{SERVER_HOST}"\n  port: 3000\n  token: secret-token\n',
     );
 
     const schema: ConfigSchema = {

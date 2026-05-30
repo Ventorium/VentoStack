@@ -2,10 +2,20 @@
 // @ventostack/openapi — 从路由 Schema 推导 OpenAPI
 // ============================================================
 
-import type { OpenAPIParameter, OpenAPIRequestBody, OpenAPIOperation, OpenAPIResponse } from "./generator";
-import type { OpenAPISchema } from "./schema-builder";
 import { isRouteResponseConfig } from "@ventostack/core";
-import type { RouteResponseDefinition, RouteSchemaConfig, SchemaField, SchemaFieldType } from "@ventostack/core";
+import type {
+  RouteResponseDefinition,
+  RouteSchemaConfig,
+  SchemaField,
+  SchemaFieldType,
+} from "@ventostack/core";
+import type {
+  OpenAPIOperation,
+  OpenAPIParameter,
+  OpenAPIRequestBody,
+  OpenAPIResponse,
+} from "./generator";
+import type { OpenAPISchema } from "./schema-builder";
 
 /**
  * 将 SchemaFieldType 映射为 OpenAPI 类型
@@ -108,7 +118,9 @@ export function schemaToOpenAPIObject(schema: Record<string, SchemaField>): Open
  * @param querySchema - 查询参数 schema
  * @returns OpenAPIParameter 数组
  */
-export function querySchemaToParameters(querySchema: Record<string, SchemaField>): OpenAPIParameter[] {
+export function querySchemaToParameters(
+  querySchema: Record<string, SchemaField>,
+): OpenAPIParameter[] {
   const params: OpenAPIParameter[] = [];
   for (const [key, field] of Object.entries(querySchema)) {
     const param: OpenAPIParameter = {
@@ -128,7 +140,9 @@ export function querySchemaToParameters(querySchema: Record<string, SchemaField>
  * @param headersSchema - 请求头 schema
  * @returns OpenAPIParameter 数组
  */
-export function headersSchemaToParameters(headersSchema: Record<string, SchemaField>): OpenAPIParameter[] {
+export function headersSchemaToParameters(
+  headersSchema: Record<string, SchemaField>,
+): OpenAPIParameter[] {
   const params: OpenAPIParameter[] = [];
   for (const [key, field] of Object.entries(headersSchema)) {
     const param: OpenAPIParameter = {
@@ -148,7 +162,9 @@ export function headersSchemaToParameters(headersSchema: Record<string, SchemaFi
  * @param bodySchema - 请求体 schema
  * @returns OpenAPIRequestBody 对象
  */
-export function bodySchemaToRequestBody(bodySchema: Record<string, SchemaField>): OpenAPIRequestBody {
+export function bodySchemaToRequestBody(
+  bodySchema: Record<string, SchemaField>,
+): OpenAPIRequestBody {
   return {
     required: Object.values(bodySchema).some((f) => f.required),
     content: {
@@ -162,7 +178,9 @@ export function bodySchemaToRequestBody(bodySchema: Record<string, SchemaField>)
  * @param formDataSchema - FormData schema
  * @returns OpenAPIRequestBody 对象
  */
-export function formDataSchemaToRequestBody(formDataSchema: Record<string, SchemaField>): OpenAPIRequestBody {
+export function formDataSchemaToRequestBody(
+  formDataSchema: Record<string, SchemaField>,
+): OpenAPIRequestBody {
   return {
     required: Object.values(formDataSchema).some((f) => f.required),
     content: {

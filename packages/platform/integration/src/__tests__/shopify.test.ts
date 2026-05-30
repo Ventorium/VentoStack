@@ -15,9 +15,13 @@ describe("createShopifyVerifier", () => {
     const body = '{"id":123,"topic":"orders/create"}';
     const signature = computeShopifyHmac(body, secret);
 
-    const result = await verifier.verify(body, {
-      "x-shopify-hmac-sha256": signature,
-    }, { secret });
+    const result = await verifier.verify(
+      body,
+      {
+        "x-shopify-hmac-sha256": signature,
+      },
+      { secret },
+    );
 
     expect(result.valid).toBe(true);
   });
@@ -26,11 +30,15 @@ describe("createShopifyVerifier", () => {
     const body = '{"id":123}';
     const signature = computeShopifyHmac(body, secret);
 
-    const result = await verifier.verify(body, {
-      "x-shopify-hmac-sha256": signature,
-      "x-shopify-topic": "orders/create",
-      "x-shopify-shop-domain": "my-shop.myshopify.com",
-    }, { secret });
+    const result = await verifier.verify(
+      body,
+      {
+        "x-shopify-hmac-sha256": signature,
+        "x-shopify-topic": "orders/create",
+        "x-shopify-shop-domain": "my-shop.myshopify.com",
+      },
+      { secret },
+    );
 
     expect(result.valid).toBe(true);
     expect(result.eventType).toBe("orders/create");
@@ -42,9 +50,13 @@ describe("createShopifyVerifier", () => {
     const body = '{"id":123}';
     const signature = computeShopifyHmac(body, secret);
 
-    const result = await verifier.verify(body, {
-      "x-shopify-hmac-sha256": signature,
-    }, { secret: "wrong-secret" });
+    const result = await verifier.verify(
+      body,
+      {
+        "x-shopify-hmac-sha256": signature,
+      },
+      { secret: "wrong-secret" },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Signature mismatch");

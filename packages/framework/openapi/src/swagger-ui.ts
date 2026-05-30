@@ -5,7 +5,7 @@
  * 无需本地依赖，直接通过 CDN 加载 Swagger UI。
  */
 
-import type { VentoStackApp, Plugin } from "@ventostack/core";
+import type { Plugin, VentoStackApp } from "@ventostack/core";
 
 /** Swagger UI 配置选项 */
 export interface SwaggerUIOptions {

@@ -332,11 +332,14 @@ import { createConfig } from "../config";
 
 describe("createConfig type inference", () => {
   test("default value makes type non-nullable", () => {
-    const config = createConfig({
-      port: { type: "number", default: 3000 },
-      host: { type: "string", default: "0.0.0.0" },
-      debug: { type: "boolean", default: false },
-    }, {});
+    const config = createConfig(
+      {
+        port: { type: "number", default: 3000 },
+        host: { type: "string", default: "0.0.0.0" },
+        debug: { type: "boolean", default: false },
+      },
+      {},
+    );
 
     // 有 default 的字段不应包含 undefined
     const port: number = config.port;
@@ -349,18 +352,24 @@ describe("createConfig type inference", () => {
   });
 
   test("required true makes type non-nullable", () => {
-    const config = createConfig({
-      databaseUrl: { type: "string", required: true, env: "DATABASE_URL" },
-    }, { DATABASE_URL: "postgres://localhost" });
+    const config = createConfig(
+      {
+        databaseUrl: { type: "string", required: true, env: "DATABASE_URL" },
+      },
+      { DATABASE_URL: "postgres://localhost" },
+    );
 
     const url: string = config.databaseUrl;
     expect(url).toBe("postgres://localhost");
   });
 
   test("no default and no required gives undefined", () => {
-    const config = createConfig({
-      optionalPort: { type: "number" },
-    }, {});
+    const config = createConfig(
+      {
+        optionalPort: { type: "number" },
+      },
+      {},
+    );
 
     // 无 default 且无 required 时应包含 undefined
     const port: number | undefined = config.optionalPort;
@@ -378,19 +387,25 @@ describe("createConfig type inference", () => {
     createConfig({ debug: { type: "boolean", default: "true" } }, {});
 
     // 正确类型应通过
-    createConfig({
-      port: { type: "number", default: 3000 },
-      host: { type: "string", default: "localhost" },
-      debug: { type: "boolean", default: true },
-    }, {});
+    createConfig(
+      {
+        port: { type: "number", default: 3000 },
+        host: { type: "string", default: "localhost" },
+        debug: { type: "boolean", default: true },
+      },
+      {},
+    );
   });
 
   test("options infers union type", () => {
-    const config = createConfig({
-      logLevel: { type: "string", options: ["debug", "info", "error"] as const, default: "info" },
-      mode: { type: "number", options: [1, 2, 3] as const, default: 1 },
-      flag: { type: "boolean", options: [true, false] as const, default: false },
-    }, {});
+    const config = createConfig(
+      {
+        logLevel: { type: "string", options: ["debug", "info", "error"] as const, default: "info" },
+        mode: { type: "number", options: [1, 2, 3] as const, default: 1 },
+        flag: { type: "boolean", options: [true, false] as const, default: false },
+      },
+      {},
+    );
 
     // 类型应为字面量 union
     const logLevel: "debug" | "info" | "error" = config.logLevel;
@@ -406,7 +421,11 @@ describe("createConfig type inference", () => {
     expect(() =>
       createConfig(
         {
-          logLevel: { type: "string", options: ["debug", "info", "error"] as const, env: "LOG_LEVEL" },
+          logLevel: {
+            type: "string",
+            options: ["debug", "info", "error"] as const,
+            env: "LOG_LEVEL",
+          },
         },
         { LOG_LEVEL: "warn" },
       ),
@@ -416,7 +435,11 @@ describe("createConfig type inference", () => {
   test("options runtime validation accepts valid value", () => {
     const config = createConfig(
       {
-        logLevel: { type: "string", options: ["debug", "info", "error"] as const, env: "LOG_LEVEL" },
+        logLevel: {
+          type: "string",
+          options: ["debug", "info", "error"] as const,
+          env: "LOG_LEVEL",
+        },
       },
       { LOG_LEVEL: "debug" },
     );

@@ -3,9 +3,9 @@
  * 提供基于 JWT 的认证中间件与基于 RBAC 的权限校验中间件
  */
 
-import type { Middleware } from "@ventostack/core";
 import type { JWTManager } from "@ventostack/auth";
 import type { RBAC } from "@ventostack/auth";
+import type { Middleware } from "@ventostack/core";
 
 /** 认证后的用户信息（注入到 ctx.user） */
 export interface AuthUser {
@@ -31,10 +31,10 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
   return async (ctx, next) => {
     const authHeader = ctx.request.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
-      return new Response(
-        JSON.stringify({ code: 401, message: "缺少认证令牌" }),
-        { status: 401, headers: JSON_HEADERS },
-      );
+      return new Response(JSON.stringify({ code: 401, message: "缺少认证令牌" }), {
+        status: 401,
+        headers: JSON_HEADERS,
+      });
     }
 
     const token = authHeader.slice(7);
@@ -42,15 +42,15 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
       const payload = await jwt.verify(token, secret);
       ctx.user = {
         id: payload.sub ?? "",
-        roles: (payload as Record<string, unknown>).roles as string[] ?? [],
+        roles: ((payload as Record<string, unknown>).roles as string[]) ?? [],
         username: ((payload as Record<string, unknown>).username as string) ?? "",
       } satisfies AuthUser;
       return next();
     } catch {
-      return new Response(
-        JSON.stringify({ code: 401, message: "无效的认证令牌" }),
-        { status: 401, headers: JSON_HEADERS },
-      );
+      return new Response(JSON.stringify({ code: 401, message: "无效的认证令牌" }), {
+        status: 401,
+        headers: JSON_HEADERS,
+      });
     }
   };
 }
@@ -67,10 +67,10 @@ export function createPermMiddleware(rbac: RBAC): (resource: string, action: str
     return async (ctx, next) => {
       const user = ctx.user as AuthUser | undefined;
       if (!user) {
-        return new Response(
-          JSON.stringify({ code: 401, message: "未登录" }),
-          { status: 401, headers: JSON_HEADERS },
-        );
+        return new Response(JSON.stringify({ code: 401, message: "未登录" }), {
+          status: 401,
+          headers: JSON_HEADERS,
+        });
       }
 
       // 超级管理员跳过权限检查
@@ -78,9 +78,7 @@ export function createPermMiddleware(rbac: RBAC): (resource: string, action: str
         return next();
       }
 
-      const allowed = user.roles.some(
-        (role) => rbac.hasPermission(role, resource, action),
-      );
+      const allowed = user.roles.some((role) => rbac.hasPermission(role, resource, action));
       if (!allowed) {
         return new Response(
           JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),

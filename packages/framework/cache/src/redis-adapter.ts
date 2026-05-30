@@ -84,9 +84,7 @@ export function createRedisAdapter(options: RedisAdapterOptions): CacheAdapter {
     const result = await client.keys(prefixed(pattern));
     // 去除前缀，返回原始键名
     if (!keyPrefix) return result;
-    return result
-      .filter((k) => k.startsWith(keyPrefix))
-      .map((k) => k.slice(keyPrefix.length));
+    return result.filter((k) => k.startsWith(keyPrefix)).map((k) => k.slice(keyPrefix.length));
   }
 
   return { get, set, del, has, flush, keys };

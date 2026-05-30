@@ -5,7 +5,7 @@
 import { createRouter } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { SchedulerService } from "../services/scheduler";
-import { ok, okPage, fail, parseBody, pageOf } from "./common";
+import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createSchedulerRoutes(
   schedulerService: SchedulerService,
@@ -62,29 +62,41 @@ export function createSchedulerRoutes(
   });
 
   // Start job
-  router.put("/api/system/scheduler/jobs/:id/start", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    await schedulerService.start(id);
-    return ok(null);
-  });
+  router.put(
+    "/api/system/scheduler/jobs/:id/start",
+    perm("scheduler", "job:update"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      await schedulerService.start(id);
+      return ok(null);
+    },
+  );
 
   // Stop job
-  router.put("/api/system/scheduler/jobs/:id/stop", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    await schedulerService.stop(id);
-    return ok(null);
-  });
+  router.put(
+    "/api/system/scheduler/jobs/:id/stop",
+    perm("scheduler", "job:update"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      await schedulerService.stop(id);
+      return ok(null);
+    },
+  );
 
   // Execute job immediately
-  router.post("/api/system/scheduler/jobs/:id/execute", perm("scheduler", "job:update"), async (ctx) => {
-    const id = (ctx.params as Record<string, string>).id!;
-    try {
-      await schedulerService.executeNow(id);
-      return ok(null);
-    } catch (e) {
-      return fail(e instanceof Error ? e.message : "执行失败", 500);
-    }
-  });
+  router.post(
+    "/api/system/scheduler/jobs/:id/execute",
+    perm("scheduler", "job:update"),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      try {
+        await schedulerService.executeNow(id);
+        return ok(null);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "执行失败", 500);
+      }
+    },
+  );
 
   // List logs
   router.get("/api/system/scheduler/logs", perm("scheduler", "job:list"), async (ctx) => {

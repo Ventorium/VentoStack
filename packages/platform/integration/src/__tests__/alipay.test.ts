@@ -39,7 +39,9 @@ describe("createAlipayVerifier", () => {
     };
 
     // 构造待签名字符串: 排除 sign/sign_type/空值，按 key 字典排序
-    const sortedKeys = Object.keys(params).filter((k) => params[k] !== "").sort();
+    const sortedKeys = Object.keys(params)
+      .filter((k) => params[k] !== "")
+      .sort();
     const signString = sortedKeys.map((k) => `${k}=${params[k]}`).join("&");
     const sign = await rsaSign(keys.privateKey, signString);
 
@@ -49,10 +51,14 @@ describe("createAlipayVerifier", () => {
       sign_type: "RSA2",
     };
 
-    const result = await verifier.verify("", {}, {
-      publicKey: keys.publicKeyPem,
-      extra: { bodyParams },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        publicKey: keys.publicKeyPem,
+        extra: { bodyParams },
+      },
+    );
 
     expect(result.valid).toBe(true);
     expect(result.eventType).toBe("trade_status_sync");
@@ -68,7 +74,9 @@ describe("createAlipayVerifier", () => {
       empty_field: "",
     };
 
-    const sortedKeys = Object.keys(params).filter((k) => params[k] !== "").sort();
+    const sortedKeys = Object.keys(params)
+      .filter((k) => params[k] !== "")
+      .sort();
     const signString = sortedKeys.map((k) => `${k}=${params[k]}`).join("&");
     const sign = await rsaSign(keys.privateKey, signString);
 
@@ -78,10 +86,14 @@ describe("createAlipayVerifier", () => {
       sign_type: "RSA2",
     };
 
-    const result = await verifier.verify("", {}, {
-      publicKey: keys.publicKeyPem,
-      extra: { bodyParams },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        publicKey: keys.publicKeyPem,
+        extra: { bodyParams },
+      },
+    );
 
     expect(result.valid).toBe(true);
   });
@@ -101,38 +113,54 @@ describe("createAlipayVerifier", () => {
 
     const bodyParams = { ...params, sign, sign_type: "RSA2" };
 
-    const result = await verifier.verify("", {}, {
-      publicKey: wrongKeys.publicKeyPem,
-      extra: { bodyParams },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        publicKey: wrongKeys.publicKeyPem,
+        extra: { bodyParams },
+      },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Signature mismatch");
   });
 
   test("rejects missing public key", async () => {
-    const result = await verifier.verify("", {}, {
-      extra: { bodyParams: { sign: "test" } },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        extra: { bodyParams: { sign: "test" } },
+      },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Missing public key");
   });
 
   test("rejects missing bodyParams", async () => {
-    const result = await verifier.verify("", {}, {
-      publicKey: "key",
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        publicKey: "key",
+      },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toContain("Missing bodyParams");
   });
 
   test("rejects missing sign parameter", async () => {
-    const result = await verifier.verify("", {}, {
-      publicKey: "key",
-      extra: { bodyParams: { app_id: "123" } },
-    });
+    const result = await verifier.verify(
+      "",
+      {},
+      {
+        publicKey: "key",
+        extra: { bodyParams: { app_id: "123" } },
+      },
+    );
 
     expect(result.valid).toBe(false);
     expect(result.reason).toBe("Missing sign parameter");
