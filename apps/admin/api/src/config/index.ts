@@ -112,6 +112,15 @@ if (rawConfig.STORAGE_DRIVER === "s3") {
     throw new Error("S3_SECRET_ACCESS_KEY is required when STORAGE_DRIVER=s3");
 }
 
+// JWT_SECRET 密钥长度校验（256-bit = 32 字节）
+const jwtSecretBytes = new TextEncoder().encode(rawConfig.JWT_SECRET).length;
+if (jwtSecretBytes < 32) {
+  throw new Error(
+    `JWT_SECRET must be at least 32 bytes (256-bit), got ${jwtSecretBytes} bytes. ` +
+      `Current value length: ${rawConfig.JWT_SECRET.length} characters.`,
+  );
+}
+
 // ALLOWED_ORIGINS: 逗号分隔 → string[]
 export const env = {
   ...rawConfig,

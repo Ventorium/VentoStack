@@ -244,17 +244,22 @@ describe("schema-reader", () => {
       expect(schema.indexes).toEqual([]);
     });
 
-    test("queries correct SQL for table name", async () => {
+    test("uses parameterized queries for table name", async () => {
       const executor = mock(async (_text: string, _params?: unknown[]): Promise<unknown[]> => []);
       executor.mockResolvedValueOnce([]);
       executor.mockResolvedValueOnce([]);
       executor.mockResolvedValueOnce([]);
 
       await readTableSchema(executor, "my_table");
-      expect(executor.mock.calls[0]![0]).toContain("my_table");
+      // 验证使用参数化查询（$1 占位符 + params 数组）
+      expect(executor.mock.calls[0]![0]).toContain("$1");
+      expect(executor.mock.calls[0]![1]).toEqual(["my_table"]);
       expect(executor.mock.calls[0]![0]).toContain("information_schema.columns");
-      expect(executor.mock.calls[1]![0]).toContain("my_table");
+      expect(executor.mock.calls[1]![0]).toContain("$1");
+      expect(executor.mock.calls[1]![1]).toEqual(["my_table"]);
       expect(executor.mock.calls[1]![0]).toContain("PRIMARY KEY");
+      expect(executor.mock.calls[2]![0]).toContain("$1");
+      expect(executor.mock.calls[2]![1]).toEqual(["my_table"]);
     });
   });
 });

@@ -69,20 +69,22 @@ export async function readTableSchema(
     throw new Error(`Invalid table name: ${tableName}`);
   }
 
-  // 读取列信息
+  // 读取列信息 — 使用参数化查询
   const columns = (await executor(
     `SELECT column_name, data_type, is_nullable, column_default, ordinal_position
      FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = '${tableName}'
+     WHERE table_schema = 'public' AND table_name = $1
      ORDER BY ordinal_position`,
+    [tableName],
   )) as Array<Record<string, unknown>>;
 
-  // 读取主键信息
+  // 读取主键信息 — 使用参数化查询
   const pkRows = (await executor(
     `SELECT kcu.column_name
      FROM information_schema.table_constraints tc
      JOIN information_schema.key_column_usage kcu ON tc.constraint_name = kcu.constraint_name
-     WHERE tc.table_name = '${tableName}' AND tc.constraint_type = 'PRIMARY KEY'`,
+     WHERE tc.table_name = $1 AND tc.constraint_type = 'PRIMARY KEY'`,
+    [tableName],
   )) as Array<{ column_name: string }>;
   const pkColumns = new Set(pkRows.map((r) => r.column_name));
 
@@ -95,7 +97,7 @@ export async function readTableSchema(
     isPrimary: pkColumns.has(col.column_name as string),
   }));
 
-  // 读取索引信息（PostgreSQL 特有查询，best-effort）
+  // 读取索引信息（PostgreSQL 特有查询，best-effort）— 使用参数化查询
   let indexes: IndexSchemaInfo[] = [];
   try {
     const idxRows = (await executor(
@@ -104,7 +106,8 @@ export async function readTableSchema(
        JOIN pg_index ix ON t.oid = ix.indrelid
        JOIN pg_class i ON i.oid = ix.indexrelid
        JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = ANY(ix.indkey)
-       WHERE t.relname = '${tableName}'`,
+       WHERE t.relname = $1`,
+      [tableName],
     )) as Array<{ index_name: string; column_name: string; is_unique: boolean }>;
 
     const idxMap = new Map<string, { columns: string[]; unique: boolean }>();
