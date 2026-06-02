@@ -102,6 +102,13 @@ export function createPermissionLoader(deps: {
 
   /**
    * 加载数据范围规则到行过滤器
+   *
+   * data_scope 含义：
+   * 1 = 全部数据：不加过滤
+   * 2 = 本部门及子部门：dept_id IN (本部门 + 子部门列表)
+   * 3 = 本部门：dept_id = 用户部门 ID
+   * 4 = 仅本人：created_by = userId
+   * 5 = 自定义部门：从角色-部门关联表查询
    */
   async function loadDataScopeRules(): Promise<void> {
     // 查询有自定义数据范围的角色
@@ -113,13 +120,34 @@ export function createPermissionLoader(deps: {
       .list();
 
     for (const role of roles) {
-      // data_scope 含义：
-      // 1 = 全部数据
-      // 2 = 本部门及子部门
-      // 3 = 本部门
-      // 4 = 仅本人
-      // 5 = 自定义部门
       switch (role.data_scope) {
+        case 1:
+          // 全部数据：不加过滤，无需添加规则
+          break;
+
+        case 2:
+          // 本部门及子部门：需要 dept_id IN (本部门 + 递归子部门列表)
+          // TODO: 需要在行过滤器中支持动态 IN 查询，当前添加基本规则骨架
+          rowFilter.addRule({
+            resource: "*",
+            field: "dept_id",
+            operator: "in",
+            valueFrom: "user",
+            value: "deptIds", // 需要在运行时解析为本部门及子部门 ID 列表
+          });
+          break;
+
+        case 3:
+          // 本部门：dept_id = 用户部门 ID
+          rowFilter.addRule({
+            resource: "*",
+            field: "dept_id",
+            operator: "eq",
+            valueFrom: "user",
+            value: "deptId",
+          });
+          break;
+
         case 4:
           // 仅本人：按创建者过滤
           rowFilter.addRule({
@@ -130,7 +158,18 @@ export function createPermissionLoader(deps: {
             value: "userId",
           });
           break;
-        // 其他数据范围规则按需扩展
+
+        case 5:
+          // 自定义部门：需要从角色-部门关联表(sys_role_dept)查询允许的部门列表
+          // TODO: 需要在行过滤器中支持关联表查询，当前添加基本规则骨架
+          rowFilter.addRule({
+            resource: "*",
+            field: "dept_id",
+            operator: "in",
+            valueFrom: "custom", // 标记为自定义来源，需要运行时查询 sys_role_dept
+            value: `role_depts:${role.code}`, // 按角色编码查找关联部门
+          });
+          break;
       }
     }
   }

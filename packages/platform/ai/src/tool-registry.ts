@@ -111,6 +111,23 @@ export interface ToolRegistry {
   }>;
 }
 
+/**
+ * 审批管理器接口
+ * 用于在执行高风险工具前获取人工审批
+ */
+export interface ApprovalManager {
+  /**
+   * 请求审批
+   * @param toolName 工具名称
+   * @param params 工具参数
+   * @returns 审批结果：approved 为 true 表示批准，否则拒绝，reason 为拒绝原因
+   */
+  requestApproval(
+    toolName: string,
+    params: Record<string, unknown>,
+  ): Promise<{ approved: boolean; reason?: string }>;
+}
+
 /** 默认工具执行超时：30 秒（毫秒） */
 const DEFAULT_TIMEOUT = 30_000;
 
@@ -214,9 +231,12 @@ function formatValidationErrors(errors: ErrorObject[] | null | undefined): strin
 
 /**
  * 创建工具注册表实例
+ * @param options 可选配置
+ * @param options.approvalManager 审批管理器实例，用于高风险工具的人工审批
  * @returns ToolRegistry 实例
  */
-export function createToolRegistry(): ToolRegistry {
+export function createToolRegistry(options?: { approvalManager?: ApprovalManager }): ToolRegistry {
+  const approvalManager = options?.approvalManager;
   const tools = new Map<string, ToolDefinition>();
   const validators = new Map<string, ValidateFunction<Record<string, unknown>>>();
 
@@ -310,6 +330,42 @@ export function createToolRegistry(): ToolRegistry {
         duration: 0,
         timestamp: Date.now(),
       };
+    }
+
+    // 审批流检查：如果工具标记为需要审批，必须通过审批管理器获取许可
+    // 这防止 AI 模型自主批准高风险操作（如删除数据、执行系统命令等）
+    if (tool.requiresApproval) {
+      if (!approvalManager) {
+        return {
+          toolName: name,
+          success: false,
+          error: `Tool "${name}" requires approval but no ApprovalManager is configured. ` +
+            `Provide an ApprovalManager via createToolRegistry({ approvalManager }) to enable approval flow.`,
+          duration: 0,
+          timestamp: Date.now(),
+        };
+      }
+
+      try {
+        const approval = await approvalManager.requestApproval(name, params);
+        if (!approval.approved) {
+          return {
+            toolName: name,
+            success: false,
+            error: `Tool "${name}" execution was not approved${approval.reason ? `: ${approval.reason}` : ""}`,
+            duration: 0,
+            timestamp: Date.now(),
+          };
+        }
+      } catch (err) {
+        return {
+          toolName: name,
+          success: false,
+          error: `Approval request failed for tool "${name}": ${err instanceof Error ? err.message : String(err)}`,
+          duration: 0,
+          timestamp: Date.now(),
+        };
+      }
     }
 
     const timeout = tool.timeout ?? DEFAULT_TIMEOUT;

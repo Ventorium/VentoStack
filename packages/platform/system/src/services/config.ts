@@ -6,6 +6,8 @@
 import type { Cache } from "@ventostack/cache";
 import type { Database } from "@ventostack/database";
 import { ConfigModel } from "../models/config";
+import { createCacheKeyNamespace } from "./cache-key";
+import type { CacheKeyNamespace } from "./cache-key";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -75,11 +77,17 @@ export interface ConfigService {
  * @param deps 依赖注入
  * @returns ConfigService 实例
  */
-export function createConfigService(deps: { db: Database; cache: Cache }): ConfigService {
+export function createConfigService(deps: {
+  db: Database;
+  cache: Cache;
+  /** 租户 ID，启用多租户时传入以隔离缓存 */
+  tenantId?: string;
+}): ConfigService {
   const { db, cache } = deps;
+  const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
 
   function cacheKey(key: string): string {
-    return `config:${key}`;
+    return ns.key(`config:${key}`);
   }
 
   async function create(params: CreateConfigParams): Promise<{ id: string }> {

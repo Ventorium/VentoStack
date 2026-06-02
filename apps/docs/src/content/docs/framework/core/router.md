@@ -144,6 +144,35 @@ router.post("/users", {
 
 校验失败时自动返回 400 `VALIDATION_ERROR`，无需在 handler 中手动处理。
 
+### Strict 模式（拒绝未知字段）
+
+从安全审计版本起，路由校验默认开启 `strict` 模式，拒绝请求体中存在 schema 未声明的额外字段：
+
+```typescript
+// 默认行为：额外字段会触发 400 错误
+router.post("/api/users", {
+  body: {
+    username: { type: "string", required: true },
+    password: { type: "string", required: true },
+  },
+  // strict 默认为 true，无需显式声明
+}, handler);
+
+// 如果需要接收动态字段，显式关闭 strict
+router.post("/api/webhook", {
+  strict: false,  // 允许未知字段
+  body: {
+    event: { type: "string", required: true },
+  },
+}, handler);
+```
+
+安全约束：
+- `strict` 默认为 `true`（安全默认）
+- 仅对普通 JSON body 和 URL-encoded form body 生效
+- `FormData` 和 `Headers` 输入不受 strict 限制（浏览器会添加额外字段）
+- 未知字段会返回 `400 Bad Request`，错误信息为 `Unknown field 'xxx'`
+
 ## 请求头（类型化与校验）
 
 通过 `headers` Schema 声明需要提取和校验的请求头：

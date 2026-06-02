@@ -64,7 +64,7 @@ console.log(result.refreshExpiresIn);
 ## 登出
 
 ```typescript
-// 单设备登出
+// 单设备登出（传递 refreshTokenJti 会在登出时同时吊销 refresh token，防止会话残留）
 await auth.logout("user-1", "sess-abc", "refresh-token-jti");
 
 // 强制登出所有设备

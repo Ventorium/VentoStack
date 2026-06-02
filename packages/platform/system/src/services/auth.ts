@@ -66,7 +66,7 @@ export interface AuthService {
   enableMFA(userId: string): Promise<MFASetupResult>;
   verifyMFA(userId: string, code: string): Promise<boolean>;
   disableMFA(userId: string, code: string): Promise<void>;
-  recoverMFA(userId: string, recoveryCode: string): Promise<{ tempToken: string }>;
+  recoverMFA(userId: string, totpCode: string): Promise<{ tempToken: string }>;
   completeMFALogin(
     mfaToken: string,
     code: string,
@@ -81,6 +81,22 @@ export interface AuthService {
     userAgent: string;
     deviceType?: string;
   }): Promise<LoginResult>;
+}
+
+/** 脱敏：截断 token / sessionId 等敏感字符串，仅保留前 8 位 */
+function redactToken(token: string | undefined): string {
+  if (!token) return "***";
+  return token.length > 8 ? token.slice(0, 8) + "***" : "***";
+}
+
+/** 脱敏：email 只保留首字符 + ***@domain */
+function redactEmail(email: string | undefined): string {
+  if (!email) return "";
+  const atIndex = email.indexOf("@");
+  if (atIndex < 1) return "***";
+  const local = email.slice(0, atIndex);
+  const domain = email.slice(atIndex);
+  return local[0] + "***" + domain;
 }
 
 /** 登录失败最大次数（默认值，实际从 sys_config 读取） */
@@ -457,7 +473,7 @@ export function createAuthService(deps: {
         action: "login.success",
         resource: "auth",
         result: "success",
-        metadata: { ip, userId: user.id, sessionId: sessionResult.sessionId },
+        metadata: { ip, userId: user.id, sessionId: redactToken(sessionResult.sessionId) },
       });
       await recordLoginLog({
         userId: user.id,
@@ -492,7 +508,7 @@ export function createAuthService(deps: {
         action: "logout",
         resource: "auth",
         result: "success",
-        metadata: { sessionId },
+        metadata: { sessionId: redactToken(sessionId) },
       });
     },
 
@@ -546,11 +562,11 @@ export function createAuthService(deps: {
       // 即使找不到用户也返回成功，防止邮箱枚举
       if (!user) {
         await auditStore.append({
-          actor: email,
+          actor: redactEmail(email),
           action: "password.forgot",
           resource: "auth",
           result: "failure",
-          metadata: { email },
+          metadata: { email: redactEmail(email) },
         });
         // 返回一个无效 token，调用方无法区分
         const dummyToken = crypto.randomUUID();
@@ -569,7 +585,7 @@ export function createAuthService(deps: {
         resource: "auth",
         resourceId: user.id,
         result: "success",
-        metadata: { email, username: user.username },
+        metadata: { email: redactEmail(email), username: user.username },
       });
 
       // 触发事件，通知层可监听并发送邮件
@@ -772,10 +788,36 @@ export function createAuthService(deps: {
       });
     },
 
-    async recoverMFA(userId, recoveryCode) {
-      // 恢复码验证通过后生成临时 token，用户可用此 token 重新设置 MFA
-      // 恢复码存储在缓存中进行校验（实际场景可存 DB）
-      // 此处简化：生成临时 token 供调用方使用
+    async recoverMFA(userId, totpCode) {
+      // 查找用户并验证 MFA 状态
+      const mfaUser = await db
+        .query(UserModel)
+        .where("id", "=", userId)
+        .select("mfa_secret", "mfa_enabled")
+        .get();
+
+      if (!mfaUser) {
+        throw new Error("用户不存在");
+      }
+
+      if (!mfaUser.mfa_enabled || !mfaUser.mfa_secret) {
+        throw new Error("MFA 未启用");
+      }
+
+      // 验证 TOTP 码
+      const valid = await totp.verify(mfaUser.mfa_secret, totpCode);
+      if (!valid) {
+        await auditStore.append({
+          actor: userId,
+          action: "mfa.recover_failed",
+          resource: "auth",
+          resourceId: userId,
+          result: "failure",
+        });
+        throw new Error("验证码错误");
+      }
+
+      // 生成临时 token，用户可用此 token 重新设置 MFA
       const tempToken = await jwt.sign({ sub: userId, iss: "mfa-recovery" }, jwtSecret, {
         expiresIn: 600,
       });
@@ -850,7 +892,7 @@ export function createAuthService(deps: {
         action: "login.mfa_success",
         resource: "auth",
         result: "success",
-        metadata: { ip, userId, sessionId: sessionResult.sessionId },
+        metadata: { ip, userId, sessionId: redactToken(sessionResult.sessionId) },
       });
 
       return {
@@ -904,7 +946,7 @@ export function createAuthService(deps: {
         action: "login.passkey_success",
         resource: "auth",
         result: "success",
-        metadata: { ip, userId, sessionId: sessionResult.sessionId },
+        metadata: { ip, userId, sessionId: redactToken(sessionResult.sessionId) },
       });
 
       return {

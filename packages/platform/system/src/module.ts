@@ -17,6 +17,8 @@ import type {
 import type { Cache } from "@ventostack/cache";
 import { createRouter } from "@ventostack/core";
 import type { Router } from "@ventostack/core";
+import { createCacheKeyNamespace } from "./services/cache-key";
+import type { CacheKeyNamespace } from "./services/cache-key";
 import type { Database } from "@ventostack/database";
 import type { EventBus } from "@ventostack/events";
 import type { AuditStore } from "@ventostack/observability";
@@ -101,6 +103,12 @@ export interface SystemModuleDeps {
   rpName?: string;
   rpOrigins?: string[];
   fileUploader?: FileUploader;
+  /** 可信代理 IP/CIDR 列表，用于安全提取客户端真实 IP */
+  trustedProxies?: string[];
+  /** 是否启用多租户隔离 */
+  tenantEnabled?: boolean;
+  /** 当前租户 ID，启用多租户时传入以隔离缓存键 */
+  tenantId?: string;
 }
 
 export function createSystemModule(deps: SystemModuleDeps): SystemModule {
@@ -119,8 +127,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     fileUploader,
   } = deps;
 
+  const tenantEnabled = deps.tenantEnabled === true;
+  const tenantId = tenantEnabled ? deps.tenantId : undefined;
+  const ns: CacheKeyNamespace = createCacheKeyNamespace(tenantId);
+
   // Services
-  const configService = createConfigService({ db, cache });
+  const configService = createConfigService({ db, cache, tenantId });
   const authService = createAuthService({
     db,
     cache,
@@ -133,12 +145,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     eventBus,
     configService,
   });
-  const userService = createUserService({ db, passwordHasher, cache, configService });
-  const roleService = createRoleService({ db, cache });
+  const userService = createUserService({ db, passwordHasher, cache, configService, tenantId });
+  const roleService = createRoleService({ db, cache, tenantId });
   const menuService = createMenuService({ db });
   const deptService = createDeptService({ db });
   const postService = createPostService({ db });
-  const dictService = createDictService({ db, cache });
+  const dictService = createDictService({ db, cache, tenantId });
   const noticeService = createNoticeService({ db });
   const permissionLoader = createPermissionLoader({ db, rbac, rowFilter });
   const menuTreeBuilder = createMenuTreeBuilder({ db });
@@ -239,7 +251,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
   );
 
-  router.merge(createAuthRoutes(authService, authMiddleware));
+  router.merge(createAuthRoutes(authService, authMiddleware, perm, deps.trustedProxies ?? []));
   router.merge(
     createPasskeyRoutes(passkeyService, authService, authMiddleware, cache, configService),
   );
@@ -1011,7 +1023,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         password_hash: hash,
         password_changed_at: new Date(),
       });
-      await cache.del(`user:detail:${user.id}`);
+      await cache.del(ns.detailKey("user", user.id));
       return ok(null);
     },
   );
@@ -1059,7 +1071,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
 
       await db.query(UserModel).where("id", "=", user.id).update({ avatar: avatarUrl });
-      await cache.del(`user:detail:${user.id}`);
+      await cache.del(ns.detailKey("user", user.id));
       return ok({ avatar: avatarUrl });
     },
   );
@@ -1187,7 +1199,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         .query(UserModel)
         .where("id", "=", id)
         .update({ locked_until: null, login_attempts: 0 });
-      await cache.del(`user:detail:${id}`);
+      await cache.del(ns.detailKey("user", id));
       return ok(null);
     },
     perm("system", "user:update"),
@@ -1206,7 +1218,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const body = await parseBody(ctx.request);
       const blacklisted = body.blacklisted as boolean;
       await db.query(UserModel).where("id", "=", id).update({ blacklisted });
-      await cache.del(`user:detail:${id}`);
+      await cache.del(ns.detailKey("user", id));
       return ok(null);
     },
     perm("system", "user:update"),

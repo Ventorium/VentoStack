@@ -50,6 +50,37 @@ description: Use when reviewing VentoStack backend code, configs, manifests, or 
 - 容器仍可写根文件系统，或保留默认 capabilities
 - 输入校验没有请求大小、JSON 深度、上传大小边界
 
+## Security Rules (2024 Security Audit)
+
+以下规则由安全审计修复后引入，审查时必须逐项确认：
+
+### 认证与路由
+
+- **所有非公开 API 必须绑定在认证中间件后**：路由挂载在 protected router（经 authMiddleware 保护）或使用 `createCrudRoutes` 自动注入。无认证的公开路由必须显式标注并评估风险。
+- **权限标识符必填**：每条业务路由必须携带 `perm("resource:action")` 权限中间件。超管角色（`admin`）自动跳过，但不影响其他角色。
+- **管理端点独立端口**：`ADMIN_PORT > 0` 时健康检查、指标、OpenAPI 文档绑定独立端口；`ADMIN_PORT = 0` 时不推荐用于生产。
+
+### Schema 校验
+
+- **Schema strict 模式默认开启**：`strict` 默认 `true`，拒绝未知字段。显式设置 `strict: false` 需要安全审查审批。
+- **所有外部输入必须经 Schema 校验**：query、body、headers、formData 均需声明 Schema。
+
+### 审计与脱敏
+
+- **审计日志 metadata 自动脱敏**：`auditLog.append()` 的 `metadata` 字段经 `sanitize()` 递归脱敏（27 个默认敏感字段 + 自定义字段）。
+- **操作日志请求体自动脱敏**：`createOperationLogMiddleware` 对 31 个敏感字段递归替换为 `"******"`。
+- **IP 提取依赖可信代理**：仅直接连接 IP 匹配 `trustedProxies` 列表时才读取代理头，空列表 = 不信任任何代理。
+
+### Row Filter 与数据隔离
+
+- **Row Filter 必须参数化查询**：`createRowFilter().buildWhereClause()` 返回 `ParameterizedClause`（`$1, $2, ...`），禁止使用 `formatSqlLiteral`（已 deprecated）。
+- **缓存键支持租户命名空间**：`createCacheKeyNamespace(tenantId)` 生成 `tenant:${tenantId}:key` 格式，多租户场景必须使用。
+
+### AI 沙箱
+
+- **沙箱默认拒绝所有工具**：`allowedTools` 为空时 `canExecute()` 返回 `false`，必须显式配置白名单。
+- **文件/网络访问默认关闭**：`allowFileRead`、`allowFileWrite`、`allowNetworkAccess` 默认 `false`，开启时必须提供 `workingDirectory` / `allowedHosts`。
+
 ## Review Standard
 
 优先给出可验证证据，而不是只转述设计意图。能通过测试、配置、清单、代码路径证明的问题，优先用证据说话。

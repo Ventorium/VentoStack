@@ -121,6 +121,10 @@ app.use(errorHandler({ logger }));
 app.use(errorHandler({ fallbackMessage: "服务暂时不可用" }));
 ```
 
+配置选项：
+
+- `includeStackInLog`：是否在服务器日志中包含错误堆栈（默认：开发环境 true，生产环境 false）
+
 ### cors — 跨域处理
 
 ```typescript

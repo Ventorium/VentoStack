@@ -31,6 +31,11 @@ async function main(): Promise<void> {
   // 5. process.exit(0)
   await appCtx.app.listen();
 
+  // 启动管理端口（独立于业务端口，默认绑定 127.0.0.1）
+  if (appCtx.adminApp) {
+    await appCtx.adminApp.listen();
+  }
+
   // 后端启动后自动生成前端 SDK 类型（仅开发模式）
   if (env.NODE_ENV !== "production") {
     const genLog = createTagLogger("gen:sdk");

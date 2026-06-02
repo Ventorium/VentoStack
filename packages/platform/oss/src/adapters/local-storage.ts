@@ -3,7 +3,7 @@
  */
 
 import { mkdir, stat, unlink, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve, sep } from "node:path";
 import type { StorageAdapter } from "./storage";
 
 export interface LocalStorageOptions {
@@ -13,11 +13,17 @@ export interface LocalStorageOptions {
 
 export function createLocalStorage(options: LocalStorageOptions): StorageAdapter {
   const { basePath, baseUrl = "/files" } = options;
+  const resolvedBase = resolve(basePath);
 
   function fullPath(key: string): string {
-    // Prevent path traversal
-    const safe = key.replace(/\.\./g, "").replace(/^\/+/, "");
-    return join(basePath, safe);
+    // 先清理前导斜杠
+    const cleaned = key.replace(/^\/+/, "");
+    const resolved = resolve(resolvedBase, cleaned);
+    // 安全校验：解析后的路径必须在 basePath 下
+    if (!resolved.startsWith(resolvedBase + sep) && resolved !== resolvedBase) {
+      throw new Error("Path traversal detected");
+    }
+    return resolved;
   }
 
   return {
@@ -72,8 +78,15 @@ export function createLocalStorage(options: LocalStorageOptions): StorageAdapter
 
     async getSignedUrl(key, _expiresIn) {
       // Local storage returns a static URL; signing is a no-op
-      const safe = key.replace(/\.\./g, "").replace(/^\/+/, "");
-      return `${baseUrl}/${safe}`;
+      // 复用 fullPath 进行路径遍历校验，同时生成安全的相对路径
+      const cleaned = key.replace(/^\/+/, "");
+      const resolved = resolve(resolvedBase, cleaned);
+      if (!resolved.startsWith(resolvedBase + sep) && resolved !== resolvedBase) {
+        throw new Error("Path traversal detected");
+      }
+      // 生成相对于 basePath 的安全路径用于 URL
+      const safeRelative = resolved.slice(resolvedBase.length).replace(/^\/+/, "");
+      return `${baseUrl}/${safeRelative}`;
     },
   };
 }

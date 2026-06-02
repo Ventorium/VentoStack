@@ -105,6 +105,10 @@ export interface PlatformConfig {
   rpName?: string;
   /** WebAuthn 允许来源 */
   rpOrigins?: string[];
+  /** 可信代理 IP/CIDR 列表，用于安全提取客户端真实 IP */
+  trustedProxies?: string[];
+  /** 是否启用多租户隔离（默认 false，向后兼容） */
+  tenantEnabled?: boolean;
 }
 
 /** 平台实例 */
@@ -162,6 +166,8 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     rpID,
     rpName,
     rpOrigins,
+    trustedProxies,
+    tenantEnabled,
   } = config;
 
   const db = providedDb ?? createDatabase({ executor });
@@ -196,6 +202,8 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(rpID !== undefined ? { rpID } : {}),
     ...(rpName !== undefined ? { rpName } : {}),
     ...(rpOrigins !== undefined ? { rpOrigins } : {}),
+    ...(trustedProxies !== undefined ? { trustedProxies } : {}),
+    ...(tenantEnabled !== undefined ? { tenantEnabled } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
 

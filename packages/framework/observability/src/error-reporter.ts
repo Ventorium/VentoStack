@@ -2,6 +2,8 @@
  * @ventostack/observability - 错误上报（Sentry / 钉钉告警 / Webhook）
  * 提供多通道错误上报能力，支持采样率控制、忽略模式与环境/服务标识
  * 内置 Sentry、钉钉 Webhook、通用 Webhook 三种告警通道
+ *
+ * 所有 context 数据在上报前会自动递归脱敏，防止敏感信息泄露到外部通道
  */
 
 export interface ErrorReporterConfig {
@@ -42,6 +44,46 @@ export interface ErrorReporter {
   captureFatal(error: Error | string, context?: Record<string, unknown>): Promise<void>;
 }
 
+/** 默认需要脱敏的字段名（小写），与 logger.ts 保持一致 */
+const DEFAULT_SENSITIVE_FIELDS = [
+  "password",
+  "passwordhash",
+  "password_hash",
+  "token",
+  "secret",
+  "key",
+  "cookie",
+  "authorization",
+  "phone",
+  "email",
+  "idcard",
+  "mfarecret",
+  "mfa_secret",
+];
+
+/**
+ * 递归脱敏对象中的敏感字段
+ * 与 logger.ts 中的 redactValue 逻辑一致
+ */
+function sanitizeContext(value: unknown, sensitiveFields: string[]): unknown {
+  if (value === null || value === undefined) return value;
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeContext(item, sensitiveFields));
+  }
+  if (typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (sensitiveFields.includes(k.toLowerCase())) {
+        result[k] = "***";
+      } else {
+        result[k] = sanitizeContext(v, sensitiveFields);
+      }
+    }
+    return result;
+  }
+  return value;
+}
+
 /**
  * 创建错误上报器
  */
@@ -72,7 +114,10 @@ export function createErrorReporter(config: ErrorReporterConfig): ErrorReporter 
       timestamp: Date.now(),
     };
     if (error instanceof Error && error.stack) report.stack = error.stack;
-    if (context) report.context = context;
+    // 对 context 执行递归脱敏后再上报，防止敏感信息泄露到外部通道
+    if (context) {
+      report.context = sanitizeContext(context, DEFAULT_SENSITIVE_FIELDS) as Record<string, unknown>;
+    }
     if (config.environment) report.environment = config.environment;
     if (config.serviceName) report.serviceName = config.serviceName;
 

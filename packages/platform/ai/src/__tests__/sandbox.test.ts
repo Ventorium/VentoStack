@@ -13,9 +13,9 @@ describe("Sandbox", () => {
     expect(sandbox.canExecute("write")).toBe(false);
   });
 
-  test("canExecute 空白名单（全允许）", () => {
+  test("canExecute 空白名单（安全默认：拒绝所有）", () => {
     const sandbox = createSandbox({});
-    expect(sandbox.canExecute("anything")).toBe(true);
+    expect(sandbox.canExecute("anything")).toBe(false);
   });
 
   test("canAccessURL 通过", () => {
@@ -86,7 +86,7 @@ describe("Sandbox", () => {
   });
 
   test("wrapExecution 超时", async () => {
-    const sandbox = createSandbox({ maxExecutionTime: 50 });
+    const sandbox = createSandbox({ allowedTools: ["anything"], maxExecutionTime: 50 });
     await expect(
       sandbox.wrapExecution("anything", () => new Promise((r) => setTimeout(r, 200))),
     ).rejects.toThrow("timed out");

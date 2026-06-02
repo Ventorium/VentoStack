@@ -8,7 +8,7 @@ import { resolve } from "node:path";
 
 /** 沙箱权限配置 */
 export interface SandboxPermissions {
-  /** 允许执行的工具名称列表，为空表示允许所有 */
+  /** 允许执行的工具名称列表，为空表示拒绝所有（必须显式配置白名单） */
   allowedTools?: string[];
   /** 允许访问的主机列表；开启网络访问时必须显式提供 */
   allowedHosts?: string[];
@@ -84,7 +84,7 @@ export function createSandbox(permissions: SandboxPermissions): Sandbox {
 
   function canExecute(toolName: string): boolean {
     if (!effectivePermissions.allowedTools || effectivePermissions.allowedTools.length === 0) {
-      return true;
+      return false; // 安全默认：空白名单 = 拒绝所有
     }
     return effectivePermissions.allowedTools.includes(toolName);
   }
@@ -130,8 +130,13 @@ export function createSandbox(permissions: SandboxPermissions): Sandbox {
     }
 
     const timeout = effectivePermissions.maxExecutionTime ?? DEFAULT_MAX_EXECUTION_TIME;
+    const maxMemory = effectivePermissions.maxMemory ?? DEFAULT_MAX_MEMORY;
 
-    return Promise.race([
+    // 执行前记录内存基线
+    const memBefore = process.memoryUsage();
+    const memBaseline = memBefore.heapUsed;
+
+    const result = await Promise.race([
       fn(),
       new Promise<never>((_, reject) =>
         setTimeout(
@@ -140,6 +145,19 @@ export function createSandbox(permissions: SandboxPermissions): Sandbox {
         ),
       ),
     ]);
+
+    // 执行后检查内存使用增量，超出限制时发出警告
+    // 注意：Worker 级别的 resourceLimits 强制内存隔离应在 tool-registry.ts 的 execute() 方法中集成，
+    // 此处仅做进程内监控与告警
+    const memAfter = process.memoryUsage();
+    const memDelta = memAfter.heapUsed - memBaseline;
+    if (memDelta > maxMemory) {
+      console.warn(
+        `[sandbox] tool "${toolName}" memory usage exceeded limit: ${(memDelta / 1024 / 1024).toFixed(1)}MB > ${(maxMemory / 1024 / 1024).toFixed(1)}MB (heapUsed delta). Worker-level enforcement required.`,
+      );
+    }
+
+    return result;
   }
 
   function getPermissions(): SandboxPermissions {

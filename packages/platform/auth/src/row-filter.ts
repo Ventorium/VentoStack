@@ -62,12 +62,12 @@ export interface RowFilter {
   getRules(): RowFilterRule[];
 
   /**
-   * 构建 SQL WHERE 子句
+   * 构建 SQL WHERE 子句（参数化）
    * @param resource 资源/表名
    * @param ctx 过滤上下文
-   * @returns SQL WHERE 子句字符串，无过滤条件时返回空字符串
+   * @returns 参数化查询子句，无过滤条件时 sql 为空字符串
    */
-  buildWhereClause(resource: string, ctx: RowFilterContext): string;
+  buildWhereClause(resource: string, ctx: RowFilterContext): ParameterizedClause;
 }
 
 /**
@@ -82,6 +82,17 @@ export interface RowFilterClause {
   value: unknown;
 }
 
+/**
+ * 参数化查询子句结构
+ * buildWhereClause 的返回类型，使用占位符 + 参数数组避免 SQL 注入
+ */
+export interface ParameterizedClause {
+  /** SQL WHERE 子句，包含 $1, $2, ... 占位符；无过滤条件时为空字符串 */
+  sql: string;
+  /** 与占位符对应的参数值数组 */
+  params: unknown[];
+}
+
 const SAFE_IDENTIFIER_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*$/;
 
 function assertSafeIdentifier(identifier: string): string {
@@ -91,6 +102,7 @@ function assertSafeIdentifier(identifier: string): string {
   return identifier;
 }
 
+/** @deprecated 仅用于内部兼容，新代码应使用参数化查询 */
 function formatSqlLiteral(value: unknown): string {
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {
@@ -179,30 +191,36 @@ export function createRowFilter(): RowFilter {
       return [...rules];
     },
 
-    buildWhereClause(resource: string, ctx: RowFilterContext): string {
+    buildWhereClause(resource: string, ctx: RowFilterContext): ParameterizedClause {
       const filters = this.getFilters(resource, ctx);
-      if (filters.length === 0) return "";
+      if (filters.length === 0) return { sql: "", params: [] };
 
       if (filters.some((filter) => isMissingFilterValue(filter.value))) {
-        return "WHERE 1 = 0";
+        return { sql: "WHERE 1 = 0", params: [] };
       }
+
+      const params: unknown[] = [];
+      let paramIndex = 1;
 
       const conditions = filters.map((f) => {
         const field = assertSafeIdentifier(f.field);
 
         if (f.operator === "IN" || f.operator === "NOT IN") {
           const vals = Array.isArray(f.value) ? f.value : [f.value];
-          return `${field} ${f.operator} (${vals.map((v) => formatSqlLiteral(v)).join(", ")})`;
+          const placeholders = vals.map(() => `$${paramIndex++}`);
+          params.push(...vals);
+          return `${field} ${f.operator} (${placeholders.join(", ")})`;
         }
 
         if (f.value === null) {
           return `${field} ${f.operator === "!=" ? "IS NOT NULL" : "IS NULL"}`;
         }
 
-        return `${field} ${f.operator} ${formatSqlLiteral(f.value)}`;
+        params.push(f.value);
+        return `${field} ${f.operator} $${paramIndex++}`;
       });
 
-      return `WHERE ${conditions.join(" AND ")}`;
+      return { sql: `WHERE ${conditions.join(" AND ")}`, params };
     },
   };
 }

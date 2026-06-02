@@ -5,7 +5,7 @@
  */
 
 import type { ModelDefinition } from "./model";
-import { createQueryBuilder } from "./query-builder";
+import { createQueryBuilder, assertValidIdentifier } from "./query-builder";
 import type { QueryBuilder, WhereOp } from "./query-builder";
 
 /**
@@ -221,6 +221,7 @@ function createQueryExecutor<T>(
       },
 
       async sum(field: keyof T): Promise<number> {
+        assertValidIdentifier(field as string, "aggregate(sum)");
         const aggBuilder = nextBuilder.select(`SUM(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
@@ -229,6 +230,7 @@ function createQueryExecutor<T>(
       },
 
       async avg(field: keyof T): Promise<number> {
+        assertValidIdentifier(field as string, "aggregate(avg)");
         const aggBuilder = nextBuilder.select(`AVG(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
@@ -237,6 +239,7 @@ function createQueryExecutor<T>(
       },
 
       async min(field: keyof T): Promise<number> {
+        assertValidIdentifier(field as string, "aggregate(min)");
         const aggBuilder = nextBuilder.select(`MIN(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
@@ -245,6 +248,7 @@ function createQueryExecutor<T>(
       },
 
       async max(field: keyof T): Promise<number> {
+        assertValidIdentifier(field as string, "aggregate(max)");
         const aggBuilder = nextBuilder.select(`MAX(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);

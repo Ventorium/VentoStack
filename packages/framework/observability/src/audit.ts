@@ -2,7 +2,10 @@
  * @ventostack/observability - 审计日志
  * 提供防篡改的审计记录存储，基于 SHA-256 哈希链保证记录完整性
  * 支持按 actor/action/resource/time 多维度查询与哈希链验证
+ * 所有写入的 metadata 自动进行敏感字段脱敏，防止泄露 email、token、sessionId 等信息
  */
+
+import { sanitize } from "./logger";
 
 export interface AuditEntry {
   id: string;
@@ -74,7 +77,7 @@ export function createAuditLog(): AuditStore {
         hash,
       };
       if (input.resourceId) entry.resourceId = input.resourceId;
-      if (input.metadata) entry.metadata = input.metadata;
+      if (input.metadata) entry.metadata = sanitize(input.metadata) as Record<string, unknown>;
       if (previousHash) entry.previousHash = previousHash;
 
       entries.push(entry);

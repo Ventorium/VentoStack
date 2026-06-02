@@ -15,7 +15,7 @@ const VALID_IDENTIFIER_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 /**
  * 验证字段名是否合法，不合法则抛出 TypeError。
  */
-function assertValidIdentifier(name: string, context: string): void {
+export function assertValidIdentifier(name: string, context: string): void {
   if (!VALID_IDENTIFIER_RE.test(name)) {
     throw new TypeError(
       `Invalid SQL identifier in ${context}: "${name}". Identifiers must match /^[a-zA-Z_][a-zA-Z0-9_]*$/`,
@@ -160,6 +160,13 @@ export interface QueryBuilder<T = unknown> {
   /** 查询时包含已软删除的行 */
   withDeleted(): QueryBuilder<T>;
 
+  // 多租户
+  /**
+   * 设置租户 ID，自动在 WHERE 条件前添加 tenant_id = $N。
+   * @param tenantId — 租户标识
+   */
+  withTenant(tenantId: string): QueryBuilder<T>;
+
   // SQL 生成
   /** 生成最终 SQL 文本与参数数组 */
   toSQL(): { text: string; params: unknown[] };
@@ -216,6 +223,8 @@ interface QueryState {
   includeDeleted: boolean;
   /** 最大 limit 值 */
   maxLimit: number;
+  /** 租户 ID（启用多租户时自动注入到 WHERE 条件） */
+  tenantId?: string;
 }
 
 /**
@@ -245,6 +254,7 @@ function cloneState(state: QueryState): QueryState {
     isRestore: state.isRestore,
     includeDeleted: state.includeDeleted,
     maxLimit: state.maxLimit,
+    tenantId: state.tenantId,
   };
 }
 
@@ -320,6 +330,7 @@ function buildConditionGroup(
  * @param isSoftDelete — 当前模型是否启用软删除
  * @param includeDeleted — 是否包含已软删除行
  * @param startParamIndex — 参数起始索引（从 1 开始）
+ * @param tenantId — 可选租户 ID，自动注入 tenant_id 条件
  * @returns 子句文本、参数数组与下一个参数索引
  */
 function buildWhereClause(
@@ -327,10 +338,21 @@ function buildWhereClause(
   isSoftDelete: boolean,
   includeDeleted: boolean,
   startParamIndex: number,
+  tenantId?: string,
 ): { clause: string; params: unknown[]; nextParamIndex: number } {
   const params: unknown[] = [];
+  let paramIndex = startParamIndex;
 
-  const allWheres = [...wheres];
+  const allWheres: WhereCondition[] = [];
+
+  // 租户隔离条件始终在最前面，确保索引稳定
+  if (tenantId !== undefined) {
+    assertValidIdentifier("tenant_id", "tenant");
+    allWheres.push({ field: "tenant_id", op: "=", value: tenantId, connector: "AND" });
+  }
+
+  allWheres.push(...wheres);
+
   if (isSoftDelete && !includeDeleted) {
     allWheres.push({ field: "deleted_at", op: "IS NULL", connector: "AND" });
   }
@@ -339,7 +361,7 @@ function buildWhereClause(
     return { clause: "", params, nextParamIndex: startParamIndex };
   }
 
-  const { text, nextParamIndex } = buildConditionGroup(allWheres, startParamIndex, (...vals) =>
+  const { text, nextParamIndex } = buildConditionGroup(allWheres, paramIndex, (...vals) =>
     params.push(...vals),
   );
 
@@ -394,6 +416,7 @@ function buildSelectSQL(tableName: string, state: QueryState): { text: string; p
     state.isSoftDelete,
     state.includeDeleted,
     paramIndex,
+    state.tenantId,
   );
   text += where.clause;
   params.push(...where.params);
@@ -511,7 +534,7 @@ function buildUpdateSQL(tableName: string, state: QueryState): { text: string; p
     });
   }
 
-  const where = buildWhereClause(wheres, state.isSoftDelete, state.includeDeleted, paramIndex);
+  const where = buildWhereClause(wheres, state.isSoftDelete, state.includeDeleted, paramIndex, state.tenantId);
   text += where.clause;
   params.push(...where.params);
 
@@ -531,7 +554,7 @@ function buildDeleteSQL(tableName: string, state: QueryState): { text: string; p
     const paramIndex = 1;
     let text = `UPDATE ${tableName} SET deleted_at = NULL`;
 
-    const where = buildWhereClause(state.wheres, false, true, paramIndex);
+    const where = buildWhereClause(state.wheres, false, true, paramIndex, state.tenantId);
     text += where.clause;
     params.push(...where.params);
 
@@ -544,7 +567,7 @@ function buildDeleteSQL(tableName: string, state: QueryState): { text: string; p
     const paramIndex = 1;
     let text = `DELETE FROM ${tableName}`;
 
-    const where = buildWhereClause(state.wheres, false, true, paramIndex);
+    const where = buildWhereClause(state.wheres, false, true, paramIndex, state.tenantId);
     text += where.clause;
     params.push(...where.params);
 
@@ -562,7 +585,7 @@ function buildDeleteSQL(tableName: string, state: QueryState): { text: string; p
     const wheres = [...state.wheres];
     wheres.push({ field: "deleted_at", op: "IS NULL", connector: "AND" });
 
-    const where = buildWhereClause(wheres, false, true, paramIndex);
+    const where = buildWhereClause(wheres, false, true, paramIndex, state.tenantId);
     text += where.clause;
     params.push(...where.params);
 
@@ -574,7 +597,7 @@ function buildDeleteSQL(tableName: string, state: QueryState): { text: string; p
   const paramIndex = 1;
   let text = `DELETE FROM ${tableName}`;
 
-  const where = buildWhereClause(state.wheres, false, true, paramIndex);
+  const where = buildWhereClause(state.wheres, false, true, paramIndex, state.tenantId);
   text += where.clause;
   params.push(...where.params);
 
@@ -715,6 +738,15 @@ function createBuilder<T>(tableName: string, state: QueryState): QueryBuilder<T>
       return createBuilder<T>(tableName, next);
     },
 
+    withTenant(tenantId: string): QueryBuilder<T> {
+      if (typeof tenantId !== "string" || tenantId.length === 0) {
+        throw new TypeError("withTenant requires a non-empty string tenantId");
+      }
+      const next = cloneState(state);
+      next.tenantId = tenantId;
+      return createBuilder<T>(tableName, next);
+    },
+
     toSQL(): { text: string; params: unknown[] } {
       switch (state.operation) {
         case "select":
@@ -784,6 +816,7 @@ export function createQueryBuilder<T = unknown>(
     isRestore: false,
     includeDeleted: false,
     maxLimit: options?.maxLimit ?? DEFAULT_MAX_LIMIT,
+    tenantId: undefined,
   };
 
   return createBuilder<T>(model.tableName, state);

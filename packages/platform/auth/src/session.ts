@@ -177,7 +177,14 @@ export function createSessionManager(
   const prefix = options.prefix ?? DEFAULT_PREFIX;
   const _cookieName = options.cookieName ?? DEFAULT_COOKIE_NAME;
 
-  // userId -> Set<sessionId> index for destroyByUser support
+  // Whether the store manages its own user-session index (e.g. Redis via sadd/smembers).
+  // When true, we skip the in-memory index entirely — it would be stale in a
+  // multi-instance deployment since other instances create sessions invisible to
+  // this process's local Map.
+  const storeHasUserIndex = typeof store.deleteByUser === "function";
+
+  // userId -> Set<sessionId> in-memory index — only used as fallback when the
+  // store does NOT provide deleteByUser (i.e. MemorySessionStore).
   const userSessions = new Map<string, Set<string>>();
 
   /**
@@ -199,15 +206,19 @@ export function createSessionManager(
       };
       await store.set({ ...session, id: prefixedId(id), data: { ...data } });
 
-      // Track userId -> sessionId index
-      const userId = data.userId as string | undefined;
-      if (userId) {
-        let sessions = userSessions.get(userId);
-        if (!sessions) {
-          sessions = new Set();
-          userSessions.set(userId, sessions);
+      // Only maintain the in-memory index when the store does not manage its own
+      // user-session mapping. Redis stores track this via sadd on a per-user set
+      // key, which is visible to all instances.
+      if (!storeHasUserIndex) {
+        const userId = data.userId as string | undefined;
+        if (userId) {
+          let sessions = userSessions.get(userId);
+          if (!sessions) {
+            sessions = new Set();
+            userSessions.set(userId, sessions);
+          }
+          sessions.add(id);
         }
-        sessions.add(id);
       }
 
       return session;
@@ -229,11 +240,13 @@ export function createSessionManager(
     async destroy(id: string): Promise<void> {
       await store.delete(prefixedId(id));
 
-      // Remove from userSessions index
-      for (const [, sessionIds] of userSessions) {
-        if (sessionIds.has(id)) {
-          sessionIds.delete(id);
-          break;
+      // Only clean up the in-memory index when we are actually using it.
+      if (!storeHasUserIndex) {
+        for (const [, sessionIds] of userSessions) {
+          if (sessionIds.has(id)) {
+            sessionIds.delete(id);
+            break;
+          }
         }
       }
     },
@@ -243,11 +256,14 @@ export function createSessionManager(
     },
 
     async destroyByUser(userId: string): Promise<number> {
-      // If store supports deleteByUser natively, delegate to it
+      // If the store provides deleteByUser, delegate entirely to it. This is
+      // the distributed-safe path — the store (e.g. Redis) has a global view of
+      // all sessions across instances.
       if (store.deleteByUser) {
         return store.deleteByUser(userId);
       }
 
+      // Fallback: use the local in-memory index (single-instance / test setup).
       const sessionIds = userSessions.get(userId);
       if (!sessionIds || sessionIds.size === 0) {
         return 0;

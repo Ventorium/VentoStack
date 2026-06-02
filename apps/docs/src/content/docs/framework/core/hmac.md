@@ -72,3 +72,5 @@ function createHMACSigner(options: HMACOptions): {
 - 使用 `timingSafeEqual` 恒定时间比较，防止时序攻击
 - 内置 Nonce 去重存储，自动清理过期 Nonce，防止重放攻击
 - 验证失败返回 `401`，可选原因为 Missing/Invalid/Expired/Mismatch
+- Nonce 检查和记录使用互斥锁保证单进程内的原子性，防止并发请求下的 nonce 重放
+- 在多进程/多实例部署中，内存级互斥锁不足以防止跨进程的 nonce 重放，需依赖外部存储（如 Redis）实现跨进程去重

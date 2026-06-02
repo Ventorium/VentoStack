@@ -44,8 +44,7 @@ app.use(createStaticMiddleware({
 
 ## 安全特性
 
-- **路径遍历防护**：过滤 `..`、`.` 和多余斜杠
-- **根目录校验**：拼接后的路径不逃逸根目录
+- **路径遍历防护**：使用 `path.resolve()` 解析绝对路径后校验 `resolvedPath.startsWith(normalizedRoot)`，确保解析后的路径不逃逸根目录。同时校验 URL 路径以声明的 prefix 开头。
 - **扩展名白名单**：可选，限制可访问文件类型
 - **文件存在检查**：不存在时交由下一个中间件处理
 

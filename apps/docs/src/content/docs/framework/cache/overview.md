@@ -142,6 +142,23 @@ interface TaggedCache {
 }
 ```
 
+### 租户命名空间
+
+当启用多租户时，缓存键应添加 `tenant:${tenantId}:` 前缀以隔离不同租户的缓存数据。平台模块提供了 `createCacheKeyNamespace` 辅助函数：
+
+```typescript
+import { createCacheKeyNamespace } from "@ventostack/system";
+
+const ns = createCacheKeyNamespace("tenant-abc");
+ns.key("user:detail:123");    // "tenant:tenant-abc:user:detail:123"
+ns.listKey("user");            // "tenant:tenant-abc:user:list"
+ns.detailKey("user", "123");   // "tenant:tenant-abc:user:detail:123"
+
+// tenantId 为空时不添加前缀（向后兼容）
+const defaultNs = createCacheKeyNamespace();
+defaultNs.key("user:detail:123"); // "user:detail:123"
+```
+
 ## 其他缓存工具
 
 `@ventostack/cache` 还提供了以下独立工具：

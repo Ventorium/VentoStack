@@ -73,3 +73,41 @@ const { middleware } = createTenantMiddleware({
 - 响应头中自动附加 `x-tenant-id`
 - 子域名策略要求至少三段域名（如 `tenant.example.com`）
 - `getTenantFromRequest` 可单独用于非中间件场景
+
+### Admin 应用租户配置
+
+Admin 应用通过环境变量 `TENANT_ENABLED` 控制是否启用多租户：
+
+```bash
+# .env
+TENANT_ENABLED=true
+```
+
+启用后：
+1. 自动注册 `createTenantMiddleware`，从请求头 `x-tenant-id` 提取租户 ID
+2. QueryBuilder 自动注入 `tenant_id` WHERE 条件：
+
+```typescript
+// 启用租户后，所有查询自动添加 tenant_id 条件
+const users = await db.query(UserModel)
+  .withTenant("tenant-abc")
+  .where("status", "=", "active")
+  .list();
+// 生成 SQL: WHERE tenant_id = $1 AND status = $2 AND deleted_at IS NULL
+// 参数: ["tenant-abc", "active"]
+```
+
+3. 缓存键自动添加 `tenant:${tenantId}:` 前缀
+
+### QueryBuilder withTenant()
+
+```typescript
+interface QueryBuilder<T> {
+  /** 设置租户 ID，自动在 WHERE 条件中注入 tenant_id = $N */
+  withTenant(tenantId: string): QueryBuilder<T>;
+}
+```
+
+- `tenant_id` 条件作为 WHERE 子句的第一个条件注入
+- 使用参数化查询（不是字符串拼接）
+- 列名通过 `assertValidIdentifier()` 校验

@@ -17,6 +17,19 @@ const rawConfig = createConfig(
     },
     PORT: { type: "number", env: "PORT", default: 9320 },
     HOST: { type: "string", env: "HOST", default: "0.0.0.0" },
+    // ---- 管理端口（健康检查、指标、OpenAPI 文档）----
+    ADMIN_PORT: {
+      type: "number",
+      env: "ADMIN_PORT",
+      default: 9322,
+      description: "管理端口（/health, /metrics, /docs）。设为 0 则禁用独立端口，回退到主端口。",
+    },
+    ADMIN_HOST: {
+      type: "string",
+      env: "ADMIN_HOST",
+      default: "127.0.0.1",
+      description: "管理端口绑定地址，默认仅本地访问。",
+    },
     DATABASE_URL: {
       type: "string",
       env: "DATABASE_URL",
@@ -96,6 +109,13 @@ const rawConfig = createConfig(
     },
     S3_REGION: { type: "string", env: "S3_REGION", default: "auto" },
     S3_PUBLIC_BASE_URL: { type: "string", env: "S3_PUBLIC_BASE_URL" },
+    // ---- Tenant ----
+    TENANT_ENABLED: {
+      type: "boolean",
+      env: "TENANT_ENABLED",
+      default: false,
+      description: "是否启用多租户隔离",
+    },
   },
   process.env,
 );

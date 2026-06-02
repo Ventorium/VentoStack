@@ -326,3 +326,50 @@ describe("createRedisSessionStore deleteByUser", () => {
     expect(members).not.toContain("s1");
   });
 });
+
+describe("distributed destroyByUser across independent SessionManager instances", () => {
+  // Simulates two server instances sharing the same Redis backend.
+  // Instance A creates sessions; instance B (with no local memory index) destroys them.
+
+  test("instance B can destroy sessions created by instance A", async () => {
+    const { createSessionManager } = require("../session");
+
+    // Both instances share the same Redis client (i.e. the same Redis)
+    const sharedRedisClient = createMockRedisClient();
+
+    // Instance A: creates sessions
+    const storeA = createRedisSessionStore({ client: sharedRedisClient });
+    const managerA = createSessionManager(storeA, { ttl: 3600 });
+
+    const s1 = await managerA.create({ userId: "user-x" });
+    const s2 = await managerA.create({ userId: "user-x" });
+    const s3 = await managerA.create({ userId: "other-user" });
+
+    // Instance B: a completely independent manager with its own local state
+    const storeB = createRedisSessionStore({ client: sharedRedisClient });
+    const managerB = createSessionManager(storeB, { ttl: 3600 });
+
+    // managerB has never seen user-x's sessions in its local memory, but
+    // destroyByUser should still work because it delegates to the Redis store.
+    const count = await managerB.destroyByUser("user-x");
+    expect(count).toBe(2);
+
+    // user-x sessions are gone
+    expect(await managerA.get(s1.id)).toBeNull();
+    expect(await managerA.get(s2.id)).toBeNull();
+
+    // other-user session survives
+    expect(await managerA.get(s3.id)).not.toBeNull();
+  });
+
+  test("instance B destroyByUser returns 0 for unknown user", async () => {
+    const { createSessionManager } = require("../session");
+
+    const sharedRedisClient = createMockRedisClient();
+    const storeB = createRedisSessionStore({ client: sharedRedisClient });
+    const managerB = createSessionManager(storeB, { ttl: 3600 });
+
+    const count = await managerB.destroyByUser("never-existed");
+    expect(count).toBe(0);
+  });
+});

@@ -78,6 +78,12 @@ app.use(errorHandler({ logger }));
 
 // 静默模式（测试环境禁用日志）
 app.use(errorHandler({ silent: true }));
+
+// errorHandler 配置选项：
+// - silent — 是否静默模式（不输出日志）
+// - logger — 自定义 Logger 实例
+// - includeStackInLog — 是否在日志中包含错误堆栈；默认非生产环境为 true，生产环境为 false。
+//   生产环境建议保持默认（不记录堆栈），以防止内部路径和模块结构泄露。
 ```
 
 如果需要自定义错误处理逻辑，也可以手动实现：

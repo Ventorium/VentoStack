@@ -6,6 +6,8 @@
 import type { Cache } from "@ventostack/cache";
 import type { Database } from "@ventostack/database";
 import { DictDataModel, DictTypeModel } from "../models/dict";
+import { createCacheKeyNamespace } from "./cache-key";
+import type { CacheKeyNamespace } from "./cache-key";
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -99,11 +101,17 @@ export interface DictService {
  * @param deps 依赖注入
  * @returns DictService 实例
  */
-export function createDictService(deps: { db: Database; cache: Cache }): DictService {
+export function createDictService(deps: {
+  db: Database;
+  cache: Cache;
+  /** 租户 ID，启用多租户时传入以隔离缓存 */
+  tenantId?: string;
+}): DictService {
   const { db, cache } = deps;
+  const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
 
   function cacheKey(typeCode: string): string {
-    return `dict:${typeCode}`;
+    return ns.key(`dict:${typeCode}`);
   }
 
   // ===== 字典类型 =====

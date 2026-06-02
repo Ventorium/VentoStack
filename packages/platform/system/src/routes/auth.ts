@@ -1,21 +1,43 @@
 /**
  * @ventostack/system - 认证路由
  *
- * 公开端点（login/register/forgot-password/reset-password）直接在 router 上注册。
- * 需认证端点（logout/MFA）在子 router 上通过 use(authMiddleware) 保护。
+ * 公开端点（login/register/forgot-password/reset-password-by-token）直接在 router 上注册。
+ * 需认证端点（logout/reset-password/MFA）在子 router 上通过 use(authMiddleware) 保护。
  */
 
 import { createRouter } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
 
-/** 从请求头提取客户端 IP（优先代理头，回退到 Bun 注入的 x-real-ip） */
-function extractClientIP(headers: Headers): string {
-  return (
-    headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-    headers.get("x-real-ip")?.trim() ??
-    "unknown"
-  );
+/**
+ * 从请求中提取客户端 IP（安全版本）
+ * 仅当直接连接 IP 在可信代理列表中时，才读取代理头
+ */
+function extractClientIP(request: Request, trustedProxies: string[] = []): string {
+  // 获取直接连接 IP
+  const directIP =
+    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ?? "unknown";
+
+  // 没有可信代理配置，返回直接连接 IP
+  if (trustedProxies.length === 0) {
+    return directIP;
+  }
+
+  // 直接连接 IP 不在可信代理列表中，返回直接连接 IP（防止伪造）
+  if (!trustedProxies.includes(directIP)) {
+    return directIP;
+  }
+
+  // 来自可信代理，读取代理头获取真实客户端 IP
+  const forwarded = request.headers.get("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) return first;
+  }
+  const realIP = request.headers.get("x-real-ip");
+  if (realIP) return realIP.trim();
+
+  return directIP;
 }
 import { fail, ok, parseBody } from "./common";
 
@@ -26,7 +48,12 @@ const tokenPairSchema = {
   tokenType: { type: "string" as const, description: "令牌类型" },
 };
 
-export function createAuthRoutes(authService: AuthService, authMiddleware: Middleware): Router {
+export function createAuthRoutes(
+  authService: AuthService,
+  authMiddleware: Middleware,
+  perm: (resource: string, action: string) => Middleware,
+  trustedProxies: string[] = [],
+): Router {
   const router = createRouter();
 
   // ---- 公开端点 ----
@@ -54,7 +81,7 @@ export function createAuthRoutes(authService: AuthService, authMiddleware: Middl
         const result = await authService.login({
           username: body.username as string,
           password: body.password as string,
-          ip: extractClientIP(ctx.request.headers),
+          ip: extractClientIP(ctx.request, trustedProxies),
           userAgent: ctx.request.headers.get("user-agent") ?? "unknown",
           deviceType: body.deviceType as string | undefined,
         });
@@ -137,27 +164,6 @@ export function createAuthRoutes(authService: AuthService, authMiddleware: Middl
   );
 
   router.post(
-    "/api/auth/reset-password",
-    {
-      body: {
-        userId: { type: "uuid" as const, required: true, description: "用户 ID" },
-        newPassword: { type: "string" as const, required: true, min: 6, description: "新密码" },
-      },
-      openapi: { summary: "重置密码（管理员）", tags: ["auth"], operationId: "resetPassword" },
-    },
-    async (ctx) => {
-      try {
-        const body = await parseBody(ctx.request);
-        await authService.resetPassword(body.userId as string, body.newPassword as string);
-        return ok(null);
-      } catch (e) {
-        const msg = e instanceof Error ? e.message : "重置失败";
-        return fail(msg, 400);
-      }
-    },
-  );
-
-  router.post(
     "/api/auth/reset-password-by-token",
     {
       body: {
@@ -216,7 +222,7 @@ export function createAuthRoutes(authService: AuthService, authMiddleware: Middl
         const result = await authService.completeMFALogin(
           body.mfaToken as string,
           body.code as string,
-          extractClientIP(ctx.request.headers),
+          extractClientIP(ctx.request, trustedProxies),
           ctx.request.headers.get("user-agent") ?? "unknown",
           body.deviceType as string | undefined,
         );
@@ -235,15 +241,52 @@ export function createAuthRoutes(authService: AuthService, authMiddleware: Middl
   protectedRouter.post(
     "/api/auth/logout",
     {
+      body: {
+        refreshToken: { type: "string" as const, description: "刷新令牌" },
+        sessionId: { type: "string" as const, description: "会话 ID" },
+      },
       openapi: { summary: "退出登录", tags: ["auth"], operationId: "logout" },
     },
     async (ctx) => {
       const user = ctx.user as { id: string } | undefined;
       if (user) {
-        await authService.logout(user.id, "");
+        try {
+          const body = await parseBody(ctx.request);
+          await authService.logout(
+            user.id,
+            (body.sessionId as string) || "",
+            (body.refreshToken as string) || undefined,
+          );
+        } catch {
+          // 即使 refreshToken 解析失败也要执行基本登出
+          await authService.logout(user.id, "");
+        }
       }
       return ok(null);
     },
+  );
+
+  // 管理员重置密码（需认证 + 权限校验）
+  protectedRouter.post(
+    "/api/auth/reset-password",
+    {
+      body: {
+        userId: { type: "uuid" as const, required: true, description: "用户 ID" },
+        newPassword: { type: "string" as const, required: true, min: 6, description: "新密码" },
+      },
+      openapi: { summary: "重置密码（管理员）", tags: ["auth"], operationId: "resetPassword" },
+    },
+    async (ctx) => {
+      try {
+        const body = await parseBody(ctx.request);
+        await authService.resetPassword(body.userId as string, body.newPassword as string);
+        return ok(null);
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : "重置失败";
+        return fail(msg, 400);
+      }
+    },
+    perm("system", "user:resetPwd"),
   );
 
   // MFA

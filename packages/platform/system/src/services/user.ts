@@ -9,6 +9,8 @@ import type { Database } from "@ventostack/database";
 import { DeptModel } from "../models/dept";
 import { UserModel } from "../models/user";
 import type { ConfigService } from "./config";
+import { createCacheKeyNamespace } from "./cache-key";
+import type { CacheKeyNamespace } from "./cache-key";
 import { validatePassword } from "./password-policy";
 
 /** 创建用户参数 */
@@ -132,8 +134,11 @@ export function createUserService(deps: {
   passwordHasher: PasswordHasher;
   cache: Cache;
   configService: ConfigService;
+  /** 租户 ID，启用多租户时传入以隔离缓存 */
+  tenantId?: string;
 }): UserService {
   const { db, passwordHasher, cache, configService } = deps;
+  const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
 
   return {
     async create(params) {
@@ -173,7 +178,7 @@ export function createUserService(deps: {
       });
 
       // 清除用户列表缓存
-      await cache.del("user:list");
+      await cache.del(ns.listKey("user"));
 
       return { id };
     },
@@ -194,8 +199,8 @@ export function createUserService(deps: {
       await db.query(UserModel).where("id", "=", id).update(updates);
 
       // 清除用户缓存
-      await cache.del(`user:detail:${id}`);
-      await cache.del("user:list");
+      await cache.del(ns.detailKey("user", id));
+      await cache.del(ns.listKey("user"));
     },
 
     async delete(id) {
@@ -203,13 +208,13 @@ export function createUserService(deps: {
       await db.query(UserModel).where("id", "=", id).delete();
 
       // 清除缓存
-      await cache.del(`user:detail:${id}`);
-      await cache.del("user:list");
+      await cache.del(ns.detailKey("user", id));
+      await cache.del(ns.listKey("user"));
     },
 
     async getById(id) {
       // 尝试从缓存获取
-      const cached = await cache.get<UserDetail>(`user:detail:${id}`);
+      const cached = await cache.get<UserDetail>(ns.detailKey("user", id));
       if (cached) return cached;
 
       const row = await db
@@ -253,7 +258,7 @@ export function createUserService(deps: {
       };
 
       // 写入缓存
-      await cache.set(`user:detail:${id}`, detail, { ttl: 300 });
+      await cache.set(ns.detailKey("user", id), detail, { ttl: 300 });
 
       return detail;
     },
@@ -323,15 +328,15 @@ export function createUserService(deps: {
       });
 
       // 清除用户缓存
-      await cache.del(`user:detail:${id}`);
+      await cache.del(ns.detailKey("user", id));
     },
 
     async updateStatus(id, status) {
       await db.query(UserModel).where("id", "=", id).update({ status });
 
       // 清除缓存
-      await cache.del(`user:detail:${id}`);
-      await cache.del("user:list");
+      await cache.del(ns.detailKey("user", id));
+      await cache.del(ns.listKey("user"));
     },
 
     async export(params) {

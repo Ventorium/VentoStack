@@ -162,3 +162,33 @@ modules: {
 - 禁止内联 `(ctx: any, next: any)` 权限中间件，用 `createPermMiddleware`
 - 表名 `sys_` 前缀，列名 snake_case，TS 字段 camelCase
 - 测试用 `createMockDatabase(createMockExecutor())`
+
+## 安全约束（Security Audit）
+
+新增平台模块时必须遵守以下安全规则：
+
+### 租户隔离配置
+
+- `createPlatform()` 中通过 `tenantEnabled: true` 启用多租户模式（默认 `false`，向后兼容）
+- 启用后 `createTenantMiddleware` 自动从 JWT 注入 `tenant_id`，不依赖前端传递
+- Service 层查询必须调用 `db.query(Model).withTenant(tenantId)` 注入租户条件
+- 缓存键必须使用 `createCacheKeyNamespace(tenantId)` 生成带租户前缀的键：`tenant:${tenantId}:原始键`
+
+### 管理端点独立端口
+
+- 模块中的健康检查、指标、调试端点必须挂载在独立的管理端口（`ADMIN_PORT`）
+- 生产环境禁止将管理端点暴露在业务端口上
+- `ADMIN_PORT = 0` 时所有端点在同一端口，不推荐生产使用
+
+### 安全中间件注册要求
+
+- **认证中间件必挂**：所有非公开 API 的路由组必须先 `router.use(authMiddleware)`
+- **权限标识符必填**：使用 `createPermMiddleware(rbac)` 工厂，每条路由绑定 `perm("resource:action")`
+- **Schema strict 默认开启**：路由 config 中 `strict` 默认 `true`，不要显式关闭
+- **审计日志集成**：写操作路由组应挂载 `createOperationLogMiddleware(auditLog, { trustedProxies })`，确保操作可审计且自动脱敏
+- **可信代理配置透传**：`trustedProxies` 从 `PlatformConfig` 传入各模块，用于安全提取客户端 IP
+
+### Row Filter 与数据隔离
+
+- 模块中涉及数据行级过滤的场景，必须使用 `createRowFilter()` + `buildWhereClause()` 参数化查询
+- 禁止在 Row Filter 中使用字符串拼接生成 SQL 条件

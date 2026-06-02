@@ -21,7 +21,7 @@
  */
 
 /** 创建结构化日志记录器 */
-export { createLogger, getDefaultLogger } from "./logger";
+export { createLogger, getDefaultLogger, sanitize } from "./logger";
 export type { Logger, LogLevel, LogEntry, LoggerOptions } from "./logger";
 
 /** 创建指标收集器（计数器、直方图、仪表盘） */

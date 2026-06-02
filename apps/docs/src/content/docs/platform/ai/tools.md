@@ -58,7 +58,7 @@ const schemas = registry.toJSONSchema();
 import { createSandbox } from "@ventostack/ai";
 
 const sandbox = createSandbox({
-  allowedTools: ["get_weather", "search_document"],
+  allowedTools: ["get_weather", "search_document"], // 允许执行的工具名称列表，为空或不设置时拒绝所有工具（必须显式配置白名单）
   allowedHosts: ["api.weather.com", "api.example.com"],
   allowNetworkAccess: true,
   allowFileRead: true,
@@ -86,6 +86,8 @@ const result = await sandbox.wrapExecution("get_weather", async () => {
   return await fetchWeather();
 });
 ```
+
+> **安全默认**：`allowedTools` 为空数组或未设置时，`canExecute()` 对所有工具返回 false。必须显式配置白名单才能允许工具执行。
 
 ## 审批流
 

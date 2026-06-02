@@ -7,6 +7,8 @@ import type { Cache } from "@ventostack/cache";
 import type { Database } from "@ventostack/database";
 import { RoleMenuModel } from "../models/menu";
 import { RoleModel } from "../models/role";
+import { createCacheKeyNamespace } from "./cache-key";
+import type { CacheKeyNamespace } from "./cache-key";
 import type { PaginatedResult } from "./user";
 
 /** 创建角色参数 */
@@ -65,8 +67,11 @@ export interface RoleService {
 export function createRoleService(deps: {
   db: Database;
   cache: Cache;
+  /** 租户 ID，启用多租户时传入以隔离缓存 */
+  tenantId?: string;
 }): RoleService {
   const { db, cache } = deps;
+  const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
 
   return {
     async create(params) {
@@ -83,7 +88,7 @@ export function createRoleService(deps: {
         remark: remark ?? null,
       });
 
-      await cache.del("role:list");
+      await cache.del(ns.listKey("role"));
 
       return { id };
     },
@@ -100,8 +105,8 @@ export function createRoleService(deps: {
 
       await db.query(RoleModel).where("id", "=", id).update(updates);
 
-      await cache.del(`role:detail:${id}`);
-      await cache.del("role:list");
+      await cache.del(ns.detailKey("role", id));
+      await cache.del(ns.listKey("role"));
     },
 
     async delete(id) {
@@ -112,12 +117,12 @@ export function createRoleService(deps: {
       // 软删除角色
       await db.query(RoleModel).where("id", "=", id).delete();
 
-      await cache.del(`role:detail:${id}`);
-      await cache.del("role:list");
+      await cache.del(ns.detailKey("role", id));
+      await cache.del(ns.listKey("role"));
     },
 
     async getById(id) {
-      const cached = await cache.get<RoleDetail>(`role:detail:${id}`);
+      const cached = await cache.get<RoleDetail>(ns.detailKey("role", id));
       if (cached) return cached;
 
       const row = await db
@@ -152,7 +157,7 @@ export function createRoleService(deps: {
           row.updated_at instanceof Date ? row.updated_at.toISOString() : String(row.updated_at),
       };
 
-      await cache.set(`role:detail:${id}`, detail, { ttl: 300 });
+      await cache.set(ns.detailKey("role", id), detail, { ttl: 300 });
 
       return detail;
     },
@@ -207,8 +212,8 @@ export function createRoleService(deps: {
       }
 
       // 清除与角色相关的缓存
-      await cache.del(`role:menus:${roleId}`);
-      await cache.del("role:list");
+      await cache.del(ns.key(`role:menus:${roleId}`));
+      await cache.del(ns.listKey("role"));
     },
 
     async assignDataScope(roleId, scope, deptIds) {
@@ -226,7 +231,7 @@ export function createRoleService(deps: {
         }
       }
 
-      await cache.del(`role:detail:${roleId}`);
+      await cache.del(ns.detailKey("role", roleId));
     },
   };
 }

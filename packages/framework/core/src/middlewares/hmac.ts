@@ -90,6 +90,31 @@ export function createHMACSigner(options: HMACOptions): {
   // Nonce 去重存储
   const usedNonces = new Map<string, number>(); // nonce -> expiry timestamp
 
+  // 简易互斥锁，确保单进程内 nonce 检查和记录的原子性
+  // 注意：在多进程/多实例部署中，仍需依赖外部存储（如 Redis）实现跨进程去重
+  let nonceLock = false;
+  const nonceQueue: Array<() => void> = [];
+
+  function acquireNonceLock(): Promise<void> {
+    if (!nonceLock) {
+      nonceLock = true;
+      return Promise.resolve();
+    }
+    return new Promise<void>((resolve) => {
+      nonceQueue.push(resolve);
+    });
+  }
+
+  function releaseNonceLock(): void {
+    if (nonceQueue.length > 0) {
+      const next = nonceQueue.shift()!;
+      // 保持 lock 为 true，直接传递给下一个等待者
+      next();
+    } else {
+      nonceLock = false;
+    }
+  }
+
   // 定期清理过期 nonce
   const cleanupInterval = setInterval(() => {
     const now = Date.now();
@@ -170,24 +195,31 @@ export function createHMACSigner(options: HMACOptions): {
       return { valid: false, reason: "Signature expired" };
     }
 
-    // 检查 nonce 是否重复
-    if (usedNonces.has(nonceVal)) {
-      return { valid: false, reason: "Nonce already used" };
+    // 原子性检查 nonce：获取锁 -> 检查是否重复 -> 校验签名 -> 记录 nonce -> 释放锁
+    // 这防止了并发请求中同一 nonce 被多次接受的竞态条件
+    await acquireNonceLock();
+    try {
+      // 检查 nonce 是否重复
+      if (usedNonces.has(nonceVal)) {
+        return { valid: false, reason: "Nonce already used" };
+      }
+
+      const url = new URL(request.url);
+      const body = await request.clone().text();
+
+      const expected = await computeSignature(request.method, url.pathname, body, ts, nonceVal);
+
+      if (!constantTimeEqual(sig, expected)) {
+        return { valid: false, reason: "Signature mismatch" };
+      }
+
+      // 记录 nonce，设置过期时间
+      usedNonces.set(nonceVal, now + maxAge);
+
+      return { valid: true };
+    } finally {
+      releaseNonceLock();
     }
-
-    const url = new URL(request.url);
-    const body = await request.clone().text();
-
-    const expected = await computeSignature(request.method, url.pathname, body, ts, nonceVal);
-
-    if (!constantTimeEqual(sig, expected)) {
-      return { valid: false, reason: "Signature mismatch" };
-    }
-
-    // 记录 nonce，设置过期时间
-    usedNonces.set(nonceVal, now + maxAge);
-
-    return { valid: true };
   }
 
   function middleware(): Middleware {

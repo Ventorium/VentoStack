@@ -252,3 +252,26 @@ fail("Not found", 404, 404)           // { code: 404, message: "Not found", data
 parseBody<T>(request)                 // 读取请求体 JSON → T
 pageOf(query)                         // { page: 1, pageSize: 10 } (page ≥ 1, pageSize 1-100)
 ```
+
+## 安全约束（Security Audit）
+
+新增实体时必须遵守以下安全规则：
+
+### 路由安全
+
+- **新增路由必须在 protected router 上**：所有非公开 API 必须挂载在经 `authMiddleware` 保护的 router 上，或使用 `createCrudRoutes` 自动注入认证。
+- **必须添加权限标识符**：每条路由必须携带 `perm("system:xxx:action")` 权限中间件，禁止裸路由。权限格式：`system:模块:list` / `query` / `create` / `update` / `delete`。
+
+### Schema 安全
+
+- **Schema strict 模式默认开启**：路由 config 中的 `strict` 默认 `true`（拒绝未知字段），不要显式设为 `false`。
+- **必须定义请求/响应 Schema**：新增路由的 `body`、`query`、`formData` 必须声明 Schema，以便运行时校验和前端类型生成。
+
+### 审计与脱敏
+
+- **审计日志 metadata 自动脱敏**：通过 `createOperationLogMiddleware` 记录的操作日志，请求体中 31 个敏感字段（password、token、secret 等）会被自动替换为 `"******"`，无需手动处理。
+- **日志中禁止输出敏感数据**：Service 层的 `console.log` / `logger` 调用不应包含 password、token 等字段。
+
+### SQL 安全
+
+- **参数化查询强制**：所有 SQL 使用 `$1, $2, ...` 占位符，禁止字符串拼接。动态字段名使用 `assertValidIdentifier` 校验。

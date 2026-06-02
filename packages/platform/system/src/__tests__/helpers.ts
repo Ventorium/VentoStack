@@ -362,7 +362,7 @@ export function createMockRowFilter() {
     addRule: mock(() => {}),
     getFilters: mock(() => []),
     getRules: mock(() => []),
-    buildWhereClause: mock(() => ""),
+    buildWhereClause: mock(() => ({ sql: "", params: [] })),
   };
 }
 

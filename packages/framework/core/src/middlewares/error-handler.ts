@@ -27,6 +27,8 @@ export interface ErrorHandlerOptions {
   silent?: boolean;
   /** 生产环境返回的固定错误消息，默认 "服务器内部错误" */
   fallbackMessage?: string;
+  /** 是否在日志中包含堆栈信息；默认非生产环境为 true，生产环境为 false */
+  includeStackInLog?: boolean;
 }
 
 /**
@@ -39,6 +41,8 @@ export interface ErrorHandlerOptions {
 export function errorHandler(options?: ErrorHandlerOptions): Middleware {
   const logger = options?.silent ? noopLogger : (options?.logger ?? consoleLogger);
   const fallbackMessage = options?.fallbackMessage ?? "服务器内部错误";
+  const isProduction = process.env.NODE_ENV === "production";
+  const includeStackInLog = options?.includeStackInLog ?? !isProduction;
 
   return async (ctx: Context, next) => {
     try {
@@ -60,7 +64,7 @@ export function errorHandler(options?: ErrorHandlerOptions): Middleware {
         return ctx.json(body, error.code);
       }
 
-      const stack = error instanceof Error ? error.stack : undefined;
+      const stack = includeStackInLog && error instanceof Error ? error.stack : undefined;
       logger.error("unhandled error", {
         method: ctx.method,
         path: ctx.path,

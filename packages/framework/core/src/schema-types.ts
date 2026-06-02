@@ -97,6 +97,8 @@ export interface RouteSchemaConfig {
   formData?: Record<string, SchemaField>;
   /** 响应 Schema（用于类型推导、运行时校验和 OpenAPI） */
   responses?: Record<number | string, RouteResponseDefinition>;
+  /** 是否拒绝未知字段（默认 true） */
+  strict?: boolean;
   /** OpenAPI 文档元数据 */
   openapi?: RouteOpenAPIConfig;
   /** 附加元数据 */
@@ -510,14 +512,26 @@ export function validateResponseData(
  * 从原始数据按 Schema 做类型转换与校验
  * @param raw - 原始数据（Record / FormData / Headers）
  * @param schema - Schema 定义
+ * @param strict - 是否拒绝未知字段（默认 true）
  * @returns 转换后的数据和错误列表
  */
 export function coerceAndValidate(
   raw: Record<string, unknown> | globalThis.FormData | Headers,
   schema: Record<string, SchemaField>,
+  strict = true,
 ): { data: Record<string, unknown>; errors: string[] } {
   const data: Record<string, unknown> = {};
   const errors: string[] = [];
+
+  // strict 模式：检查未知字段（仅对普通对象输入生效）
+  if (strict && !(raw instanceof globalThis.FormData) && !(raw instanceof Headers)) {
+    const schemaKeys = new Set(Object.keys(schema));
+    for (const key of Object.keys(raw as Record<string, unknown>)) {
+      if (!schemaKeys.has(key)) {
+        errors.push(`Unknown field '${key}'`);
+      }
+    }
+  }
 
   for (const [key, field] of Object.entries(schema)) {
     let value: unknown;
@@ -532,7 +546,7 @@ export function coerceAndValidate(
         if (matched) value = raw.get(matched);
       }
     } else {
-      value = raw[key];
+      value = (raw as Record<string, unknown>)[key];
     }
 
     // required / default
@@ -573,11 +587,13 @@ export function coerceAndValidate(
  * 解析 JSON body 并校验
  * @param request - Request 对象
  * @param schema - Schema 定义
+ * @param strict - 是否拒绝未知字段（默认 true）
  * @returns 转换后的数据和错误列表
  */
 export async function coerceAndValidateJSONBody(
   request: Request,
   schema: Record<string, SchemaField>,
+  strict = true,
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
   let body: unknown;
   try {
@@ -590,18 +606,20 @@ export async function coerceAndValidateJSONBody(
     return { data: {}, errors: ["Body must be a non-null object"] };
   }
 
-  return coerceAndValidate(body as Record<string, unknown>, schema);
+  return coerceAndValidate(body as Record<string, unknown>, schema, strict);
 }
 
 /**
  * 解析 form-urlencoded body 并校验
  * @param request - Request 对象
  * @param schema - Schema 定义
+ * @param strict - 是否拒绝未知字段（默认 true）
  * @returns 转换后的数据和错误列表
  */
 export async function coerceAndValidateFormBody(
   request: Request,
   schema: Record<string, SchemaField>,
+  strict = true,
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
   const text = await request.clone().text();
   const params = new URLSearchParams(text);
@@ -609,18 +627,20 @@ export async function coerceAndValidateFormBody(
   for (const [k, v] of params) {
     raw[k] = v;
   }
-  return coerceAndValidate(raw, schema);
+  return coerceAndValidate(raw, schema, strict);
 }
 
 /**
  * 解析 FormData body 并校验
  * @param request - Request 对象
  * @param schema - Schema 定义
+ * @param strict - 是否拒绝未知字段（默认 true）
  * @returns 转换后的数据和错误列表
  */
 export async function coerceAndValidateFormDataBody(
   request: Request,
   schema: Record<string, SchemaField>,
+  strict = true,
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
   let formData: globalThis.FormData;
   try {
@@ -665,5 +685,5 @@ export async function coerceAndValidateFormDataBody(
     }
   }
 
-  return coerceAndValidate(raw, schema);
+  return coerceAndValidate(raw, schema, strict);
 }

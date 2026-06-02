@@ -159,6 +159,9 @@ app.use(requestLogger());
 // 健康检查（无需认证）
 app.use(healthRouter);
 
+// 注意：Admin 生产部署已将 /health、/metrics、/docs 等管理端点移至独立的 ADMIN_PORT（默认 9322）。
+// 上方示例展示的是框架层的基本用法，生产部署建议参考 Admin 部署文档。
+
 // 平台路由（自动包含所有模块）
 app.use(platform.router);
 

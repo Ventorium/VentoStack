@@ -81,6 +81,8 @@ const metricsMiddleware: Middleware = async (ctx, next) => {
 
 ## 暴露 Prometheus 端点
 
+> **安全提示**：生产环境中 `/metrics` 端点不应在公网暴露。Admin 应用已通过 `ADMIN_PORT` 将 `/metrics` 移至独立管理端口（默认 127.0.0.1:9322），仅本地可访问。
+
 ```typescript
 // 提供 /metrics 端点供 Prometheus 抓取
 router.get("/metrics", async (ctx) => {

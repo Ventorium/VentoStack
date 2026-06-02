@@ -44,17 +44,12 @@ filter.addRule({
 ## 生成 WHERE 子句
 
 ```typescript
-const where = filter.buildWhereClause("orders", {
-  userId: "user-1",
-  tenantId: "tenant-abc",
-});
-// "WHERE tenant_id = 'tenant-abc' AND deleted = 'false'"
+const filter = rowFilter.buildWhereClause();
+// filter.sql: "WHERE tenant_id = $1 AND deleted_at IS NULL"
+// filter.params: ["tenant-abc"]
 
-const where2 = filter.buildWhereClause("posts", {
-  userId: "user-1",
-  tenantId: "tenant-abc",
-});
-// "WHERE author_id = 'user-1' AND deleted = 'false'"
+// 执行参数化查询
+const rows = await db.raw(filter.sql, filter.params);
 ```
 
 ## 获取过滤条件
@@ -86,12 +81,17 @@ const clauses = filter.getFilters("orders", {
 ## 安全机制
 
 - 字段名经过安全校验（仅允许字母、数字、下划线和点号），防止 SQL 注入
-- 字符串值自动转义单引号
+- 使用参数化查询（$1, $2 占位符 + params 数组），从根本上消除 SQL 注入风险
 - 当过滤值为 `undefined` 或空数组时，返回 `WHERE 1 = 0`（拒绝所有数据）
 
 ## 接口参考
 
 ```typescript
+interface ParameterizedClause {
+  sql: string;       // WHERE 子句，含 $1, $2 占位符
+  params: unknown[]; // 参数值数组
+}
+
 interface RowFilterRule {
   resource: string;        // 资源/表名，"*" 通配所有
   field: string;           // 过滤字段名
@@ -111,7 +111,7 @@ interface RowFilter {
   addRule(rule: RowFilterRule): void;
   getFilters(resource: string, ctx: RowFilterContext): RowFilterClause[];
   getRules(): RowFilterRule[];
-  buildWhereClause(resource: string, ctx: RowFilterContext): string;
+  buildWhereClause(resource: string, ctx: RowFilterContext): ParameterizedClause;
 }
 ```
 
@@ -120,3 +120,4 @@ interface RowFilter {
 - 过滤规则基于内存数组存储，重启后需重新注册
 - 通配资源（`resource: "*"`）的规则会匹配所有资源名
 - 建议将生成的 WHERE 子句与参数化查询结合使用，进一步提升安全性
+- `buildWhereClause` 已内置参数化查询支持，返回 `ParameterizedClause`（含 `sql` 和 `params`），可直接传入数据库执行器

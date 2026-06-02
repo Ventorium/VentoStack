@@ -156,6 +156,26 @@ interface TOTPManager {
 }
 ```
 
+## MFA 恢复
+
+当用户丢失 MFA 设备但仍能获取 TOTP 验证码时，可通过 `recoverMFA` 方法恢复：
+
+```typescript
+const result = await authService.recoverMFA(userId, totpCode);
+// 返回 { tempToken: "..." }
+```
+
+恢复流程：
+1. 用户提供当前 TOTP 验证码
+2. 系统验证 TOTP 码正确性
+3. 验证通过后禁用 MFA 并生成临时 token（有效期 600 秒）
+4. 用户使用临时 token 重新设置 MFA
+
+安全约束：
+- 必须提供有效的 TOTP 验证码（不是 recovery code）
+- TOTP 验证失败时不会禁用 MFA
+- 临时 token 有效期仅 10 分钟
+
 ## 注意事项
 
 - 使用 `createTOTP(options?)` 创建管理器，不是 `createMFAManager()`

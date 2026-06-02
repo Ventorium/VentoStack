@@ -12,6 +12,7 @@ import {
   createApp,
   createRouter,
   createStaticMiddleware,
+  createTenantMiddleware,
   errorHandler,
   rateLimit,
   requestId,
@@ -42,8 +43,10 @@ import { serverLogger } from "./logger";
 import { createStorageAdapter } from "./storage";
 
 export interface AppContext {
-  /** VentoStack 应用实例 */
+  /** VentoStack 应用实例（业务端口） */
   app: VentoStackApp;
+  /** 管理端口应用实例（ADMIN_PORT=0 时为 null） */
+  adminApp: VentoStackApp | null;
 }
 
 /**
@@ -145,6 +148,8 @@ export async function buildApp(): Promise<AppContext> {
       scheduler: true,
     },
     notifyChannels: new Map([["in_app", createInAppChannel()]]),
+    // 多租户隔离开关
+    tenantEnabled: env.TENANT_ENABLED,
     // jobHandlers: { ... }, // 注册定时任务处理器
   });
 
@@ -156,6 +161,7 @@ export async function buildApp(): Promise<AppContext> {
   // 4. 应用装配
   // =============================================
   const app = createApp({ port: env.PORT, hostname: env.HOST });
+  let adminAppRef: VentoStackApp | null = null;
 
   // 4a. 全局中间件（顺序敏感）
   app.use(requestId());
@@ -169,7 +175,10 @@ export async function buildApp(): Promise<AppContext> {
   );
   app.use(requestLogger());
 
-  // 4b. 健康检查（无需认证）
+  // 4b. 判断是否使用独立管理端口
+  const useAdminPort = env.ADMIN_PORT > 0;
+
+  // 健康检查路由（用于注册到主应用或管理应用）
   const healthRouter = createRouter();
   healthRouter.get("/health", (ctx) => ctx.json(healthCheck.live()));
   healthRouter.get("/health/live", (ctx) => ctx.json(healthCheck.live()));
@@ -177,25 +186,63 @@ export async function buildApp(): Promise<AppContext> {
     const status = await healthCheck.ready();
     return ctx.json(status, status.status === "ok" ? 200 : 503);
   });
-  app.use(healthRouter);
 
-  // 4b-2. 指标端点（无需认证）
+  // 指标路由
   const metricsRouter = createRouter();
   metricsRouter.get("/metrics", (ctx) => {
     return ctx.text(metrics.render());
   });
-  app.use(metricsRouter);
 
-  // 4c. OpenAPI 文档（无需认证，必须在系统路由之前注册）
-  setupOpenAPI(app, {
-    info: { title: "VentoStack API", version: "0.1.0" },
-    servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
-    jsonPath: "/openapi.json",
-    docsPath: "/docs",
-    securitySchemes: {
-      bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
-    },
-  });
+  if (useAdminPort) {
+    // =============================================
+    // 4b-1. 独立管理端口模式
+    // =============================================
+    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST });
+
+    adminApp.use(requestId());
+    adminApp.use(requestLogger());
+
+    // 健康检查
+    adminApp.use(healthRouter);
+
+    // 指标端点
+    adminApp.use(metricsRouter);
+
+    // OpenAPI 文档（非生产环境 或 显式开启时注册）
+    if (env.NODE_ENV !== "production") {
+      setupOpenAPI(adminApp, {
+        info: { title: "VentoStack API", version: "0.1.0" },
+        servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
+        jsonPath: "/openapi.json",
+        docsPath: "/docs",
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        },
+      });
+    }
+
+    adminApp.use(errorHandler({ logger: serverLogger }));
+    adminAppRef = adminApp;
+  } else {
+    // =============================================
+    // 4b-2. 回退模式（ADMIN_PORT=0，所有端点在同一端口）
+    // =============================================
+    app.use(healthRouter);
+    app.use(metricsRouter);
+
+    // OpenAPI 文档（非生产环境注册）
+    if (env.NODE_ENV !== "production") {
+      setupOpenAPI(app, {
+        info: { title: "VentoStack API", version: "0.1.0" },
+        servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
+        jsonPath: "/openapi.json",
+        docsPath: "/docs",
+        securitySchemes: {
+          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+        },
+      });
+    }
+  }
 
   // 4d. 静态文件服务（仅本地存储模式）
   if (env.STORAGE_DRIVER === "local") {
@@ -253,12 +300,22 @@ export async function buildApp(): Promise<AppContext> {
   };
   app.use(authRateLimitMiddleware);
 
+  // 4e-1. 多租户中间件（TENANT_ENABLED=true 时注册）
+  if (env.TENANT_ENABLED) {
+    const { middleware: tenantMiddleware } = createTenantMiddleware({
+      strategy: "header",
+      headerName: "x-tenant-id",
+    });
+    app.use(tenantMiddleware);
+    serverLogger.info("多租户隔离已启用（strategy: header, x-tenant-id）");
+  }
+
   // 4e. 平台模块路由（createPlatform 自动聚合了所有模块路由）
   app.use(platform.router);
 
   // 4f. 优雅关停
   let shutdownStarted = false;
-  app.lifecycle.onBeforeStop(async () => {
+  const gracefulShutdown = async () => {
     if (shutdownStarted) return;
     shutdownStarted = true;
 
@@ -269,6 +326,13 @@ export async function buildApp(): Promise<AppContext> {
     forceExit.unref();
 
     try {
+      // 先关闭管理端口（不再接受新请求）
+      if (adminAppRef) {
+        serverLogger.info("正在关闭管理端口...");
+        await adminAppRef.close();
+        serverLogger.info("管理端口已关闭");
+      }
+
       serverLogger.info("正在关闭缓存...");
       await cacheInstance.close();
       serverLogger.info("缓存已关闭");
@@ -279,10 +343,11 @@ export async function buildApp(): Promise<AppContext> {
     } catch (err) {
       serverLogger.error(`关停异常: ${err instanceof Error ? err.message : String(err)}`);
     }
-  });
+  };
+  app.lifecycle.onBeforeStop(gracefulShutdown);
 
   // 4g. 错误处理（必须最后注册）
   app.use(errorHandler({ logger: serverLogger }));
 
-  return { app };
+  return { app, adminApp: adminAppRef };
 }

@@ -65,9 +65,17 @@ requestLogger.info("处理订单");
 
 ## 自动脱敏
 
-默认对以下字段自动脱敏（替换为 `***`）：
+框架默认自动脱敏以下字段（不区分大小写，替换为 `***`）：
 
-`password`、`token`、`secret`、`key`、`cookie`、`authorization`
+- 基础安全字段：password、token、secret、key、cookie、authorization
+- 个人信息字段：phone、email、idcard、creditcard、ssn
+- 认证相关：apikey、access_token、refresh_token、mfa_secret
+- 会话相关：sessionid、session_id
+- 重置相关：resettoken、reset_token、temptoken、temp_token
+- MFA 相关：mfarecovery、mfa_recovery
+- 基础设施：private_key、connection_string、database_url、refresh_token_jti
+
+审计日志的 `metadata` 字段在写入时会自动执行脱敏（调用 `sanitize()` 函数），无需调用方手动处理。
 
 可自定义脱敏字段列表：
 

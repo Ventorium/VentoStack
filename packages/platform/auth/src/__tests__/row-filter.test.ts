@@ -103,7 +103,8 @@ describe("createRowFilter", () => {
       value: "tenant_id",
     });
     const clause = rf.buildWhereClause("users", { tenantId: "t1" });
-    expect(clause).toBe("WHERE tenant_id = 't1'");
+    expect(clause.sql).toBe("WHERE tenant_id = $1");
+    expect(clause.params).toEqual(["t1"]);
   });
 
   test("buildWhereClause with IN operator", () => {
@@ -116,17 +117,18 @@ describe("createRowFilter", () => {
       value: "admin",
     });
     const clause = rf.buildWhereClause("users", {});
-    expect(clause).toContain("IN");
-    expect(clause).toContain("admin");
+    expect(clause.sql).toContain("IN");
+    expect(clause.params).toEqual(["admin"]);
   });
 
   test("buildWhereClause empty for no matching rules", () => {
     const rf = createRowFilter();
     const clause = rf.buildWhereClause("users", {});
-    expect(clause).toBe("");
+    expect(clause.sql).toBe("");
+    expect(clause.params).toEqual([]);
   });
 
-  test("buildWhereClause escapes SQL literal payloads", () => {
+  test("buildWhereClause uses parameterized query to prevent injection", () => {
     const rf = createRowFilter();
     rf.addRule({
       resource: "users",
@@ -137,7 +139,8 @@ describe("createRowFilter", () => {
     });
 
     const clause = rf.buildWhereClause("users", { tenantId: "t' OR '1'='1" });
-    expect(clause).toBe("WHERE tenant_id = 't'' OR ''1''=''1'");
+    expect(clause.sql).toBe("WHERE tenant_id = $1");
+    expect(clause.params).toEqual(["t' OR '1'='1"]);
   });
 
   test("buildWhereClause fails closed when tenant context is missing", () => {
@@ -151,7 +154,8 @@ describe("createRowFilter", () => {
     });
 
     const clause = rf.buildWhereClause("users", {});
-    expect(clause).toBe("WHERE 1 = 0");
+    expect(clause.sql).toBe("WHERE 1 = 0");
+    expect(clause.params).toEqual([]);
   });
 
   test("addRule rejects unsafe SQL identifiers", () => {
@@ -172,6 +176,7 @@ describe("createRowFilter", () => {
     rf.addRule({ resource: "t", field: "a", operator: "eq", valueFrom: "static", value: "1" });
     rf.addRule({ resource: "t", field: "b", operator: "eq", valueFrom: "static", value: "2" });
     const clause = rf.buildWhereClause("t", {});
-    expect(clause).toContain("AND");
+    expect(clause.sql).toContain("AND");
+    expect(clause.params).toEqual(["1", "2"]);
   });
 });

@@ -797,6 +797,7 @@ describe("Router - formData schema", () => {
     router.post(
       "/upload",
       {
+        strict: false,
         formData: {
           title: { type: "string", required: true },
         },

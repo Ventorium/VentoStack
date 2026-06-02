@@ -81,6 +81,12 @@ app.lifecycle.onBeforeStop(async () => {
 await app.listen();
 ```
 
+### 生产部署建议
+
+- HTTP 响应的 `Server` 头固定为 `VentoStack`，不暴露运行时版本信息
+- 推荐将 /health、/metrics、/docs 等管理端点置于独立端口并绑定 localhost
+- 生产环境默认不记录未处理错误的堆栈信息到日志
+
 ## 注册可访问地址
 
 应用启动后可以注册可访问地址，用于日志输出或健康检查：

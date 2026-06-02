@@ -99,4 +99,4 @@ export type {
 
 /** 行级数据过滤 - 根据用户/租户上下文自动生成 WHERE 条件 */
 export { createRowFilter } from "./row-filter";
-export type { RowFilter, RowFilterRule, RowFilterContext } from "./row-filter";
+export type { RowFilter, RowFilterRule, RowFilterContext, ParameterizedClause } from "./row-filter";

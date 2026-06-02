@@ -931,13 +931,15 @@ export function createRouter(): Router {
           let coercedFormData: Record<string, unknown> = {};
 
           if (schema) {
+            const strict = schema.strict !== false;
+
             if (schema.query) {
               const url = new URL(req.url);
               const rawQuery: Record<string, unknown> = {};
               url.searchParams.forEach((v, k) => {
                 rawQuery[k] = v;
               });
-              const result = coerceAndValidate(rawQuery, schema.query);
+              const result = coerceAndValidate(rawQuery, schema.query, strict);
               if (result.errors.length > 0) {
                 return new Response(
                   JSON.stringify({ error: "VALIDATION_ERROR", errors: result.errors }),
@@ -948,7 +950,7 @@ export function createRouter(): Router {
             }
 
             if (schema.headers) {
-              const result = coerceAndValidate(req.headers, schema.headers);
+              const result = coerceAndValidate(req.headers, schema.headers, strict);
               if (result.errors.length > 0) {
                 return new Response(
                   JSON.stringify({ error: "VALIDATION_ERROR", errors: result.errors }),
@@ -961,9 +963,9 @@ export function createRouter(): Router {
               const contentType = req.headers.get("content-type") ?? "";
               let result: { data: Record<string, unknown>; errors: string[] };
               if (contentType.includes("application/json")) {
-                result = await coerceAndValidateJSONBody(req, schema.body);
+                result = await coerceAndValidateJSONBody(req, schema.body, strict);
               } else if (contentType.includes("application/x-www-form-urlencoded")) {
-                result = await coerceAndValidateFormBody(req, schema.body);
+                result = await coerceAndValidateFormBody(req, schema.body, strict);
               } else {
                 return new Response(
                   JSON.stringify({
@@ -983,7 +985,7 @@ export function createRouter(): Router {
             }
 
             if (schema.formData) {
-              const result = await coerceAndValidateFormDataBody(req, schema.formData);
+              const result = await coerceAndValidateFormDataBody(req, schema.formData, strict);
               if (result.errors.length > 0) {
                 return new Response(
                   JSON.stringify({ error: "VALIDATION_ERROR", errors: result.errors }),

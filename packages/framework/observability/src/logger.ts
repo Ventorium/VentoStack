@@ -70,8 +70,36 @@ const LOG_LEVEL_ORDER: Record<LogLevel, number> = {
   fatal: 4,
 };
 
-/** 默认脱敏字段列表 */
-const DEFAULT_SENSITIVE_FIELDS = ["password", "token", "secret", "key", "cookie", "authorization"];
+/** 默认脱敏字段列表（不区分大小写匹配） */
+const DEFAULT_SENSITIVE_FIELDS = [
+  "password",
+  "token",
+  "secret",
+  "key",
+  "cookie",
+  "authorization",
+  "phone",
+  "email",
+  "idcard",
+  "creditcard",
+  "ssn",
+  "apikey",
+  "access_token",
+  "refresh_token",
+  "private_key",
+  "connection_string",
+  "database_url",
+  "sessionid",
+  "session_id",
+  "resettoken",
+  "reset_token",
+  "temptoken",
+  "temp_token",
+  "mfarecovery",
+  "mfa_recovery",
+  "refreshtoken",
+  "refresh_token_jti",
+];
 
 /** 递归脱敏任意值
  * @param value 待脱敏的值
@@ -105,6 +133,15 @@ function redactMeta(
   sensitiveFields: string[],
 ): Record<string, unknown> {
   return redactValue(meta, sensitiveFields) as Record<string, unknown>;
+}
+
+/** 对任意值进行递归脱敏（公共 API，供审计日志等模块复用）
+ * 使用默认敏感字段列表，递归遍历对象并将匹配字段替换为 "***"
+ * @param value 待脱敏的值
+ * @returns 脱敏后的值 */
+export function sanitize(value: unknown): unknown {
+  const fields = DEFAULT_SENSITIVE_FIELDS.map((f) => f.toLowerCase());
+  return redactValue(value, fields);
 }
 
 /** 无操作日志记录器，用于日志被禁用时 */

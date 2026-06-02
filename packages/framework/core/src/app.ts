@@ -134,6 +134,21 @@ export function createApp(config?: AppConfig): VentoStackApp {
   }
 
   /**
+   * 为响应添加默认安全头（隐藏 Server 信息指纹）
+   * @param response - 原始响应
+   * @returns 添加 Server 头后的响应
+   */
+  function addServerHeader(response: Response): Response {
+    const headers = new Headers(response.headers);
+    headers.set("Server", "VentoStack");
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  }
+
+  /**
    * 包装单个请求处理器，统计活跃请求并统一捕获异常
    * @param handler - 原始请求处理器
    * @returns 包装后的处理器
@@ -143,7 +158,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
   ): (req: Request) => Promise<Response> {
     return async (req: Request): Promise<Response> => {
       if (isClosing) {
-        return new Response("Service Unavailable", { status: 503 });
+        return addServerHeader(new Response("Service Unavailable", { status: 503 }));
       }
       activeRequests++;
       try {
@@ -163,9 +178,10 @@ export function createApp(config?: AppConfig): VentoStackApp {
             // requestIP 在非服务器请求（如测试）下可能失败
           }
         }
-        return await handler(req);
+        const response = await handler(req);
+        return addServerHeader(response);
       } catch (error) {
-        return defaultErrorHandler(error);
+        return addServerHeader(defaultErrorHandler(error));
       } finally {
         activeRequests--;
       }
@@ -228,7 +244,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
         fetch() {
           return new Response(JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }), {
             status: 404,
-            headers: { "Content-Type": "application/json" },
+            headers: { "Content-Type": "application/json", Server: "VentoStack" },
           });
         },
       });

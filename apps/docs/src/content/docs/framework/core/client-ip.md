@@ -54,3 +54,27 @@ const ipMiddleware: Middleware = async (ctx, next) => {
 | `trustProxyHeaders` | `boolean` | `false` | 是否信任 `X-Forwarded-For` / `X-Real-IP` |
 
 > ⚠️ 仅在确认上游代理可信时启用 `trustProxyHeaders`，否则客户端可伪造 IP。
+
+### 平台模块的可信代理配置
+
+Admin 应用的认证路由和审计日志中间件使用 `trustedProxies: string[]` 参数（IP/CIDR 列表），而非简单的 boolean 开关：
+
+```typescript
+// 在 createAuthRoutes 中传入可信代理列表
+createAuthRoutes(authService, authMiddleware, perm, [
+  "10.0.0.0/8",
+  "172.16.0.0/12", 
+  "192.168.0.0/16",
+]);
+
+// 在 createOperationLogMiddleware 中配置
+createOperationLogMiddleware(auditLog, {
+  trustedProxies: ["10.0.0.0/8"],
+});
+```
+
+安全注意事项：
+- 空 `trustedProxies` 列表时，直接使用连接 IP，不读取任何代理头
+- 仅当直接连接 IP 在可信代理列表中时，才读取 X-Forwarded-For / X-Real-IP
+- 支持 CIDR 格式（如 `10.0.0.0/8`）
+- 当前 CIDR 匹配仅支持 IPv4，IPv6 地址直接使用连接 IP

@@ -157,6 +157,8 @@ readinessProbe:
   periodSeconds: 10
 ```
 
+> **Admin 部署注意**：Admin 应用已将健康检查端点从主端口移至独立的管理端口（`ADMIN_PORT`，默认 9322，绑定 127.0.0.1）。Kubernetes 探针应指向管理端口而非业务端口。
+
 ## HealthCheck 接口
 
 ```typescript
