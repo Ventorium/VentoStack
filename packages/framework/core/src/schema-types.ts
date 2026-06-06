@@ -1,6 +1,8 @@
 // @ventostack/core - Schema 类型推导与运行时校验
 // 为路由配置提供统一的类型声明、编译期推导和运行时转换/校验
 
+import { VALIDATION_PATTERNS } from "./validation-rules";
+
 /** 支持的 schema 字段类型 */
 export type SchemaFieldType =
   | "string"
@@ -291,6 +293,18 @@ function validateCoercedValue(value: unknown, field: SchemaField, path: string):
     ) {
       errors.push(`${path} must be a valid UUID`);
     }
+
+    // format checks
+    if (field.format === "email") {
+      if (!VALIDATION_PATTERNS.email.test(value)) {
+        errors.push(`${path}: invalid email format`);
+      }
+    }
+    if (field.format === "phone") {
+      if (!VALIDATION_PATTERNS.phone.test(value)) {
+        errors.push(`${path}: invalid phone number format`);
+      }
+    }
   }
 
   // number / int / float checks
@@ -423,6 +437,18 @@ function validateStrictValue(value: unknown, field: SchemaField, path: string): 
       !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
     ) {
       errors.push(`${path} must be a valid UUID`);
+    }
+
+    // format checks
+    if (field.format === "email") {
+      if (!VALIDATION_PATTERNS.email.test(value)) {
+        errors.push(`${path}: invalid email format`);
+      }
+    }
+    if (field.format === "phone") {
+      if (!VALIDATION_PATTERNS.phone.test(value)) {
+        errors.push(`${path}: invalid phone number format`);
+      }
     }
   }
 

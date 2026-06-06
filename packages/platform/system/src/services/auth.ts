@@ -525,6 +525,17 @@ export function createAuthService(deps: {
 
     async register(params) {
       const { username, password, email, phone } = params;
+
+      // 密码策略校验
+      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const complexity =
+        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
+        "low";
+      const validation = validatePassword(password, { minLength, complexity });
+      if (!validation.valid) {
+        throw new Error(validation.message);
+      }
+
       const id = crypto.randomUUID();
       const passwordHash = await passwordHasher.hash(password);
 

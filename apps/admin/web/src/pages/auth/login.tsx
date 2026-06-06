@@ -8,30 +8,11 @@ import {
   type PasswordExpiredInfo,
   useAuth,
 } from "@/store/useAuth";
+import { getPasswordRules } from "@/utils/validators";
 import { Button, Checkbox, Divider, Form, Input, Modal } from "antd";
 import type { OTPRef } from "antd/es/input/Otp";
 import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-
-const getPasswordRules = (minLength: number, complexity: "low" | "medium" | "high") => {
-  const rules: Array<
-    | { required: boolean; message: string }
-    | { min: number; message: string }
-    | { pattern: RegExp; message: string }
-  > = [
-    { required: true, message: "请输入新密码" },
-    { min: minLength, message: `密码不能少于${minLength}位` },
-  ];
-  if (complexity === "medium") {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: "密码需包含字母和数字" });
-  } else if (complexity === "high") {
-    rules.push({
-      pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/,
-      message: "密码需包含字母、数字和特殊字符",
-    });
-  }
-  return rules;
-};
 
 const LoginPage = () => {
   const navigate = useNavigate();

@@ -113,7 +113,7 @@ export function createAuthRoutes(
         },
         password: { type: "string" as const, required: true, min: 6, description: "密码" },
         email: { type: "string" as const, format: "email", description: "邮箱" },
-        phone: { type: "string" as const, description: "手机号" },
+        phone: { type: "string" as const, format: "phone", description: "手机号" },
       },
       responses: { 200: tokenPairSchema },
       openapi: { summary: "用户注册", tags: ["auth"], operationId: "register" },

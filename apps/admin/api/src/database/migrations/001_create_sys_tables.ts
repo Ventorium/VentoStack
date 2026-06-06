@@ -87,7 +87,7 @@ export const createSysTables: Migration = {
     await executor(`
       CREATE TABLE IF NOT EXISTS sys_dept (
         id VARCHAR(36) PRIMARY KEY,
-        parent_id VARCHAR(36) NOT NULL,
+        parent_id VARCHAR(36),
         name VARCHAR(64) NOT NULL,
         sort INT DEFAULT 0,
         leader VARCHAR(64),

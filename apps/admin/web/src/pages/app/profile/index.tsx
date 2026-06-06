@@ -6,6 +6,7 @@ import { msg } from "@/components/GlobalMessage";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useTable } from "@/hooks/useTable";
 import { useAuth } from "@/store/useAuth";
+import { emailRules, getPasswordRules, phoneRules } from "@/utils/validators";
 import {
   CopyOutlined,
   DeleteOutlined,
@@ -54,26 +55,6 @@ interface MFASetupData {
   qrCodeUri: string;
   recoveryCodes: string[];
 }
-
-const getPasswordRules = (minLength: number, complexity: "low" | "medium" | "high") => {
-  const rules: Array<
-    | { required: boolean; message: string }
-    | { min: number; message: string }
-    | { pattern: RegExp; message: string }
-  > = [
-    { required: true, message: "请输入新密码" },
-    { min: minLength, message: `密码不能少于${minLength}位` },
-  ];
-  if (complexity === "medium") {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: "密码需包含字母和数字" });
-  } else if (complexity === "high") {
-    rules.push({
-      pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/,
-      message: "密码需包含字母、数字和特殊字符",
-    });
-  }
-  return rules;
-};
 
 export default function ProfilePage() {
   const [profileForm] = Form.useForm();
@@ -344,7 +325,7 @@ export default function ProfilePage() {
           name="email"
           rules={[
             { required: true, message: "请输入邮箱" },
-            { type: "email", message: "邮箱格式不正确" },
+            ...emailRules,
           ]}
         >
           <Input placeholder="请输入邮箱" />
@@ -352,7 +333,7 @@ export default function ProfilePage() {
         <Form.Item
           label="手机号"
           name="phone"
-          rules={[{ pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" }]}
+          rules={phoneRules}
         >
           <Input placeholder="请输入手机号" />
         </Form.Item>

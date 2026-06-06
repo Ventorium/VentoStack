@@ -286,6 +286,9 @@ export type { TagLogger } from "./tag-log";
 // ========== 工具函数 ==========
 export { generateId, generateUUID } from "./utils/generate-id";
 
+// ========== 校验常量与工具函数 ==========
+export { VALIDATION_PATTERNS, isValidEmail, isValidPhone } from "./validation-rules";
+
 // 静态文件服务
 export { createStaticMiddleware } from "./middlewares/static";
 export type { StaticOptions } from "./middlewares/static";

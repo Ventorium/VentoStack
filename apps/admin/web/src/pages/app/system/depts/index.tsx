@@ -4,6 +4,7 @@ import ActionColumn from "@/components/ActionColumn";
 import DictSelect from "@/components/DictSelect";
 import { msg } from "@/components/GlobalMessage";
 import { fmtDate } from "@/utils/fmtDate";
+import { emailRules, phoneRules } from "@/utils/validators";
 import { PlusOutlined } from "@ant-design/icons";
 import {
   Button,
@@ -269,12 +270,12 @@ const DeptPage = () => {
           </Row>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item name="phone" label="电话">
+              <Form.Item name="phone" label="电话" rules={phoneRules}>
                 <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="email" label="邮箱">
+              <Form.Item name="email" label="邮箱" rules={emailRules}>
                 <Input />
               </Form.Item>
             </Col>

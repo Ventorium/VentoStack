@@ -58,6 +58,7 @@ export default defineConfig(({ mode }) => {
       alias: [{ find: "@", replacement: resolve(__dirname, "./src") }],
     },
     server: {
+      host: "0.0.0.0",
       port: 9321,
       proxy: {
         "/api": {

@@ -274,7 +274,9 @@ export function createUserService(deps: {
       if (status !== undefined) {
         query = query.where("status", "=", status);
       }
-      if (deptId) {
+      if (deptId === "__none__") {
+        query = query.where("dept_id", "IS", null);
+      } else if (deptId) {
         const deptIds = await collectDescendantDeptIds(db, deptId);
         query = query.where("dept_id", "IN", deptIds);
       }
@@ -350,7 +352,9 @@ export function createUserService(deps: {
       if (status !== undefined) {
         query = query.where("status", "=", status);
       }
-      if (deptId) {
+      if (deptId === "__none__") {
+        query = query.where("dept_id", "IS", null);
+      } else if (deptId) {
         query = query.where("dept_id", "=", deptId);
       }
 

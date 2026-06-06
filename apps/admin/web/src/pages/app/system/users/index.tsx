@@ -7,6 +7,7 @@ import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useTable } from "@/hooks/useTable";
 import { cleanParams } from "@/utils/cleanParams";
 import { fmtDate } from "@/utils/fmtDate";
+import { emailRules, getPasswordRules, phoneRules, usernameRules } from "@/utils/validators";
 import {
   ApartmentOutlined,
   MenuFoldOutlined,
@@ -50,26 +51,6 @@ const buildTreeData = (
     title: item.name,
     children: item.children?.length ? buildTreeData(item.children) : undefined,
   }));
-
-const getPasswordRules = (minLength: number, complexity: "low" | "medium" | "high") => {
-  const rules: Array<
-    | { required: boolean; message: string }
-    | { min: number; message: string }
-    | { pattern: RegExp; message: string }
-  > = [
-    { required: true, message: "请输入密码" },
-    { min: minLength, message: `密码不能少于${minLength}位` },
-  ];
-  if (complexity === "medium") {
-    rules.push({ pattern: /^(?=.*[a-zA-Z])(?=.*\d)/, message: "密码需包含字母和数字" });
-  } else if (complexity === "high") {
-    rules.push({
-      pattern: /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?])/,
-      message: "密码需包含字母、数字和特殊字符",
-    });
-  }
-  return rules;
-};
 
 const UserPage = () => {
   const navigate = useNavigate();
@@ -148,9 +129,13 @@ const UserPage = () => {
   }, [fetchDeptTree, deptEnabled]);
 
   const handleDeptSelect = (selectedKeys: React.Key[]) => {
-    const deptId = selectedKeys[0] as string | undefined;
-    setSelectedDeptId(deptId ?? null);
-    if (deptId) {
+    const rawKey = selectedKeys[0] as string | undefined;
+    // "__none__" 表示筛选无部门的用户
+    const deptId = rawKey === "__none__" ? undefined : (rawKey ?? undefined);
+    setSelectedDeptId(rawKey === "__none__" ? "__none__" : (rawKey ?? null));
+    if (rawKey === "__none__") {
+      onSearch({ ...searchForm.getFieldsValue(), deptId: "__none__" });
+    } else if (deptId) {
       onSearch({ ...searchForm.getFieldsValue(), deptId });
     } else {
       onSearch({ ...searchForm.getFieldsValue(), deptId: undefined });
@@ -426,8 +411,11 @@ const UserPage = () => {
             <Spin spinning={deptLoading}>
               {deptTreeData.length > 0 ? (
                 <Tree
-                  treeData={deptTreeData}
-                  selectedKeys={selectedDeptId ? [selectedDeptId] : []}
+                  treeData={[
+                    ...deptTreeData,
+                    { key: "__none__", title: "无部门" },
+                  ]}
+                  selectedKeys={selectedDeptId ? [selectedDeptId] : ["__none__"]}
                   onSelect={handleDeptSelect}
                   defaultExpandAll
                   showLine={{ showLeafIcon: false }}
@@ -551,7 +539,7 @@ const UserPage = () => {
               <Form.Item
                 name="username"
                 label="用户名"
-                rules={[{ required: true, message: "请输入用户名" }]}
+                rules={usernameRules}
               >
                 <Input disabled={!!editingUser} />
               </Form.Item>
@@ -581,7 +569,7 @@ const UserPage = () => {
               <Form.Item
                 name="email"
                 label="邮箱"
-                rules={[{ type: "email", message: "邮箱格式不正确" }]}
+                rules={emailRules}
               >
                 <Input />
               </Form.Item>
@@ -590,7 +578,7 @@ const UserPage = () => {
               <Form.Item
                 name="phone"
                 label="手机号"
-                rules={[{ pattern: /^1[3-9]\d{9}$/, message: "手机号格式不正确" }]}
+                rules={phoneRules}
               >
                 <Input />
               </Form.Item>
