@@ -29,6 +29,15 @@ export interface AppConfig {
   port?: number;
   /** 监听主机名，默认 0.0.0.0 */
   hostname?: string;
+  /** 是否打印启动 Banner，默认 true */
+  banner?: boolean;
+  /**
+   * 自定义 fetch 回退处理器。
+   * 当请求不匹配任何声明式路由时调用。
+   * 返回 null 或 undefined 时降级到框架默认 404。
+   * 可用于接入 Vite dev server、SPA fallback 等场景。
+   */
+  fetchFallback?: (request: Request, server: Server) => Response | Promise<Response | null> | null;
 }
 
 /** 应用可访问地址条目 */
@@ -237,24 +246,40 @@ export function createApp(config?: AppConfig): VentoStackApp {
       const listenPort = port ?? config?.port ?? 3000;
       const hostname = config?.hostname ?? "0.0.0.0";
 
+      // 预定义 404 响应
+      const notFoundResponse = new Response(
+        JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }),
+        { status: 404, headers: { "Content-Type": "application/json", Server: "VentoStack" } },
+      );
+
       server = Bun.serve({
         port: listenPort,
         hostname,
         routes: wrapped,
-        fetch() {
-          return new Response(JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }), {
-            status: 404,
-            headers: { "Content-Type": "application/json", Server: "VentoStack" },
-          });
+        fetch(req: Request, srv: Server) {
+          if (!config?.fetchFallback) return notFoundResponse;
+          try {
+            const result = config.fetchFallback(req, srv);
+            if (result instanceof Promise) {
+              return result.then(
+                (r) => r ?? notFoundResponse,
+                () => notFoundResponse,
+              );
+            }
+            return result ?? notFoundResponse;
+          } catch {
+            return notFoundResponse;
+          }
         },
       });
 
-      // 打印启动 Banner
-      const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
-      const baseUrl = `http://${displayHost}:${listenPort}`;
-      const accent = ansi(COLORS.info);
-      const tag = ansi(COLORS.tag);
-      console.log(`
+      // 打印启动 Banner（仅当 banner !== false 时）
+      if (config?.banner !== false) {
+        const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
+        const baseUrl = `http://${displayHost}:${listenPort}`;
+        const accent = ansi(COLORS.info);
+        const tag = ansi(COLORS.tag);
+        console.log(`
 ${tag}██╗   ██╗███████╗███╗   ██╗████████╗ ██████╗ ███████╗████████╗ █████╗  ██████╗██╗  ██╗${RESET}
 ${tag}██║   ██║██╔════╝████╗  ██║╚══██╔══╝██╔═══██╗██╔════╝╚══██╔══╝██╔══██╗██╔════╝██║ ██╔╝${RESET}
 ${tag}██║   ██║█████╗  ██╔██╗ ██║   ██║   ██║   ██║███████╗   ██║   ███████║██║     █████╔╝ ${RESET}
@@ -263,11 +288,17 @@ ${tag} ╚████╔╝ ███████╗██║ ╚████�
 ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝${RESET}
 
   ➜  Local:   ${accent}${baseUrl}${RESET}`);
-      for (const url of urls) {
+        for (const url of urls) {
+          // eslint-disable-next-line no-console
+          console.log(`  ➜  ${url.label}: ${accent}${baseUrl}${url.path}${RESET}`);
+        }
+        console.log();
+      } else {
+        const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
+        const accent = ansi(COLORS.info);
         // eslint-disable-next-line no-console
-        console.log(`  ➜  ${url.label}: ${accent}${baseUrl}${url.path}${RESET}`);
+        console.log(`  ➜  Admin:   ${accent}http://${displayHost}:${listenPort}${RESET}`);
       }
-      console.log();
 
       // SIGTERM / SIGINT 优雅关闭
       sigTermHandler = () => {

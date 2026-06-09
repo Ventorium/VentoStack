@@ -35,6 +35,8 @@
       "@ventostack/cli/*": ["./packages/framework/cli/src/*"],
       "@ventostack/webhook": ["./packages/framework/webhook/src/index.ts"],
       "@ventostack/webhook/*": ["./packages/framework/webhook/src/*"],
+      "@ventostack/vite-bridge": ["./packages/framework/vite-bridge/src/index.ts"],
+      "@ventostack/vite-bridge/*": ["./packages/framework/vite-bridge/src/*"],
       "@ventostack/auth": ["./packages/platform/auth/src/index.ts"],
       "@ventostack/auth/*": ["./packages/platform/auth/src/*"],
       "@ventostack/ai": ["./packages/platform/ai/src/index.ts"],

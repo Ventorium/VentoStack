@@ -54,6 +54,57 @@ async function main(): Promise<void> {
       },
     });
   }
+
+  // 开发模式：键盘快捷键（重启前端 / 后端 / 全部）
+  if (env.NODE_ENV !== "production" && appCtx.viteBridge && process.stdin.isTTY) {
+    const bridge = appCtx.viteBridge;
+
+    process.stdin.setRawMode(true);
+    process.stdin.resume();
+    process.stdin.setEncoding("utf8");
+
+    console.log("  ⌨  Shortcuts:");
+    console.log("     F / Q   Restart frontend (Vite)");
+    console.log("     B / H   Restart backend (Bun)");
+    console.log("     R       Restart all");
+    console.log("     Ctrl+C  Exit");
+    console.log();
+
+    process.stdin.on("data", async (key: string) => {
+      const k = key.toLowerCase();
+      try {
+        if (k === "f" || k === "q") {
+          console.log("↻ Restarting frontend...");
+          await bridge.restart();
+          console.log("✓ Frontend restarted");
+        } else if (k === "b" || k === "h") {
+          console.log("↻ Restarting backend...");
+          const existingBridge = appCtx!.viteBridge;
+          await appCtx!.app.close();
+          if (appCtx!.adminApp) await appCtx!.adminApp.close();
+          appCtx = await buildApp({ existingBridge: existingBridge ?? undefined });
+          await appCtx.app.listen();
+          if (appCtx.adminApp) await appCtx.adminApp.listen();
+          console.log("✓ Backend restarted");
+        } else if (k === "r") {
+          console.log("↻ Restarting all...");
+          await appCtx!.viteBridge?.close();
+          await appCtx!.app.close();
+          if (appCtx!.adminApp) await appCtx!.adminApp.close();
+          appCtx = await buildApp();
+          await appCtx.app.listen();
+          if (appCtx.adminApp) await appCtx.adminApp.listen();
+          console.log("✓ All restarted");
+        } else if (key === "") {
+          // Ctrl+C — raw mode 下不会触发 SIGINT，手动处理
+          process.stdin.setRawMode(false);
+          process.exit(0);
+        }
+      } catch (err) {
+        console.error("Restart failed:", err);
+      }
+    });
+  }
 }
 
 // ===============================================

@@ -30,6 +30,7 @@
         "@ventostack/oss": "workspace:*",
         "@ventostack/scheduler": "workspace:*",
         "@ventostack/system": "workspace:*",
+        "@ventostack/vite-bridge": "workspace:*",
         "@ventostack/workflow": "workspace:*",
       },
       "devDependencies": {
@@ -187,6 +188,17 @@
       },
       "devDependencies": {
         "bun-types": "latest",
+      },
+    },
+    "packages/framework/vite-bridge": {
+      "name": "@ventostack/vite-bridge",
+      "version": "0.1.0",
+      "dependencies": {
+        "@ventostack/core": "workspace:*",
+      },
+      "devDependencies": {
+        "bun-types": "latest",
+        "vite": "^8.0.10",
       },
     },
     "packages/framework/webhook": {
@@ -1195,6 +1207,8 @@
     "@ventostack/system": ["@ventostack/system@workspace:packages/platform/system"],
 
     "@ventostack/testing": ["@ventostack/testing@workspace:packages/framework/testing"],
+
+    "@ventostack/vite-bridge": ["@ventostack/vite-bridge@workspace:packages/framework/vite-bridge"],
 
     "@ventostack/webhook": ["@ventostack/webhook@workspace:packages/framework/webhook"],
 
@@ -2579,6 +2593,8 @@
     "@ventostack/openapi/@types/bun": ["@types/bun@1.3.14", "", { "dependencies": { "bun-types": "1.3.14" } }, "sha512-h1hFqFVcvAvD9j9K7ZW7vd82aSA+rTdznZa+5bwvCwqSB1jmmfLcbIWhOLx1/+boy/xmjgCs/OMUL8hRJSmnPw=="],
 
     "@ventostack/testing/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
+
+    "@ventostack/vite-bridge/bun-types": ["bun-types@1.3.14", "", { "dependencies": { "@types/node": "*" } }, "sha512-4N0ig0fEomHt5R0KCFWjovxow98rIoRwKolrYdCcknNwMekCXRnWEUvgu5soYV8QXtVsrUD8B95MBOZGPvr6KQ=="],
 
     "anymatch/picomatch": ["picomatch@2.3.2", "", {}, "sha512-V7+vQEJ06Z+c5tSye8S+nHUfI51xoXIXjHQ99cQtKUkQqqO1kO/KCJUfZXuB47h/YBlDhah2H3hdUGXn8ie0oA=="],
 

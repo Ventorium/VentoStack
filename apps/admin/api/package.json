@@ -16,7 +16,6 @@
     "@ventostack/core": "workspace:*",
     "@ventostack/database": "workspace:*",
     "@ventostack/events": "workspace:*",
-    "@ventostack/gen": "workspace:*",
     "@ventostack/i18n": "workspace:*",
     "@ventostack/monitor": "workspace:*",
     "@ventostack/notification": "workspace:*",
@@ -25,6 +24,7 @@
     "@ventostack/oss": "workspace:*",
     "@ventostack/scheduler": "workspace:*",
     "@ventostack/system": "workspace:*",
+    "@ventostack/vite-bridge": "workspace:*",
     "@ventostack/workflow": "workspace:*"
   },
   "devDependencies": {

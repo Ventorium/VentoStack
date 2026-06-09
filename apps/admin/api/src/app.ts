@@ -47,13 +47,17 @@ export interface AppContext {
   app: VentoStackApp;
   /** 管理端口应用实例（ADMIN_PORT=0 时为 null） */
   adminApp: VentoStackApp | null;
+  /** Vite 桥接实例（仅开发模式有值） */
+  viteBridge: import("@ventostack/vite-bridge").ViteBridge | null;
 }
 
 /**
  * 装配并启动应用
  * 失败时抛异常，由入口层处理
+ *
+ * @param opts.existingBridge - 可选，复用已有的 Vite Bridge（用于后端单独重启时）
  */
-export async function buildApp(): Promise<AppContext> {
+export async function buildApp(opts?: { existingBridge?: import("@ventostack/vite-bridge").ViteBridge }): Promise<AppContext> {
   // =============================================
   // 1. 基础设施层
   // =============================================
@@ -139,7 +143,6 @@ export async function buildApp(): Promise<AppContext> {
     // 模块开关：按需启用/禁用
     modules: {
       system: true,
-      gen: true,
       monitor: true,
       notification: true,
       i18n: true,
@@ -160,7 +163,32 @@ export async function buildApp(): Promise<AppContext> {
   // =============================================
   // 4. 应用装配
   // =============================================
-  const app = createApp({ port: env.PORT, hostname: env.HOST });
+
+  // 4a-0. 开发模式：创建 Vite 桥接（单进程前后端合一）
+  let viteBridge: import("@ventostack/vite-bridge").ViteBridge | null = opts?.existingBridge ?? null;
+  let fetchFallback: import("@ventostack/core").AppConfig["fetchFallback"] | undefined;
+
+  if (env.NODE_ENV !== "production" && !viteBridge) {
+    try {
+      const { createViteBridge } = await import("@ventostack/vite-bridge");
+      const { resolve } = await import("node:path");
+      viteBridge = await createViteBridge({
+        webDir: resolve(import.meta.dir, "../../web"),
+        skipPrefixes: ["/api/", "/health", "/metrics", "/openapi", "/docs", "/uploads/"],
+        logger: serverLogger,
+      });
+      fetchFallback = viteBridge.fetchFallback;
+      serverLogger.info(`Vite HMR → ws://localhost:${viteBridge.hmrPort}`);
+    } catch (err) {
+      serverLogger.warn(
+        `Vite bridge 初始化失败（非致命，回退到默认行为）: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  } else if (viteBridge) {
+    fetchFallback = viteBridge.fetchFallback;
+  }
+
+  const app = createApp({ port: env.PORT, hostname: env.HOST, fetchFallback });
   let adminAppRef: VentoStackApp | null = null;
 
   // 4a. 全局中间件（顺序敏感）
@@ -197,7 +225,7 @@ export async function buildApp(): Promise<AppContext> {
     // =============================================
     // 4b-1. 独立管理端口模式
     // =============================================
-    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST });
+    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST, banner: false });
 
     adminApp.use(requestId());
     adminApp.use(requestLogger());
@@ -255,12 +283,40 @@ export async function buildApp(): Promise<AppContext> {
   }
 
   // 4d-2. SPA 前端静态文件服务（生产模式：前端 dist 已复制到 public/）
-  if (env.NODE_ENV === "production") {
+  // 注意：生产模式通过 fetchFallback 在路由未匹配时提供静态文件，
+  // 这里注册一个中间件作为补充（处理匹配到路由但需要 SPA fallback 的场景）
+  if (env.NODE_ENV === "production" && !fetchFallback) {
     const { resolve } = await import("node:path");
     const publicDir = resolve(import.meta.dir, "../public");
+    const notFoundResponse = new Response(
+      JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }),
+      { status: 404, headers: { "Content-Type": "application/json" } },
+    );
+    fetchFallback = (request: Request): Response => {
+      const url = new URL(request.url);
+      const pathname = url.pathname;
+      if (
+        pathname.startsWith("/api/") ||
+        pathname.startsWith("/health") ||
+        pathname.startsWith("/metrics") ||
+        pathname.startsWith("/openapi") ||
+        pathname.startsWith("/docs") ||
+        pathname.startsWith("/uploads/")
+      ) {
+        return notFoundResponse;
+      }
+      const filePath = resolve(publicDir, pathname.slice(1) || "index.html");
+      const file = Bun.file(filePath);
+      if (pathname === "/" || pathname === "") {
+        return new Response(Bun.file(resolve(publicDir, "index.html")));
+      }
+      return new Response(file);
+    };
+    // 更新 app 的 fetchFallback（需要在 listen 之前）
+    // 注意：由于 createApp 已经调用，这里通过修改 config 来生效不可行
+    // 改为注册中间件作为兜底
     const spaMiddleware: Middleware = async (ctx, next) => {
       const pathname = new URL(ctx.request.url).pathname;
-      // API/健康检查/指标/OpenAPI 路径跳过
       if (
         pathname.startsWith("/api/") ||
         pathname.startsWith("/health") ||
@@ -271,13 +327,11 @@ export async function buildApp(): Promise<AppContext> {
       ) {
         return next();
       }
-      // 尝试返回静态文件
       const filePath = resolve(publicDir, pathname.slice(1) || "index.html");
       const file = Bun.file(filePath);
       if (await file.exists()) {
         return new Response(file);
       }
-      // SPA fallback: 返回 index.html
       return new Response(Bun.file(resolve(publicDir, "index.html")));
     };
     app.use(spaMiddleware);
@@ -322,7 +376,7 @@ export async function buildApp(): Promise<AppContext> {
     const forceExit = setTimeout(() => {
       serverLogger.info("强制退出（超时）");
       process.exit(0);
-    }, 5000);
+    }, 10_000);
     forceExit.unref();
 
     try {
@@ -331,6 +385,13 @@ export async function buildApp(): Promise<AppContext> {
         serverLogger.info("正在关闭管理端口...");
         await adminAppRef.close();
         serverLogger.info("管理端口已关闭");
+      }
+
+      // 关闭 Vite bridge（开发模式）
+      if (viteBridge) {
+        serverLogger.info("正在关闭 Vite dev server...");
+        await viteBridge.close();
+        serverLogger.info("Vite dev server 已关闭");
       }
 
       serverLogger.info("正在关闭缓存...");
@@ -342,6 +403,8 @@ export async function buildApp(): Promise<AppContext> {
       serverLogger.info("数据库已关闭");
     } catch (err) {
       serverLogger.error(`关停异常: ${err instanceof Error ? err.message : String(err)}`);
+    } finally {
+      clearTimeout(forceExit);
     }
   };
   app.lifecycle.onBeforeStop(gracefulShutdown);
@@ -349,5 +412,5 @@ export async function buildApp(): Promise<AppContext> {
   // 4g. 错误处理（必须最后注册）
   app.use(errorHandler({ logger: serverLogger }));
 
-  return { app, adminApp: adminAppRef };
+  return { app, adminApp: adminAppRef, viteBridge };
 }
