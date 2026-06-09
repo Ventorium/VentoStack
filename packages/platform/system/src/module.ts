@@ -1494,6 +1494,60 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
   );
 
+  // === Published notices for current user (with read status) ===
+  userRouter.get(
+    "/api/system/notices/published",
+    {
+      responses: {
+        200: {
+          items: { type: "json" as const, description: "通知列表" },
+          total: { type: "int" as const, description: "总数" },
+          page: { type: "int" as const, description: "当前页" },
+          pageSize: { type: "int" as const, description: "每页条数" },
+          totalPages: { type: "int" as const, description: "总页数" },
+        },
+      },
+      openapi: {
+        summary: "获取已发布通知列表（含已读状态）",
+        tags: ["notice"],
+        operationId: "listPublishedNotices",
+      },
+    },
+    async (ctx) => {
+      const user = ctx.user as { id: string } | undefined;
+      const userId = user?.id ?? "";
+      const query = ctx.url ? new URL(ctx.url).searchParams : new URLSearchParams();
+      const page = Number(query.get("page") ?? "1");
+      const pageSize = Number(query.get("pageSize") ?? "10");
+
+      const result = await noticeService.listPublishedForUser(userId, { page, pageSize });
+      return ok(result);
+    },
+  );
+
+  // === Batch mark notices as read ===
+  userRouter.post(
+    "/api/system/notices/batch-read",
+    {
+      responses: { 200: { type: "json" as const, description: "操作结果" } },
+      openapi: {
+        summary: "批量标记通知已读",
+        tags: ["notice"],
+        operationId: "batchMarkNoticeRead",
+      },
+    },
+    async (ctx) => {
+      const user = ctx.user as { id: string } | undefined;
+      const userId = user?.id ?? "";
+      const body = (await ctx.body()) as { ids?: string[] };
+      const ids = body?.ids ?? [];
+      if (ids.length === 0) return ok(null);
+
+      await noticeService.markBatchRead(userId, ids);
+      return ok(null);
+    },
+  );
+
   // Merge userRouter into main router
   router.merge(userRouter);
 

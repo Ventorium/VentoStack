@@ -715,6 +715,25 @@ export type OpenAPIs = {
         unreadNotices?: number;
       };
     };
+    /**
+     * 获取已发布通知列表（含已读状态）
+     */
+    "/api/system/notices/published": {
+      query: {
+        page?: number;
+        pageSize?: number;
+      };
+      params: never;
+      headers: never;
+      body: never;
+      response: {
+        items?: any[];
+        total?: number;
+        page?: number;
+        pageSize?: number;
+        totalPages?: number;
+      };
+    };
     "/api/system/gen/tables": {
       query: never;
       params: never;
@@ -1867,6 +1886,21 @@ export type OpenAPIs = {
          * @description 通知 ID 列表
          */
         ids: any[];
+      };
+      response: any;
+    };
+    /**
+     * 批量标记通知已读
+     */
+    "/api/system/notices/batch-read": {
+      query: never;
+      params: never;
+      headers: never;
+      body: {
+        /**
+         * @description 通知 ID 列表
+         */
+        ids: string[];
       };
       response: any;
     };

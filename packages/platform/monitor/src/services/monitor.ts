@@ -23,28 +23,28 @@ export interface OnlineUser {
 
 /** 服务器状态（对齐前端 ServerStatus） */
 export interface ServerStatus {
-  cpuUsage: number;
-  memoryUsage: number;
-  memoryTotal: number;
-  memoryUsed: number;
-  uptime: number;
-  nodeVersion: string;
-  bunVersion: string;
+  cpu: { usage: number; model: string; cores: number };
+  memory: { usage: number; total: number; used: number };
+  disk: { usage: number; total: number; used: number; mount: string };
+  os: { platform: string; arch: string; hostname: string };
+  process: { pid: number; uptime: number; bunVersion: string; nodeVersion: string };
 }
 
 /** 缓存状态（对齐前端 CacheStatus） */
 export interface CacheStatus {
   keyCount: number;
-  hitRate: number;
-  memoryUsage: number;
+  hitRate?: number;
+  memory: string;
+  uptime?: string;
+  version?: string;
 }
 
 /** 数据源状态（对齐前端 DataSourceStatus） */
 export interface DataSourceStatus {
-  status: string;
+  connected: boolean;
+  poolSize: number;
   activeConnections: number;
   idleConnections: number;
-  maxConnections: number;
 }
 
 /** 健康检查项（对齐前端 HealthCheckItem） */
@@ -75,7 +75,7 @@ export interface MonitorService {
 export interface CacheStatsProvider {
   getKeyCount(): Promise<number>;
   getHitRate(): Promise<number>;
-  getMemoryUsage(): Promise<number>;
+  getMemoryUsage(): Promise<string>;
 }
 
 /** 监控服务依赖 */
@@ -98,6 +98,9 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       let cpuModel = "unknown";
       let cpuCores = 1;
       let loadAvg: number[] = [0, 0, 0];
+      let platform = process.platform;
+      let arch = process.arch;
+      let hostname = "unknown";
 
       try {
         const os = await import("node:os");
@@ -107,6 +110,9 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
         cpuCores = cpus.length;
         cpuModel = cpus[0]?.model ?? "unknown";
         loadAvg = os.loadavg();
+        platform = os.platform();
+        arch = os.arch();
+        hostname = os.hostname();
       } catch {
         systemTotal = mem.heapTotal;
         systemFree = mem.heapTotal - mem.heapUsed;
@@ -114,14 +120,42 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
 
       const systemUsed = systemTotal - systemFree;
 
+      // 磁盘信息（简化：使用根分区）
+      let diskTotal = 0;
+      let diskUsed = 0;
+      try {
+        const { execSync } = await import("node:child_process");
+        const df = execSync("df -B1 / | tail -1", { encoding: "utf8" }).trim().split(/\s+/);
+        diskTotal = Number(df[1]) || 0;
+        diskUsed = Number(df[2]) || 0;
+      } catch {
+        // ignore
+      }
+
       return {
-        cpuUsage: cpuCores > 0 ? loadAvg[0]! / cpuCores : 0,
-        memoryUsage: systemTotal > 0 ? systemUsed / systemTotal : 0,
-        memoryTotal: systemTotal,
-        memoryUsed: systemUsed,
-        uptime: Math.floor(process.uptime()),
-        nodeVersion: process.versions.node ?? "",
-        bunVersion: Bun.version,
+        cpu: {
+          usage: cpuCores > 0 ? loadAvg[0]! / cpuCores : 0,
+          model: cpuModel,
+          cores: cpuCores,
+        },
+        memory: {
+          usage: systemTotal > 0 ? systemUsed / systemTotal : 0,
+          total: systemTotal,
+          used: systemUsed,
+        },
+        disk: {
+          usage: diskTotal > 0 ? diskUsed / diskTotal : 0,
+          total: diskTotal,
+          used: diskUsed,
+          mount: "/",
+        },
+        os: { platform, arch, hostname },
+        process: {
+          pid: process.pid,
+          uptime: Math.floor(process.uptime()),
+          bunVersion: Bun.version,
+          nodeVersion: process.versions.node ?? "",
+        },
       };
     },
 
@@ -129,7 +163,7 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       if (cacheStatsProvider) {
         return cacheStatsProvider();
       }
-      return { keyCount: 0, hitRate: 0, memoryUsage: 0 };
+      return { keyCount: 0, memory: "0B" };
     },
 
     async getDataSourceStatus(): Promise<DataSourceStatus> {
@@ -140,12 +174,12 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       if (db) {
         try {
           await db.raw("SELECT 1");
-          return { status: "UP", activeConnections: 1, idleConnections: 0, maxConnections: 0 };
+          return { connected: true, poolSize: 0, activeConnections: 1, idleConnections: 0 };
         } catch {
-          return { status: "DOWN", activeConnections: 0, idleConnections: 0, maxConnections: 0 };
+          return { connected: false, poolSize: 0, activeConnections: 0, idleConnections: 0 };
         }
       }
-      return { status: "UNKNOWN", activeConnections: 0, idleConnections: 0, maxConnections: 0 };
+      return { connected: false, poolSize: 0, activeConnections: 0, idleConnections: 0 };
     },
 
     async getHealthStatus(): Promise<HealthStatus> {

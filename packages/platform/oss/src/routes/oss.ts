@@ -90,7 +90,7 @@ export function createOSSRoutes(
 
   // List files
   router.get(
-    "/api/oss",
+    "/api/system/oss",
     {
       query: {
         page: { type: "int" as const, default: 1, description: "页码" },

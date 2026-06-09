@@ -220,9 +220,9 @@ const OSSPage = () => {
       </Modal>
       <Image
         preview={{
-          visible: previewOpen,
+          open: previewOpen,
           src: previewImage,
-          onVisibleChange: (vis) => setPreviewOpen(vis),
+          onOpenChange: (vis) => setPreviewOpen(vis),
         }}
         style={{ display: "none" }}
       />

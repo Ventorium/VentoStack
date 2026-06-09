@@ -261,40 +261,6 @@ export interface HealthStatus {
   checks: HealthCheckItem[];
 }
 
-// ===== 代码生成 =====
-export interface GenTable {
-  id: string;
-  tableName: string;
-  moduleName: string;
-  genType: string;
-  packagePath: string;
-  remark: string;
-  columns?: GenTableColumn[];
-  createdAt: string;
-}
-
-export interface GenTableColumn {
-  id: string;
-  tableId: string;
-  columnName: string;
-  columnType: string;
-  tsType: string;
-  displayType: string;
-  queryType: string;
-  required: boolean;
-  showInList: boolean;
-  showInForm: boolean;
-  showInQuery: boolean;
-  comment: string;
-}
-
-export interface DbTable {
-  tableName: string;
-  tableComment: string;
-  engine: string;
-  createTime: string;
-}
-
 // ===== 消息中心 =====
 export interface NotifyMessage {
   id: string;

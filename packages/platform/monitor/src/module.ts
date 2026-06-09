@@ -50,6 +50,10 @@ export function createMonitorModule(deps: MonitorModuleDeps): MonitorModule {
           headers: { "Content-Type": "application/json" },
         });
       }
+      // 超级管理员跳过权限检查
+      if (user.roles.includes("admin")) {
+        return next();
+      }
       if (rbac) {
         const allowed = user.roles.some((r: string) => rbac.hasPermission(r, resource, action));
         if (!allowed) {

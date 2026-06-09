@@ -187,14 +187,6 @@ export const initAdminSeed: Seed = {
       },
       {
         id: generateUUID(),
-        name: "代码生成",
-        path: "/system/gen",
-        component: "system/gen/index",
-        icon: "CodeOutlined",
-        sort: 5,
-      },
-      {
-        id: generateUUID(),
         name: "消息中心",
         path: "/system/notification",
         component: "system/notification/index",
@@ -281,11 +273,6 @@ export const initAdminSeed: Seed = {
         { name: "文件删除", permission: "system:oss:remove", sort: 3 },
       ],
       系统监控: [{ name: "监控查询", permission: "system:monitor:list", sort: 1 }],
-      代码生成: [
-        { name: "生成查询", permission: "system:gen:list", sort: 1 },
-        { name: "生成代码", permission: "system:gen:generate", sort: 2 },
-        { name: "生成删除", permission: "system:gen:remove", sort: 3 },
-      ],
       消息中心: [
         { name: "消息查询", permission: "system:notification:list", sort: 1 },
         { name: "消息发送", permission: "system:notification:send", sort: 2 },

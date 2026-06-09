@@ -44,6 +44,11 @@ export interface NoticeItem {
   createdAt: string;
 }
 
+/** 用户视角通知列表项（含已读状态） */
+export interface UserNoticeItem extends NoticeItem {
+  isRead: boolean;
+}
+
 /** 通知列表查询参数 */
 export interface NoticeListParams {
   page?: number;
@@ -68,8 +73,15 @@ export interface NoticeService {
   revoke(id: string): Promise<void>;
   /** 标记通知已读 */
   markRead(userId: string, noticeId: string): Promise<void>;
+  /** 批量标记已读 */
+  markBatchRead(userId: string, noticeIds: string[]): Promise<void>;
   /** 获取用户未读通知数 */
   getUnreadCount(userId: string): Promise<number>;
+  /** 查询已发布通知（附带当前用户已读状态） */
+  listPublishedForUser(
+    userId: string,
+    params?: { page?: number; pageSize?: number },
+  ): Promise<PaginatedResult<UserNoticeItem>>;
 }
 
 /**
@@ -200,6 +212,68 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
     return Number(rows[0]?.cnt ?? 0);
   }
 
+  async function markBatchRead(userId: string, noticeIds: string[]): Promise<void> {
+    if (noticeIds.length === 0) return;
+    const now = new Date();
+    for (const noticeId of noticeIds) {
+      await db.raw(
+        `INSERT INTO sys_user_notice (user_id, notice_id, read_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+        [userId, noticeId, now],
+      );
+    }
+  }
+
+  async function listPublishedForUser(
+    userId: string,
+    params?: { page?: number; pageSize?: number },
+  ): Promise<PaginatedResult<UserNoticeItem>> {
+    const page = params?.page ?? 1;
+    const pageSize = params?.pageSize ?? 10;
+
+    // 查询已发布通知总数
+    const countRows = (await db.raw(
+      `SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.deleted_at IS NULL AND n.status = 1`,
+    )) as Array<Record<string, unknown>>;
+    const total = Number(countRows[0]?.cnt ?? 0);
+
+    // LEFT JOIN 获取已读状态
+    const rows = (await db.raw(
+      `SELECT n.id, n.title, n.content, n.type, n.sort, n.status, n.publisher_id, n.publish_at, n.remark, n.created_at,
+              (un.read_at IS NOT NULL) AS is_read
+       FROM sys_notice n
+       LEFT JOIN sys_user_notice un ON un.user_id = $1 AND un.notice_id = n.id
+       WHERE n.deleted_at IS NULL AND n.status = 1
+       ORDER BY n.sort DESC, n.publish_at DESC
+       LIMIT $2 OFFSET $3`,
+      [userId, pageSize, (page - 1) * pageSize],
+    )) as Array<Record<string, unknown>>;
+
+    const items: UserNoticeItem[] = rows.map((row) => ({
+      id: String(row.id),
+      title: String(row.title ?? ""),
+      content: String(row.content ?? ""),
+      type: Number(row.type ?? 1),
+      sort: Number(row.sort ?? 0),
+      status: Number(row.status ?? 0),
+      publisherId: String(row.publisher_id ?? ""),
+      publishAt: row.publish_at ? String(row.publish_at) : null,
+      remark: String(row.remark ?? ""),
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ""),
+      isRead: Boolean(row.is_read),
+    }));
+
+    return {
+      items,
+      total,
+      page,
+      pageSize,
+      totalPages: pageSize > 0 ? Math.ceil(total / pageSize) : 0,
+    };
+  }
+
   return {
     create,
     update,
@@ -208,6 +282,8 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
     publish,
     revoke,
     markRead,
+    markBatchRead,
     getUnreadCount,
+    listPublishedForUser,
   };
 }

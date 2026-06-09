@@ -9,6 +9,7 @@ import { type SqlExecutor, createSeedRunner } from "@ventostack/database";
 import { initAdminSeed } from "./seeds/001_init_admin";
 import { initConfigSeed } from "./seeds/002_init_config";
 import { initDictSeed } from "./seeds/003_init_dict";
+import { addDashboardMenuSeed } from "./seeds/004_add_dashboard_menu";
 
 const log = createTagLogger("seeds");
 
@@ -17,6 +18,7 @@ export async function runSeeds(executor: SqlExecutor): Promise<void> {
   runner.addSeed(initAdminSeed);
   runner.addSeed(initConfigSeed);
   runner.addSeed(initDictSeed);
+  runner.addSeed(addDashboardMenuSeed);
 
   await runner.run();
   log.info("All seeds executed");
