@@ -31,8 +31,16 @@ const LoginLogPage = () => {
 
   const columns: ColumnsType<LoginLogItem> = [
     { title: "用户", dataIndex: "username", key: "username", width: 120 },
-    { title: "IP", dataIndex: "ip", key: "ip", width: 140 },
-    { title: "位置", dataIndex: "location", key: "location", width: 160, ellipsis: true },
+    {
+      title: "IP / 位置",
+      key: "ipLocation",
+      width: 200,
+      ellipsis: true,
+      render: (_: unknown, r: LoginLogItem) => {
+        const loc = r.location ? ` (${r.location})` : "";
+        return <span className="font-mono text-sm">{r.ip}{loc}</span>;
+      },
+    },
     { title: "浏览器", dataIndex: "browser", key: "browser", width: 160, ellipsis: true },
     { title: "操作系统", dataIndex: "os", key: "os", width: 120, ellipsis: true },
     {

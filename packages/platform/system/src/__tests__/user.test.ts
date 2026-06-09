@@ -121,4 +121,27 @@ describe("UserService", () => {
     await s.userService.updateStatus("u1", 0);
     expect(s.calls.some((c) => c.text.includes("UPDATE") || c.text.includes("status"))).toBe(true);
   });
+
+  test("list with deptId __none__ filters users without department", async () => {
+    const s = setup();
+    s.results.set("COUNT", [{ count: 1 }]);
+    s.results.set("SELECT", [{ id: "u1", username: "orphan", status: 1 }]);
+    const result = await s.userService.list({ page: 1, pageSize: 10, deptId: "__none__" });
+    expect(result.items.length).toBe(1);
+    expect(s.calls.some((c) => c.text.includes("IS") || c.text.includes("NULL"))).toBe(true);
+  });
+
+  test("list without deptId returns all users", async () => {
+    const s = setup();
+    s.results.set("COUNT", [{ count: 3 }]);
+    s.results.set("SELECT", [
+      { id: "u1", username: "admin", status: 1 },
+      { id: "u2", username: "user", status: 1 },
+    ]);
+    const result = await s.userService.list({ page: 1, pageSize: 10 });
+    expect(result.total).toBe(3);
+    // 不传 deptId 时不应有 dept_id 相关的 WHERE 条件
+    const selectCalls = s.calls.filter((c) => c.text.startsWith("SELECT"));
+    expect(selectCalls.every((c) => !c.text.includes("dept_id IS") && !c.text.includes("dept_id IN"))).toBe(true);
+  });
 });

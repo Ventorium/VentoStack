@@ -36,6 +36,7 @@ export interface MenuTreeNode {
   sort: number;
   visible: boolean;
   status: number;
+  remark: string;
   createdAt: string;
   children: MenuTreeNode[];
 }
@@ -74,6 +75,7 @@ function buildTree(rows: Array<Record<string, unknown>>): MenuTreeNode[] {
       sort: row.sort as number,
       visible: (row.visible as boolean) ?? true,
       status: (row.status as number) ?? 1,
+      remark: (row.remark as string) ?? "",
       createdAt: (row.created_at as string) ?? "",
       children: [],
     };

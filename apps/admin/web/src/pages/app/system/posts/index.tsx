@@ -211,7 +211,7 @@ const PostPage = () => {
         }
       >
         {hasSelected && (
-          <div className="mb-2 text-sm text-gray-500">
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
             已选 {selectedRowKeys.length} 项{" "}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择

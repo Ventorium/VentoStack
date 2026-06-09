@@ -2,7 +2,6 @@ import { create } from "zustand";
 
 export interface PublicConfig {
   siteName: string;
-  theme: "light" | "dark";
   deptEnabled: boolean;
   mfaEnabled: boolean;
   mfaForce: boolean;
@@ -19,7 +18,6 @@ interface PublicConfigState {
 
 const defaultConfig: PublicConfig = {
   siteName: "VentoStack",
-  theme: "light",
   deptEnabled: true,
   mfaEnabled: false,
   mfaForce: false,
@@ -39,7 +37,6 @@ export const usePublicConfig = create<PublicConfigState>((set) => ({
         set({
           config: {
             siteName: data.data.siteName ?? defaultConfig.siteName,
-            theme: data.data.theme ?? defaultConfig.theme,
             deptEnabled: data.data.deptEnabled ?? defaultConfig.deptEnabled,
             mfaEnabled: data.data.mfaEnabled ?? defaultConfig.mfaEnabled,
             mfaForce: data.data.mfaForce ?? defaultConfig.mfaForce,

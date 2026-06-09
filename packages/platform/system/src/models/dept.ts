@@ -11,6 +11,7 @@ export const DeptModel = defineModel(
     phone: column.varchar({ length: 20, nullable: true }),
     email: column.varchar({ length: 128, nullable: true }),
     status: column.int({ default: 1 }),
+    remark: column.varchar({ length: 512, nullable: true }),
   },
   { softDelete: true, timestamps: true },
 );

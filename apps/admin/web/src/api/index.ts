@@ -107,15 +107,25 @@ const rawClient = createFetchClient<OpenAPIs>({
 
     if (!response) return;
 
-    // 401 — token 过期：由 requestWithRefresh 处理刷新，此处不显示错误
+    // 401 — token 过期或登录失败
     if (response.status === 401) {
       // 有 refresh token 时，静默等待 requestWithRefresh 处理刷新
       if (getRefreshToken()) return;
-      // 无 refresh token，走原有逻辑
-      if (getAccessToken()) {
-        clearToken();
-        globalNavigate("/auth/login", { replace: true });
+      // 无任何 token（如登录接口），尝试显示服务端返回的错误消息
+      if (!getAccessToken()) {
+        try {
+          const json: unknown = await response.clone().json();
+          if (json && typeof json === "object" && "message" in json) {
+            msg.error((json as { message: string }).message);
+          }
+        } catch {
+          msg.error("登录失败");
+        }
+        return;
       }
+      // 有 access token 但无 refresh token，清除并跳转登录页
+      clearToken();
+      globalNavigate("/auth/login", { replace: true });
       return;
     }
 

@@ -9,6 +9,7 @@ export const ConfigModel = defineModel(
     value: column.text(),
     type: column.int({ nullable: true }),
     group: column.varchar({ length: 64, nullable: true }),
+    sort: column.int({ default: 0 }),
     remark: column.varchar({ length: 512, nullable: true }),
   },
   { timestamps: true },

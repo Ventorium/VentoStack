@@ -11,6 +11,7 @@ export interface I18nLocale {
   code: string;
   name: string;
   isDefault: boolean;
+  sort: number;
   status: number;
 }
 
@@ -21,6 +22,7 @@ export interface I18nMessage {
   code: string;
   value: string;
   module: string | null;
+  remark: string;
 }
 
 /** 分页结果 */
@@ -107,9 +109,9 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
     async listLocales() {
       const rows = await db
         .query(I18nLocaleModel)
-        .select("id", "code", "name", "is_default", "status")
-        .orderBy("is_default", "desc")
-        .orderBy("code", "asc")
+        .select("id", "code", "name", "is_default", "sort", "status")
+        .orderBy("sort", "desc")
+        .orderBy("created_at", "desc")
         .list();
 
       return rows.map((row) => ({
@@ -117,6 +119,7 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
         code: row.code,
         name: row.name,
         isDefault: row.is_default,
+        sort: row.sort ?? 0,
         status: row.status,
       }));
     },
@@ -156,8 +159,8 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
       const total = await query.count();
 
       const rows = await query
-        .select("id", "locale", "code", "value", "module")
-        .orderBy("code", "asc")
+        .select("id", "locale", "code", "value", "module", "remark", "created_at")
+        .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
         .list();
@@ -168,6 +171,7 @@ export function createI18nService(deps: I18nServiceDeps): I18nService {
         code: row.code,
         value: row.value,
         module: row.module ?? null,
+        remark: row.remark ?? "",
       }));
 
       return {

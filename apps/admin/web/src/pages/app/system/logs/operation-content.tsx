@@ -5,7 +5,7 @@ import { useTable } from "@/hooks/useTable";
 import { cleanParams } from "@/utils/cleanParams";
 import { fmtDate } from "@/utils/fmtDate";
 import { EyeOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag } from "antd";
+import { Button, Card, Descriptions, Form, Input, Modal, Select, Space, Table, Tag, theme } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
 
@@ -23,6 +23,7 @@ const resultMap: Record<number, { label: string; color: string }> = {
 const OperationLogPage = () => {
   const { loading, data, total, page, pageSize, onSearch, onReset, onPageChange } =
     useTable<OperationLogItem>(fetcher);
+  const { token } = theme.useToken();
   const [searchForm] = Form.useForm();
   const [detailRecord, setDetailRecord] = useState<OperationLogItem | null>(null);
 
@@ -62,20 +63,14 @@ const OperationLogPage = () => {
   const columns: ColumnsType<OperationLogItem> = [
     { title: "用户", dataIndex: "username", key: "username", width: 100 },
     { title: "模块", dataIndex: "module", key: "module", width: 100 },
-    { title: "操作", dataIndex: "action", key: "action", width: 100 },
-    { title: "请求方式", dataIndex: "method", key: "method", width: 80 },
+    { title: "操作", dataIndex: "action", key: "action", width: 120 },
     {
-      title: "请求地址",
-      dataIndex: "url",
-      key: "url",
-      ellipsis: true,
-      render: (_: unknown, r: OperationLogItem) => (
-        <span className="font-mono text-sm">
-          {r.method} {r.url}
-        </span>
-      ),
+      title: "IP / 位置",
+      dataIndex: "ip",
+      key: "ip",
+      width: 160,
+      render: (v: string) => <span className="font-mono text-sm">{v}</span>,
     },
-    { title: "IP", dataIndex: "ip", key: "ip", width: 120 },
     {
       title: "结果",
       dataIndex: "result",
@@ -95,8 +90,8 @@ const OperationLogPage = () => {
       render: (_: unknown, r: OperationLogItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: "详情",
+      key: "detail",
       width: 80,
       fixed: "right" as const,
       render: (_: unknown, r: OperationLogItem) => (
@@ -161,15 +156,15 @@ const OperationLogPage = () => {
         destroyOnHidden
       >
         {detailRecord && (
-          <Descriptions column={1} size="small" bordered>
+          <Descriptions column={1} size="small" bordered labelStyle={{ width: 80, minWidth: 80, whiteSpace: "nowrap" }}>
             <Descriptions.Item label="用户">{detailRecord.username}</Descriptions.Item>
             <Descriptions.Item label="模块">{detailRecord.module}</Descriptions.Item>
             <Descriptions.Item label="操作">{detailRecord.action}</Descriptions.Item>
             <Descriptions.Item label="请求方式">{detailRecord.method}</Descriptions.Item>
             <Descriptions.Item label="请求地址">
-              <span className="font-mono text-sm break-all">{detailRecord.url}</span>
+              <span className="font-mono text-sm break-all">{detailRecord.method} {detailRecord.url}</span>
             </Descriptions.Item>
-            <Descriptions.Item label="IP">{detailRecord.ip}</Descriptions.Item>
+            <Descriptions.Item label="IP"><span className="font-mono text-sm">{detailRecord.ip}</span></Descriptions.Item>
             <Descriptions.Item label="结果">
               {(() => {
                 const s = resultMap[detailRecord.result];
@@ -182,12 +177,12 @@ const OperationLogPage = () => {
             </Descriptions.Item>
             {detailRecord.errorMsg && (
               <Descriptions.Item label="错误信息">
-                <span className="text-red-500">{detailRecord.errorMsg}</span>
+                <span style={{ color: token.colorError }}>{detailRecord.errorMsg}</span>
               </Descriptions.Item>
             )}
             {parseParams(detailRecord.params) && (
               <Descriptions.Item label="请求参数">
-                <pre className="bg-gray-50 p-2 rounded text-sm max-h-64 overflow-auto whitespace-pre-wrap break-all m-0">
+                <pre style={{ background: token.colorFillQuaternary, color: token.colorText }} className="p-2 rounded text-sm max-h-64 overflow-auto whitespace-pre-wrap break-all m-0">
                   {JSON.stringify(parseParams(detailRecord.params), null, 2)}
                 </pre>
               </Descriptions.Item>

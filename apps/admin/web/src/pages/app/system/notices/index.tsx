@@ -52,12 +52,12 @@ const NoticePage = () => {
   const openCreate = () => {
     setEditingNotice(null);
     form.resetFields();
-    form.setFieldsValue({ type: "1" });
+    form.setFieldsValue({ type: 1 });
     setModalOpen(true);
   };
   const openEdit = (r: NoticeItem) => {
     setEditingNotice(r);
-    form.setFieldsValue({ title: r.title, content: r.content, type: r.type });
+    form.setFieldsValue({ title: r.title, content: r.content, type: Number(r.type) });
     setModalOpen(true);
   };
 
@@ -234,16 +234,20 @@ const NoticePage = () => {
       fixed: "right" as const,
       render: (_: unknown, r: NoticeItem) => {
         const items = [
-          { label: "编辑", onClick: () => openEdit(r) },
-          ...(r.status === 0 ? [{ label: "发布", onClick: () => handlePublish(r.id) }] : []),
-          ...(r.status === 1 ? [{ label: "撤回", onClick: () => handleRevoke(r.id) }] : []),
-          ...(r.status === 2 ? [{ label: "重新发布", onClick: () => handlePublish(r.id) }] : []),
-          {
-            label: "删除",
-            onClick: () => handleDelete(r.id),
-            danger: true,
-            confirm: "确定删除该公告？",
-          },
+          ...(r.status !== 1 ? [{ label: "编辑", onClick: () => openEdit(r) }] : []),
+          ...(r.status === 0 ? [{ label: "上架", onClick: () => handlePublish(r.id) }] : []),
+          ...(r.status === 1 ? [{ label: "下架", onClick: () => handleRevoke(r.id) }] : []),
+          ...(r.status === 2 ? [{ label: "重新上架", onClick: () => handlePublish(r.id) }] : []),
+          ...(r.status !== 1
+            ? [
+                {
+                  label: "删除",
+                  onClick: () => handleDelete(r.id),
+                  danger: true,
+                  confirm: "确定删除该公告？",
+                },
+              ]
+            : []),
         ];
         return <ActionColumn items={items} />;
       },
@@ -308,7 +312,7 @@ const NoticePage = () => {
         }
       >
         {hasSelected && (
-          <div className="mb-2 text-sm text-gray-500">
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
             已选 {selectedRowKeys.length} 项{" "}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择

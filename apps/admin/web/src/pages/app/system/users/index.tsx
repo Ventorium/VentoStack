@@ -10,11 +10,13 @@ import { fmtDate } from "@/utils/fmtDate";
 import { emailRules, getPasswordRules, phoneRules, usernameRules } from "@/utils/validators";
 import {
   ApartmentOutlined,
+  AppstoreOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
+  StopOutlined,
 } from "@ant-design/icons";
 import {
   Button,
@@ -42,7 +44,17 @@ const fetcher = (params: Record<string, unknown>) =>
     data?: PaginatedData<UserItem>;
   }>;
 
-/** Flatten dept tree into antd TreeDataNode format */
+/** Flatten dept tree into antd TreeSelect data format */
+const buildTreeSelectData = (
+  items: DeptItem[],
+): Array<{ value: string; label: string; children?: any[] }> =>
+  items.map((item) => ({
+    value: item.id,
+    label: item.name,
+    children: item.children?.length ? buildTreeSelectData(item.children) : undefined,
+  }));
+
+/** Flatten dept tree into antd Tree data format */
 const buildTreeData = (
   items: DeptItem[],
 ): Array<{ key: string; title: string; children?: any[] }> =>
@@ -84,9 +96,13 @@ const UserPage = () => {
   const [resetPwdUserId, setResetPwdUserId] = useState("");
   const [resetPwdForm] = Form.useForm();
 
-  // Dept tree state
+  // Dept tree state (for left panel Tree: key/title)
   const [deptTreeData, setDeptTreeData] = useState<
     Array<{ key: string; title: string; children?: any[] }>
+  >([]);
+  // Dept select state (for modal TreeSelect: value/label)
+  const [deptSelectData, setDeptSelectData] = useState<
+    Array<{ value: string; label: string; children?: any[] }>
   >([]);
   const [deptLoading, setDeptLoading] = useState(false);
   const [selectedDeptId, setSelectedDeptId] = useState<string | null>(null);
@@ -118,6 +134,7 @@ const UserPage = () => {
       };
       if (result) {
         setDeptTreeData(buildTreeData(result));
+        setDeptSelectData(buildTreeSelectData(result));
       }
     } finally {
       setDeptLoading(false);
@@ -130,31 +147,45 @@ const UserPage = () => {
 
   const handleDeptSelect = (selectedKeys: React.Key[]) => {
     const rawKey = selectedKeys[0] as string | undefined;
-    // "__none__" 表示筛选无部门的用户
-    const deptId = rawKey === "__none__" ? undefined : (rawKey ?? undefined);
-    setSelectedDeptId(rawKey === "__none__" ? "__none__" : (rawKey ?? null));
-    if (rawKey === "__none__") {
-      onSearch({ ...searchForm.getFieldsValue(), deptId: "__none__" });
-    } else if (deptId) {
-      onSearch({ ...searchForm.getFieldsValue(), deptId });
+    if (!rawKey) return;
+    setSelectedDeptId(rawKey);
+    // "__all__" = 所有部门（不传 deptId），"__none__" = 无部门用户
+    let deptId: string | undefined;
+    if (rawKey === "__all__") {
+      deptId = undefined;
+    } else if (rawKey === "__none__") {
+      deptId = "__none__";
     } else {
-      onSearch({ ...searchForm.getFieldsValue(), deptId: undefined });
+      deptId = rawKey;
     }
+    onSearch({ ...searchForm.getFieldsValue(), deptId });
   };
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
-    onSearch(cleanParams({ ...values, deptId: selectedDeptId ?? undefined }));
+    const deptId =
+      selectedDeptId === "__all__" || !selectedDeptId
+        ? undefined
+        : selectedDeptId === "__none__"
+          ? "__none__"
+          : selectedDeptId;
+    onSearch(cleanParams({ ...values, deptId }));
   };
   const handleReset = () => {
     searchForm.resetFields();
-    setSelectedDeptId(null);
-    onReset();
+    setSelectedDeptId("__all__");
+    onSearch({});
   };
 
   const openCreate = () => {
     setEditingUser(null);
     form.resetFields();
+    // 自动选中左侧当前选中的部门（排除 __all__ 和 __none__）
+    const preselectedDeptId =
+      selectedDeptId && selectedDeptId !== "__all__" && selectedDeptId !== "__none__"
+        ? selectedDeptId
+        : undefined;
+    form.setFieldsValue({ status: 1, deptId: preselectedDeptId });
     setModalOpen(true);
   };
   const openEdit = (r: UserItem) => {
@@ -400,7 +431,7 @@ const UserPage = () => {
             styles={{ body: { padding: "12px 16px" } }}
           >
             <div className="flex items-center justify-between mb-2">
-              <span className="text-sm font-medium text-gray-600">部门筛选</span>
+              <span className="text-sm font-medium text-gray-600 dark:text-gray-400">部门筛选</span>
               <Button
                 type="text"
                 size="small"
@@ -412,10 +443,27 @@ const UserPage = () => {
               {deptTreeData.length > 0 ? (
                 <Tree
                   treeData={[
+                    {
+                      key: "__all__",
+                      title: (
+                        <span>
+                          <AppstoreOutlined style={{ marginRight: 4, color: "inherit" }} />
+                          所有部门
+                        </span>
+                      ),
+                    },
+                    {
+                      key: "__none__",
+                      title: (
+                        <span>
+                          <StopOutlined style={{ marginRight: 4, color: "inherit" }} />
+                          无部门
+                        </span>
+                      ),
+                    },
                     ...deptTreeData,
-                    { key: "__none__", title: "无部门" },
                   ]}
-                  selectedKeys={selectedDeptId ? [selectedDeptId] : ["__none__"]}
+                  selectedKeys={[selectedDeptId ?? "__all__"]}
                   onSelect={handleDeptSelect}
                   defaultExpandAll
                   showLine={{ showLeafIcon: false }}
@@ -423,10 +471,10 @@ const UserPage = () => {
                   style={{ fontSize: 13 }}
                 />
               ) : (
-                <div className="text-xs text-gray-400 py-4 text-center">暂无部门数据</div>
+                <div className="text-xs text-gray-400 dark:text-gray-500 py-4 text-center">暂无部门数据</div>
               )}
             </Spin>
-            <div className="mt-2 pt-2 border-t border-gray-100">
+            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
               <Button
                 type="link"
                 size="small"
@@ -497,7 +545,7 @@ const UserPage = () => {
             }
           >
             {hasSelected && (
-              <div className="mb-2 text-sm text-gray-500">
+              <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
                 已选 {selectedRowKeys.length} 项{" "}
                 <Button type="link" size="small" onClick={clearSelection}>
                   取消选择
@@ -586,7 +634,7 @@ const UserPage = () => {
             <Col span={12}>
               <Form.Item name="deptId" label="部门">
                 <TreeSelect
-                  treeData={deptTreeData}
+                  treeData={deptSelectData}
                   placeholder="选择部门"
                   allowClear
                   treeDefaultExpandAll

@@ -15,6 +15,7 @@ export const MenuModel = defineModel(
     sort: column.int({ default: 0 }),
     visible: column.boolean({ default: true }),
     status: column.int({ default: 1 }),
+    remark: column.varchar({ length: 512, nullable: true }),
   },
   { timestamps: true },
 );

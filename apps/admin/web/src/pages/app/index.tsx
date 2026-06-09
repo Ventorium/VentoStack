@@ -32,8 +32,8 @@ const DashboardPage = () => {
   return (
     <div>
       <div className="mb-6">
-        <h2 className="text-xl font-semibold text-gray-800">仪表盘</h2>
-        <p className="text-gray-500 mt-1">欢迎回到 VentoStack 管理后台</p>
+        <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200">仪表盘</h2>
+        <p className="text-gray-500 dark:text-gray-400 mt-1">欢迎回到 VentoStack 管理后台</p>
       </div>
 
       <Spin spinning={loading}>

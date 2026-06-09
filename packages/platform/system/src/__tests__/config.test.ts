@@ -43,14 +43,37 @@ describe("ConfigService", () => {
 
   test("update changes config value", async () => {
     const s = setup();
-    await s.configService.update("site_name", { value: "NewName" });
+    // update 现在先 SELECT key 再 UPDATE（与 delete 同模式）
+    s.results.set("SELECT", [{ key: "site_name" }]);
+    await s.configService.update("cfg-123", { value: "NewName" });
+    expect(s.calls.some((c) => c.text.includes("SELECT"))).toBe(true);
     expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
   });
 
-  test("delete removes config", async () => {
+  test("delete removes config by id", async () => {
     const s = setup();
-    await s.configService.delete("site_name");
+    // delete 现在先 SELECT key 再 DELETE，需要 mock SELECT 返回
+    s.results.set("SELECT", [{ key: "custom_key" }]);
+    await s.configService.delete("cfg-123");
+    // 第一次 call 是 SELECT（查 key），第二次是 soft delete (UPDATE SET deleted_at)
+    expect(s.calls.some((c) => c.text.includes("SELECT"))).toBe(true);
     expect(s.calls.some((c) => c.text.includes("deleted_at"))).toBe(true);
+  });
+
+  test("delete rejects protected system config", async () => {
+    const s = setup();
+    // mock SELECT 返回受保护的 key
+    s.results.set("SELECT", [{ key: "sys_site_name" }]);
+    expect(s.configService.delete("cfg-protected")).rejects.toThrow("不允许删除");
+  });
+
+  test("delete does nothing if config not found", async () => {
+    const s = setup();
+    // mock SELECT 返回空
+    s.results.set("SELECT", []);
+    await s.configService.delete("cfg-nonexistent");
+    // 只有 SELECT，没有 DELETE
+    expect(s.calls.every((c) => !c.text.includes("DELETE"))).toBe(true);
   });
 
   test("refreshCache clears cached value", async () => {

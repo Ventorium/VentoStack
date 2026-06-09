@@ -37,6 +37,7 @@ export interface DeptTreeNode {
   phone: string;
   email: string;
   status: number;
+  remark: string;
   createdAt: string;
   children: DeptTreeNode[];
 }
@@ -98,7 +99,7 @@ export function createDeptService(deps: { db: Database }): DeptService {
   async function getTree(): Promise<DeptTreeNode[]> {
     const rows = await db
       .query(DeptModel)
-      .select("id", "parent_id", "name", "sort", "leader", "phone", "email", "status", "created_at")
+      .select("id", "parent_id", "name", "sort", "leader", "phone", "email", "status", "remark", "created_at")
       .orderBy("sort", "asc")
       .orderBy("id", "asc")
       .list();
@@ -112,6 +113,7 @@ export function createDeptService(deps: { db: Database }): DeptService {
       phone: row.phone ?? "",
       email: row.email ?? "",
       status: row.status ?? 1,
+      remark: row.remark ?? "",
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()

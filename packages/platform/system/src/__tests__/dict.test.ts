@@ -64,13 +64,53 @@ describe("DictService", () => {
 
   test("updateType updates dict type", async () => {
     const s = setup();
+    // Mock the SELECT to return non-system type
+    s.results.set("SELECT", [{ is_system: false }]);
     await s.dictService.updateType("status", { name: "状态v2" });
     expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
   });
 
+  test("updateType rejects system dict type", async () => {
+    const s = setup();
+    // Mock the SELECT to return system type
+    s.results.set("SELECT", [{ is_system: true }]);
+    expect(
+      s.dictService.updateType("sys_status", { name: "状态v2" }),
+    ).rejects.toThrow("系统内置字典类型不可修改");
+  });
+
   test("deleteType removes dict type", async () => {
     const s = setup();
+    // Mock the SELECT to return non-system type
+    s.results.set("SELECT", [{ is_system: false }]);
     await s.dictService.deleteType("status");
     expect(s.calls.some((c) => c.text.includes("DELETE"))).toBe(true);
+  });
+
+  test("deleteType rejects system dict type", async () => {
+    const s = setup();
+    // Mock the SELECT to return system type
+    s.results.set("SELECT", [{ is_system: true }]);
+    expect(
+      s.dictService.deleteType("sys_status"),
+    ).rejects.toThrow("系统内置字典类型不可删除");
+  });
+
+  test("updateData rejects system dict data", async () => {
+    const s = setup();
+    // Mock the SELECT to return system data
+    s.results.set("SELECT", [{ type_code: "sys_status", is_system: true }]);
+    expect(
+      s.dictService.updateData("dd1", { label: "新标签" }),
+    ).rejects.toThrow("系统内置字典数据不可修改");
+  });
+
+  test("deleteData rejects system dict data", async () => {
+    const s = setup();
+    // Mock the SELECT to return system data
+    s.results.set("SELECT", [{ type_code: "sys_status", is_system: true }]);
+    expect(
+      s.dictService.deleteData("dd1"),
+    ).rejects.toThrow("系统内置字典数据不可删除");
   });
 });

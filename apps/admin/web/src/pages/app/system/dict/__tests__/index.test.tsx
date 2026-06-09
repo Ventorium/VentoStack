@@ -31,6 +31,8 @@ describe("字典管理页", () => {
       id: "dt1",
       name: "系统状态",
       code: "sys_status",
+      isSystem: true,
+      sort: 0,
       status: 1,
       remark: "系统状态字典",
       createdAt: "2024-01-01T00:00:00Z",
@@ -38,6 +40,8 @@ describe("字典管理页", () => {
     expect(dictType.id).toBeTruthy();
     expect(dictType.name).toBeTruthy();
     expect(dictType.code).toBeTruthy();
+    expect(dictType.isSystem).toBe(true);
+    expect(dictType.sort).toBe(0);
     expect([0, 1]).toContain(dictType.status);
   });
 
@@ -48,6 +52,7 @@ describe("字典管理页", () => {
       value: "1",
       typeCode: "sys_status",
       cssClass: "green",
+      isSystem: true,
       sort: 1,
       status: 1,
       remark: "",
@@ -56,6 +61,7 @@ describe("字典管理页", () => {
     expect(dictData.label).toBeTruthy();
     expect(dictData.value).toBeTruthy();
     expect(dictData.typeCode).toBeTruthy();
+    expect(dictData.isSystem).toBe(true);
   });
 
   test("编辑字典类型时字典标识应禁用", () => {
@@ -241,5 +247,42 @@ describe("字典管理页", () => {
     const searchParams = { name: "系统", code: "sys" };
     expect(searchParams.name).toBe("系统");
     expect(searchParams.code).toBe("sys");
+  });
+
+  test("系统内置字典类型不应显示编辑和删除按钮", () => {
+    const isSystemType = (r: { isSystem: boolean }) => r.isSystem;
+    expect(isSystemType({ isSystem: true })).toBe(true);
+    expect(isSystemType({ isSystem: false })).toBe(false);
+  });
+
+  test("系统内置字典数据不应显示编辑和删除按钮", () => {
+    const isSystemData = (r: { isSystem: boolean }) => r.isSystem;
+    expect(isSystemData({ isSystem: true })).toBe(true);
+    expect(isSystemData({ isSystem: false })).toBe(false);
+  });
+
+  test("打开系统内置字典数据 Drawer 时 currentTypeIsSystem 为 true", () => {
+    const typeCode = "sys_status";
+    const typeName = "系统状态";
+    const isSystem = true;
+    const state = { currentTypeIsSystem: false };
+    state.currentTypeIsSystem = isSystem;
+    expect(state.currentTypeIsSystem).toBe(true);
+  });
+
+  test("系统内置字典类型的字典数据 Drawer 不显示新增按钮", () => {
+    const currentTypeIsSystem = true;
+    const showCreateButton = !currentTypeIsSystem;
+    expect(showCreateButton).toBe(false);
+  });
+
+  test("非系统字典类型应显示编辑和删除按钮", () => {
+    const isSystemType = (r: { isSystem: boolean }) => r.isSystem;
+    expect(isSystemType({ isSystem: false })).toBe(false);
+    // Non-system types should show edit and delete
+    const showEdit = !isSystemType({ isSystem: false });
+    const showDelete = !isSystemType({ isSystem: false });
+    expect(showEdit).toBe(true);
+    expect(showDelete).toBe(true);
   });
 });

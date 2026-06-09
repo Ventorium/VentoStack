@@ -59,6 +59,7 @@ const DictPage = () => {
   // Dict data selection
   const [dataSelectedKeys, setDataSelectedKeys] = useState<React.Key[]>([]);
   const [dataSelectedRows, setDataSelectedRows] = useState<DictDataItem[]>([]);
+  const [currentTypeIsSystem, setCurrentTypeIsSystem] = useState(false);
   const dataHasSelected = dataSelectedKeys.length > 0;
 
   const handleSearch = () => {
@@ -77,7 +78,7 @@ const DictPage = () => {
   };
   const openEditType = (r: DictTypeItem) => {
     setEditingType(r);
-    typeForm.setFieldsValue({ name: r.name, code: r.code, remark: r.remark, status: r.status });
+    typeForm.setFieldsValue({ name: r.name, code: r.code, sort: r.sort, remark: r.remark, status: r.status });
     setTypeModalOpen(true);
   };
 
@@ -115,9 +116,10 @@ const DictPage = () => {
     }
   };
 
-  const openDictData = async (typeCode: string, typeName: string) => {
+  const openDictData = async (typeCode: string, typeName: string, isSystem: boolean) => {
     setCurrentTypeCode(typeCode);
     setCurrentTypeName(typeName);
+    setCurrentTypeIsSystem(isSystem);
     setDataLoading(true);
     setDrawerOpen(true);
     setDataSelectedKeys([]);
@@ -238,6 +240,15 @@ const DictPage = () => {
   const typeColumns: ColumnsType<DictTypeItem> = [
     { title: "字典名称", dataIndex: "name", key: "name", width: 160 },
     { title: "字典标识", dataIndex: "code", key: "code", width: 160 },
+    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
+    {
+      title: "系统内置",
+      dataIndex: "isSystem",
+      key: "isSystem",
+      width: 80,
+      render: (_: unknown, r: DictTypeItem) =>
+        r.isSystem ? <Tag color="blue">是</Tag> : <Tag>否</Tag>,
+    },
     {
       title: "状态",
       dataIndex: "status",
@@ -263,14 +274,18 @@ const DictPage = () => {
       render: (_: unknown, r: DictTypeItem) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEditType(r) },
-            { label: "字典数据", onClick: () => openDictData(r.code, r.name) },
-            {
-              label: "删除",
-              onClick: () => handleDeleteType(r.code),
-              danger: true,
-              confirm: "确定删除该字典类型？",
-            },
+            ...(!r.isSystem ? [{ label: "编辑" as const, onClick: () => openEditType(r) }] : []),
+            { label: "字典数据", onClick: () => openDictData(r.code, r.name, r.isSystem) },
+            ...(!r.isSystem
+              ? [
+                  {
+                    label: "删除" as const,
+                    onClick: () => handleDeleteType(r.code),
+                    danger: true as const,
+                    confirm: "确定删除该字典类型？",
+                  },
+                ]
+              : []),
           ]}
         />
       ),
@@ -290,25 +305,33 @@ const DictPage = () => {
       ),
     },
     { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
-    {
-      title: "操作",
-      key: "action",
-      width: 130,
-      fixed: "right" as const,
-      render: (_: unknown, r: DictDataItem) => (
-        <ActionColumn
-          items={[
-            { label: "编辑", onClick: () => openEditData(r) },
-            {
-              label: "删除",
-              onClick: () => handleDeleteData(r.id),
-              danger: true,
-              confirm: "确定删除？",
-            },
-          ]}
-        />
-      ),
-    },
+    ...(!currentTypeIsSystem
+      ? [
+          {
+            title: "操作",
+            key: "action",
+            width: 130,
+            fixed: "right" as const,
+            render: (_: unknown, r: DictDataItem) => (
+              <ActionColumn
+                items={[
+                  ...(!r.isSystem ? [{ label: "编辑" as const, onClick: () => openEditData(r) }] : []),
+                  ...(!r.isSystem
+                    ? [
+                        {
+                          label: "删除" as const,
+                          onClick: () => handleDeleteData(r.id),
+                          danger: true as const,
+                          confirm: "确定删除？",
+                        },
+                      ]
+                    : []),
+                ]}
+              />
+            ),
+          },
+        ]
+      : []),
   ];
 
   return (
@@ -380,7 +403,12 @@ const DictPage = () => {
             </Col>
           </Row>
           <Row gutter={16}>
-            <Col span={12}>
+            <Col span={8}>
+              <Form.Item name="sort" label="排序" initialValue={0}>
+                <InputNumber className="w-full" />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
               <Form.Item name="status" label="状态" initialValue={1}>
                 <DictSelect typeCode="sys_status" />
               </Form.Item>
@@ -393,17 +421,24 @@ const DictPage = () => {
       </Modal>
 
       <Drawer
-        title={`字典数据 - ${currentTypeName || currentTypeCode}`}
+        title={
+          <Space>
+            <span>字典数据 - {currentTypeName || currentTypeCode}</span>
+            {currentTypeIsSystem && <Tag color="blue">系统内置</Tag>}
+          </Space>
+        }
         open={drawerOpen}
         onClose={() => setDrawerOpen(false)}
         size="large"
         destroyOnHidden
       >
         <div className="mb-4 flex items-center gap-2">
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreateData}>
-            新增字典项
-          </Button>
-          {dataHasSelected && (
+          {!currentTypeIsSystem && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={openCreateData}>
+              新增字典项
+            </Button>
+          )}
+          {dataHasSelected && !currentTypeIsSystem && (
             <Button danger onClick={handleBatchDeleteData}>
               批量删除 ({dataSelectedKeys.length})
             </Button>
@@ -422,7 +457,7 @@ const DictPage = () => {
           )}
         </div>
         {dataHasSelected && (
-          <div className="mb-2 text-sm text-gray-500">已选 {dataSelectedKeys.length} 项</div>
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">已选 {dataSelectedKeys.length} 项</div>
         )}
         <Table
           rowKey="id"
@@ -432,13 +467,17 @@ const DictPage = () => {
           pagination={false}
           scroll={{ x: 600 }}
           size="small"
-          rowSelection={{
-            selectedRowKeys: dataSelectedKeys,
-            onChange: (keys, rows) => {
-              setDataSelectedKeys(keys);
-              setDataSelectedRows(rows as DictDataItem[]);
-            },
-          }}
+          rowSelection={
+            currentTypeIsSystem
+              ? undefined
+              : {
+                  selectedRowKeys: dataSelectedKeys,
+                  onChange: (keys, rows) => {
+                    setDataSelectedKeys(keys);
+                    setDataSelectedRows(rows as DictDataItem[]);
+                  },
+                }
+          }
         />
       </Drawer>
 

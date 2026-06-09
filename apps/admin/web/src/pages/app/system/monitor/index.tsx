@@ -69,53 +69,53 @@ const MonitorPage = () => {
               {serverStatus ? (
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">CPU使用率</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">CPU使用率</div>
                     <Progress percent={Math.round(serverStatus.cpu.usage * 100)} size="small" />
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                       {serverStatus.cpu.model} ({serverStatus.cpu.cores} cores)
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">内存使用率</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">内存使用率</div>
                     <Progress percent={Math.round(serverStatus.memory.usage * 100)} size="small" />
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                       {Math.round(serverStatus.memory.used / 1024 / 1024)} MB /{" "}
                       {Math.round(serverStatus.memory.total / 1024 / 1024)} MB
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">磁盘使用率</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">磁盘使用率</div>
                     <Progress percent={Math.round(serverStatus.disk.usage * 100)} size="small" />
-                    <div className="text-xs text-gray-400 mt-1">
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
                       {Math.round(serverStatus.disk.used / 1024 / 1024 / 1024)} GB /{" "}
                       {Math.round(serverStatus.disk.total / 1024 / 1024 / 1024)} GB
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">运行时间</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">运行时间</div>
                     <div className="text-base font-medium">
                       {formatUptime(serverStatus.process.uptime)}
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">运行时版本</div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">运行时版本</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
                       Bun: {serverStatus.process.bunVersion}
                     </div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
                       Node: {serverStatus.process.nodeVersion}
                     </div>
                   </div>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">系统信息</div>
-                    <div className="text-xs text-gray-600">
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">系统信息</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
                       {serverStatus.os.platform} / {serverStatus.os.arch}
                     </div>
-                    <div className="text-xs text-gray-600">主机名: {serverStatus.os.hostname}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">主机名: {serverStatus.os.hostname}</div>
                   </div>
                 </Space>
               ) : (
-                <div className="text-center text-gray-400 py-4">暂无数据</div>
+                <div className="text-center text-gray-400 dark:text-gray-500 py-4">暂无数据</div>
               )}
             </Card>
           </Col>
@@ -127,7 +127,7 @@ const MonitorPage = () => {
                   <Statistic title="键数量" value={cacheStatus.keyCount} />
                   {cacheStatus.hitRate != null && (
                     <div>
-                      <div className="text-sm text-gray-500 mb-1">命中率</div>
+                      <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">命中率</div>
                       <Progress percent={Math.round(cacheStatus.hitRate * 100)} size="small" />
                     </div>
                   )}
@@ -137,7 +137,7 @@ const MonitorPage = () => {
                   )}
                 </Space>
               ) : (
-                <div className="text-center text-gray-400 py-4">暂无数据</div>
+                <div className="text-center text-gray-400 dark:text-gray-500 py-4">暂无数据</div>
               )}
             </Card>
           </Col>
@@ -147,7 +147,7 @@ const MonitorPage = () => {
               {dataSourceStatus ? (
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">连接状态</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">连接状态</div>
                     <Tag color={dataSourceStatus.connected ? "green" : "red"}>
                       {dataSourceStatus.connected ? "已连接" : "未连接"}
                     </Tag>
@@ -157,7 +157,7 @@ const MonitorPage = () => {
                   <Statistic title="空闲连接" value={dataSourceStatus.idleConnections} />
                 </Space>
               ) : (
-                <div className="text-center text-gray-400 py-4">暂无数据</div>
+                <div className="text-center text-gray-400 dark:text-gray-500 py-4">暂无数据</div>
               )}
             </Card>
           </Col>
@@ -167,13 +167,13 @@ const MonitorPage = () => {
               {healthStatus ? (
                 <Space orientation="vertical" style={{ width: "100%" }}>
                   <div>
-                    <div className="text-sm text-gray-500 mb-1">总体状态</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">总体状态</div>
                     <Tag color={healthStatus.status === "UP" ? "green" : "red"}>
                       {healthStatus.status}
                     </Tag>
                   </div>
                   <div className="mt-2">
-                    <div className="text-sm text-gray-500 mb-2">检查项</div>
+                    <div className="text-sm text-gray-500 dark:text-gray-400 mb-2">检查项</div>
                     {healthStatus.checks.map((check) => (
                       <div key={check.name} className="flex justify-between items-center py-1">
                         <span className="text-xs">{check.name}</span>
@@ -188,7 +188,7 @@ const MonitorPage = () => {
                   </div>
                 </Space>
               ) : (
-                <div className="text-center text-gray-400 py-4">暂无数据</div>
+                <div className="text-center text-gray-400 dark:text-gray-500 py-4">暂无数据</div>
               )}
             </Card>
           </Col>

@@ -54,8 +54,8 @@ export const initDictSeed: Seed = {
     for (const type of types) {
       const typeId = generateUUID();
       await executor(
-        `INSERT INTO sys_dict_type (id, name, code, status, remark, created_at, updated_at)
-         VALUES ($1, $2, $3, 1, $4, NOW(), NOW())
+        `INSERT INTO sys_dict_type (id, name, code, is_system, status, remark, created_at, updated_at)
+         VALUES ($1, $2, $3, TRUE, 1, $4, NOW(), NOW())
          ON CONFLICT (code) DO NOTHING`,
         [typeId, type.name, type.code, type.remark],
       );
@@ -64,8 +64,8 @@ export const initDictSeed: Seed = {
       for (const item of items) {
         const dataId = generateUUID();
         await executor(
-          `INSERT INTO sys_dict_data (id, type_code, label, value, sort, css_class, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, 1, NOW(), NOW())
+          `INSERT INTO sys_dict_data (id, type_code, label, value, sort, css_class, is_system, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, TRUE, 1, NOW(), NOW())
            ON CONFLICT (type_code, value) DO NOTHING`,
           [dataId, type.code, item.label, item.value, item.sort, item.cssClass ?? ""],
         );

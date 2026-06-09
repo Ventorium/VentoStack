@@ -6,6 +6,7 @@ import { msg } from "@/components/GlobalMessage";
 import { fmtDate } from "@/utils/fmtDate";
 import { emailRules, phoneRules } from "@/utils/validators";
 import { PlusOutlined } from "@ant-design/icons";
+import { ExpandAltOutlined, ShrinkOutlined } from "@ant-design/icons";
 import {
   Button,
   Card,
@@ -21,7 +22,7 @@ import {
   TreeSelect,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 function toTreeSelectData(items: DeptItem[]): any[] {
   return items.map((item) => ({
@@ -41,6 +42,23 @@ const DeptPage = () => {
   const [selectedRowKeys, setSelectedRowKeys] = useState<React.Key[]>([]);
   const [selectedRows, setSelectedRows] = useState<DeptItem[]>([]);
   const hasSelected = selectedRowKeys.length > 0;
+  const [expandedKeys, setExpandedKeys] = useState<React.Key[]>([]);
+
+  /** 收集树中所有节点的 key */
+  const collectAllKeys = (items: DeptItem[]): React.Key[] => {
+    const keys: React.Key[] = [];
+    const walk = (nodes: DeptItem[]) => {
+      for (const node of nodes) {
+        keys.push(node.id);
+        if (node.children?.length) walk(node.children);
+      }
+    };
+    walk(items);
+    return keys;
+  };
+
+  const allKeys = useMemo(() => collectAllKeys(data), [data]);
+  const allExpanded = expandedKeys.length >= allKeys.length && allKeys.length > 0;
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -50,7 +68,9 @@ const DeptPage = () => {
         data?: DeptItem[];
       };
       if (!error) {
-        setData(data ?? []);
+        const tree = data ?? [];
+        setData(tree);
+        setExpandedKeys(collectAllKeys(tree));
       }
     } finally {
       setLoading(false);
@@ -191,7 +211,19 @@ const DeptPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">部门管理</h3>
       <Card
-        title="部门列表"
+        title={
+          <Space>
+            <span>部门列表</span>
+            <Button
+              type="link"
+              size="small"
+              icon={allExpanded ? <ShrinkOutlined /> : <ExpandAltOutlined />}
+              onClick={() => setExpandedKeys(allExpanded ? [] : allKeys)}
+            >
+              {allExpanded ? "收起所有" : "展开所有"}
+            </Button>
+          </Space>
+        }
         extra={
           <Space>
             {hasSelected && (
@@ -206,7 +238,7 @@ const DeptPage = () => {
         }
       >
         {hasSelected && (
-          <div className="mb-2 text-sm text-gray-500">
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
             已选 {selectedRowKeys.length} 项{" "}
             <Button
               type="link"
@@ -227,7 +259,10 @@ const DeptPage = () => {
           loading={loading}
           pagination={false}
           scroll={{ x: 1100 }}
-          defaultExpandAllRows
+          expandable={{
+            expandedRowKeys: expandedKeys,
+            onExpandedRowsChange: (keys) => setExpandedKeys(keys),
+          }}
           size="small"
           rowSelection={{
             selectedRowKeys,

@@ -60,10 +60,25 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0",
       port: 9321,
+      hmr: {
+        host: "0.0.0.0",
+        port: 9321,
+      },
       proxy: {
         "/api": {
           target: "http://127.0.0.1:9320",
           changeOrigin: true,
+          configure: (proxy) => {
+            proxy.on("proxyReq", (proxyReq, req) => {
+              // 转发真实客户端 IP 到后端
+              const clientIp =
+                req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
+                req.socket.remoteAddress ||
+                "unknown";
+              proxyReq.setHeader("x-forwarded-for", clientIp);
+              proxyReq.setHeader("x-real-ip", clientIp);
+            });
+          },
         },
         "/ws": {
           target: "ws://127.0.0.1:9320",

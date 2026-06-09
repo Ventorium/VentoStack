@@ -50,7 +50,7 @@ export function createUserRoutes(
         pageSize: { type: "int" as const, default: 10, description: "每页数量" },
         username: { type: "string" as const, description: "用户名筛选" },
         status: { type: "int" as const, description: "状态筛选" },
-        deptId: { type: "uuid" as const, description: "部门 ID 筛选" },
+        deptId: { type: "string" as const, description: "部门 ID 筛选，__none__ 表示无部门" },
       },
       responses: { 200: paginatedUserSchema },
       openapi: { summary: "获取用户列表", tags: ["user"], operationId: "listUsers" },
@@ -198,7 +198,7 @@ export function createUserRoutes(
       body: {
         username: { type: "string" as const, description: "用户名筛选" },
         status: { type: "int" as const, description: "状态筛选" },
-        deptId: { type: "uuid" as const, description: "部门 ID 筛选" },
+        deptId: { type: "string" as const, description: "部门 ID 筛选，__none__ 表示无部门" },
       },
       openapi: { summary: "导出用户 CSV", tags: ["user"], operationId: "exportUsers" },
     },

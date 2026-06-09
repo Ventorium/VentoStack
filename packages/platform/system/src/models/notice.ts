@@ -10,6 +10,8 @@ export const NoticeModel = defineModel(
     status: column.int({ default: 0 }),
     publisher_id: column.varchar({ length: 36, nullable: true }),
     publish_at: column.timestamp({ nullable: true }),
+    sort: column.int({ default: 0 }),
+    remark: column.varchar({ length: 512, nullable: true }),
   },
   { softDelete: true, timestamps: true },
 );

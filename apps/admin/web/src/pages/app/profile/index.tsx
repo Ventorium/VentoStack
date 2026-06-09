@@ -36,6 +36,7 @@ import {
   Tag,
   Typography,
   Upload,
+  theme,
 } from "antd";
 import dayjs from "dayjs";
 import { useEffect, useState } from "react";
@@ -57,6 +58,7 @@ interface MFASetupData {
 }
 
 export default function ProfilePage() {
+  const { token } = theme.useToken();
   const [profileForm] = Form.useForm();
   const [passwordForm] = Form.useForm();
   const [mfaForm] = Form.useForm();
@@ -84,6 +86,7 @@ export default function ProfilePage() {
 
   const mfaGloballyEnabled = usePublicConfig((s) => s.config.mfaEnabled);
   const mfaForce = usePublicConfig((s) => s.config.mfaForce);
+  const passkeyEnabled = usePublicConfig((s) => s.config.passkeyEnabled);
   const passwordMinLength = usePublicConfig((s) => s.config.passwordMinLength);
   const passwordComplexity = usePublicConfig((s) => s.config.passwordComplexity);
 
@@ -433,7 +436,7 @@ export default function ProfilePage() {
               <Text code copyable={{ text: mfaSetupData.secret }}>
                 {mfaSetupData.secret}
               </Text>
-              <pre style={{ marginTop: 16, padding: 16, background: "#f5f5f5", borderRadius: 4 }}>
+              <pre style={{ marginTop: 16, padding: 16, background: token.colorFillQuaternary, color: token.colorText, borderRadius: 4 }}>
                 <code>{mfaSetupData.qrCodeUri}</code>
               </pre>
             </div>
@@ -716,16 +719,20 @@ export default function ProfilePage() {
           },
         ]
       : []),
-    {
-      key: "passkey",
-      label: (
-        <span className="flex-inline gap-1">
-          <KeyOutlined />
-          通行密钥
-        </span>
-      ),
-      children: passkeyTab,
-    },
+    ...(passkeyEnabled
+      ? [
+          {
+            key: "passkey",
+            label: (
+              <span className="flex-inline gap-1">
+                <KeyOutlined />
+                通行密钥
+              </span>
+            ),
+            children: passkeyTab,
+          },
+        ]
+      : []),
     {
       key: "history",
       label: (

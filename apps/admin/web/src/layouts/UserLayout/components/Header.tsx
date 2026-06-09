@@ -1,15 +1,51 @@
+import { useTheme } from "@/hooks/useTheme";
+import type { ThemeMode } from "@/hooks/useTheme";
 import { useAuth } from "@/store/useAuth";
 import { useMenu } from "@/store/useMenu";
 import {
+  DesktopOutlined,
   LogoutOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
+  MoonOutlined,
+  SunOutlined,
   UserOutlined,
 } from "@ant-design/icons";
 import { Avatar, Dropdown, Layout, Space, theme } from "antd";
 import { useNavigate } from "react-router";
 
 const { Header: AntHeader } = Layout;
+
+const themeOptions: { key: ThemeMode; icon: React.ReactNode; label: string }[] = [
+  { key: "auto", icon: <DesktopOutlined />, label: "跟随系统" },
+  { key: "light", icon: <SunOutlined />, label: "亮色模式" },
+  { key: "dark", icon: <MoonOutlined />, label: "暗色模式" },
+];
+
+const ThemeToggle = () => {
+  const { theme: resolvedTheme, mode, setTheme } = useTheme();
+
+  const Icon = resolvedTheme === "dark" ? MoonOutlined : SunOutlined;
+
+  return (
+    <Dropdown
+      menu={{
+        items: themeOptions.map((opt) => ({
+          key: opt.key,
+          icon: opt.icon,
+          label: opt.label,
+        })),
+        selectedKeys: [mode],
+        onClick: ({ key }) => setTheme(key as ThemeMode),
+      }}
+      placement="bottomRight"
+    >
+      <div className="text-lg cursor-pointer hover:opacity-70 transition-opacity">
+        <Icon />
+      </div>
+    </Dropdown>
+  );
+};
 
 const Header = () => {
   const navigate = useNavigate();
@@ -49,12 +85,15 @@ const Header = () => {
         {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}
       </div>
 
-      <Dropdown menu={dropdownItems} placement="bottomRight">
-        <Space className="cursor-pointer hover:opacity-80">
-          <Avatar size={32} src={user?.avatar || undefined} icon={<UserOutlined />} />
-          <span>{user?.nickname ?? user?.username ?? "用户"}</span>
-        </Space>
-      </Dropdown>
+      <Space size="middle">
+        <ThemeToggle />
+        <Dropdown menu={dropdownItems} placement="bottomRight">
+          <Space className="cursor-pointer hover:opacity-80">
+            <Avatar size={32} src={user?.avatar || undefined} icon={<UserOutlined />} />
+            <span>{user?.nickname ?? user?.username ?? "用户"}</span>
+          </Space>
+        </Dropdown>
+      </Space>
     </AntHeader>
   );
 };

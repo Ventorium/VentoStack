@@ -13,7 +13,9 @@ export const NotifyTemplateModel = defineModel(
     channel: column.varchar({ length: 32 }),
     title: column.varchar({ length: 256, nullable: true }),
     content: column.text(),
+    sort: column.int({ default: 0 }),
     status: column.int({ default: 1 }),
+    remark: column.varchar({ length: 512, nullable: true }),
   },
   { timestamps: true },
 );

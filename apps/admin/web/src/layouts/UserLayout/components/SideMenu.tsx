@@ -1,3 +1,5 @@
+import { usePublicConfig } from "@/hooks/usePublicConfig";
+import { useTheme } from "@/hooks/useTheme";
 import { useMenu } from "@/store/useMenu";
 import { resolveIcon } from "@/utils/icon";
 import { Menu } from "antd";
@@ -34,8 +36,11 @@ const SideMenu = () => {
   const location = useLocation();
   const routes = useMenu((s) => s.routes);
   const collapsed = useMenu((s) => s.collapsed);
+  const { theme: resolvedTheme } = useTheme();
+  const siteName = usePublicConfig((s) => s.config.siteName);
 
   const menuItems = useMemo(() => convertRoutesToMenuItems(routes), [routes]);
+  const isDark = resolvedTheme === "dark";
 
   // compute selected keys from current path
   const selectedKeys = useMemo(() => {
@@ -58,13 +63,15 @@ const SideMenu = () => {
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
-      <div className="h-14 flex items-center justify-center text-white font-semibold text-base shrink-0 border-b border-white/10">
-        {collapsed ? "VS" : "VentoStack"}
+      <div
+        className={`h-14 flex items-center justify-center font-semibold text-base shrink-0 ${isDark ? "text-white border-b border-white/10" : "text-white border-b border-white/10"}`}
+      >
+        {collapsed ? siteName.slice(0, 2) : `${siteName} 管理后台`}
       </div>
       <div className="flex-1 overflow-y-auto overflow-x-hidden">
         <Menu
           mode="inline"
-          theme="dark"
+          theme={isDark ? "light" : "dark"}
           selectedKeys={selectedKeys}
           defaultOpenKeys={defaultOpenKeys}
           items={menuItems}

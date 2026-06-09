@@ -36,9 +36,11 @@ export interface NoticeItem {
   title: string;
   content: string;
   type: number;
+  sort: number;
   status: number;
   publisherId: string;
   publishAt: string | null;
+  remark: string;
   createdAt: string;
 }
 
@@ -128,12 +130,15 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
         "title",
         "content",
         "type",
+        "sort",
         "status",
         "publisher_id",
         "publish_at",
+        "remark",
         "created_at",
       )
-      .orderBy("id", "desc")
+      .orderBy("sort", "desc")
+      .orderBy("created_at", "desc")
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();
@@ -143,9 +148,11 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
       title: row.title,
       content: row.content,
       type: row.type ?? 1,
+      sort: row.sort ?? 0,
       status: row.status ?? 0,
       publisherId: row.publisher_id ?? "",
       publishAt: row.publish_at ? String(row.publish_at) : null,
+      remark: row.remark ?? "",
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()

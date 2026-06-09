@@ -183,8 +183,12 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
-      await service.update(id, body);
-      return ok(null);
+      try {
+        await service.update(id, body);
+        return ok(null);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "Update failed", 400);
+      }
     },
     perm(module, `${resource}:update`),
   );
@@ -199,8 +203,12 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       : {},
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      await service.delete(id);
-      return ok(null);
+      try {
+        await service.delete(id);
+        return ok(null);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "Delete failed", 400);
+      }
     },
     perm(module, `${resource}:delete`),
   );

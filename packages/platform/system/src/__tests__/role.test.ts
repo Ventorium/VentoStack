@@ -173,4 +173,31 @@ describe("RoleService", () => {
     expect(s.calls.length).toBe(3);
     expect(s.calls.some((c) => c.text.includes("sys_role_dept"))).toBe(true);
   });
+
+  test("getRoleMenuIds returns menu IDs from db", async () => {
+    const s = setup();
+    s.results.set("SELECT", [{ menu_id: "m1" }, { menu_id: "m2" }]);
+    const ids = await s.roleService.getRoleMenuIds("r1");
+    expect(ids).toEqual(["m1", "m2"]);
+    expect(s.calls.some((c) => c.text.includes("sys_role_menu"))).toBe(true);
+  });
+
+  test("getRoleMenuIds returns empty array when no menus assigned", async () => {
+    const s = setup();
+    s.results.set("SELECT", []);
+    const ids = await s.roleService.getRoleMenuIds("r1");
+    expect(ids).toEqual([]);
+  });
+
+  test("getRoleMenuIds returns cached result on second call", async () => {
+    const s = setup();
+    s.results.set("SELECT", [{ menu_id: "m1" }]);
+    const ids1 = await s.roleService.getRoleMenuIds("r1");
+    expect(ids1).toEqual(["m1"]);
+
+    // Clear results — second call should use cache
+    s.results.clear();
+    const ids2 = await s.roleService.getRoleMenuIds("r1");
+    expect(ids2).toEqual(["m1"]);
+  });
 });

@@ -12,6 +12,7 @@ export const I18nMessageModel = defineModel(
     code: column.varchar({ length: 256 }),
     value: column.text(),
     module: column.varchar({ length: 64, nullable: true }),
+    remark: column.varchar({ length: 512, nullable: true }),
   },
   { timestamps: true },
 );

@@ -15,10 +15,20 @@ body,
   width: 100%;
 }
 
+/* 暗色模式 body 背景 */
+html.dark body {
+  background-color: #141414;
+  color: rgba(255, 255, 255, 0.85);
+}
+
 /* 全局滚动条样式 */
 * {
   scrollbar-width: thin;
   scrollbar-color: rgba(0, 0, 0, 0.2) transparent;
+}
+
+html.dark * {
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
 }
 
 *::-webkit-scrollbar {
@@ -35,8 +45,16 @@ body,
   border-radius: 4px;
 }
 
+html.dark *::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+}
+
 *::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 0, 0, 0.35);
+}
+
+html.dark *::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.35);
 }
 
 /* 过渡动画 */

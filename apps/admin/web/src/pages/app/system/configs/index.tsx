@@ -93,6 +93,21 @@ const ConfigPage = () => {
   };
 
   const typeMap: Record<number, string> = { 0: "字符串", 1: "数字", 2: "布尔", 3: "JSON" };
+
+/** 受保护的系统参数 key — 不允许删除 */
+const PROTECTED_KEYS = new Set([
+  "sys_dept_enabled",
+  "sys_user_init_password",
+  "sys_password_min_length",
+  "sys_password_complexity",
+  "sys_password_expire_days",
+  "sys_login_max_attempts",
+  "sys_login_lock_minutes",
+  "sys_site_name",
+  "sys_mfa_enabled",
+  "sys_mfa_force",
+  "sys_passkey_enabled",
+]);
   const columns: ColumnsType<ConfigItem> = [
     { title: "参数名称", dataIndex: "name", key: "name", width: 160 },
     { title: "参数键名", dataIndex: "key", key: "key", width: 160 },
@@ -128,12 +143,16 @@ const ConfigPage = () => {
         <ActionColumn
           items={[
             { label: "编辑", onClick: () => openEdit(r) },
-            {
-              label: "删除",
-              onClick: () => handleDelete(r.id),
-              danger: true,
-              confirm: "确定删除该参数？",
-            },
+            ...(PROTECTED_KEYS.has(r.key)
+              ? []
+              : [
+                  {
+                    label: "删除",
+                    onClick: () => handleDelete(r.id),
+                    danger: true as const,
+                    confirm: "确定删除该参数？",
+                  },
+                ]),
           ]}
         />
       ),

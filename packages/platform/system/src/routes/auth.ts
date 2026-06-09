@@ -63,6 +63,7 @@ export function createAuthRoutes(
       body: {
         username: { type: "string" as const, required: true, description: "用户名" },
         password: { type: "string" as const, required: true, description: "密码" },
+        remember: { type: "boolean" as const, description: "记住登录" },
         deviceType: { type: "string" as const, description: "设备类型" },
       },
       responses: {

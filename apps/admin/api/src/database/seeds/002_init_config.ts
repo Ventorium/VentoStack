@@ -65,14 +65,6 @@ export const initConfigSeed: Seed = {
         remark: "账户被锁定后的持续时间",
       },
       {
-        name: "系统主题",
-        key: "sys_theme",
-        value: "light",
-        type: 0,
-        group: "ui",
-        remark: "light 或 dark",
-      },
-      {
         name: "系统名称",
         key: "sys_site_name",
         value: "VentoStack",
@@ -116,6 +108,6 @@ export const initConfigSeed: Seed = {
       );
     }
 
-    log.info("Config seed created — 13 system configs");
+    log.info("Config seed created — 12 system configs");
   },
 };

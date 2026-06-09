@@ -11,7 +11,9 @@ export const I18nLocaleModel = defineModel(
     code: column.varchar({ length: 32 }),
     name: column.varchar({ length: 128 }),
     is_default: column.boolean({ default: false }),
+    sort: column.int({ default: 0 }),
     status: column.int({ default: 1 }),
+    remark: column.varchar({ length: 512, nullable: true }),
   },
   { timestamps: true },
 );

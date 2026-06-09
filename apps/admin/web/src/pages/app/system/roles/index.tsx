@@ -156,14 +156,25 @@ const RolePage = () => {
   const openAssignMenus = async (r: RoleItem) => {
     setAssignRoleId(r.id);
     setAssignRoleCode(r.code);
-    const res = (await client.get("/api/system/menus/tree")) as {
-      error?: unknown;
-      data?: MenuItem[];
-    };
-    const tree = res.data ?? [];
+    // 并行加载菜单树和角色已有菜单
+    const [menuRes, roleMenuRes] = await Promise.all([
+      client.get("/api/system/menus/tree") as Promise<{
+        error?: unknown;
+        data?: MenuItem[];
+      }>,
+      isBuiltInRole(r.code)
+        ? Promise.resolve({ data: { menuIds: [] as string[] } })
+        : (client.get("/api/system/roles/:id/menus", {
+            params: { id: r.id },
+          }) as Promise<{ error?: unknown; data?: { menuIds?: string[] } }>),
+    ]);
+    const tree = menuRes.data ?? [];
     setMenuTree(tree);
-    // admin 角色默认全选
-    setCheckedKeys(isBuiltInRole(r.code) ? collectAllKeys(tree) : []);
+    // admin 角色全选，否则用已有菜单 ID
+    const existingKeys = isBuiltInRole(r.code)
+      ? collectAllKeys(tree)
+      : (roleMenuRes.data?.menuIds ?? []);
+    setCheckedKeys(existingKeys);
     setMenuModalOpen(true);
   };
 
@@ -309,7 +320,7 @@ const RolePage = () => {
         }
       >
         {hasSelected && (
-          <div className="mb-2 text-sm text-gray-500">
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
             已选 {selectedRowKeys.length} 项{" "}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择
@@ -383,9 +394,10 @@ const RolePage = () => {
         width={480}
       >
         {isBuiltInRole(assignRoleCode) && (
-          <p className="text-gray-500 mb-2">内置超级管理员角色拥有所有权限</p>
+          <p className="text-gray-500 dark:text-gray-400 mb-2">内置超级管理员角色拥有所有权限</p>
         )}
         {menuTree.length > 0 && (
+          <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
           <Tree
             checkable
             defaultExpandAll
@@ -394,6 +406,7 @@ const RolePage = () => {
             selectable={false}
             treeData={toTreeData(menuTree)}
           />
+          </div>
         )}
       </Modal>
     </div>

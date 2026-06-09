@@ -22,7 +22,9 @@ export interface NotifyTemplate {
   channel: string;
   title: string | null;
   content: string;
+  sort: number;
   status: number;
+  remark: string;
 }
 
 /** 通知消息 */
@@ -348,7 +350,8 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       const total = await query.count();
 
       const rows = await query
-        .select("id", "name", "code", "channel", "title", "content", "status")
+        .select("id", "name", "code", "channel", "title", "content", "sort", "status")
+        .orderBy("sort", "desc")
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -361,7 +364,9 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
         channel: row.channel,
         title: row.title ?? null,
         content: row.content,
+        sort: row.sort ?? 0,
         status: row.status,
+        remark: row.remark ?? "",
       }));
 
       return {

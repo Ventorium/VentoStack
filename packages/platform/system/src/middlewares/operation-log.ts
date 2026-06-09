@@ -115,6 +115,111 @@ function resolveModule(path: string): string {
 }
 
 /**
+ * 规范化 URL 路径：将 UUID 和数字 ID 替换为 :id
+ */
+function normalizePath(path: string): string {
+  return path
+    .replace(/\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi, "/:id")
+    .replace(/\/\d+/g, "/:id");
+}
+
+/**
+ * `{METHOD} {normalizedPath}` → 业务操作描述
+ * 未匹配时回退到 `{method} {path}`
+ */
+const ACTION_DESCRIPTIONS: Record<string, string> = {
+  // ── 认证 ──
+  "POST /api/auth/login": "登录",
+  "POST /api/auth/register": "注册",
+  "POST /api/auth/refresh": "刷新令牌",
+  "POST /api/auth/logout": "退出登录",
+  "PUT /api/auth/password": "修改密码",
+  "PUT /api/auth/profile": "更新资料",
+
+  // ── 用户管理 ──
+  "POST /api/system/users": "新增用户",
+  "PUT /api/system/users/:id": "编辑用户",
+  "DELETE /api/system/users/:id": "删除用户",
+  "PUT /api/system/users/:id/reset-password": "重置密码",
+  "PUT /api/system/users/:id/status": "更新状态",
+
+  // ── 角色管理 ──
+  "POST /api/system/roles": "新增角色",
+  "PUT /api/system/roles/:id": "编辑角色",
+  "DELETE /api/system/roles/:id": "删除角色",
+
+  // ── 菜单管理 ──
+  "POST /api/system/menus": "新增菜单",
+  "PUT /api/system/menus/:id": "编辑菜单",
+  "DELETE /api/system/menus/:id": "删除菜单",
+
+  // ── 部门管理 ──
+  "POST /api/system/depts": "新增部门",
+  "PUT /api/system/depts/:id": "编辑部门",
+  "DELETE /api/system/depts/:id": "删除部门",
+
+  // ── 岗位管理 ──
+  "POST /api/system/posts": "新增岗位",
+  "PUT /api/system/posts/:id": "编辑岗位",
+  "DELETE /api/system/posts/:id": "删除岗位",
+
+  // ── 字典管理 ──
+  "POST /api/system/dict/types": "新增字典类型",
+  "PUT /api/system/dict/types/:id": "编辑字典类型",
+  "DELETE /api/system/dict/types/:id": "删除字典类型",
+  "POST /api/system/dict/types/:id/data": "新增字典数据",
+  "PUT /api/system/dict/data/:id": "编辑字典数据",
+  "DELETE /api/system/dict/data/:id": "删除字典数据",
+
+  // ── 参数配置 ──
+  "POST /api/system/configs": "新增参数",
+  "PUT /api/system/configs/:id": "编辑参数",
+  "DELETE /api/system/configs/:id": "删除参数",
+
+  // ── 通知公告 ──
+  "POST /api/system/notices": "新增公告",
+  "PUT /api/system/notices/:id": "编辑公告",
+  "DELETE /api/system/notices/:id": "删除公告",
+  "PUT /api/system/notices/:id/publish": "上架公告",
+  "PUT /api/system/notices/:id/revoke": "下架公告",
+  "PUT /api/system/notices/:id/read": "标记已读",
+  "POST /api/system/notices/batch-publish": "批量上架公告",
+  "POST /api/system/notices/batch-revoke": "批量下架公告",
+  "POST /api/system/notices/batch-delete": "批量删除公告",
+
+  // ── 文件管理 ──
+  "POST /api/system/oss/upload": "上传文件",
+  "DELETE /api/system/oss/:id": "删除文件",
+
+  // ── 定时任务 ──
+  "POST /api/system/scheduler": "新增任务",
+  "PUT /api/system/scheduler/:id": "编辑任务",
+  "DELETE /api/system/scheduler/:id": "删除任务",
+  "PUT /api/system/scheduler/:id/toggle": "启停任务",
+  "POST /api/system/scheduler/:id/execute": "立即执行",
+
+  // ── 个人中心 ──
+  "PUT /api/system/user/profile": "更新个人资料",
+  "PUT /api/system/user/password": "修改个人密码",
+  "PUT /api/system/user/avatar": "更新头像",
+  "POST /api/system/user/mfa/enable": "启用MFA",
+  "POST /api/system/user/mfa/disable": "禁用MFA",
+  "POST /api/system/user/mfa/verify": "验证MFA",
+  "PUT /api/system/user/passkey/register": "注册通行密钥",
+  "POST /api/system/user/passkey/authenticate": "验证通行密钥",
+  "DELETE /api/system/user/passkey/:id": "删除通行密钥",
+};
+
+/**
+ * 根据 HTTP 方法和路径生成业务操作描述
+ */
+function resolveAction(method: string, path: string): string {
+  const normalized = normalizePath(path);
+  const key = `${method} ${normalized}`;
+  return ACTION_DESCRIPTIONS[key] ?? `${method} ${path}`;
+}
+
+/**
  * 将 IPv4 字符串转为数值
  */
 function ipToNumber(ip: string): number | null {
@@ -181,10 +286,36 @@ function isTrustedProxy(ip: string, trusted: string[]): boolean {
  * @param request - Request 对象
  * @param trustedProxies - 可信代理 IP/CIDR 列表
  */
+/** 去掉 IPv6 映射前缀，如 ::ffff:192.168.1.1 → 192.168.1.1 */
+function stripIPv6Mapping(ip: string): string {
+  if (ip.startsWith("::ffff:")) return ip.slice(7);
+  return ip;
+}
+
 function extractClientIP(request: Request, trustedProxies: string[]): string {
   // 获取直接连接 IP
-  const directIP =
+  const rawIP =
     (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ?? "unknown";
+  const directIP = stripIPv6Mapping(rawIP);
+
+  // 尝试从 header 读取真实客户端 IP 的辅助函数
+  const fromHeaders = (): string | null => {
+    const realIP = request.headers.get("x-real-ip");
+    if (realIP) return stripIPv6Mapping(realIP.trim());
+    const forwarded = request.headers.get("x-forwarded-for");
+    if (forwarded) {
+      const first = forwarded.split(",")[0]?.trim();
+      if (first) return stripIPv6Mapping(first);
+    }
+    return null;
+  };
+
+  // 直接连接 IP 不可用或是 loopback 时，尝试从 header 读取
+  // （开发环境 Vite proxy、生产环境反向代理都会产生 loopback 连接）
+  if (directIP === "unknown" || directIP.startsWith("127.")) {
+    const headerIP = fromHeaders();
+    if (headerIP) return headerIP;
+  }
 
   // 没有可信代理配置，返回直接连接 IP
   if (trustedProxies.length === 0) {
@@ -326,7 +457,7 @@ export function createOperationLogMiddleware(
       auditLog
         .append({
           actor,
-          action: `${method} ${ctx.path}`,
+          action: resolveAction(method, ctx.path),
           resource: "operation",
           result: responseStatus < 400 ? "success" : "failure",
           metadata: {
@@ -349,7 +480,7 @@ export function createOperationLogMiddleware(
           user_id: user?.id ?? null,
           username: actor,
           module,
-          action: `${method} ${ctx.path}`,
+          action: resolveAction(method, ctx.path),
           method,
           url: ctx.path,
           ip: clientIP,

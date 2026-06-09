@@ -8,6 +8,7 @@ import { createGenTables } from "@ventostack/gen";
 import { createI18nTables } from "@ventostack/i18n";
 import { createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
+import { createNotifyTables } from "@ventostack/notification";
 import { createWorkflowTables } from "@ventostack/workflow";
 import { createSysTables } from "./migrations/001_create_sys_tables";
 import { addPasswordChangedAt } from "./migrations/003_password_changed_at";
@@ -15,6 +16,9 @@ import { addPasskeySupport } from "./migrations/004_passkey_support";
 import { addLoginMethodColumn } from "./migrations/005_login_method_column";
 import { addDictDataUnique } from "./migrations/006_dict_data_unique";
 import { createRoleDeptTable } from "./migrations/007_create_role_dept_table";
+import { removeSysTheme } from "./migrations/008_remove_sys_theme";
+import { addDictIsSystem } from "./migrations/009_dict_is_system";
+import { addSortRemark } from "./migrations/010_add_sort_remark";
 
 const logger = createTagLogger("migrations");
 
@@ -30,12 +34,16 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addLoginMethodColumn);
   runner.addMigration(addDictDataUnique);
   runner.addMigration(createRoleDeptTable);
+  runner.addMigration(removeSysTheme);
+  runner.addMigration(addDictIsSystem);
+  runner.addMigration(addSortRemark);
 
   // 平台模块表结构由 platform packages 提供，注册顺序由 admin 应用控制。
   runner.addMigration(createGenTables);
   runner.addMigration(createI18nTables);
   runner.addMigration(createWorkflowTables);
   runner.addMigration(createOssTables);
+  runner.addMigration(createNotifyTables);
   runner.addMigration(createSchedulerTables);
 
   const executed = await runner.up();

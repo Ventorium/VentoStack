@@ -56,6 +56,7 @@ export interface RoleService {
     status?: number;
   }): Promise<PaginatedResult<RoleListItem>>;
   assignMenus(roleId: string, menuIds: string[]): Promise<void>;
+  getRoleMenuIds(roleId: string): Promise<string[]>;
   assignDataScope(roleId: string, scope: number, deptIds?: string[]): Promise<void>;
 }
 
@@ -174,7 +175,7 @@ export function createRoleService(deps: {
 
       const rows = await query
         .select("id", "name", "code", "sort", "data_scope", "status", "created_at")
-        .orderBy("sort", "asc")
+        .orderBy("sort", "desc")
         .orderBy("created_at", "desc")
         .limit(pageSize)
         .offset((page - 1) * pageSize)
@@ -214,6 +215,15 @@ export function createRoleService(deps: {
       // 清除与角色相关的缓存
       await cache.del(ns.key(`role:menus:${roleId}`));
       await cache.del(ns.listKey("role"));
+    },
+
+    async getRoleMenuIds(roleId) {
+      const cached = await cache.get<string>(ns.key(`role:menus:${roleId}`));
+      if (cached) return JSON.parse(cached) as string[];
+      const rows = await db.query(RoleMenuModel).where("role_id", "=", roleId).select("menu_id").list();
+      const ids = rows.map((r) => r.menu_id as string);
+      await cache.set(ns.key(`role:menus:${roleId}`), JSON.stringify(ids), 3600);
+      return ids;
     },
 
     async assignDataScope(roleId, scope, deptIds) {

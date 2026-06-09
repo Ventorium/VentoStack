@@ -233,7 +233,7 @@ const GenPage = () => {
               key: String(idx),
               label: file.name,
               children: (
-                <div className="bg-gray-50 p-4 rounded max-h-96 overflow-auto">
+                <div className="bg-gray-50 dark:bg-gray-800 p-4 rounded max-h-96 overflow-auto">
                   <pre className="text-xs whitespace-pre-wrap">{file.content}</pre>
                 </div>
               ),

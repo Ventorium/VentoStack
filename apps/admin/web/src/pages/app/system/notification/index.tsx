@@ -195,7 +195,7 @@ const NotificationPage = () => {
         }
       >
         {hasSelected && (
-          <div className="mb-2 text-sm text-gray-500">
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
             已选 {selectedRowKeys.length} 项{" "}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择
@@ -230,18 +230,18 @@ const NotificationPage = () => {
         {currentMessage && (
           <div>
             <div className="mb-4">
-              <span className="text-gray-500">标题：</span>
+              <span className="text-gray-500 dark:text-gray-400">标题：</span>
               <span className="font-medium">{currentMessage.title}</span>
             </div>
             <div className="mb-4">
-              <span className="text-gray-500">渠道：</span>
+              <span className="text-gray-500 dark:text-gray-400">渠道：</span>
               {(() => {
                 const ch = channelMap[currentMessage.channel];
                 return ch ? <Tag color={ch.color}>{ch.label}</Tag> : currentMessage.channel;
               })()}
             </div>
             <div className="mb-4">
-              <span className="text-gray-500">状态：</span>
+              <span className="text-gray-500 dark:text-gray-400">状态：</span>
               {currentMessage.status === "UNREAD" ? (
                 <Badge status="processing" text="未读" />
               ) : (
@@ -249,10 +249,10 @@ const NotificationPage = () => {
               )}
             </div>
             <div className="mb-2">
-              <span className="text-gray-500">时间：</span>
+              <span className="text-gray-500 dark:text-gray-400">时间：</span>
               <span>{fmtDate(currentMessage.createdAt)}</span>
             </div>
-            <div className="mt-6 p-4 bg-gray-50 rounded whitespace-pre-wrap">
+            <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded whitespace-pre-wrap">
               {currentMessage.content}
             </div>
           </div>

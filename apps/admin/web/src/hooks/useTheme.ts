@@ -1,45 +1,78 @@
-import { useEffect, useState } from "react";
+import { create } from "zustand";
 
 export type ThemeMode = "auto" | "dark" | "light";
 
-export function useTheme() {
-  const [theme, setTheme] = useState<ThemeMode>("auto");
-  const [resolvedTheme, setResolvedTheme] = useState<"dark" | "light">("light");
+const STORAGE_KEY = "ventostack_theme_mode";
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+function getStoredMode(): ThemeMode {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "dark" || stored === "light" || stored === "auto") return stored;
+  } catch {
+    // localStorage unavailable
+  }
+  return "auto";
+}
 
-    const updateTheme = () => {
-      const prefersDark = mediaQuery.matches;
-      const root = document.documentElement;
+function resolveTheme(mode: ThemeMode): "dark" | "light" {
+  if (mode !== "auto") return mode;
+  try {
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  } catch {
+    return "light";
+  }
+}
 
-      let actualTheme: "dark" | "light";
-      if (theme === "auto") {
-        actualTheme = prefersDark ? "dark" : "light";
-      } else {
-        actualTheme = theme;
+function applyDOM(theme: "dark" | "light") {
+  try {
+    document.documentElement.classList.toggle("dark", theme === "dark");
+  } catch {
+    // SSR guard
+  }
+}
+
+interface ThemeState {
+  mode: ThemeMode;
+  theme: "dark" | "light";
+  setTheme: (mode: ThemeMode) => void;
+}
+
+export const useTheme = create<ThemeState>((set) => {
+  const initialMode = getStoredMode();
+  const initialTheme = resolveTheme(initialMode);
+
+  // Apply on store creation
+  applyDOM(initialTheme);
+
+  return {
+    mode: initialMode,
+    theme: initialTheme,
+    setTheme: (newMode: ThemeMode) => {
+      try {
+        localStorage.setItem(STORAGE_KEY, newMode);
+      } catch {
+        // localStorage unavailable
       }
+      const resolved = resolveTheme(newMode);
+      applyDOM(resolved);
+      set({ mode: newMode, theme: resolved });
+    },
+  };
+});
 
-      root.classList.toggle("dark", actualTheme === "dark");
-      setResolvedTheme(actualTheme);
-    };
-
-    // Initial theme setup
-    updateTheme();
-
-    // Listen for system theme changes when in auto mode
-    const handleChange = () => {
-      if (theme === "auto") {
-        updateTheme();
+// 监听系统主题变化，auto 模式下自动跟随
+if (typeof window !== "undefined") {
+  try {
+    const mq = window.matchMedia("(prefers-color-scheme: dark)");
+    mq.addEventListener("change", () => {
+      const state = useTheme.getState();
+      if (state.mode === "auto") {
+        const resolved = resolveTheme("auto");
+        applyDOM(resolved);
+        useTheme.setState({ theme: resolved });
       }
-    };
-
-    mediaQuery.addEventListener("change", handleChange);
-
-    return () => {
-      mediaQuery.removeEventListener("change", handleChange);
-    };
-  }, [theme]);
-
-  return { theme: resolvedTheme, mode: theme, setTheme };
+    });
+  } catch {
+    // not available
+  }
 }

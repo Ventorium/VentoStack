@@ -80,6 +80,8 @@ export interface DictTypeItem {
   id: string;
   name: string;
   code: string;
+  isSystem: boolean;
+  sort: number;
   status: number;
   remark: string;
   createdAt: string;
@@ -92,6 +94,7 @@ export interface DictDataItem {
   value: string;
   sort: number;
   cssClass: string;
+  isSystem: boolean;
   status: number;
   remark: string;
   createdAt: string;

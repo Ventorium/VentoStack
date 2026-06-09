@@ -130,10 +130,10 @@ const LoginPage = () => {
 
   return (
     <div className="min-h-screen flex items-center justify-center">
-      <div className="w-120 bg-white/90 backdrop-blur-sm rounded-lg shadow-xl p-8">
+      <div className="w-120 bg-white/90 dark:bg-neutral-800/90 backdrop-blur-sm rounded-lg shadow-xl p-8">
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-bold text-dark">{siteName} 管理后台</h1>
-          <p className="text-gray-500 mt-2">
+          <h1 className="text-2xl font-bold text-dark dark:text-gray-100">{siteName} 管理后台</h1>
+          <p className="text-gray-500 dark:text-gray-400 mt-2">
             {loginMode === "password" ? "请输入账号和密码登录" : "请输入账号后使用通行密钥登录"}
           </p>
         </div>
@@ -215,7 +215,7 @@ const LoginPage = () => {
 
       {/* MFA 验证弹窗 */}
       <Modal title="多因素认证验证" open={!!mfaInfo} closable={false} footer={null} destroyOnHidden>
-        <p className="text-gray-500 mb-4">请输入您的认证器应用中显示的6位验证码</p>
+        <p className="text-gray-500 dark:text-gray-400 mb-4">请输入您的认证器应用中显示的6位验证码</p>
         <div className="flex flex-col items-center gap-4">
           <Input.OTP ref={inputRef} length={6} size="large" value={mfaCode} onChange={setMfaCode} />
           <Button
@@ -240,7 +240,7 @@ const LoginPage = () => {
         okText="修改密码"
         destroyOnHidden
       >
-        <p className="text-gray-500 mb-4">您的密码已过期，请修改密码后重新登录。</p>
+        <p className="text-gray-500 dark:text-gray-400 mb-4">您的密码已过期，请修改密码后重新登录。</p>
         <Form form={pwdForm} layout="vertical">
           <Form.Item
             name="newPassword"

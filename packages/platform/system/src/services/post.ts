@@ -113,8 +113,8 @@ export function createPostService(deps: { db: Database }): PostService {
 
     const rows = await query
       .select("id", "name", "code", "sort", "status", "remark", "created_at")
-      .orderBy("sort", "asc")
-      .orderBy("id", "asc")
+      .orderBy("sort", "desc")
+      .orderBy("created_at", "desc")
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();

@@ -201,7 +201,6 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       responses: {
         200: {
           siteName: { type: "string" as const, description: "站点名称" },
-          theme: { type: "string" as const, description: "主题" },
           deptEnabled: { type: "boolean" as const, description: "是否启用部门" },
           mfaEnabled: { type: "boolean" as const, description: "是否启用 MFA" },
           mfaForce: { type: "boolean" as const, description: "是否强制 MFA" },
@@ -218,7 +217,6 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async () => {
       const [
         siteName,
-        theme,
         deptEnabled,
         mfaEnabled,
         mfaForce,
@@ -227,7 +225,6 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         passwordComplexity,
       ] = await Promise.all([
         configService.getValue("sys_site_name"),
-        configService.getValue("sys_theme"),
         configService.getValue("sys_dept_enabled"),
         configService.getValue("sys_mfa_enabled"),
         configService.getValue("sys_mfa_force"),
@@ -237,7 +234,6 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       ]);
       return ok({
         siteName: siteName ?? "VentoStack",
-        theme: theme ?? "light",
         deptEnabled: deptEnabled !== "false",
         mfaEnabled: mfaEnabled !== "false",
         mfaForce: mfaForce === "true",
@@ -296,6 +292,21 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         },
       },
       extraRoutes: (r) => {
+        r.get(
+          "/api/system/roles/:id/menus",
+          {
+            responses: {
+              200: { menuIds: { type: "array" as const, description: "菜单 ID 列表" } },
+            },
+            openapi: { summary: "获取角色已分配菜单", tags: ["role"], operationId: "getRoleMenus" },
+          },
+          async (ctx) => {
+            const id = (ctx.params as Record<string, string>).id!;
+            const menuIds = await roleService.getRoleMenuIds(id);
+            return ok({ menuIds });
+          },
+          perm("system", "role:list"),
+        );
         r.put(
           "/api/system/roles/:id/menus",
           {
@@ -635,18 +646,21 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           id: { type: "uuid" as const, description: "字典类型 ID" },
           name: { type: "string" as const, description: "字典名称" },
           code: { type: "string" as const, description: "字典编码" },
+          isSystem: { type: "boolean" as const, description: "是否系统内置" },
+          sort: { type: "int" as const, description: "排序" },
           status: { type: "int" as const, description: "状态" },
           remark: { type: "string" as const, description: "备注" },
         },
         createBody: {
           name: { type: "string" as const, required: true, description: "字典名称" },
           code: { type: "string" as const, required: true, description: "字典编码" },
+          sort: { type: "int" as const, default: 0, description: "排序" },
           status: { type: "int" as const, default: 1, description: "状态" },
           remark: { type: "string" as const, description: "备注" },
         },
         updateBody: {
           name: { type: "string" as const, description: "字典名称" },
-          code: { type: "string" as const, description: "字典编码" },
+          sort: { type: "int" as const, description: "排序" },
           status: { type: "int" as const, description: "状态" },
           remark: { type: "string" as const, description: "备注" },
         },
@@ -680,7 +694,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       service: {
         ...configService,
         create: (body) => configService.create(body as CreateConfigParams),
-        update: (key, body) => configService.update(key, body as Record<string, unknown>),
+        update: (id, body) => configService.update(id, body as Record<string, unknown>),
       },
       authMiddleware,
       perm,
@@ -1112,8 +1126,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const body = await parseBody(ctx.request);
-      const result = await dictService.createData(body as unknown as CreateDictDataParams);
-      return ok(result);
+      try {
+        const result = await dictService.createData(body as unknown as CreateDictDataParams);
+        return ok(result);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "创建失败", 400);
+      }
     },
     perm("system", "dict:create"),
   );
@@ -1131,8 +1149,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
-      await dictService.updateData(id, body as Record<string, unknown>);
-      return ok(null);
+      try {
+        await dictService.updateData(id, body as Record<string, unknown>);
+        return ok(null);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "更新失败", 400);
+      }
     },
     perm("system", "dict:update"),
   );
@@ -1143,8 +1165,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      await dictService.deleteData(id);
-      return ok(null);
+      try {
+        await dictService.deleteData(id);
+        return ok(null);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "删除失败", 400);
+      }
     },
     perm("system", "dict:delete"),
   );
