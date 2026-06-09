@@ -4,7 +4,6 @@
 
 import { createTagLogger } from "@ventostack/core";
 import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
-import { createGenTables } from "@ventostack/gen";
 import { createI18nTables } from "@ventostack/i18n";
 import { createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
@@ -39,7 +38,6 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addSortRemark);
 
   // 平台模块表结构由 platform packages 提供，注册顺序由 admin 应用控制。
-  runner.addMigration(createGenTables);
   runner.addMigration(createI18nTables);
   runner.addMigration(createWorkflowTables);
   runner.addMigration(createOssTables);

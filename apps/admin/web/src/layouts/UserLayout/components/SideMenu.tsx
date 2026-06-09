@@ -3,13 +3,27 @@ import { useTheme } from "@/hooks/useTheme";
 import { useMenu } from "@/store/useMenu";
 import { resolveIcon } from "@/utils/icon";
 import { Menu } from "antd";
-import { useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router";
 
 /** 将后端路由路径补全为前端完整路径（/app 前缀） */
 function normalizePath(path: string): string {
   if (path.startsWith("/app")) return path;
   return `/app${path.startsWith("/") ? "" : "/"}${path}`;
+}
+
+/** 递归构建 子菜单key → 父菜单key 的映射 */
+function buildParentMap(
+  routes: import("@/api/types").FrontendRoute[],
+  parentKey: string | null,
+  map: Map<string, string>,
+): void {
+  for (const r of routes) {
+    if (r.meta?.hidden) continue;
+    const key = normalizePath(r.path);
+    if (parentKey) map.set(key, parentKey);
+    if (r.children?.length) buildParentMap(r.children, key, map);
+  }
 }
 
 function convertRoutesToMenuItems(routes: import("@/api/types").FrontendRoute[]): any[] {
@@ -47,14 +61,29 @@ const SideMenu = () => {
     return [location.pathname];
   }, [location.pathname]);
 
-  // compute open keys for submenus
-  const defaultOpenKeys = useMemo(() => {
-    const segments = location.pathname.split("/").filter(Boolean);
+  // 从路由树中找到当前路径的所有祖先菜单 key
+  const routeOpenKeys = useMemo(() => {
+    const parentMap = new Map<string, string>();
+    buildParentMap(routes, null, parentMap);
+
     const keys: string[] = [];
-    for (let i = 1; i < segments.length; i++) {
-      keys.push("/" + segments.slice(0, i + 1).join("/"));
+    let current: string | undefined = location.pathname;
+    while (current) {
+      keys.push(current);
+      current = parentMap.get(current);
     }
     return keys;
+  }, [routes, location.pathname]);
+
+  // 受控 openKeys：路由变化时自动同步，用户点击时手动更新
+  const [openKeys, setOpenKeys] = useState<string[]>(routeOpenKeys);
+
+  useEffect(() => {
+    setOpenKeys(routeOpenKeys);
+  }, [routeOpenKeys]);
+
+  const onOpenChange = useCallback((keys: string[]) => {
+    setOpenKeys(keys);
   }, []);
 
   const onClick = ({ key }: { key: string }) => {
@@ -73,7 +102,8 @@ const SideMenu = () => {
           mode="inline"
           theme={isDark ? "light" : "dark"}
           selectedKeys={selectedKeys}
-          defaultOpenKeys={defaultOpenKeys}
+          openKeys={openKeys}
+          onOpenChange={onOpenChange}
           items={menuItems}
           onClick={onClick}
           inlineCollapsed={collapsed}

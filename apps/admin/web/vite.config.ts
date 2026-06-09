@@ -31,7 +31,7 @@ export default defineConfig(({ mode }) => {
     plugins: [
       guiResolvePlugin(resolve(__dirname, "node_modules")),
       react(),
-      UnoCSS(),
+      UnoCSS({ configFile: resolve(__dirname, "uno.config.ts") }),
       svgr(),
       pages({
         extensions: ["tsx"],
@@ -40,19 +40,7 @@ export default defineConfig(({ mode }) => {
         importMode: "async",
         dirs: "src/pages",
         resolver: "react",
-      }),
-      {
-        name: "api-handler",
-        configureServer(server) {
-          server.middlewares.use("/_env", (_req, res, _next) => {
-            res.writeHead(200, { "Content-Type": "application/json" });
-            const data = {
-              XXX: env.XXX,
-            };
-            res.end(JSON.stringify(data));
-          });
-        },
-      },
+      })
     ],
     resolve: {
       alias: [{ find: "@", replacement: resolve(__dirname, "./src") }],
@@ -63,31 +51,6 @@ export default defineConfig(({ mode }) => {
       hmr: {
         host: "0.0.0.0",
         port: 9321,
-      },
-      proxy: {
-        "/api": {
-          target: "http://127.0.0.1:9320",
-          changeOrigin: true,
-          configure: (proxy) => {
-            proxy.on("proxyReq", (proxyReq, req) => {
-              // 转发真实客户端 IP 到后端
-              const clientIp =
-                req.headers["x-forwarded-for"]?.toString().split(",")[0]?.trim() ||
-                req.socket.remoteAddress ||
-                "unknown";
-              proxyReq.setHeader("x-forwarded-for", clientIp);
-              proxyReq.setHeader("x-real-ip", clientIp);
-            });
-          },
-        },
-        "/ws": {
-          target: "ws://127.0.0.1:9320",
-          ws: true,
-        },
-        "/uploads": {
-          target: "http://127.0.0.1:9320",
-          changeOrigin: true,
-        },
       },
     },
   };

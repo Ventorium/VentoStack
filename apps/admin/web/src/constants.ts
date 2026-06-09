@@ -137,18 +137,6 @@ export const SYSTEM_API = {
   MONITOR_HEALTH: "/api/system/monitor/health",
 } as const;
 
-/** 代码生成模块 */
-export const GEN_API = {
-  TABLES: "/api/system/gen/tables",
-  TABLE_DETAIL: "/api/system/gen/tables/:id",
-  TABLE_UPDATE: "/api/system/gen/tables/:id",
-  TABLE_IMPORT: "/api/system/gen/tables/import",
-  TABLE_PREVIEW: "/api/system/gen/tables/:id/preview",
-  TABLE_GENERATE: "/api/system/gen/tables/:id/generate",
-  COLUMN_UPDATE: "/api/system/gen/columns/:id",
-  DB_TABLES: "/api/system/gen/db-tables",
-} as const;
-
 /** 文件存储模块 */
 export const OSS_API = {
   LIST: "/api/system/oss",

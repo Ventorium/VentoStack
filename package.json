@@ -9,7 +9,6 @@
   "scripts": {
     "dev": "bun --hot apps/example/src/main.ts",
     "dev:admin": "bun run --cwd apps/admin/api dev",
-    "dev:admin:web": "bun run --cwd apps/admin/web dev",
     "dev:doc": "bun run --cwd apps/docs dev",
     "build": "bun run packages/framework/cli/src/build.ts",
     "build:doc": "bun run --cwd apps/docs build",

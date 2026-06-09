@@ -23,8 +23,6 @@ import type { EventBus } from "@ventostack/events";
 import type { AuditStore, HealthCheck } from "@ventostack/observability";
 
 import type { Scheduler } from "@ventostack/events";
-import { createGenModule } from "@ventostack/gen";
-import type { GenModule } from "@ventostack/gen";
 import { createI18nModule } from "@ventostack/i18n";
 import type { I18nModule } from "@ventostack/i18n";
 import { createMonitorModule } from "@ventostack/monitor";
@@ -84,7 +82,6 @@ export interface PlatformConfig {
   /** 模块开关 */
   modules?: {
     system?: boolean;
-    gen?: boolean;
     monitor?: boolean;
     notification?: boolean;
     i18n?: boolean;
@@ -115,8 +112,6 @@ export interface PlatformConfig {
 export interface Platform {
   /** 系统模块 */
   system?: SystemModule;
-  /** 代码生成模块 */
-  gen?: GenModule;
   /** 监控模块 */
   monitor?: MonitorModule;
   /** 通知模块 */
@@ -174,7 +169,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   const enabled = {
     system: moduleFlags?.system !== false,
-    gen: moduleFlags?.gen !== false,
     monitor: moduleFlags?.monitor !== false,
     notification: moduleFlags?.notification !== false,
     i18n: moduleFlags?.i18n !== false,
@@ -206,17 +200,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(tenantEnabled !== undefined ? { tenantEnabled } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
-
-  const gen = enabled.gen
-    ? createGenModule({
-        db,
-        executor,
-        readTableSchema,
-        jwt,
-        jwtSecret,
-        rbac,
-      })
-    : undefined;
 
   const monitor = enabled.monitor
     ? createMonitorModule({
@@ -285,7 +268,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   // Mount module routers
   if (system) router.merge(system.router);
-  if (gen) router.merge(gen.router);
   if (monitor) router.merge(monitor.router);
   if (notification) router.merge(notification.router);
   if (i18n) router.merge(i18n.router);
@@ -295,7 +277,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   return {
     ...(system !== undefined ? { system } : {}),
-    ...(gen !== undefined ? { gen } : {}),
     ...(monitor !== undefined ? { monitor } : {}),
     ...(notification !== undefined ? { notification } : {}),
     ...(i18n !== undefined ? { i18n } : {}),
@@ -305,7 +286,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     router,
     async init() {
       if (system) await system.init();
-      if (gen) await gen.init();
       if (monitor) await monitor.init();
       if (notification) await notification.init();
       if (i18n) await i18n.init();
