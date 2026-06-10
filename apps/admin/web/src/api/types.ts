@@ -295,3 +295,60 @@ export interface OnlineUser {
   loginAt: string;
   lastAccessAt: string;
 }
+
+// === 工作流类型 ===
+
+export interface WorkflowDefinitionItem {
+  id: string;
+  name: string;
+  code: string;
+  version: number;
+  description: string | null;
+  category: string | null;
+  status: number;
+  createdBy: string | null;
+  tenantId: string | null;
+  createdAt: string;
+}
+
+export interface WorkflowInstanceItem {
+  id: string;
+  definitionId: string;
+  definitionVer: number;
+  businessType: string | null;
+  businessId: string | null;
+  initiatorId: string;
+  title: string | null;
+  status: number;
+  formData: Record<string, unknown> | null;
+  variables: Record<string, unknown> | null;
+  resubmitOf: string | null;
+  tenantId: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  createdAt: string;
+}
+
+export interface WorkflowTaskItem {
+  id: string;
+  instanceId: string;
+  nodeId: string;
+  assigneeId: string;
+  action: string | null;
+  comment: string | null;
+  status: number;
+  transferTo: string | null;
+  actedAt: string | null;
+  createdAt: string;
+}
+
+export interface WorkflowHistoryItem {
+  id: string;
+  instanceId: string;
+  nodeId: string | null;
+  taskId: string | null;
+  operatorId: string;
+  action: string;
+  comment: string | null;
+  createdAt: string;
+}

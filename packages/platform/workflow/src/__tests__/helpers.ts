@@ -4,6 +4,12 @@
 
 import { mock } from "bun:test";
 
+/** 为数组附加 rowCount 属性，兼容 db.raw() 返回值 */
+function withRowCount(rows: unknown[]): unknown[] {
+  Object.defineProperty(rows, "rowCount", { value: rows.length, writable: true, enumerable: false, configurable: true });
+  return rows;
+}
+
 /** 创建 Mock SqlExecutor */
 export function createMockExecutor() {
   const calls: Array<{ text: string; params?: unknown[] }> = [];
@@ -21,7 +27,6 @@ export function createMockExecutor() {
       const tableName = fromMatch[1];
       for (const [pattern, result] of results) {
         if (pattern.includes(tableName) && !pattern.includes("WHERE")) {
-          // Table-level match (no WHERE clause in pattern) - return result for COUNT/list queries
           if (
             text.startsWith("SELECT COUNT") ||
             (!text.includes("WHERE") && !text.includes("LIMIT"))
@@ -72,14 +77,15 @@ export function createMockJWTManager() {
 
 /**
  * 创建 Mock Database
- *
- * 拦截 db.query(Model) 调用，在 query builder 的 get()/list()/count() 阶段
- * 根据 SQL 模式匹配返回预设结果（与 createMockExecutor 的 results Map 兼容）。
- *
- * 同时支持 db.raw() 直接调用 mock executor。
  */
 export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExecutor>) {
   const { executor } = mockExecutor;
+
+  /** 将 executor 结果包装为带 rowCount 的 MockResult */
+  async function execRaw(text: string, params?: unknown[]): Promise<unknown[]> {
+    const rows = await executor(text, params);
+    return withRowCount(rows);
+  }
 
   function createBuilder() {
     const state: {
@@ -181,12 +187,10 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
         const rows = (await executor(sql, params)) as any[];
         if (rows.length === 0) return 0;
-        // Handle { count: N }, { total: N }, or { cnt: N } patterns
         const first = rows[0];
         if (first?.count !== undefined) return Number(first.count);
         if (first?.total !== undefined) return Number(first.total);
         if (first?.cnt !== undefined) return Number(first.cnt);
-        // Fallback: return row count
         return rows.length;
       },
       async insert(data: Record<string, unknown>) {
@@ -264,7 +268,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
       return createBuilder()._setState(meta.tableName, meta.softDelete);
     },
     raw: mock(async (text: string, params?: unknown[]) => {
-      return executor(text, params);
+      return execRaw(text, params);
     }),
     async transaction<T>(fn: (tx: any) => Promise<T>): Promise<T> {
       return fn(db);

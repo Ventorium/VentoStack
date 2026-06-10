@@ -7,22 +7,39 @@
 // Models
 export { WorkflowDefModel } from "./models/definition";
 export { WorkflowNodeModel } from "./models/node";
+export { WorkflowEdgeModel } from "./models/edge";
 export { WorkflowInstanceModel } from "./models/instance";
 export { WorkflowTaskModel } from "./models/task";
+export { WorkflowHistoryModel } from "./models/history";
+
+// Engine
+export { buildGraph, getNextNodes, validateGraph, hasCycle, evaluateCondition, resolveField } from "./engine/graph";
+export type { GraphNodeData, GraphEdgeData, GraphNode, GraphEdge, WorkflowGraph, EngineContext, ConditionItem, ConditionNodeConfig } from "./engine/graph";
+export { getActiveTasks, isNodeCompleted } from "./engine/strategy";
+export type { ApprovalStrategy, TaskInfo, StrategyResult } from "./engine/strategy";
+export { createAssigneeResolver } from "./engine/assignee";
+export type { AssigneeConfig, ApproveNodeConfig, AssigneeResolver } from "./engine/assignee";
+export { WorkflowError, workflowErrors } from "./engine/errors";
 
 // Services
-export { createWorkflowService } from "./services/workflow";
+export { createWorkflowService } from "./services";
 export type {
-  WorkflowDefinition,
-  WorkflowNode,
-  WorkflowInstance,
-  WorkflowTask,
-  WorkflowInstanceDetail,
-  PaginatedResult,
   WorkflowService,
   WorkflowServiceDeps,
-} from "./services/workflow";
-export { DefStatus, InstanceStatus, TaskStatus, NodeType } from "./services/workflow";
+  CreateDefParams,
+  UpdateDefParams,
+  ListDefParams,
+  StartInstanceParams,
+  InstanceDetail,
+  WorkflowDefinition,
+  WorkflowInstance,
+  WorkflowHistory,
+  WorkflowTask,
+  PaginatedResult,
+  PageParams,
+  TaskListParams,
+} from "./services";
+export { DefStatus, InstanceStatus, TaskStatus } from "./services";
 
 // Routes
 export { createWorkflowRoutes } from "./routes/workflow";
@@ -33,3 +50,8 @@ export type { WorkflowModule, WorkflowModuleDeps } from "./module";
 
 // Migrations
 export { createWorkflowTables } from "./migrations/001_create_workflow_tables";
+export { enhanceWorkflowTables } from "./migrations/002_enhance_workflow_tables";
+
+// Engine Actions (advanced: flow control functions for custom integrations)
+export { insertHistory, completeInstance, createTasksForNode, advanceFromNode, processNodeCompletion, handleNodeReject } from "./engine/actions";
+export type { FlowActionDeps } from "./engine/actions";

@@ -1,6 +1,6 @@
 {
   "name": "@ventostack/workflow",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "type": "module",
   "main": "src/index.ts",
   "types": "src/index.ts",
@@ -10,7 +10,8 @@
   "dependencies": {
     "@ventostack/core": "workspace:*",
     "@ventostack/database": "workspace:*",
-    "@ventostack/auth": "workspace:*"
+    "@ventostack/auth": "workspace:*",
+    "@ventostack/events": "workspace:*"
   },
   "devDependencies": {
     "@ventostack/testing": "workspace:*"

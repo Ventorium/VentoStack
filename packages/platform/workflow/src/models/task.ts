@@ -14,7 +14,10 @@ export const WorkflowTaskModel = defineModel(
     action: column.varchar({ length: 32, nullable: true }),
     comment: column.text({ nullable: true }),
     status: column.int({ default: 0 }),
+    transfer_to: column.varchar({ length: 36, nullable: true }),
     acted_at: column.timestamp({ nullable: true }),
+    due_at: column.timestamp({ nullable: true }),
+    tenant_id: column.varchar({ length: 36, nullable: true }),
   },
   { timestamps: true },
 );

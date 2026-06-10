@@ -237,6 +237,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwt,
         jwtSecret,
         rbac,
+        eventBus,
       })
     : undefined;
 
