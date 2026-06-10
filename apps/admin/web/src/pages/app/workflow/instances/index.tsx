@@ -1,7 +1,7 @@
 import { Card, Table, Button, Form, Input, Space, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { client } from "@/api";
-import type { WorkflowInstanceItem } from "@/api/types";
+import type { PaginatedData, WorkflowInstanceItem } from "@/api/types";
 import { useTable } from "@/hooks/useTable";
 import ActionColumn from "@/components/ActionColumn";
 import { fmtDate } from "@/utils/fmtDate";
@@ -10,7 +10,7 @@ import { msg } from "@/components/GlobalMessage";
 const fetcher = (params: Record<string, unknown>) =>
   client.get("/api/workflow/instances", { query: params }) as Promise<{
     error?: unknown;
-    data?: { items: WorkflowInstanceItem[]; total: number };
+    data?: PaginatedData<WorkflowInstanceItem>;
   }>;
 
 const InstanceStatusMap: Record<number, { label: string; color: string }> = {

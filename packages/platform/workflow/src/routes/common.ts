@@ -9,7 +9,7 @@ export function ok(data: unknown) {
 }
 
 export function okPage(items: unknown[], total: number, page: number, pageSize: number) {
-  return new Response(JSON.stringify({ code: 0, data: { items, total, page, pageSize } }), {
+  return new Response(JSON.stringify({ code: 0, data: { list: items, total, page, pageSize } }), {
     headers: { "Content-Type": "application/json" },
   });
 }

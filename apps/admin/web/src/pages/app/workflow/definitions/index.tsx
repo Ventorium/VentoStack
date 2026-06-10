@@ -3,7 +3,7 @@ import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col, message 
 import type { ColumnsType } from "antd/es/table";
 import { PlusOutlined } from "@ant-design/icons";
 import { client } from "@/api";
-import type { WorkflowDefinitionItem } from "@/api/types";
+import type { PaginatedData, WorkflowDefinitionItem } from "@/api/types";
 import { useTable } from "@/hooks/useTable";
 import ActionColumn from "@/components/ActionColumn";
 import { fmtDate } from "@/utils/fmtDate";
@@ -11,7 +11,7 @@ import { fmtDate } from "@/utils/fmtDate";
 const fetcher = (params: Record<string, unknown>) =>
   client.get("/api/workflow/definitions", { query: params }) as Promise<{
     error?: unknown;
-    data?: { items: WorkflowDefinitionItem[]; total: number };
+    data?: PaginatedData<WorkflowDefinitionItem>;
   }>;
 
 const DefStatusMap: Record<number, { label: string; color: string }> = {

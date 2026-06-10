@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Card, Table, Button, Form, Input, Space, Tag, Modal, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { client } from "@/api";
-import type { WorkflowTaskItem } from "@/api/types";
+import type { PaginatedData, WorkflowTaskItem } from "@/api/types";
 import { useTable } from "@/hooks/useTable";
 import ActionColumn from "@/components/ActionColumn";
 import { fmtDate } from "@/utils/fmtDate";
@@ -10,7 +10,7 @@ import { fmtDate } from "@/utils/fmtDate";
 const fetcher = (params: Record<string, unknown>) =>
   client.get("/api/workflow/tasks", { query: params }) as Promise<{
     error?: unknown;
-    data?: { items: WorkflowTaskItem[]; total: number };
+    data?: PaginatedData<WorkflowTaskItem>;
   }>;
 
 const TaskStatusMap: Record<number, { label: string; color: string }> = {
