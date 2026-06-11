@@ -93,3 +93,16 @@ export type {
   /** RAG 智能体 */
   RAGAgent,
 } from "./rag-agent";
+
+// AI Module (聚合)
+export { createAIModule } from "./module";
+export type { AIModule, AIModuleDeps } from "./module";
+
+// Agent Service
+export { createAgentService } from "./services/agent";
+
+// Provider Service
+export { createProviderService } from "./services/provider";
+
+// Migration
+export { createAiProviderTables } from "./migrations/005_create_ai_provider_tables";

@@ -1,0 +1,102 @@
+/**
+ * LLM Gateway 类型定义
+ */
+
+export interface LLMProvider {
+  name: string;
+  capabilities: ProviderCapabilities;
+  chat(params: ChatParams): Promise<ChatResult>;
+  chatStream(params: ChatParams): AsyncIterable<StreamChunk>;
+  listModels(): Promise<ModelInfo[]>;
+}
+
+export interface ProviderCapabilities {
+  functionCalling: boolean;
+  maxContextLength: number;
+  supportsVision: boolean;
+  supportsStreaming: boolean;
+}
+
+export interface ChatMessage {
+  role: "system" | "user" | "assistant" | "tool";
+  content: string;
+  tool_calls?: ToolCall[];
+  tool_call_id?: string;
+}
+
+export interface LLMToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface ToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface ChatParams {
+  model: string;
+  messages: ChatMessage[];
+  tools?: LLMToolDefinition[];
+  temperature?: number;
+  maxTokens?: number;
+  signal?: AbortSignal;
+}
+
+export interface ChatResult {
+  content: string;
+  toolCalls?: ToolCall[];
+  usage: TokenUsage;
+  finishReason: "stop" | "tool_calls" | "length" | "error";
+}
+
+export interface StreamChunk {
+  type:
+    | "content"
+    | "tool_call_start"
+    | "tool_call_delta"
+    | "usage"
+    | "error"
+    | "done";
+  delta?: string;
+  toolCall?: ToolCall;
+  toolCallDelta?: { id?: string; name?: string; arguments?: string };
+  usage?: TokenUsage;
+  error?: { code: string; message: string; recoverable: boolean };
+}
+
+export interface TokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+}
+
+export interface ModelInfo {
+  id: string;
+  name: string;
+  contextLength: number;
+  supportsFunctionCalling: boolean;
+  supportsVision: boolean;
+}
+
+export interface LLMGatewayConfig {
+  providers: LLMProvider[];
+  defaultModel: string;
+  defaultProvider?: string;
+  maxConcurrent?: number;
+  maxQueued?: number;
+  queueTimeoutMs?: number;
+}
+
+export interface LLMGateway {
+  chat(params: ChatParams): Promise<ChatResult>;
+  chatStream(params: ChatParams): AsyncIterable<StreamChunk>;
+  getProvider(name: string): LLMProvider | undefined;
+  getDefaultProvider(): LLMProvider;
+  listProviders(): LLMProvider[];
+}

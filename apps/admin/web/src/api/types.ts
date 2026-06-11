@@ -352,3 +352,79 @@ export interface WorkflowHistoryItem {
   comment: string | null;
   createdAt: string;
 }
+
+// ========== AI 模块类型 ==========
+
+export interface KnowledgeBaseItem {
+  id: string;
+  name: string;
+  description: string | null;
+  basePath: string;
+  status: string;
+  fileCount: number;
+  tenantId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AgentItem {
+  id: string;
+  name: string;
+  description: string | null;
+  avatar: string | null;
+  type: string;
+  model: string;
+  systemPrompt: string;
+  tools: string[] | null;
+  knowledgeBaseIds: string[] | null;
+  status: string;
+  isPublic: boolean;
+  tenantId: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ConversationItem {
+  id: string;
+  agentId: string;
+  userId: string;
+  title: string | null;
+  status: string;
+  messageCount: number;
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface AIMessageItem {
+  id: string;
+  conversationId: string;
+  role: string;
+  content: string;
+  tokenCount: number;
+  createdAt: string;
+}
+
+export interface AIToolLogItem {
+  id: string;
+  conversationId: string | null;
+  toolName: string;
+  input: unknown;
+  output: unknown;
+  status: string;
+  duration: number | null;
+  userId: string | null;
+  tenantId: string;
+  createdAt: string;
+}
+
+export interface FileEntry {
+  name: string;
+  path: string;
+  type: "file" | "directory";
+  size: number;
+  modifiedAt: string;
+  children?: FileEntry[];
+}
