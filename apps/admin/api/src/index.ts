@@ -36,14 +36,6 @@ async function main(): Promise<void> {
     await appCtx.adminApp.listen();
   }
 
-  // 打印启动摘要
-  const mainPort = env.PORT || 9320;
-  const adminPort = env.ADMIN_PORT || 9322;
-  const adminHost = env.ADMIN_HOST || "127.0.0.1";
-
-  serverLogger.info(`管理后台地址: http://localhost:${mainPort}`);
-  serverLogger.info(`管理端口: ${adminHost}:${adminPort}（健康检查、监控指标、OpenAPI 文档）`);
-
   // 后端启动后自动生成前端 SDK 类型（仅开发模式）
   if (env.NODE_ENV !== "production") {
     const genLog = createTagLogger("gen:sdk");

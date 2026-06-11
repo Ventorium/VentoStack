@@ -178,7 +178,6 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
         logger: serverLogger,
       });
       fetchFallback = viteBridge.fetchFallback;
-      serverLogger.info(`Vite HMR → ws://localhost:${viteBridge.hmrPort}`);
     } catch (err) {
       serverLogger.warn(
         `Vite bridge 初始化失败（非致命，回退到默认行为）: ${err instanceof Error ? err.message : String(err)}`,
@@ -225,16 +224,20 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     // =============================================
     // 4b-1. 独立管理端口模式
     // =============================================
-    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST, banner: false });
+    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST, banner: true });
 
     adminApp.use(requestId());
     adminApp.use(requestLogger());
 
     // 健康检查
     adminApp.use(healthRouter);
+    adminApp.addUrl("健康检查", "/health");
+    adminApp.addUrl("存活探针", "/health/live");
+    adminApp.addUrl("就绪探针", "/health/ready");
 
     // 指标端点
     adminApp.use(metricsRouter);
+    adminApp.addUrl("Prometheus 指标", "/metrics");
 
     // OpenAPI 文档（非生产环境 或 显式开启时注册）
     if (env.NODE_ENV !== "production") {
@@ -247,6 +250,7 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
           bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
         },
       });
+      adminApp.addUrl("OpenAPI 文档", "/docs");
     }
 
     adminApp.use(errorHandler({ logger: serverLogger }));

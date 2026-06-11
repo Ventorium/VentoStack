@@ -287,7 +287,7 @@ ${tag}╚██╗ ██╔╝██╔══╝  ██║╚██╗██�
 ${tag} ╚████╔╝ ███████╗██║ ╚████║   ██║   ╚██████╔╝███████║   ██║   ██║  ██║╚██████╗██║  ██╗${RESET}
 ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   ╚═╝    ╚═════╝ ╚══════╝   ╚═╝   ╚═╝  ╚═╝ ╚═════╝╚═╝  ╚═╝${RESET}
 
-  ➜  Local:   ${accent}${baseUrl}${RESET}`);
+  ➜  页面地址:   ${accent}${baseUrl}${RESET}`);
         for (const url of urls) {
           // eslint-disable-next-line no-console
           console.log(`  ➜  ${url.label}: ${accent}${baseUrl}${url.path}${RESET}`);
@@ -297,7 +297,10 @@ ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   �
         const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
         const accent = ansi(COLORS.info);
         // eslint-disable-next-line no-console
-        console.log(`  ➜  Admin:   ${accent}http://${displayHost}:${listenPort}${RESET}`);
+        console.log(`  ➜  监控端口:   ${accent}http://${displayHost}:${listenPort}${RESET}`);
+        for (const url of urls) {
+          console.log(`  ➜  ${url.label}: ${accent}http://${displayHost}:${listenPort}${url.path}${RESET}`);
+        }
       }
 
       // SIGTERM / SIGINT 优雅关闭
