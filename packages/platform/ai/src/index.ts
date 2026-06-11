@@ -189,6 +189,8 @@ export { createAgentService } from "./services/agent";
 export { createProviderService } from "./services/provider";
 
 // ---- Migration ----
+export { createAiKnowledgeTables } from "./migrations/003_create_ai_knowledge_tables";
+export { createAiAgentTables } from "./migrations/004_create_ai_agent_tables";
 export { createAiProviderTables } from "./migrations/005_create_ai_provider_tables";
 
 // ---- Tool Policy (renamed from Sandbox) ----
