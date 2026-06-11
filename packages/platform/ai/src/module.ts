@@ -54,6 +54,8 @@ import { createKnowledgeBaseRoutes } from "./routes/knowledge-base";
 import { createAgentRoutes, type AgentCrudService } from "./routes/agent";
 import { createAgentService } from "./services/agent";
 import { createChatRoutes, type ConversationService } from "./routes/chat";
+import { createProviderRoutes } from "./routes/provider";
+import { createProviderService } from "./services/provider";
 
 // Auth
 import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
@@ -198,10 +200,14 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
   const perm = rbac
     ? createPermMiddleware(rbac)
-    : () => async (_ctx: unknown, next: () => Promise<unknown>) => next();
+    : () => async (_ctx: unknown, next: () => Promise<Response>) => next();
 
   // 创建路由
   const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm);
+
+  // Provider 服务
+  const providerService = createProviderService({ db: db as import("@ventostack/database").Database });
+  const providerRouter = createProviderRoutes(providerService, authMiddleware, perm);
 
   // Agent CRUD 服务
   const agentDbService = createAgentService({ db: db as import("@ventostack/database").Database });
@@ -231,6 +237,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(kbRouter);
   router.merge(agentRouter);
   router.merge(chatRouter);
+  router.merge(providerRouter);
 
   // 创建 Harness 工厂
   function createHarness(partialOptions: Partial<AgentHarnessOptions>): AgentHarness {
