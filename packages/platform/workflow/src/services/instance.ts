@@ -64,6 +64,7 @@ export interface InstanceService {
   cancel(instanceId: string, userId: string, comment?: string): Promise<void>;
   resubmit(instanceId: string, userId: string, formData: Record<string, unknown>): Promise<{ instanceId: string }>;
   getHistory(instanceId: string): Promise<WorkflowHistory[]>;
+  listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>>;
 }
 
 export interface InstanceServiceDeps { db: Database; eventBus?: EventBus; assigneeResolver: AssigneeResolver }
@@ -204,7 +205,18 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     return rows.map(mapHistory);
   }
 
-  return { start, getDetail, listMy, withdraw, cancel, resubmit, getHistory };
+  async function listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>> {
+    const { page = 1, pageSize = 10 } = params ?? {};
+    let q = db.query(WorkflowInstanceModel).where("business_type", "=", businessType);
+    if (businessId) q = q.where("business_id", "=", businessId);
+    const total = await q.count();
+    const rows = await q
+      .select("id", "definition_id", "definition_ver", "business_type", "business_id", "initiator_id", "title", "status", "form_data", "variables", "resubmit_of", "tenant_id", "started_at", "ended_at", "created_at")
+      .orderBy("created_at", "desc").limit(pageSize).offset((page - 1) * pageSize).list();
+    return { items: rows.map(mapInstance), total, page, pageSize };
+  }
+
+  return { start, getDetail, listMy, withdraw, cancel, resubmit, getHistory, listByBusiness };
 }
 
 function mapInstance(row: Record<string, unknown>): WorkflowInstance {

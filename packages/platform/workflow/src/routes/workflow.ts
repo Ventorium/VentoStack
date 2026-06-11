@@ -7,7 +7,6 @@ import type { Middleware, Router } from "@ventostack/core";
 import type { WorkflowService } from "../services";
 import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
-/** 统一错误处理 */
 function handleError(e: unknown): Response {
   if (e instanceof VentoStackError) {
     return new Response(
@@ -42,10 +41,19 @@ export function createWorkflowRoutes(
     const result = await service.listDefinitions({
       status: q.status !== undefined ? Number(q.status) : undefined,
       category: q.category as string | undefined,
-      page,
-      pageSize,
+      businessType: q.businessType as string | undefined,
+      page, pageSize,
     });
     return okPage(result.items, result.total, result.page, result.pageSize);
+  });
+
+  router.get("/api/workflow/definitions/by-business-type/:type", perm("workflow", "query"), async (ctx) => {
+    try {
+      const bizType = (ctx.params as Record<string, string>).type!;
+      const def = await service.getDefinitionByBusinessType(bizType);
+      if (!def) return fail("未找到该业务类型对应的流程定义", 404, 404);
+      return ok(def);
+    } catch (e) { return handleError(e); }
   });
 
   router.get("/api/workflow/definitions/:id", perm("workflow", "query"), async (ctx) => {
@@ -139,6 +147,13 @@ export function createWorkflowRoutes(
   router.get("/api/workflow/instances", perm("workflow", "list"), async (ctx) => {
     const user = ctx.user as { id: string };
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
+    const q = ctx.query as Record<string, unknown>;
+    const bizType = q.businessType as string | undefined;
+    const bizId = q.businessId as string | undefined;
+    if (bizType) {
+      const result = await service.listInstancesByBusiness(bizType, bizId, { page, pageSize });
+      return okPage(result.items, result.total, result.page, result.pageSize);
+    }
     const result = await service.listMyInstances(user.id, { page, pageSize });
     return okPage(result.items, result.total, result.page, result.pageSize);
   });
@@ -176,8 +191,7 @@ export function createWorkflowRoutes(
     const q = ctx.query as Record<string, unknown>;
     const result = await service.listMyTasks(user.id, {
       status: q.status !== undefined ? Number(q.status) : undefined,
-      page,
-      pageSize,
+      page, pageSize,
     });
     return okPage(result.items, result.total, result.page, result.pageSize);
   });

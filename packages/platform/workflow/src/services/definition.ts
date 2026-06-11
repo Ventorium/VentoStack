@@ -16,22 +16,22 @@ export { DefStatus };
 
 export interface WorkflowDefinition {
   id: string; name: string; code: string; version: number;
-  description: string | null; category: string | null; status: number;
-  createdBy: string | null; tenantId: string | null; createdAt: string;
+  description: string | null; category: string | null; businessType: string | null;
+  status: number; createdBy: string | null; tenantId: string | null; createdAt: string;
 }
 
 export interface CreateDefParams {
   name: string; code: string; description?: string; category?: string;
-  formConfig?: Record<string, unknown>; settings?: Record<string, unknown>;
+  businessType?: string; formConfig?: Record<string, unknown>; settings?: Record<string, unknown>;
   createdBy?: string; tenantId?: string;
 }
 
 export interface UpdateDefParams {
-  name?: string; description?: string; category?: string;
+  name?: string; description?: string; category?: string; businessType?: string;
   formConfig?: Record<string, unknown>; settings?: Record<string, unknown>;
 }
 
-export interface ListDefParams { status?: number; category?: string; page?: number; pageSize?: number }
+export interface ListDefParams { status?: number; category?: string; businessType?: string; page?: number; pageSize?: number }
 export interface PaginatedResult<T> { items: T[]; total: number; page: number; pageSize: number }
 
 export interface DefinitionService {
@@ -39,6 +39,7 @@ export interface DefinitionService {
   update(id: string, params: UpdateDefParams): Promise<void>;
   delete(id: string): Promise<void>;
   getById(id: string): Promise<WorkflowDefinition | null>;
+  getByBusinessType(businessType: string): Promise<WorkflowDefinition | null>;
   list(params?: ListDefParams): Promise<PaginatedResult<WorkflowDefinition>>;
   publish(id: string): Promise<void>;
   disable(id: string): Promise<void>;
@@ -56,6 +57,7 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     await db.query(WorkflowDefModel).insert({
       id, name: params.name, code: params.code, version: 1,
       description: params.description ?? null, category: params.category ?? null,
+      business_type: params.businessType ?? null,
       status: DefStatus.DRAFT, created_by: params.createdBy ?? null, tenant_id: params.tenantId ?? null,
     });
     return { id };
@@ -66,6 +68,7 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     if (params.name !== undefined) updates.name = params.name;
     if (params.description !== undefined) updates.description = params.description;
     if (params.category !== undefined) updates.category = params.category;
+    if (params.businessType !== undefined) updates.business_type = params.businessType;
     if (params.formConfig !== undefined) updates.form_config = params.formConfig;
     if (params.settings !== undefined) updates.settings = params.settings;
     if (Object.keys(updates).length === 0) return;
@@ -78,19 +81,30 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
 
   async function getById(id: string): Promise<WorkflowDefinition | null> {
     const row = await db.query(WorkflowDefModel).where("id", "=", id)
-      .select("id", "name", "code", "version", "description", "category", "status", "created_by", "tenant_id", "created_at")
+      .select("id", "name", "code", "version", "description", "category", "business_type", "status", "created_by", "tenant_id", "created_at")
+      .get();
+    return row ? mapDefinition(row) : null;
+  }
+
+  async function getByBusinessType(businessType: string): Promise<WorkflowDefinition | null> {
+    const row = await db.query(WorkflowDefModel)
+      .where("business_type", "=", businessType)
+      .where("status", "=", DefStatus.ACTIVE)
+      .select("id", "name", "code", "version", "description", "category", "business_type", "status", "created_by", "tenant_id", "created_at")
+      .orderBy("version", "desc")
       .get();
     return row ? mapDefinition(row) : null;
   }
 
   async function list(params?: ListDefParams): Promise<PaginatedResult<WorkflowDefinition>> {
-    const { status, category, page = 1, pageSize = 10 } = params ?? {};
+    const { status, category, businessType, page = 1, pageSize = 10 } = params ?? {};
     let q = db.query(WorkflowDefModel);
     if (status !== undefined) q = q.where("status", "=", status);
     if (category) q = q.where("category", "=", category);
+    if (businessType) q = q.where("business_type", "=", businessType);
     const total = await q.count();
     const rows = await q
-      .select("id", "name", "code", "version", "description", "category", "status", "created_by", "tenant_id", "created_at")
+      .select("id", "name", "code", "version", "description", "category", "business_type", "status", "created_by", "tenant_id", "created_at")
       .orderBy("created_at", "desc").limit(pageSize).offset((page - 1) * pageSize).list();
     return { items: rows.map(mapDefinition), total, page, pageSize };
   }
@@ -99,7 +113,7 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     const def = await db.query(WorkflowDefModel).where("id", "=", id)
       .select("id", "status", "version").get();
     if (!def) throw workflowErrors.defNotFound();
-    if (def.status === DefStatus.ACTIVE) return; // 幂等
+    if (def.status === DefStatus.ACTIVE) return;
     const { valid, errors } = await validateGraphData(id);
     if (!valid) throw workflowErrors.invalidGraph(errors.join("; "));
     await db.query(WorkflowDefModel).where("id", "=", id)
@@ -118,22 +132,22 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
   }
 
   async function saveGraph(defId: string, graph: { nodes: GraphNodeData[]; edges: GraphEdgeData[] }): Promise<void> {
-    await db.transaction(async (tx) => {
-      await tx.query(WorkflowNodeModel).where("definition_id", "=", defId).hardDelete();
-      await tx.query(WorkflowEdgeModel).where("definition_id", "=", defId).hardDelete();
-      for (const node of graph.nodes) {
-        await tx.query(WorkflowNodeModel).insert({
-          id: node.id, definition_id: defId, name: node.name, type: node.type,
-          config: node.config ?? null, position_x: node.position_x ?? 0, position_y: node.position_y ?? 0, sort: node.sort ?? 0,
-        });
-      }
-      for (const edge of graph.edges) {
-        await tx.query(WorkflowEdgeModel).insert({
-          id: edge.id, definition_id: defId, source_node_id: edge.source_node_id,
-          target_node_id: edge.target_node_id, name: edge.name ?? null, sort: edge.sort ?? 0,
-        });
-      }
-    });
+    await db.raw(`DELETE FROM sys_workflow_edge WHERE definition_id = $1`, [defId]);
+    await db.raw(`DELETE FROM sys_workflow_node WHERE definition_id = $1`, [defId]);
+    for (const node of graph.nodes) {
+      await db.raw(
+        `INSERT INTO sys_workflow_node (id, definition_id, name, type, config, position_x, position_y, sort, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())`,
+        [node.id, defId, node.name, node.type, node.config ? JSON.stringify(node.config) : null, node.position_x ?? 0, node.position_y ?? 0, node.sort ?? 0],
+      );
+    }
+    for (const edge of graph.edges) {
+      await db.raw(
+        `INSERT INTO sys_workflow_edge (id, definition_id, source_node_id, target_node_id, name, sort, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        [edge.id, defId, edge.source_node_id, edge.target_node_id, edge.name ?? null, edge.sort ?? 0],
+      );
+    }
   }
 
   async function getGraph(defId: string): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }> {
@@ -166,14 +180,15 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     }
   }
 
-  return { create, update, delete: deleteDef, getById, list, publish, disable, clone: cloneDef, saveGraph, getGraph, validateGraphData };
+  return { create, update, delete: deleteDef, getById, getByBusinessType, list, publish, disable, clone: cloneDef, saveGraph, getGraph, validateGraphData };
 }
 
 function mapDefinition(row: Record<string, unknown>): WorkflowDefinition {
   return {
     id: row.id as string, name: row.name as string, code: row.code as string,
     version: row.version as number, description: (row.description as string) ?? null,
-    category: (row.category as string) ?? null, status: row.status as number,
+    category: (row.category as string) ?? null, businessType: (row.business_type as string) ?? null,
+    status: row.status as number,
     createdBy: (row.created_by as string) ?? null, tenantId: (row.tenant_id as string) ?? null,
     createdAt: (row.created_at as Date).toISOString(),
   };

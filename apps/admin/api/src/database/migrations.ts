@@ -8,7 +8,7 @@ import { createI18nTables } from "@ventostack/i18n";
 import { createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
 import { createNotifyTables } from "@ventostack/notification";
-import { createWorkflowTables, enhanceWorkflowTables } from "@ventostack/workflow";
+import { createWorkflowTables, enhanceWorkflowTables, addBusinessType } from "@ventostack/workflow";
 import { createSysTables } from "./migrations/001_create_sys_tables";
 import { addPasswordChangedAt } from "./migrations/003_password_changed_at";
 import { addPasskeySupport } from "./migrations/004_passkey_support";
@@ -41,6 +41,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(createI18nTables);
   runner.addMigration(createWorkflowTables);
   runner.addMigration(enhanceWorkflowTables);
+  runner.addMigration(addBusinessType);
   runner.addMigration(createOssTables);
   runner.addMigration(createNotifyTables);
   runner.addMigration(createSchedulerTables);

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Card, Table, Button, Input, Form, Modal, Space, Tag, Row, Col, message } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { PlusOutlined } from "@ant-design/icons";
@@ -21,6 +22,7 @@ const DefStatusMap: Record<number, { label: string; color: string }> = {
 };
 
 const WorkflowDefinitionsPage = () => {
+  const navigate = useNavigate();
   const { loading, data, total, page, pageSize, refresh, onSearch, onReset, onPageChange } =
     useTable<WorkflowDefinitionItem>(fetcher);
   const [searchForm] = Form.useForm();
@@ -32,19 +34,12 @@ const WorkflowDefinitionsPage = () => {
   const handleSearch = () => {
     onSearch({ name: searchForm.getFieldValue("name"), status: searchForm.getFieldValue("status") });
   };
-  const handleReset = () => {
-    searchForm.resetFields();
-    onReset();
-  };
+  const handleReset = () => { searchForm.resetFields(); onReset(); };
 
-  const openCreate = () => {
-    setEditingItem(null);
-    form.resetFields();
-    setModalOpen(true);
-  };
+  const openCreate = () => { setEditingItem(null); form.resetFields(); setModalOpen(true); };
   const openEdit = (r: WorkflowDefinitionItem) => {
     setEditingItem(r);
-    form.setFieldsValue({ name: r.name, code: r.code, description: r.description, category: r.category });
+    form.setFieldsValue({ name: r.name, code: r.code, description: r.description, category: r.category, businessType: r.businessType });
     setModalOpen(true);
   };
 
@@ -53,97 +48,50 @@ const WorkflowDefinitionsPage = () => {
     setModalLoading(true);
     try {
       if (editingItem) {
-        const { error } = await client.put("/api/workflow/definitions/:id", {
-          params: { id: editingItem.id },
-          body: values,
-        });
-        if (!error) {
-          message.success("更新成功");
-          setModalOpen(false);
-          refresh();
-        }
+        const { error } = await client.put("/api/workflow/definitions/:id", { params: { id: editingItem.id }, body: values });
+        if (!error) { message.success("更新成功"); setModalOpen(false); refresh(); }
       } else {
         const { error } = await client.post("/api/workflow/definitions", { body: values });
-        if (!error) {
-          message.success("创建成功");
-          setModalOpen(false);
-          refresh();
-        }
+        if (!error) { message.success("创建成功"); setModalOpen(false); refresh(); }
       }
-    } finally {
-      setModalLoading(false);
-    }
+    } finally { setModalLoading(false); }
   };
 
   const handlePublish = async (id: string) => {
     const { error } = await client.post("/api/workflow/definitions/:id/publish", { params: { id } });
-    if (!error) {
-      message.success("发布成功");
-      refresh();
-    }
+    if (!error) { message.success("发布成功"); refresh(); }
   };
-
   const handleDisable = async (id: string) => {
     const { error } = await client.post("/api/workflow/definitions/:id/disable", { params: { id } });
-    if (!error) {
-      message.success("已停用");
-      refresh();
-    }
+    if (!error) { message.success("已停用"); refresh(); }
   };
-
   const handleClone = async (id: string) => {
     const { error } = await client.post("/api/workflow/definitions/:id/clone", { params: { id } });
-    if (!error) {
-      message.success("克隆成功");
-      refresh();
-    }
+    if (!error) { message.success("克隆成功"); refresh(); }
   };
-
   const handleDelete = async (id: string) => {
     const { error } = await client.delete("/api/workflow/definitions/:id", { params: { id } });
-    if (!error) {
-      message.success("删除成功");
-      refresh();
-    }
+    if (!error) { message.success("删除成功"); refresh(); }
   };
 
   const columns: ColumnsType<WorkflowDefinitionItem> = [
-    { title: "名称", dataIndex: "name", key: "name", width: 180 },
-    { title: "编码", dataIndex: "code", key: "code", width: 160 },
-    { title: "分类", dataIndex: "category", key: "category", width: 100 },
+    { title: "名称", dataIndex: "name", key: "name", width: 160 },
+    { title: "编码", dataIndex: "code", key: "code", width: 140 },
+    { title: "分类", dataIndex: "category", key: "category", width: 80, render: (v: string | null) => v || "-" },
+    { title: "业务类型", dataIndex: "businessType", key: "businessType", width: 100, render: (v: string | null) => v ? <Tag>{v}</Tag> : "-" },
+    { title: "版本", dataIndex: "version", key: "version", width: 60, render: (v: number) => `v${v}` },
+    { title: "状态", dataIndex: "status", key: "status", width: 80, render: (_: unknown, r: WorkflowDefinitionItem) => { const s = DefStatusMap[r.status] ?? { label: "未知", color: "default" }; return <Tag color={s.color}>{s.label}</Tag>; } },
+    { title: "创建时间", dataIndex: "createdAt", key: "createdAt", width: 160, render: (_: unknown, r: WorkflowDefinitionItem) => fmtDate(r.createdAt) },
     {
-      title: "版本", dataIndex: "version", key: "version", width: 70,
-      render: (v: number) => `v${v}`,
-    },
-    {
-      title: "状态", dataIndex: "status", key: "status", width: 90,
-      render: (_: unknown, r: WorkflowDefinitionItem) => {
-        const s = DefStatusMap[r.status] ?? { label: "未知", color: "default" };
-        return <Tag color={s.color}>{s.label}</Tag>;
-      },
-    },
-    {
-      title: "创建时间", dataIndex: "createdAt", key: "createdAt", width: 180,
-      render: (_: unknown, r: WorkflowDefinitionItem) => fmtDate(r.createdAt),
-    },
-    {
-      title: "操作", key: "action", width: 240, fixed: "right" as const,
+      title: "操作", key: "action", width: 280, fixed: "right" as const,
       render: (_: unknown, r: WorkflowDefinitionItem) => (
-        <ActionColumn
-          items={[
-            { label: "编辑", onClick: () => openEdit(r) },
-            ...(r.status === 0
-              ? [
-                  { label: "发布", onClick: () => handlePublish(r.id) },
-                  { label: "删除", onClick: () => handleDelete(r.id), danger: true, confirm: "确定删除？" },
-                ]
-              : []),
-            ...(r.status === 1
-              ? [{ label: "停用", onClick: () => handleDisable(r.id) }]
-              : []),
-            { label: "克隆", onClick: () => handleClone(r.id) },
-          ]}
-        />
+        <ActionColumn items={[
+          { label: "设计", onClick: () => navigate(`/app/workflow/definitions/${r.id}/designer`) },
+          { label: "编辑", onClick: () => openEdit(r) },
+          ...(r.status === 0 ? [{ label: "发布", onClick: () => handlePublish(r.id) }, { label: "删除", onClick: () => handleDelete(r.id), danger: true, confirm: "确定删除？" }] : []),
+          ...(r.status === 1 ? [{ label: "停用", onClick: () => handleDisable(r.id) }] : []),
+          { label: "克隆", onClick: () => handleClone(r.id) },
+        ]} />
       ),
     },
   ];
@@ -151,67 +99,21 @@ const WorkflowDefinitionsPage = () => {
   return (
     <Card>
       <Form form={searchForm} layout="inline" style={{ marginBottom: 16 }}>
-        <Form.Item name="name">
-          <Input placeholder="流程名称" allowClear />
-        </Form.Item>
-        <Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>搜索</Button>
-            <Button onClick={handleReset}>重置</Button>
-          </Space>
-        </Form.Item>
+        <Form.Item name="name"><Input placeholder="流程名称" allowClear /></Form.Item>
+        <Form.Item><Space><Button type="primary" onClick={handleSearch}>搜索</Button><Button onClick={handleReset}>重置</Button></Space></Form.Item>
       </Form>
-
-      <Row style={{ marginBottom: 16 }}>
-        <Col>
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
-            新建流程
-          </Button>
-        </Col>
-      </Row>
-
-      <Table
-        rowKey="id"
-        loading={loading}
-        columns={columns}
-        dataSource={data}
-        pagination={{
-          current: page,
-          pageSize,
-          total,
-          showSizeChanger: true,
-          showTotal: (t) => `共 ${t} 条`,
-          onChange: onPageChange,
-        }}
-        scroll={{ x: 1000 }}
-      />
-
-      <Modal
-        title={editingItem ? "编辑流程定义" : "新建流程定义"}
-        open={modalOpen}
-        onOk={handleOk}
-        onCancel={() => setModalOpen(false)}
-        confirmLoading={modalLoading}
-        destroyOnClose
-      >
+      <Row style={{ marginBottom: 16 }}><Col><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建流程</Button></Col></Row>
+      <Table rowKey="id" loading={loading} columns={columns} dataSource={data}
+        pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 条`, onChange: onPageChange }}
+        scroll={{ x: 1100 }} />
+      <Modal title={editingItem ? "编辑流程定义" : "新建流程定义"} open={modalOpen} onOk={handleOk}
+        onCancel={() => setModalOpen(false)} confirmLoading={modalLoading} destroyOnClose>
         <Form form={form} layout="vertical">
-          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}>
-            <Input placeholder="如：请假审批" />
-          </Form.Item>
-          <Form.Item
-            name="code"
-            label="编码"
-            rules={[{ required: true, message: "请输入编码" }]}
-            extra="英文标识，创建后不可修改"
-          >
-            <Input placeholder="如：leave_approval" disabled={!!editingItem} />
-          </Form.Item>
-          <Form.Item name="category" label="分类">
-            <Input placeholder="如：人事、财务" />
-          </Form.Item>
-          <Form.Item name="description" label="描述">
-            <Input.TextArea rows={3} />
-          </Form.Item>
+          <Form.Item name="name" label="名称" rules={[{ required: true, message: "请输入名称" }]}><Input placeholder="如：请假审批" /></Form.Item>
+          <Form.Item name="code" label="编码" rules={[{ required: true, message: "请输入编码" }]} extra="英文标识，创建后不可修改"><Input placeholder="如：leave_approval" disabled={!!editingItem} /></Form.Item>
+          <Form.Item name="category" label="分类"><Input placeholder="如：人事、财务" /></Form.Item>
+          <Form.Item name="businessType" label="业务类型" extra="绑定后，该业务类型会自动关联此流程"><Input placeholder="如：notice、leave、expense" /></Form.Item>
+          <Form.Item name="description" label="描述"><Input.TextArea rows={3} /></Form.Item>
         </Form>
       </Modal>
     </Card>

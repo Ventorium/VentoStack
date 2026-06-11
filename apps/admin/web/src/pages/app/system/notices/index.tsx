@@ -10,6 +10,7 @@ import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons"
 import { Button, Card, Col, Form, Input, Modal, Row, Space, Table, Tag } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
+import WorkflowBanner from "@/components/WorkflowStatus";
 
 const fetcher = (params: Record<string, unknown>) =>
   client.get("/api/system/notices", { query: cleanParams(params) }) as Promise<{
@@ -95,6 +96,31 @@ const NoticePage = () => {
       }
     } finally {
       setModalLoading(false);
+    }
+  };
+
+  /** 提交上架审批（所有上架必须走审批流） */
+  const handlePublishApproval = async (r: NoticeItem) => {
+    const { error: defErr, data: def } = await client.get("/api/workflow/definitions/by-business-type/:type", {
+      params: { type: "notice" },
+    });
+    if (defErr || !def) {
+      msg.warning("未配置公告审批流程，请先在审批流程中创建并绑定 notice 业务类型");
+      return;
+    }
+    const defData = def as { id: string };
+    const { error } = await client.post("/api/workflow/instances", {
+      body: {
+        definitionId: defData.id,
+        businessType: "notice",
+        businessId: r.id,
+        title: `公告上架审批: ${r.title}`,
+        formData: { noticeId: r.id, title: r.title, content: r.content, type: r.type },
+      },
+    });
+    if (!error) {
+      msg.success("已提交上架审批");
+      refresh();
     }
   };
 
@@ -235,9 +261,9 @@ const NoticePage = () => {
       render: (_: unknown, r: NoticeItem) => {
         const items = [
           ...(r.status !== 1 ? [{ label: "编辑", onClick: () => openEdit(r) }] : []),
-          ...(r.status === 0 ? [{ label: "上架", onClick: () => handlePublish(r.id) }] : []),
+          ...(r.status === 0 ? [{ label: "上架审批", onClick: () => handlePublishApproval(r) }] : []),
           ...(r.status === 1 ? [{ label: "下架", onClick: () => handleRevoke(r.id) }] : []),
-          ...(r.status === 2 ? [{ label: "重新上架", onClick: () => handlePublish(r.id) }] : []),
+          ...(r.status === 2 ? [{ label: "重新提交审批", onClick: () => handlePublishApproval(r) }] : []),
           ...(r.status !== 1
             ? [
                 {
@@ -322,6 +348,10 @@ const NoticePage = () => {
         <Table
           rowKey="id"
           columns={columns}
+          expandable={{
+            expandedRowRender: (r) => <WorkflowBanner businessType="notice" businessId={r.id} />,
+            rowExpandable: () => true,
+          }}
           dataSource={data}
           loading={loading}
           size="small"
