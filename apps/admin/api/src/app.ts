@@ -224,7 +224,7 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     // =============================================
     // 4b-1. 独立管理端口模式
     // =============================================
-    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST, banner: true });
+    const adminApp = createApp({ port: env.ADMIN_PORT, hostname: env.ADMIN_HOST, banner: false });
 
     adminApp.use(requestId());
     adminApp.use(requestLogger());
@@ -250,7 +250,6 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
           bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
         },
       });
-      adminApp.addUrl("OpenAPI 文档", "/docs");
     }
 
     adminApp.use(errorHandler({ logger: serverLogger }));
