@@ -11,17 +11,17 @@
  * - Model/Provider 管理
  * - 完整事件订阅
  */
-import type { LLMGateway } from "../llm-gateway/types";
+import type { LLMGateway, ChatMessage } from "../llm-gateway/types";
 import type { Skill, SkillManager } from "../skills/types";
-import type { formatSkillsForSystemPrompt } from "../skills/system-prompt";
 import type { PromptTemplate, PromptTemplateManager } from "../prompt-templates/types";
 import type { Session } from "../session/types";
+import { createEventEmitter } from "./events";
 import type { AgentEventEmitter, AgentEvent, AgentEventMessage } from "./events";
 import type { AgentTool, ToolExecutionMode, BeforeToolCallContext, BeforeToolCallResult, AfterToolCallContext, AfterToolCallResult } from "./types";
 import type { CompactionSettings } from "../compaction/compaction";
+import { createMessageQueue } from "./message-queue";
 import type { MessageQueue, QueueMode } from "./message-queue";
 import type { ModelConfig, ModelRegistry } from "../llm-gateway/model-registry";
-import type { ChatMessage } from "../llm-gateway/types";
 
 // ---- Harness 事件 ----
 
@@ -173,16 +173,12 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
   let idleResolve: (() => void) | null = null;
   let toolExecMode = options.toolExecutionMode ?? "sequential";
 
-  // 消息队列（通过 createMessageQueue 创建）
-  const { createMessageQueue } = require("./message-queue");
+  // 消息队列
   const steerQueue: MessageQueue<ChatMessage> = createMessageQueue(options.steeringMode ?? "all");
   const followUpQueue: MessageQueue<ChatMessage> = createMessageQueue(options.followUpMode ?? "all");
 
   // 事件系统
-  const eventEmitter = externalEmitter ?? (() => {
-    const { createEventEmitter } = require("./events");
-    return createEventEmitter();
-  })();
+  const eventEmitter = externalEmitter ?? createEventEmitter();
 
   // 事件订阅
   const handlers = new Set<(event: HarnessEvent, signal?: AbortSignal) => Promise<void> | void>();
