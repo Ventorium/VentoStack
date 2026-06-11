@@ -63,7 +63,7 @@ async function main(): Promise<void> {
     process.stdin.resume();
     process.stdin.setEncoding("utf8");
 
-    console.log("  ⌨  Shortcuts:");
+    console.log("  ➜  Shortcuts:");
     console.log("     F / Q   Restart frontend (Vite)");
     console.log("     B / H   Restart backend (Bun)");
     console.log("     R       Restart all");
