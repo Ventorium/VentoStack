@@ -275,7 +275,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
 
       // 打印启动 Banner（仅当 banner !== false 时）
       if (config?.banner !== false) {
-        const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
+        const displayHost = (hostname === "0.0.0.0" || hostname === "127.0.0.1") ? "localhost" : hostname;
         const baseUrl = `http://${displayHost}:${listenPort}`;
         const accent = ansi(COLORS.info);
         const tag = ansi(COLORS.tag);
@@ -294,7 +294,7 @@ ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   �
         }
         console.log();
       } else {
-        const displayHost = hostname === "0.0.0.0" ? "localhost" : hostname;
+        const displayHost = (hostname === "0.0.0.0" || hostname === "127.0.0.1") ? "localhost" : hostname;
         const accent = ansi(COLORS.info);
         // eslint-disable-next-line no-console
         console.log(`  ➜  监控端口:   ${accent}http://${displayHost}:${listenPort}${RESET}`);
