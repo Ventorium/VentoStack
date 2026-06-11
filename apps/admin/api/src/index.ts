@@ -41,16 +41,8 @@ async function main(): Promise<void> {
   const adminPort = env.ADMIN_PORT || 9322;
   const adminHost = env.ADMIN_HOST || "127.0.0.1";
 
-  console.log();
-  console.log(`  \x1b[1m\x1b[36m🌐 管理后台地址:\x1b[0m  \x1b[4mhttp://localhost:${mainPort}\x1b[0m`);
-  console.log();
-  console.log(`  \x1b[2m📡 管理端口 (${adminHost}:${adminPort}) 提供以下端点:\x1b[0m`);
-  console.log(`  \x1b[2m   ├─ GET  /health          健康检查\x1b[0m`);
-  console.log(`  \x1b[2m   ├─ GET  /health/live     存活探针\x1b[0m`);
-  console.log(`  \x1b[2m   ├─ GET  /health/ready    就绪探针\x1b[0m`);
-  console.log(`  \x1b[2m   ├─ GET  /metrics         Prometheus 指标\x1b[0m`);
-  console.log(`  \x1b[2m   └─ GET  /docs            OpenAPI 文档\x1b[0m`);
-  console.log();
+  serverLogger.info(`管理后台地址: http://localhost:${mainPort}`);
+  serverLogger.info(`管理端口: ${adminHost}:${adminPort}（健康检查、监控指标、OpenAPI 文档）`);
 
   // 后端启动后自动生成前端 SDK 类型（仅开发模式）
   if (env.NODE_ENV !== "production") {
