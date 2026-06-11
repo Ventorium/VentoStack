@@ -139,8 +139,6 @@ export async function createViteBridge(options: ViteBridgeOptions): Promise<Vite
   let currentServer = await createViteServer();
   let closed = false;
 
-  logger.info(`Vite dev server 已就绪，HMR → ws://localhost:${hmrPort}`);
-
   // 5. 构建返回值
   return {
     /** HMR 端口 */

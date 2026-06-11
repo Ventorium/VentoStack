@@ -299,7 +299,7 @@ ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   �
         // eslint-disable-next-line no-console
         console.log(`  ➜  监控端口:   ${accent}http://${displayHost}:${listenPort}${RESET}`);
         for (const url of urls) {
-          console.log(`  ➜  ${url.label}: ${accent}http://${displayHost}:${listenPort}${url.path}${RESET}`);
+          console.log(`       ➜  ${url.label}: ${accent}http://${displayHost}:${listenPort}${url.path}${RESET}`);
         }
       }
 
