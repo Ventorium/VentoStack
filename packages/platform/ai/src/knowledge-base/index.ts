@@ -14,3 +14,5 @@ export type { KnowledgeBaseServiceDeps } from "./service";
 export { parseMarkdown, extractWikiLinks } from "./markdown-parser";
 export { createFileValidator } from "./file-security";
 export type { FileValidator, FileSecurityConfig } from "./file-security";
+export { createTenantQuery } from "./tenant-query";
+export type { TenantQuery } from "./tenant-query";

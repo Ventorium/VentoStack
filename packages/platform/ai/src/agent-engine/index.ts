@@ -58,3 +58,9 @@ export type {
   AfterToolCallResult,
   ToolUpdateCallback,
 } from "./types";
+
+export { createDistributedLock } from "./distributed-lock";
+export type { DistributedLock } from "./distributed-lock";
+
+export { createTokenBudgetChecker } from "./token-budget";
+export type { TokenBudgetConfig, TokenBudgetChecker } from "./token-budget";

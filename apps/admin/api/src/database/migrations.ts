@@ -7,6 +7,9 @@ import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
 import { createI18nTables } from "@ventostack/i18n";
 import { createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
+import { createAiKnowledgeTables } from "@ventostack/ai/migrations/003_create_ai_knowledge_tables";
+import { createAiAgentTables } from "@ventostack/ai/migrations/004_create_ai_agent_tables";
+import { createAiProviderTables } from "@ventostack/ai/migrations/005_create_ai_provider_tables";
 import { createNotifyTables } from "@ventostack/notification";
 import { createWorkflowTables, enhanceWorkflowTables, addBusinessType } from "@ventostack/workflow";
 import { createSysTables } from "./migrations/001_create_sys_tables";
@@ -45,6 +48,11 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(createOssTables);
   runner.addMigration(createNotifyTables);
   runner.addMigration(createSchedulerTables);
+
+  // AI 模块
+  runner.addMigration(createAiKnowledgeTables);
+  runner.addMigration(createAiAgentTables);
+  runner.addMigration(createAiProviderTables);
 
   const executed = await runner.up();
 

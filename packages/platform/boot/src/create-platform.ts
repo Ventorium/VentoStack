@@ -37,6 +37,8 @@ import { createSystemModule } from "@ventostack/system";
 import type { SystemModule } from "@ventostack/system";
 import { createWorkflowModule } from "@ventostack/workflow";
 import type { WorkflowModule } from "@ventostack/workflow";
+import { createAIModule } from "@ventostack/ai";
+import type { AIModule, AIModuleDeps, LLMProviderConfig } from "@ventostack/ai";
 
 /** 平台配置 */
 export interface PlatformConfig {
@@ -88,6 +90,7 @@ export interface PlatformConfig {
     workflow?: boolean;
     oss?: boolean;
     scheduler?: boolean;
+    ai?: boolean;
   };
 
   /** OSS 存储适配器 */
@@ -104,6 +107,13 @@ export interface PlatformConfig {
   rpOrigins?: string[];
   /** 可信代理 IP/CIDR 列表，用于安全提取客户端真实 IP */
   trustedProxies?: string[];
+  /** AI 模块配置 */
+  aiConfig?: {
+    llmProviders: LLMProviderConfig[];
+    defaultModel: string;
+    storagePath?: string;
+  };
+
   /** 是否启用多租户隔离（默认 false，向后兼容） */
   tenantEnabled?: boolean;
 }
@@ -124,6 +134,7 @@ export interface Platform {
   oss?: OSSModule;
   /** 定时任务模块 */
   scheduler?: SchedulerModule;
+  ai?: AIModule;
   /** 所有路由的聚合 */
   router: Router;
   /** 初始化所有模块 */
@@ -175,6 +186,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     workflow: moduleFlags?.workflow !== false,
     oss: moduleFlags?.oss !== false,
     scheduler: moduleFlags?.scheduler !== false,
+    ai: moduleFlags?.ai !== false,
   };
 
   // Create modules
@@ -263,6 +275,20 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
+  const aiMod = enabled.ai
+    ? createAIModule({
+        db,
+        cache,
+        jwt,
+        jwtSecret,
+        rbac,
+        eventBus,
+        llmProviders: config.aiConfig?.llmProviders ?? [],
+        defaultModel: config.aiConfig?.defaultModel ?? "gpt-4o-mini",
+        storagePath: config.aiConfig?.storagePath ?? "./data/knowledge-bases",
+      })
+    : undefined;
+
   // Aggregate routers
   const { createRouter } = await import("@ventostack/core");
   const router = createRouter();
@@ -275,6 +301,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   if (workflow) router.merge(workflow.router);
   if (oss) router.merge(oss.router);
   if (schedulerMod) router.merge(schedulerMod.router);
+  if (aiMod) router.merge(aiMod.router);
 
   return {
     ...(system !== undefined ? { system } : {}),
@@ -285,6 +312,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(oss !== undefined ? { oss } : {}),
     ...(schedulerMod !== undefined ? { scheduler: schedulerMod } : {}),
     router,
+    ...(aiMod !== undefined ? { ai: aiMod } : {}),
     async init() {
       if (system) await system.init();
       if (monitor) await monitor.init();
@@ -293,6 +321,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       if (workflow) await workflow.init();
       if (oss) await oss.init();
       if (schedulerMod) await schedulerMod.init();
+      if (aiMod) await aiMod.init();
     },
   };
 }

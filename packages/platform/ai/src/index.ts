@@ -190,3 +190,58 @@ export { createProviderService } from "./services/provider";
 
 // ---- Migration ----
 export { createAiProviderTables } from "./migrations/005_create_ai_provider_tables";
+
+// ---- Tool Policy (renamed from Sandbox) ----
+export { createToolPolicy } from "./tool-policy";
+export type { ToolPolicy } from "./tool-policy";
+
+// ---- Code Sandbox ----
+export { createProcessSandbox, createDockerSandbox, DEFAULT_SANDBOX_CONFIG } from "./code-sandbox";
+export type { CodeSandboxConfig, CodeExecution, CodeSandbox, DockerSandboxConfig } from "./code-sandbox";
+
+// ---- Distributed Lock ----
+export { createDistributedLock } from "./agent-engine/distributed-lock";
+export type { DistributedLock } from "./agent-engine/distributed-lock";
+
+// ---- Token Budget ----
+export { createTokenBudgetChecker } from "./agent-engine/token-budget";
+export type { TokenBudgetConfig, TokenBudgetChecker } from "./agent-engine/token-budget";
+
+// ---- Connection Limiter ----
+export { createConnectionLimiter } from "./stream-engine/connection-limiter";
+export type { ConnectionLimiter } from "./stream-engine/connection-limiter";
+
+// ---- Heartbeat ----
+export { createHeartbeat } from "./stream-engine/heartbeat";
+export type { HeartbeatConfig, HeartbeatController } from "./stream-engine/heartbeat";
+
+// ---- AI Cache ----
+export { createAICache } from "./cache/ai-cache";
+export type { AICache } from "./cache/ai-cache";
+
+// ---- Knowledge Base Tools ----
+export { createKBBrowseTool, createKBReadTool, createKBSearchTool, createKBFollowLinkTool } from "./tools";
+export { createCalculatorTool, createTerminalTool, createFileReadTool, createFileWriteTool, createSQLQueryTool } from "./tools";
+
+// ---- Knowledge Base Tenant Query ----
+export { createTenantQuery } from "./knowledge-base/tenant-query";
+export type { TenantQuery } from "./knowledge-base/tenant-query";
+
+// ---- Knowledge Base CRUD Service ----
+export { createKnowledgeBaseCrudService } from "./services/knowledge-base";
+export type { KnowledgeBaseItem, DocumentItem } from "./services/knowledge-base";
+
+// ---- Conversation Service ----
+export { createConversationService } from "./services/conversation";
+export type { ConversationItem } from "./services/conversation";
+
+// ---- Approval Service ----
+export { createApprovalService } from "./services/approval";
+export type { ApprovalRequest as ApprovalRequestItem } from "./services/approval";
+
+// ---- Routes ----
+export { createConversationRoutes, createApprovalRoutes, createHealthRoutes } from "./routes";
+export type { ConversationCrudService, ApprovalCrudService, HealthCheckDeps } from "./routes";
+
+// ---- Document Model ----
+export { AiDocumentModel } from "./models/document";

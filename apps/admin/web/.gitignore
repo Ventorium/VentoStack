@@ -24,3 +24,4 @@ dist-ssr
 *.sw?
 
 !src/pages/app/system/logs
+public/_info

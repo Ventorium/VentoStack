@@ -2,6 +2,7 @@
  * AI 模块数据模型
  */
 export { AiKnowledgeBaseModel } from "./knowledge-base";
+export { AiDocumentModel } from "./document";
 export { AiFileMappingModel } from "./file-mapping";
 export { AiAgentModel } from "./agent";
 export { AiConversationModel } from "./conversation";
