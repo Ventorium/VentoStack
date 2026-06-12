@@ -2,10 +2,9 @@
  * @ventostack/oss - 文件存储路由
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { OSSService } from "../services/oss";
-import { fail, ok, okPage, pageOf } from "./common";
 
 /** 上传文件大小限制 (50MB) */
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
@@ -80,7 +79,7 @@ export function createOSSRoutes(
           user.id,
         );
 
-        return ok(result);
+        return success(result);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "上传失败", 400);
       }
@@ -110,7 +109,7 @@ export function createOSSRoutes(
         page,
         pageSize,
       });
-      return okPage(result.items, result.total, result.page, result.pageSize);
+      return paginated(result.items, result.total, result.page, result.pageSize);
     },
     perm("oss", "file:list"),
   );
@@ -126,7 +125,7 @@ export function createOSSRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const file = await ossService.getById(id);
       if (!file) return fail("文件不存在", 404, 404);
-      return ok(file);
+      return success(file);
     },
     perm("oss", "file:query"),
   );
@@ -174,7 +173,7 @@ export function createOSSRoutes(
       const expiresIn = q.expiresIn ? Number(q.expiresIn) : 3600;
       const url = await ossService.getSignedUrl(id, expiresIn);
       if (!url) return fail("文件不存在", 404, 404);
-      return ok({ url, expiresIn });
+      return success({ url, expiresIn });
     },
     perm("oss", "file:query"),
   );
@@ -188,7 +187,7 @@ export function createOSSRoutes(
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       await ossService.delete(id);
-      return ok(null);
+      return success(null);
     },
     perm("oss", "file:delete"),
   );

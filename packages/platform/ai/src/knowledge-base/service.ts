@@ -2,8 +2,17 @@
  * 知识库服务（本地文件目录模式）
  * 知识库 = 文件目录，LLM 用工具浏览和读取
  */
-import { resolve, join, relative, basename, extname } from "node:path";
-import { readdir, readFile, stat, mkdir, writeFile } from "node:fs/promises";
+import { resolve, join, relative, basename, extname, dirname } from "node:path";
+import {
+  readdir,
+  readFile,
+  stat,
+  mkdir,
+  writeFile,
+  rename,
+  rm,
+  unlink,
+} from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { aiErrors } from "../errors";
 import type {
@@ -92,7 +101,46 @@ export function createKnowledgeBaseService(
       }
     }
 
+    // 目录在前，文件在后；同类型按名称排序
+    entries.sort((a, b) => {
+      if (a.type !== b.type) return a.type === "directory" ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+
     return entries;
+  }
+
+  /**
+   * 递归生成 README.md 索引
+   */
+  async function buildReadmeTree(
+    dirPath: string,
+    basePath: string,
+    indent: number = 0,
+  ): Promise<string> {
+    const lines: string[] = [];
+    const items = await readdir(dirPath, { withFileTypes: true }).catch(() => []);
+    const prefix = "  ".repeat(indent);
+
+    // 目录在前
+    const dirs = items.filter((i) => i.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
+    const files = items
+      .filter((i) => i.isFile() && (i.name.endsWith(".md") || i.name.endsWith(".txt")))
+      .sort((a, b) => a.name.localeCompare(b.name));
+
+    for (const dir of dirs) {
+      lines.push(`${prefix}- 📁 **${dir.name}/**`);
+      const childTree = await buildReadmeTree(join(dirPath, dir.name), basePath, indent + 1);
+      if (childTree) lines.push(childTree);
+    }
+
+    for (const file of files) {
+      if (file.name.toUpperCase() === "README.MD") continue; // 跳过自身
+      const relPath = relative(basePath, join(dirPath, file.name));
+      lines.push(`${prefix}- 📄 [${file.name}](${relPath})`);
+    }
+
+    return lines.join("\n");
   }
 
   return {
@@ -102,6 +150,10 @@ export function createKnowledgeBaseService(
 
       await mkdir(join(kbPath, "sources"), { recursive: true });
       await mkdir(join(kbPath, "content"), { recursive: true });
+
+      // 保存元数据
+      const meta = { name: params.name, description: params.description ?? "", createdAt: new Date().toISOString() };
+      await writeFile(join(kbPath, "meta.json"), JSON.stringify(meta, null, 2), "utf-8");
 
       // 生成 README.md 索引
       await writeFile(
@@ -122,9 +174,22 @@ export function createKnowledgeBaseService(
         ? await readdir(contentDir).catch(() => [])
         : [];
 
+      // 读取元数据
+      const metaPath = join(kbPath, "meta.json");
+      let name = id;
+      let description = "";
+      if (existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(await readFile(metaPath, "utf-8"));
+          name = meta.name ?? id;
+          description = meta.description ?? "";
+        } catch { /* ignore */ }
+      }
+
       return {
         id,
-        name: basename(kbPath),
+        name,
+        description,
         basePath: kbPath,
         tenantId,
         createdBy: "",
@@ -136,7 +201,6 @@ export function createKnowledgeBaseService(
     },
 
     async list(params) {
-      // 简化实现：扫描 storagePath 下的所有目录
       const items = existsSync(storagePath)
         ? await readdir(storagePath, { withFileTypes: true }).catch(() => [])
         : [];
@@ -150,9 +214,22 @@ export function createKnowledgeBaseService(
             ? await readdir(contentDir).catch(() => [])
             : [];
 
+          // 读取元数据
+          const metaPath = join(kbPath, "meta.json");
+          let name = item.name;
+          let description = "";
+          if (existsSync(metaPath)) {
+            try {
+              const meta = JSON.parse(await readFile(metaPath, "utf-8"));
+              name = meta.name ?? item.name;
+              description = meta.description ?? "";
+            } catch { /* ignore */ }
+          }
+
           list.push({
             id: item.name,
-            name: item.name,
+            name,
+            description,
             basePath: kbPath,
             tenantId: params.tenantId,
             createdBy: "",
@@ -178,8 +255,7 @@ export function createKnowledgeBaseService(
     async delete(id, tenantId) {
       const kbPath = getKBPath(id);
       if (!existsSync(kbPath)) return;
-      // 实际实现需要递归删除目录
-      // await rm(kbPath, { recursive: true, force: true });
+      await rm(kbPath, { recursive: true, force: true });
     },
 
     async ls(kbId, path, depth, tenantId) {
@@ -198,7 +274,8 @@ export function createKnowledgeBaseService(
 
       const content = await readFile(filePath, "utf-8");
       const parsed = parseMarkdown(content);
-      const title = parsed.frontmatter.title ?? basename(filePath, extname(filePath));
+      const title =
+        parsed.frontmatter.title ?? basename(filePath, extname(filePath));
 
       return {
         path,
@@ -237,7 +314,7 @@ export function createKnowledgeBaseService(
 
             for (let i = 0; i < lines.length; i++) {
               if (results.length >= limit) break;
-              if (lines[i].toLowerCase().includes(queryLower)) {
+              if (lines[i]?.toLowerCase().includes(queryLower)) {
                 const relativePath = relative(contentDir, fullPath);
                 const excerpt = lines
                   .slice(Math.max(0, i - 1), i + 3)
@@ -323,8 +400,94 @@ export function createKnowledgeBaseService(
       return allLines.slice(-lines).join("\n");
     },
 
+    // ── 文件写入 ──
+    async writeFile(kbId, path, content, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const filePath = safePath(contentDir, path);
+
+      // 确保父目录存在
+      await mkdir(dirname(filePath), { recursive: true });
+      await writeFile(filePath, content, "utf-8");
+
+      // 自动刷新 README
+      await this.generateReadme(kbId, tenantId);
+    },
+
+    // ── 文件重命名 ──
+    async renameFile(kbId, oldPath, newName, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const oldFilePath = safePath(contentDir, oldPath);
+      if (!existsSync(oldFilePath)) throw aiErrors.kbFileNotFound();
+
+      const newFilePath = join(dirname(oldFilePath), newName);
+      // 确保新路径仍在 contentDir 内
+      if (!newFilePath.startsWith(contentDir)) throw aiErrors.kbFileNotFound();
+
+      await rename(oldFilePath, newFilePath);
+
+      // 自动刷新 README
+      await this.generateReadme(kbId, tenantId);
+    },
+
+    // ── 创建目录 ──
+    async mkdir(kbId, path, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const dirPath = safePath(contentDir, path);
+      await mkdir(dirPath, { recursive: true });
+    },
+
+    // ── 删除文件/目录 ──
+    async deleteFile(kbId, path, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const targetPath = safePath(contentDir, path);
+      if (!existsSync(targetPath)) throw aiErrors.kbFileNotFound();
+
+      const stats = await stat(targetPath);
+      if (stats.isDirectory()) {
+        await rm(targetPath, { recursive: true, force: true });
+      } else {
+        await unlink(targetPath);
+      }
+
+      // 自动刷新 README
+      await this.generateReadme(kbId, tenantId);
+    },
+
+    // ── README 自动生成 ──
+    async generateReadme(kbId, tenantId) {
+      const contentDir = getContentPath(kbId);
+      if (!existsSync(contentDir)) return;
+
+      const kbPath = getKBPath(kbId);
+      // 读取元数据获取名称
+      let kbName = basename(kbPath);
+      const metaPath = join(kbPath, "meta.json");
+      if (existsSync(metaPath)) {
+        try {
+          const meta = JSON.parse(await readFile(metaPath, "utf-8"));
+          kbName = meta.name ?? kbName;
+        } catch { /* ignore */ }
+      }
+      const fileTree = await buildReadmeTree(contentDir, contentDir);
+
+      const readmeContent = [
+        `# ${kbName}`,
+        "",
+        `> 本文档由系统自动生成，请勿手动修改。`,
+        "",
+        "## 文件索引",
+        "",
+        fileTree || "_暂无文件_",
+        "",
+        `---`,
+        `*最后更新：${new Date().toISOString()}*`,
+        "",
+      ].join("\n");
+
+      await writeFile(join(contentDir, "README.md"), readmeContent, "utf-8");
+    },
+
     async getSourcePath(kbId, contentPath, tenantId) {
-      // 读取 manifest.json 查找源文件路径
       const kbPath = getKBPath(kbId);
       const manifestPath = join(kbPath, "manifest.json");
       if (!existsSync(manifestPath)) return null;

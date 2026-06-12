@@ -2,10 +2,9 @@
  * @ventostack/i18n - 国际化路由
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { I18nService } from "../services/i18n";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createI18nRoutes(
   i18nService: I18nService,
@@ -25,7 +24,7 @@ export function createI18nRoutes(
         name: body.name as string,
         isDefault: body.isDefault as boolean | undefined,
       });
-      return ok(result);
+      return success(result);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
@@ -33,20 +32,20 @@ export function createI18nRoutes(
 
   router.get("/api/i18n/locales", perm("i18n", "locale:list"), async () => {
     const locales = await i18nService.listLocales();
-    return ok(locales);
+    return success(locales);
   });
 
   router.put("/api/i18n/locales/:id", perm("i18n", "locale:update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await i18nService.updateLocale(id, body);
-    return ok(null);
+    return success(null);
   });
 
   router.delete("/api/i18n/locales/:id", perm("i18n", "locale:delete"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     await i18nService.deleteLocale(id);
-    return ok(null);
+    return success(null);
   });
 
   // === Message CRUD ===
@@ -60,14 +59,14 @@ export function createI18nRoutes(
       page,
       pageSize,
     });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   router.get("/api/i18n/messages/:locale", perm("i18n", "message:query"), async (ctx) => {
     const locale = (ctx.params as Record<string, string>).locale!;
     const q = ctx.query as Record<string, unknown>;
     const messages = await i18nService.getLocaleMessages(locale, q.module as string | undefined);
-    return ok(messages);
+    return success(messages);
   });
 
   router.post("/api/i18n/messages/set", perm("i18n", "message:create"), async (ctx) => {
@@ -79,7 +78,7 @@ export function createI18nRoutes(
         body.value as string,
         body.module as string | undefined,
       );
-      return ok(null);
+      return success(null);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "设置失败", 400);
     }
@@ -93,7 +92,7 @@ export function createI18nRoutes(
         body.messages as Record<string, string>,
         body.module as string | undefined,
       );
-      return ok({ count });
+      return success({ count });
     } catch (e) {
       return fail(e instanceof Error ? e.message : "导入失败", 400);
     }
@@ -102,7 +101,7 @@ export function createI18nRoutes(
   router.delete("/api/i18n/messages/:id", perm("i18n", "message:delete"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     await i18nService.deleteMessage(id);
-    return ok(null);
+    return success(null);
   });
 
   return router;

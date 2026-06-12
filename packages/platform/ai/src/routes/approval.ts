@@ -1,9 +1,8 @@
 /**
  * 审批路由
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, handleError, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import { fail, ok, handleError, parseBody } from "./common";
 
 export interface ApprovalCrudService {
   getStatus(id: string): Promise<unknown | null>;
@@ -28,7 +27,7 @@ export function createApprovalRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const approval = await approvalService.getStatus(id);
       if (!approval) return fail("审批请求不存在", 404, 404);
-      return ok(approval);
+      return success(approval);
     },
   );
 
@@ -39,7 +38,7 @@ export function createApprovalRoutes(
     async (ctx) => {
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
       const approvals = await approvalService.listPending(tenantId);
-      return ok(approvals);
+      return success(approvals);
     },
   );
 
@@ -54,7 +53,7 @@ export function createApprovalRoutes(
         const body = await parseBody(ctx.request);
         const result = await approvalService.approve(id, userId, body.reason as string | undefined);
         if (!result) return fail("审批请求不存在或已处理", 404, 404);
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -72,7 +71,7 @@ export function createApprovalRoutes(
         const body = await parseBody(ctx.request);
         const result = await approvalService.reject(id, userId, body.reason as string | undefined);
         if (!result) return fail("审批请求不存在或已处理", 404, 404);
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }

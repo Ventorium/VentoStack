@@ -2,10 +2,9 @@
  * @ventostack/workflow — 工作流路由
  */
 
-import { createRouter, VentoStackError } from "@ventostack/core";
+import { VentoStackError, createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { WorkflowService } from "../services";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 function handleError(e: unknown): Response {
   if (e instanceof VentoStackError) {
@@ -31,7 +30,7 @@ export function createWorkflowRoutes(
     try {
       const body = await parseBody(ctx.request);
       const result = await service.createDefinition(body as Parameters<WorkflowService["createDefinition"]>[0]);
-      return ok(result);
+      return success(result);
     } catch (e) { return handleError(e); }
   });
 
@@ -44,7 +43,7 @@ export function createWorkflowRoutes(
       businessType: q.businessType as string | undefined,
       page, pageSize,
     });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   router.get("/api/workflow/definitions/by-business-type/:type", perm("workflow", "query"), async (ctx) => {
@@ -52,7 +51,7 @@ export function createWorkflowRoutes(
       const bizType = (ctx.params as Record<string, string>).type!;
       const def = await service.getDefinitionByBusinessType(bizType);
       if (!def) return fail("未找到该业务类型对应的流程定义", 404, 404);
-      return ok(def);
+      return success(def);
     } catch (e) { return handleError(e); }
   });
 
@@ -60,7 +59,7 @@ export function createWorkflowRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     const def = await service.getDefinition(id);
     if (!def) return fail("流程定义不存在", 404, 404);
-    return ok(def);
+    return success(def);
   });
 
   router.put("/api/workflow/definitions/:id", perm("workflow", "update"), async (ctx) => {
@@ -68,7 +67,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       await service.updateDefinition(id, body as Parameters<WorkflowService["updateDefinition"]>[1]);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
@@ -76,7 +75,7 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       await service.deleteDefinition(id);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
@@ -84,21 +83,21 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       await service.publishDefinition(id);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
   router.post("/api/workflow/definitions/:id/disable", perm("workflow", "update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     await service.disableDefinition(id);
-    return ok(null);
+    return success(null);
   });
 
   router.post("/api/workflow/definitions/:id/clone", perm("workflow", "create"), async (ctx) => {
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const result = await service.cloneDefinition(id);
-      return ok(result);
+      return success(result);
     } catch (e) { return handleError(e); }
   });
 
@@ -107,7 +106,7 @@ export function createWorkflowRoutes(
   router.get("/api/workflow/definitions/:id/graph", perm("workflow", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const graph = await service.getGraph(id);
-    return ok(graph);
+    return success(graph);
   });
 
   router.put("/api/workflow/definitions/:id/graph", perm("workflow", "update"), async (ctx) => {
@@ -115,14 +114,14 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       await service.saveGraph(id, body as { nodes: unknown[]; edges: unknown[] });
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
   router.post("/api/workflow/definitions/:id/graph/validate", perm("workflow", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const result = await service.validateGraphData(id);
-    return ok(result);
+    return success(result);
   });
 
   // === 实例 ===
@@ -140,7 +139,7 @@ export function createWorkflowRoutes(
         formData: (body.formData as Record<string, unknown>) ?? {},
         variables: body.variables as Record<string, unknown> | undefined,
       });
-      return ok(result);
+      return success(result);
     } catch (e) { return handleError(e); }
   });
 
@@ -152,10 +151,10 @@ export function createWorkflowRoutes(
     const bizId = q.businessId as string | undefined;
     if (bizType) {
       const result = await service.listInstancesByBusiness(bizType, bizId, { page, pageSize });
-      return okPage(result.items, result.total, result.page, result.pageSize);
+      return paginated(result.items, result.total, result.page, result.pageSize);
     }
     const result = await service.listMyInstances(user.id, { page, pageSize });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   router.get("/api/workflow/instances/:id", perm("workflow", "query"), async (ctx) => {
@@ -163,7 +162,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const detail = await service.getInstanceDetail(id);
       if (!detail) return fail("实例不存在", 404, 404);
-      return ok(detail);
+      return success(detail);
     } catch (e) { return handleError(e); }
   });
 
@@ -173,14 +172,14 @@ export function createWorkflowRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       await service.withdrawInstance(id, user.id, body.comment as string | undefined);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
   router.get("/api/workflow/instances/:id/history", perm("workflow", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const history = await service.getInstanceHistory(id);
-    return ok(history);
+    return success(history);
   });
 
   // === 任务 ===
@@ -193,14 +192,14 @@ export function createWorkflowRoutes(
       status: q.status !== undefined ? Number(q.status) : undefined,
       page, pageSize,
     });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   router.get("/api/workflow/tasks/done", perm("workflow", "list"), async (ctx) => {
     const user = ctx.user as { id: string };
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const result = await service.listMyDoneTasks(user.id, { page, pageSize });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   router.post("/api/workflow/tasks/:id/approve", perm("workflow", "approve"), async (ctx) => {
@@ -209,7 +208,7 @@ export function createWorkflowRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       await service.approveTask(id, user.id, body.comment as string | undefined);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
@@ -219,7 +218,7 @@ export function createWorkflowRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       await service.rejectTask(id, user.id, body.comment as string | undefined);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
@@ -229,7 +228,7 @@ export function createWorkflowRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       await service.transferTask(id, user.id, body.targetUserId as string, body.comment as string | undefined);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
@@ -239,7 +238,7 @@ export function createWorkflowRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       await service.addSign(id, user.id, body.targetUserIds as string[], body.comment as string | undefined);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 
@@ -248,7 +247,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const user = ctx.user as { id: string };
       await service.urgeTask(id, user.id);
-      return ok(null);
+      return success(null);
     } catch (e) { return handleError(e); }
   });
 

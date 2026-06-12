@@ -2,10 +2,9 @@
  * @ventostack/gen - 代码生成路由
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { GenService } from "../services/gen";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createGenRoutes(
   genService: GenService,
@@ -19,7 +18,7 @@ export function createGenRoutes(
   router.get("/api/system/gen/tables", perm("gen", "table:list"), async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const result = await genService.listTables({ page, pageSize });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   // Import a DB table
@@ -31,7 +30,7 @@ export function createGenRoutes(
         body.moduleName as string,
         body.author as string | undefined,
       );
-      return ok(result);
+      return success(result);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "导入失败", 400);
     }
@@ -43,7 +42,7 @@ export function createGenRoutes(
     const table = await genService.getTable(id);
     if (!table) return fail("表不存在", 404, 404);
     const columns = await genService.getColumns(id);
-    return ok({ ...table, columns });
+    return success({ ...table, columns });
   });
 
   // Update table config
@@ -51,7 +50,7 @@ export function createGenRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await genService.updateTable(id, body as any);
-    return ok(null);
+    return success(null);
   });
 
   // Update column config
@@ -59,7 +58,7 @@ export function createGenRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await genService.updateColumn(id, body as any);
-    return ok(null);
+    return success(null);
   });
 
   // Preview generated code
@@ -67,7 +66,7 @@ export function createGenRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     try {
       const files = await genService.preview(id);
-      return ok(files);
+      return success(files);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "预览失败", 400);
     }
@@ -78,7 +77,7 @@ export function createGenRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     try {
       const files = await genService.generate(id);
-      return ok(files);
+      return success(files);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "生成失败", 400);
     }

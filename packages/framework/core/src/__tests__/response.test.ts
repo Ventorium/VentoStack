@@ -42,7 +42,7 @@ describe("fail()", () => {
     expect(res.status).toBe(400);
 
     const body: ApiResponse = await res.json();
-    expect(body.code).toBe(-1);
+    expect(body.code).toBe(400);
     expect(body.message).toBe("bad request");
   });
 
@@ -57,10 +57,16 @@ describe("fail()", () => {
     expect(res.status).toBe(403);
   });
 
-  test("does not include data field", async () => {
+  test("includes data: null by default", async () => {
     const res = fail("error");
     const body: ApiResponse = await res.json();
-    expect(body.data).toBeUndefined();
+    expect(body.data).toBeNull();
+  });
+
+  test("includes extra data when provided", async () => {
+    const res = fail("expired", 403, 403, { code: "token_expired" });
+    const body: ApiResponse = await res.json();
+    expect(body.data).toEqual({ code: "token_expired" });
   });
 
   test("sets JSON content-type", () => {
@@ -78,7 +84,7 @@ describe("paginated()", () => {
     const body: ApiResponse<PaginatedData<{ id: number }>> = await res.json();
     expect(body.code).toBe(0);
     expect(body.message).toBe("成功");
-    expect(body.data!.items).toEqual(items);
+    expect(body.data!.list).toEqual(items);
     expect(body.data!.total).toBe(10);
     expect(body.data!.page).toBe(1);
     expect(body.data!.pageSize).toBe(5);
@@ -97,10 +103,10 @@ describe("paginated()", () => {
     expect(body.data!.totalPages).toBe(0);
   });
 
-  test("handles empty items", async () => {
+  test("handles empty list", async () => {
     const res = paginated([], 0, 1, 10);
     const body: ApiResponse<PaginatedData<unknown>> = await res.json();
-    expect(body.data!.items).toEqual([]);
+    expect(body.data!.list).toEqual([]);
     expect(body.data!.total).toBe(0);
     expect(body.data!.totalPages).toBe(0);
   });

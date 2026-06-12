@@ -1,0 +1,64 @@
+/**
+ * AI 审计日志路由 — 查询 ai_tool_log 表
+ */
+import { createRouter, fail, handleError, pageOf, paginated, success } from "@ventostack/core";
+import type { Middleware, Router } from "@ventostack/core";
+
+export function createAuditRoutes(
+  db: { raw: (sql: string, params?: unknown[]) => Promise<unknown[]> },
+  authMiddleware: Middleware,
+  perm: (resource: string, action: string) => Middleware,
+): Router {
+  const router = createRouter();
+  router.use(authMiddleware);
+
+  router.get(
+    "/api/ai/audit",
+    perm("ai:audit", "list"),
+    async (ctx) => {
+      const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
+      const q = ctx.query as Record<string, unknown>;
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+
+      const conditions: string[] = ["tenant_id = $1"];
+      const params: unknown[] = [tenantId];
+      let idx = 2;
+
+      if (q.toolName) {
+        conditions.push(`tool_name LIKE $${idx++}`);
+        params.push(`%${q.toolName}%`);
+      }
+      if (q.status) {
+        conditions.push(`status = $${idx++}`);
+        params.push(q.status);
+      }
+      if (q.userId) {
+        conditions.push(`user_id = $${idx++}`);
+        params.push(q.userId);
+      }
+
+      const where = conditions.length > 0 ? `WHERE ${conditions.join(" AND ")}` : "";
+      const offset = (page - 1) * pageSize;
+
+      const countRows = await db.raw(
+        `SELECT COUNT(*) as cnt FROM ai_tool_log ${where}`,
+        params,
+      );
+      const total = Number((countRows as Array<Record<string, unknown>>)[0]?.cnt ?? 0);
+
+      const rows = await db.raw(
+        `SELECT id, tool_name as "toolName", user_id as "userId",
+                status, duration, input, output,
+                created_at as "createdAt"
+         FROM ai_tool_log ${where}
+         ORDER BY created_at DESC
+         LIMIT $${idx++} OFFSET $${idx++}`,
+        [...params, pageSize, offset],
+      );
+
+      return paginated(rows as unknown[], total, page, pageSize);
+    },
+  );
+
+  return router;
+}

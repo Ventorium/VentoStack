@@ -19,7 +19,7 @@ export function createAuthMiddleware(
 
     const token = authHeader.slice(7);
     try {
-      const payload = jwt.verify(token, jwtSecret);
+      const payload = await jwt.verify(token, jwtSecret);
       ctx.user = payload;
       return next();
     } catch {

@@ -2,10 +2,9 @@
  * @ventostack/notify - 通知路由
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { NotificationService } from "../services/notification";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createNotificationRoutes(
   notificationService: NotificationService,
@@ -30,7 +29,7 @@ export function createNotificationRoutes(
           content: body.content as string,
           variables: body.variables as Record<string, unknown> | undefined,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "发送失败", 400);
       }
@@ -51,7 +50,7 @@ export function createNotificationRoutes(
         page,
         pageSize,
       });
-      return okPage(result.items, result.total, result.page, result.pageSize);
+      return paginated(result.items, result.total, result.page, result.pageSize);
     },
   );
 
@@ -62,7 +61,7 @@ export function createNotificationRoutes(
     async (ctx) => {
       const user = ctx.user as { id: string };
       const count = await notificationService.getUnreadCount(user.id);
-      return ok({ count });
+      return success({ count });
     },
   );
 
@@ -74,7 +73,7 @@ export function createNotificationRoutes(
       const user = ctx.user as { id: string };
       const id = (ctx.params as Record<string, string>).id!;
       await notificationService.markRead(user.id, id);
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -90,7 +89,7 @@ export function createNotificationRoutes(
         return fail("请提供消息 ID", 400);
       }
       await notificationService.markBatchRead(user.id, messageIds);
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -102,7 +101,7 @@ export function createNotificationRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       try {
         await notificationService.retry(id);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "重试失败", 400);
       }
@@ -125,7 +124,7 @@ export function createNotificationRoutes(
           title: body.title as string | undefined,
           content: body.content as string,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "创建失败", 400);
       }
@@ -144,7 +143,7 @@ export function createNotificationRoutes(
         page,
         pageSize,
       });
-      return okPage(result.items, result.total, result.page, result.pageSize);
+      return paginated(result.items, result.total, result.page, result.pageSize);
     },
   );
 
@@ -156,7 +155,7 @@ export function createNotificationRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       await notificationService.updateTemplate(id, body);
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -167,7 +166,7 @@ export function createNotificationRoutes(
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       await notificationService.deleteTemplate(id);
-      return ok(null);
+      return success(null);
     },
   );
 

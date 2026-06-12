@@ -67,7 +67,7 @@ export interface KnowledgeBaseService {
   }): Promise<{ list: KnowledgeBase[]; total: number }>;
   delete(id: string, tenantId: string): Promise<void>;
 
-  // 文件操作（供 LLM 工具调用）
+  // 文件浏览（供 LLM 工具调用 + 前端）
   ls(
     kbId: string,
     path: string,
@@ -101,6 +101,33 @@ export interface KnowledgeBaseService {
     lines: number,
     tenantId: string,
   ): Promise<string>;
+
+  // 文件写入（前端管理）
+  writeFile(
+    kbId: string,
+    path: string,
+    content: string,
+    tenantId: string,
+  ): Promise<void>;
+  renameFile(
+    kbId: string,
+    oldPath: string,
+    newName: string,
+    tenantId: string,
+  ): Promise<void>;
+  mkdir(
+    kbId: string,
+    path: string,
+    tenantId: string,
+  ): Promise<void>;
+  deleteFile(
+    kbId: string,
+    path: string,
+    tenantId: string,
+  ): Promise<void>;
+
+  // README 自动生成
+  generateReadme(kbId: string, tenantId: string): Promise<void>;
 
   // 追踪链
   getSourcePath(

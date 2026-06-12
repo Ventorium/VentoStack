@@ -32,7 +32,8 @@ import { createEventEmitter, type AgentEventEmitter } from "./agent-engine/event
 import type { AgentTool, BeforeToolCallContext, BeforeToolCallResult, AfterToolCallContext, AfterToolCallResult } from "./agent-engine/types";
 
 // Knowledge Base
-import { createKnowledgeBaseService, type KnowledgeBaseService } from "./knowledge-base/service";
+import { createKnowledgeBaseService } from "./knowledge-base/service";
+import type { KnowledgeBaseService } from "./knowledge-base/types";
 
 // Memory
 import { createMemoryService, type MemoryService } from "./memory/service";
@@ -55,6 +56,7 @@ import { createAgentRoutes, type AgentCrudService } from "./routes/agent";
 import { createAgentService } from "./services/agent";
 import { createChatRoutes, type ConversationService } from "./routes/chat";
 import { createProviderRoutes } from "./routes/provider";
+import { createAuditRoutes } from "./routes/audit";
 import { createProviderService } from "./services/provider";
 
 // Auth
@@ -238,6 +240,14 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(agentRouter);
   router.merge(chatRouter);
   router.merge(providerRouter);
+
+  // 审计日志路由
+  const auditRouter = createAuditRoutes(
+    db as { raw: (sql: string, params?: unknown[]) => Promise<unknown[]> },
+    authMiddleware,
+    perm,
+  );
+  router.merge(auditRouter);
 
   // 创建 Harness 工厂
   function createHarness(partialOptions: Partial<AgentHarnessOptions>): AgentHarness {

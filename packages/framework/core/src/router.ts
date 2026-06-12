@@ -917,7 +917,11 @@ export function createRouter(): Router {
           for (const param of route.params) {
             if (param.name === "*" && coercedParams["*"] === undefined) {
               const url = new URL(req.url);
-              const prefix = route.strippedPath.slice(0, -1); // "/static/*" -> "/static/"
+              // Resolve :param placeholders in the prefix with actual values
+              let prefix = route.strippedPath.slice(0, -1); // "/foo/*" -> "/foo/"
+              for (const [k, v] of Object.entries(coercedParams)) {
+                if (k !== "*") prefix = prefix.replace(`:${k}`, String(v));
+              }
               if (url.pathname.startsWith(prefix)) {
                 coercedParams["*"] = url.pathname.slice(prefix.length);
               }

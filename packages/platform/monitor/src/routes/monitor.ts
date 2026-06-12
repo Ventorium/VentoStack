@@ -2,10 +2,9 @@
  * @ventostack/monitor - 监控路由
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { MonitorService } from "../services/monitor";
-import { ok } from "./common";
 
 export function createMonitorRoutes(
   monitorService: MonitorService,
@@ -32,7 +31,7 @@ export function createMonitorRoutes(
     },
     async () => {
       const status = await monitorService.getServerStatus();
-      return ok(status);
+      return success(status);
     },
     perm("system", "monitor:list"),
   );
@@ -52,7 +51,7 @@ export function createMonitorRoutes(
     },
     async () => {
       const stats = await monitorService.getCacheStats();
-      return ok(stats);
+      return success(stats);
     },
     perm("system", "monitor:list"),
   );
@@ -73,7 +72,7 @@ export function createMonitorRoutes(
     },
     async () => {
       const status = await monitorService.getDataSourceStatus();
-      return ok(status);
+      return success(status);
     },
     perm("system", "monitor:list"),
   );
@@ -92,7 +91,7 @@ export function createMonitorRoutes(
     },
     async () => {
       const health = await monitorService.getHealthStatus();
-      return ok(health);
+      return success(health);
     },
     perm("system", "monitor:list"),
   );
@@ -115,7 +114,7 @@ export function createMonitorRoutes(
     },
     async () => {
       const users = await monitorService.getOnlineUsers();
-      return ok(users);
+      return success(users);
     },
     perm("system", "online:list"),
   );
@@ -133,7 +132,7 @@ export function createMonitorRoutes(
       const sessionId = (ctx.params as Record<string, string>).sessionId!;
       const userId = ctx.query?.userId as string | undefined;
       await monitorService.forceLogout(sessionId, userId ?? "");
-      return ok(null);
+      return success(null);
     },
     perm("system", "online:forceLogout"),
   );

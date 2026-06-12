@@ -1,9 +1,8 @@
 /**
  * Agent 路由
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, handleError, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import { fail, ok, okPage, handleError, parseBody, pageOf } from "./common";
 
 export interface AgentCrudService {
   create(params: Record<string, unknown>): Promise<{ id: string }>;
@@ -41,7 +40,7 @@ export function createAgentRoutes(
           tenantId,
           createdBy: userId,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -66,7 +65,7 @@ export function createAgentRoutes(
         page,
         pageSize,
       });
-      return okPage(result.list, result.total, page, pageSize);
+      return paginated(result.list, result.total, page, pageSize);
     },
   );
 
@@ -78,7 +77,7 @@ export function createAgentRoutes(
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
       const agent = await agentService.getById(id, tenantId);
       if (!agent) return fail("Agent 不存在", 404, 404);
-      return ok(agent);
+      return success(agent);
     },
   );
 
@@ -92,7 +91,7 @@ export function createAgentRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         const body = await parseBody(ctx.request);
         await agentService.update(id, body, tenantId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
@@ -107,7 +106,7 @@ export function createAgentRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await agentService.delete(id, tenantId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
@@ -122,7 +121,7 @@ export function createAgentRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await agentService.publish(id, tenantId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }

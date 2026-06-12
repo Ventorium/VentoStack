@@ -3,9 +3,8 @@
  * GET /api/ai/healthz — 公开，简单状态检查
  * GET /api/ai/health — 需认证，各组件详细状态
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, handleError, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import { ok, handleError } from "./common";
 
 export interface HealthCheckDeps {
   /** 检查数据库连接 */
@@ -22,7 +21,7 @@ export function createHealthRoutes(deps: HealthCheckDeps): Router {
 
   // 公开健康检查 — 不需要认证
   router.get("/api/ai/healthz", async () => {
-    return ok({ status: "ok", timestamp: new Date().toISOString() });
+    return success({ status: "ok", timestamp: new Date().toISOString() });
   });
 
   // 详细健康检查 — 需要认证
@@ -59,7 +58,7 @@ export function createHealthRoutes(deps: HealthCheckDeps): Router {
 
       const allOk = Object.values(checks).every((v) => v === "ok");
 
-      return ok({
+      return success({
         status: allOk ? "ok" : "degraded",
         checks,
         timestamp: new Date().toISOString(),

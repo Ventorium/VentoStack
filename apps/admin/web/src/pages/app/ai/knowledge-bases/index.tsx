@@ -1,34 +1,44 @@
-import { useState } from "react";
-import { Card, Table, Button, Input, Space, Tag, message, Modal, Form } from "antd";
-import type { ColumnsType } from "antd/es/table";
+import { client } from "@/api";
+import type { KnowledgeBaseItem } from "@/api/types";
+import { msg } from "@/components/GlobalMessage";
+import { fmtDate } from "@/utils/fmtDate";
 import {
+  DatabaseOutlined,
+  DeleteOutlined,
+  FileOutlined,
+  FolderOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
-  FolderOutlined,
-  FileOutlined,
 } from "@ant-design/icons";
-import { client } from "@/api";
-import type { KnowledgeBaseItem } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import { fmtDate } from "@/utils/fmtDate";
+import {
+  Button,
+  Card,
+  Col,
+  Empty,
+  Form,
+  Input,
+  Modal,
+  Row,
+  Space,
+  Statistic,
+  Tag,
+  theme,
+  Tooltip,
+  Typography,
+} from "antd";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
-// AI 接口尚未注册到 OpenAPI schema，临时使用 any
-const aiClient = client as any;
-
-const fetcher = (params: Record<string, unknown>) =>
-  aiClient.get("/api/ai/knowledge-bases", { query: params }) as Promise<{
-    error?: unknown;
-    data?: { list: KnowledgeBaseItem[]; total: number };
-  }>;
-
-const KnowledgeBasesPage = () => {
+export default function KnowledgeBasesPage() {
   const navigate = useNavigate();
+  const { token } = theme.useToken();
   const [loading, setLoading] = useState(false);
-  const [data, setData] = useState<{ list: KnowledgeBaseItem[]; total: number }>({ list: [], total: 0 });
+  const [data, setData] = useState<KnowledgeBaseItem[]>([]);
+  const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchText, setSearchText] = useState("");
@@ -36,143 +46,86 @@ const KnowledgeBasesPage = () => {
   const [modalLoading, setModalLoading] = useState(false);
   const [form] = Form.useForm();
 
-  const refresh = async (params?: Record<string, unknown>) => {
-    setLoading(true);
-    try {
-      const result = await fetcher({ page, pageSize, ...params });
-      if (!result.error) {
-        setData(result.data);
+  const refresh = useCallback(
+    async (p?: number, ps?: number) => {
+      setLoading(true);
+      try {
+        const currentPage = p ?? page;
+        const currentPageSize = ps ?? pageSize;
+        const { error, data: result } = (await client.get("/api/ai/knowledge-bases", {
+          query: {
+            page: currentPage,
+            pageSize: currentPageSize,
+            name: searchText || undefined,
+          },
+        })) as { error?: unknown; data?: { list: KnowledgeBaseItem[]; total: number } };
+        if (!error && result) {
+          setData(result.list);
+          setTotal(result.total);
+        }
+      } finally {
+        setLoading(false);
       }
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    [page, pageSize, searchText],
+  );
 
-  const handleSearch = () => {
-    setPage(1);
-    refresh({ name: searchText, page: 1 });
-  };
-
-  const handleReset = () => {
-    setSearchText("");
-    setPage(1);
-    refresh({ page: 1 });
-  };
-
-  const handlePageChange = (p: number, ps: number) => {
-    setPage(p);
-    setPageSize(ps);
-    refresh({ page: p, pageSize: ps });
-  };
+  useEffect(() => {
+    refresh(1);
+  }, []);
 
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
       setModalLoading(true);
-      const { error } = await aiClient.post("/api/ai/knowledge-bases", { body: values });
+      const { error } = await client.post("/api/ai/knowledge-bases", { body: values });
       if (!error) {
-        message.success("创建成功");
+        msg.success("创建成功");
         setModalOpen(false);
         form.resetFields();
-        refresh();
+        refresh(1);
       }
     } catch {
-      // validation failed
     } finally {
       setModalLoading(false);
     }
   };
 
-  const handleDelete = (record: KnowledgeBaseItem) => {
+  const handleDelete = (record: KnowledgeBaseItem, e?: React.MouseEvent) => {
+    e?.stopPropagation();
     Modal.confirm({
       title: "确认删除",
       content: `确定要删除知识库「${record.name}」吗？此操作不可恢复。`,
       okText: "删除",
       okType: "danger",
       onOk: async () => {
-        const { error } = await aiClient.delete(`/api/ai/knowledge-bases/${record.id}`);
+        const { error } = await client.delete("/api/ai/knowledge-bases/:id", {
+          params: { id: record.id },
+        });
         if (!error) {
-          message.success("删除成功");
+          msg.success("删除成功");
           refresh();
         }
       },
     });
   };
 
-  const columns: ColumnsType<KnowledgeBaseItem> = [
-    {
-      title: "名称",
-      dataIndex: "name",
-      key: "name",
-      render: (text: string, record) => (
-        <a onClick={() => navigate(`/app/ai/knowledge-bases/${record.id}`)}>
-          <FolderOutlined style={{ marginRight: 8 }} />
-          {text}
-        </a>
-      ),
-    },
-    {
-      title: "描述",
-      dataIndex: "description",
-      key: "description",
-      ellipsis: true,
-    },
-    {
-      title: "文件数",
-      dataIndex: "fileCount",
-      key: "fileCount",
-      width: 100,
-      render: (count: number) => (
-        <Tag icon={<FileOutlined />}>{count}</Tag>
-      ),
-    },
-    {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
-      width: 100,
-      render: (status: string) => (
-        <Tag color={status === "active" ? "green" : "default"}>
-          {status === "active" ? "活跃" : status}
-        </Tag>
-      ),
-    },
-    {
-      title: "更新时间",
-      dataIndex: "updatedAt",
-      key: "updatedAt",
-      width: 180,
-      render: (date: string) => fmtDate(date),
-    },
-    {
-      title: "操作",
-      key: "action",
-      width: 120,
-      render: (_, record) => (
-        <ActionColumn
-          items={[
-            { label: "详情", onClick: () => navigate(`/app/ai/knowledge-bases/${record.id}`) },
-            { label: "删除", onClick: () => handleDelete(record), danger: true, confirm: "确定删除？" },
-          ]}
-        />
-      ),
-    },
-  ];
-
   return (
     <>
       <Card
-        title="知识库管理"
+        title={
+          <Space>
+            <DatabaseOutlined />
+            <span>知识库管理</span>
+            <Tag>{total}</Tag>
+          </Space>
+        }
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => refresh()}>
               刷新
             </Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => setModalOpen(true)}
-            >
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               创建知识库
             </Button>
           </Space>
@@ -185,24 +138,115 @@ const KnowledgeBasesPage = () => {
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
             style={{ width: 300 }}
-            onPressEnter={handleSearch}
+            onPressEnter={() => {
+              setPage(1);
+              refresh(1);
+            }}
+            allowClear
           />
-          <Button onClick={handleSearch}>搜索</Button>
-          <Button onClick={handleReset}>重置</Button>
+          <Button
+            onClick={() => {
+              setPage(1);
+              refresh(1);
+            }}
+          >
+            搜索
+          </Button>
         </Space>
 
-        <Table
-          columns={columns}
-          dataSource={data?.list}
-          rowKey="id"
-          loading={loading}
-          pagination={{
-            current: page,
-            pageSize,
-            total: data?.total,
-            onChange: handlePageChange,
-          }}
-        />
+        {data.length === 0 && !loading ? (
+          <Empty description="暂无知识库" style={{ padding: "60px 0" }}>
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
+              创建知识库
+            </Button>
+          </Empty>
+        ) : (
+          <Row gutter={[16, 16]}>
+            {data.map((kb) => (
+              <Col key={kb.id} xs={24} sm={12} md={8} lg={6}>
+                <Card
+                  hoverable
+                  onClick={() => navigate(`/app/ai/knowledge-bases/${kb.id}`)}
+                  style={{
+                    height: "100%",
+                    borderColor: token.colorBorderSecondary,
+                  }}
+                  styles={{
+                    body: { padding: 16, display: "flex", flexDirection: "column", gap: 12 },
+                  }}
+                >
+                  {/* Header */}
+                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                    <div
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: token.borderRadius,
+                        background: token.colorPrimaryBg,
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 18,
+                        color: token.colorPrimary,
+                      }}
+                    >
+                      <FolderOutlined />
+                    </div>
+                    <Tooltip title="删除">
+                      <Button
+                        type="text"
+                        size="small"
+                        danger
+                        icon={<DeleteOutlined />}
+                        onClick={(e) => handleDelete(kb, e)}
+                      />
+                    </Tooltip>
+                  </div>
+
+                  {/* Name & Description */}
+                  <div>
+                    <Text
+                      strong
+                      ellipsis
+                      style={{ fontSize: 15, display: "block", marginBottom: 4 }}
+                    >
+                      {kb.name}
+                    </Text>
+                    <Paragraph
+                      type="secondary"
+                      ellipsis={{ rows: 2 }}
+                      style={{ fontSize: 12, marginBottom: 0, minHeight: 36 }}
+                    >
+                      {kb.description || "暂无描述"}
+                    </Paragraph>
+                  </div>
+
+                  {/* Meta */}
+                  <div
+                    style={{
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      marginTop: "auto",
+                      paddingTop: 8,
+                      borderTop: `1px solid ${token.colorBorderSecondary}`,
+                    }}
+                  >
+                    <Space size={4}>
+                      <FileOutlined style={{ fontSize: 12, color: token.colorTextSecondary }} />
+                      <Text type="secondary" style={{ fontSize: 12 }}>
+                        {kb.fileCount} 文件
+                      </Text>
+                    </Space>
+                    <Text type="secondary" style={{ fontSize: 11 }}>
+                      {fmtDate(kb.updatedAt)}
+                    </Text>
+                  </div>
+                </Card>
+              </Col>
+            ))}
+          </Row>
+        )}
       </Card>
 
       <Modal
@@ -225,7 +269,6 @@ const KnowledgeBasesPage = () => {
           >
             <Input placeholder="例如：产品文档" />
           </Form.Item>
-
           <Form.Item label="描述" name="description">
             <TextArea rows={3} placeholder="知识库描述（可选）" />
           </Form.Item>
@@ -233,6 +276,4 @@ const KnowledgeBasesPage = () => {
       </Modal>
     </>
   );
-};
-
-export default KnowledgeBasesPage;
+}

@@ -5,10 +5,9 @@
  * 避免 get/post 等快捷方法将 authMiddleware 误识别为 handler。
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { UserService } from "../services/user";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 const userItemSchema = {
   id: { type: "uuid" as const, description: "用户 ID" },
@@ -64,7 +63,7 @@ export function createUserRoutes(
         status: (ctx.query as Record<string, unknown>).status as number | undefined,
         deptId: (ctx.query as Record<string, unknown>).deptId as string | undefined,
       });
-      return okPage(result.items, result.total, result.page, result.pageSize);
+      return paginated(result.items, result.total, result.page, result.pageSize);
     },
     perm("system", "user:list"),
   );
@@ -79,7 +78,7 @@ export function createUserRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const user = await userService.getById(id);
       if (!user) return fail("用户不存在", 404, 404);
-      return ok(user);
+      return success(user);
     },
     perm("system", "user:query"),
   );
@@ -110,7 +109,7 @@ export function createUserRoutes(
       try {
         const body = await parseBody(ctx.request);
         const result = await userService.create(body as any);
-        return ok(result);
+        return success(result);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "创建失败", 400);
       }
@@ -135,7 +134,7 @@ export function createUserRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       await userService.update(id, body as any);
-      return ok(null);
+      return success(null);
     },
     perm("system", "user:update"),
   );
@@ -148,7 +147,7 @@ export function createUserRoutes(
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       await userService.delete(id);
-      return ok(null);
+      return success(null);
     },
     perm("system", "user:delete"),
   );
@@ -165,7 +164,7 @@ export function createUserRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       await userService.resetPassword(id, body.newPassword as string);
-      return ok(null);
+      return success(null);
     },
     perm("system", "user:resetPwd"),
   );
@@ -187,7 +186,7 @@ export function createUserRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       await userService.updateStatus(id, body.status as number);
-      return ok(null);
+      return success(null);
     },
     perm("system", "user:update"),
   );

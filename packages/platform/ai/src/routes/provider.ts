@@ -1,9 +1,8 @@
 /**
  * AI 供应商与模型管理路由
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, handleError, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import { fail, ok, handleError, parseBody } from "./common";
 import { getPresets } from "../services/provider-presets";
 import type { createProviderService } from "../services/provider";
 
@@ -19,7 +18,7 @@ export function createProviderRoutes(
 
   // === 预设列表（无需登录也可查看）===
   router.get("/api/ai/providers/presets", async () => {
-    return ok(getPresets());
+    return success(getPresets());
   });
 
   // === 供应商 CRUD ===
@@ -30,7 +29,7 @@ export function createProviderRoutes(
     async (ctx) => {
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const providers = await providerService.listProviders(tenantId);
-      return ok(providers);
+      return success(providers);
     },
   );
 
@@ -42,7 +41,7 @@ export function createProviderRoutes(
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const provider = await providerService.getProviderById(id, tenantId);
       if (!provider) return fail("供应商不存在", 404, 404);
-      return ok(provider);
+      return success(provider);
     },
   );
 
@@ -64,7 +63,7 @@ export function createProviderRoutes(
           presetId: body.presetId as string | undefined,
           sort: body.sort as number | undefined,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -80,7 +79,7 @@ export function createProviderRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const body = await parseBody(ctx.request);
         await providerService.updateProvider(id, tenantId, body as Parameters<typeof providerService.updateProvider>[2]);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
@@ -95,7 +94,7 @@ export function createProviderRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         await providerService.deleteProvider(id, tenantId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
@@ -111,7 +110,7 @@ export function createProviderRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const models = await providerService.listModels(id, tenantId);
-      return ok(models);
+      return success(models);
     },
   );
 
@@ -124,7 +123,7 @@ export function createProviderRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const body = await parseBody(ctx.request);
         await providerService.updateModel(id, tenantId, body as Parameters<typeof providerService.updateModel>[2]);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
@@ -140,7 +139,7 @@ export function createProviderRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const result = await providerService.syncModels(id, tenantId);
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -154,7 +153,7 @@ export function createProviderRoutes(
     async (ctx) => {
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const models = await providerService.listAllModels(tenantId);
-      return ok(models);
+      return success(models);
     },
   );
 
@@ -166,7 +165,7 @@ export function createProviderRoutes(
     async (ctx) => {
       const key = (ctx.params as Record<string, string>).key!;
       const value = await providerService.getConfig(key);
-      return ok({ key, value });
+      return success({ key, value });
     },
   );
 
@@ -178,7 +177,7 @@ export function createProviderRoutes(
         const key = (ctx.params as Record<string, string>).key!;
         const body = await parseBody(ctx.request);
         await providerService.setConfig(key, body.value as string);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }

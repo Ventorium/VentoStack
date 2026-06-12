@@ -5,7 +5,7 @@
  * 需认证端点（logout/reset-password/MFA）在子 router 上通过 use(authMiddleware) 保护。
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
 
@@ -39,7 +39,6 @@ function extractClientIP(request: Request, trustedProxies: string[] = []): strin
 
   return directIP;
 }
-import { fail, ok, parseBody } from "./common";
 
 const tokenPairSchema = {
   accessToken: { type: "string" as const, description: "访问令牌" },
@@ -86,7 +85,7 @@ export function createAuthRoutes(
           userAgent: ctx.request.headers.get("user-agent") ?? "unknown",
           deviceType: body.deviceType as string | undefined,
         });
-        return ok(result);
+        return success(result);
       } catch (e: unknown) {
         const err = e as Error & { code?: string; data?: { tempToken?: string } };
         if (err.code === "password_expired" && err.data?.tempToken) {
@@ -128,7 +127,7 @@ export function createAuthRoutes(
           email: body.email as string | undefined,
           phone: body.phone as string | undefined,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "注册失败";
         return fail(msg, 400);
@@ -156,7 +155,7 @@ export function createAuthRoutes(
         const email = body.email as string;
         if (!email) return fail("请输入邮箱", 400);
         const result = await authService.forgotPassword(email);
-        return ok({ resetToken: result.resetToken });
+        return success({ resetToken: result.resetToken });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "找回密码失败";
         return fail(msg, 400);
@@ -177,7 +176,7 @@ export function createAuthRoutes(
       try {
         const body = await parseBody(ctx.request);
         await authService.resetPasswordByToken(body.token as string, body.newPassword as string);
-        return ok(null);
+        return success(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "重置失败";
         return fail(msg, 400);
@@ -198,7 +197,7 @@ export function createAuthRoutes(
       try {
         const body = await parseBody(ctx.request);
         const result = await authService.refreshToken(body.refreshToken as string);
-        return ok(result);
+        return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "刷新令牌失败";
         return fail(msg, 401, 401);
@@ -227,7 +226,7 @@ export function createAuthRoutes(
           ctx.request.headers.get("user-agent") ?? "unknown",
           body.deviceType as string | undefined,
         );
-        return ok(result);
+        return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "MFA 验证失败";
         return fail(msg, 401, 401);
@@ -263,7 +262,7 @@ export function createAuthRoutes(
           await authService.logout(user.id, "");
         }
       }
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -281,7 +280,7 @@ export function createAuthRoutes(
       try {
         const body = await parseBody(ctx.request);
         await authService.resetPassword(body.userId as string, body.newPassword as string);
-        return ok(null);
+        return success(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "重置失败";
         return fail(msg, 400);
@@ -306,7 +305,7 @@ export function createAuthRoutes(
     async (ctx) => {
       const user = ctx.user as { id: string };
       const result = await authService.enableMFA(user.id);
-      return ok(result);
+      return success(result);
     },
   );
 
@@ -323,7 +322,7 @@ export function createAuthRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       const valid = await authService.verifyMFA(user.id, body.code as string);
-      return ok({ valid });
+      return success({ valid });
     },
   );
 
@@ -339,7 +338,7 @@ export function createAuthRoutes(
       const user = ctx.user as { id: string };
       const body = await parseBody(ctx.request);
       await authService.disableMFA(user.id, body.code as string);
-      return ok(null);
+      return success(null);
     },
   );
 

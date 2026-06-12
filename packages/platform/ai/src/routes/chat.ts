@@ -1,11 +1,10 @@
 /**
  * 对话路由（含 SSE 流式）
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, handleError, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AgentLoop } from "../agent-engine/types";
 import { createSSEResponse } from "../stream-engine/sse";
-import { fail, ok, handleError, parseBody } from "./common";
 
 export interface ConversationService {
   create(params: {
@@ -45,7 +44,7 @@ export function createChatRoutes(
           userId,
           tenantId,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -65,7 +64,7 @@ export function createChatRoutes(
         agentId: q.agentId as string | undefined,
         tenantId,
       });
-      return ok(conversations);
+      return success(conversations);
     },
   );
 
@@ -78,7 +77,7 @@ export function createChatRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? "";
         await conversationService.delete(id, userId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
@@ -111,7 +110,7 @@ export function createChatRoutes(
           }
         }
 
-        return ok({ content, sessionId: body.sessionId });
+        return success({ content, sessionId: body.sessionId });
       } catch (e) {
         return handleError(e);
       }

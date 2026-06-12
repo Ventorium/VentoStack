@@ -2,10 +2,9 @@
  * @ventostack/scheduler - 定时任务路由
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { SchedulerService } from "../services/scheduler";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 export function createSchedulerRoutes(
   schedulerService: SchedulerService,
@@ -24,7 +23,7 @@ export function createSchedulerRoutes(
       page,
       pageSize,
     });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   // Get job by ID
@@ -32,7 +31,7 @@ export function createSchedulerRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     const job = await schedulerService.getById(id);
     if (!job) return fail("任务不存在", 404, 404);
-    return ok(job);
+    return success(job);
   });
 
   // Create job
@@ -40,7 +39,7 @@ export function createSchedulerRoutes(
     try {
       const body = await parseBody(ctx.request);
       const result = await schedulerService.create(body as any);
-      return ok(result);
+      return success(result);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
@@ -51,14 +50,14 @@ export function createSchedulerRoutes(
     const id = (ctx.params as Record<string, string>).id!;
     const body = await parseBody(ctx.request);
     await schedulerService.update(id, body as any);
-    return ok(null);
+    return success(null);
   });
 
   // Delete job
   router.delete("/api/system/scheduler/jobs/:id", perm("scheduler", "job:delete"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     await schedulerService.delete(id);
-    return ok(null);
+    return success(null);
   });
 
   // Start job
@@ -68,7 +67,7 @@ export function createSchedulerRoutes(
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       await schedulerService.start(id);
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -79,7 +78,7 @@ export function createSchedulerRoutes(
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       await schedulerService.stop(id);
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -91,7 +90,7 @@ export function createSchedulerRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       try {
         await schedulerService.executeNow(id);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "执行失败", 500);
       }
@@ -108,7 +107,7 @@ export function createSchedulerRoutes(
       page,
       pageSize,
     });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   return router;

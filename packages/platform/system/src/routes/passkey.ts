@@ -6,12 +6,11 @@
  */
 
 import type { Cache } from "@ventostack/cache";
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
 import type { ConfigService } from "../services/config";
 import type { PasskeyService } from "../services/passkey";
-import { fail, ok, parseBody } from "./common";
 
 /** IP 每分钟最大请求次数 */
 const MAX_IP_REQUESTS_PER_MINUTE = 20;
@@ -80,7 +79,7 @@ export function createPasskeyRoutes(
 
         const body = await parseBody(ctx.request);
         const result = await passkeyService.beginAuthentication(body.username as string);
-        return ok(result);
+        return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "通行密钥登录失败";
         return fail(msg, 400);
@@ -133,7 +132,7 @@ export function createPasskeyRoutes(
           ...(body.deviceType ? { deviceType: body.deviceType as string } : {}),
         });
 
-        return ok(loginResult);
+        return success(loginResult);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "通行密钥验证失败";
         return fail(msg, 401, 401);
@@ -165,7 +164,7 @@ export function createPasskeyRoutes(
         const user = ctx.user as { id: string } | undefined;
         if (!user?.id) return fail("未登录", 401, 401);
         const result = await passkeyService.beginRegistration(user.id);
-        return ok(result);
+        return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "通行密钥注册失败";
         return fail(msg, 400);
@@ -199,7 +198,7 @@ export function createPasskeyRoutes(
           body.challengeId as string,
           body.credential as any,
         );
-        return ok(result);
+        return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "通行密钥注册完成失败";
         return fail(msg, 400);
@@ -221,7 +220,7 @@ export function createPasskeyRoutes(
       const user = ctx.user as { id: string } | undefined;
       if (!user?.id) return fail("未登录", 401, 401);
       const passkeys = await passkeyService.listPasskeys(user.id);
-      return ok(passkeys);
+      return success(passkeys);
     },
   );
 
@@ -235,7 +234,7 @@ export function createPasskeyRoutes(
       if (!user?.id) return fail("未登录", 401, 401);
       const passkeyId = (ctx.params as Record<string, string>).id!;
       await passkeyService.removePasskey(user.id, passkeyId);
-      return ok(null);
+      return success(null);
     },
   );
 

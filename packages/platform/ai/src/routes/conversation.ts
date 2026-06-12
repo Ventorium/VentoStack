@@ -1,9 +1,8 @@
 /**
  * 对话 CRUD 路由
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, handleError, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import { fail, ok, okPage, handleError, parseBody, pageOf } from "./common";
 import type { ConversationItem } from "../services/conversation";
 
 export interface ConversationCrudService {
@@ -46,7 +45,7 @@ export function createConversationRoutes(
           tenantId,
           title: body.title as string | undefined,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -62,7 +61,7 @@ export function createConversationRoutes(
       const userId = (ctx.user as { id?: string })?.id ?? "";
       const conversation = await conversationService.getById(id, userId);
       if (!conversation) return fail("对话不存在", 404, 404);
-      return ok(conversation);
+      return success(conversation);
     },
   );
 
@@ -79,7 +78,7 @@ export function createConversationRoutes(
         agentId: q.agentId as string | undefined,
         tenantId,
       });
-      return ok(conversations);
+      return success(conversations);
     },
   );
 
@@ -92,7 +91,7 @@ export function createConversationRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? "";
         await conversationService.delete(id, userId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }

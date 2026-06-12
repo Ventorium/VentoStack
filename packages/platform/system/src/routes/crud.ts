@@ -5,9 +5,8 @@
  * 使用 router.use(authMiddleware) 注册为组中间件。
  */
 
-import { createRouter } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
 import type { Middleware, RouteSchemaConfig, Router } from "@ventostack/core";
-import { fail, ok, okPage, pageOf, parseBody } from "./common";
 
 interface CrudService {
   list: (
@@ -121,7 +120,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         page,
         pageSize,
       });
-      return okPage(result.items, result.total, result.page, result.pageSize);
+      return paginated(result.items, result.total, result.page, result.pageSize);
     },
     perm(module, `${resource}:list`),
   );
@@ -141,7 +140,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         const id = (ctx.params as Record<string, string>).id!;
         const item = await service.getById!(id);
         if (!item) return fail("Not found", 404, 404);
-        return ok(item);
+        return success(item);
       },
       perm(module, `${resource}:query`),
     );
@@ -162,7 +161,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       try {
         const body = await parseBody(ctx.request);
         const result = await service.create(body);
-        return ok(result);
+        return success(result);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "Create failed", 400);
       }
@@ -185,7 +184,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       const body = await parseBody(ctx.request);
       try {
         await service.update(id, body);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "Update failed", 400);
       }
@@ -205,7 +204,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       const id = (ctx.params as Record<string, string>).id!;
       try {
         await service.delete(id);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "Delete failed", 400);
       }

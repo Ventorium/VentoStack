@@ -1,10 +1,12 @@
 /**
  * 知识库路由
  */
-import { createRouter } from "@ventostack/core";
+import { resolve } from "node:path";
+import { readFile, existsSync } from "node:fs/promises";
+import { createRouter, success, paginated } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { KnowledgeBaseService } from "../knowledge-base/types";
-import { fail, ok, okPage, handleError, parseBody, pageOf } from "./common";
+import { fail, handleError, parseBody, pageOf } from "./common";
 
 export function createKnowledgeBaseRoutes(
   kbService: KnowledgeBaseService,
@@ -14,7 +16,8 @@ export function createKnowledgeBaseRoutes(
   const router = createRouter();
   router.use(authMiddleware);
 
-  // 知识库 CRUD
+  // ── 知识库 CRUD ──
+
   router.post(
     "/api/ai/knowledge-bases",
     perm("ai:knowledge-base", "create"),
@@ -29,7 +32,7 @@ export function createKnowledgeBaseRoutes(
           tenantId,
           userId,
         });
-        return ok(result);
+        return success(result);
       } catch (e) {
         return handleError(e);
       }
@@ -45,7 +48,7 @@ export function createKnowledgeBaseRoutes(
       );
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
       const result = await kbService.list({ tenantId, page, pageSize });
-      return okPage(result.list, result.total, page, pageSize);
+      return paginated(result.list, result.total, page, pageSize);
     },
   );
 
@@ -57,7 +60,7 @@ export function createKnowledgeBaseRoutes(
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
       const kb = await kbService.getById(id, tenantId);
       if (!kb) return fail("知识库不存在", 404, 404);
-      return ok(kb);
+      return success(kb);
     },
   );
 
@@ -69,14 +72,15 @@ export function createKnowledgeBaseRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.delete(id, tenantId);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return handleError(e);
       }
     },
   );
 
-  // 文件操作
+  // ── 文件浏览 ──
+
   router.get(
     "/api/ai/knowledge-bases/:id/files",
     perm("ai:knowledge-base", "list"),
@@ -87,27 +91,127 @@ export function createKnowledgeBaseRoutes(
       const depth = Number(q.depth) || 2;
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
       const files = await kbService.ls(id, path, depth, tenantId);
-      return ok(files);
+      return success(files);
     },
   );
 
+  // 获取文件内容（cat 解析后 / raw 原始内容）
   router.get(
     "/api/ai/knowledge-bases/:id/files/*",
     perm("ai:knowledge-base", "list"),
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      const path =
+      const q = ctx.query as Record<string, unknown>;
+      const raw = (q.raw as string) === "true";
+      const filePath =
         (ctx.params as Record<string, string>)["*"] ||
         (ctx.params as Record<string, string>).path ||
         "";
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
-      const content = await kbService.cat(id, path, tenantId);
+
+      if (raw) {
+        // 返回原始内容（用于编辑器）
+        const content = await kbService.cat(id, filePath, tenantId);
+        if (!content) return fail("文件不存在", 404, 404);
+        return success({ ...content, raw: content.content });
+      }
+
+      const content = await kbService.cat(id, filePath, tenantId);
       if (!content) return fail("文件不存在", 404, 404);
-      return ok(content);
+      return success(content);
     },
   );
 
-  // 搜索
+  // ── 文件写入 ──
+
+  router.put(
+    "/api/ai/knowledge-bases/:id/files/*",
+    perm("ai:knowledge-base", "update"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const filePath =
+          (ctx.params as Record<string, string>)["*"] ||
+          (ctx.params as Record<string, string>).path ||
+          "";
+        const body = await parseBody(ctx.request);
+        const content = body.content as string;
+        if (typeof content !== "string") {
+          return fail("content 字段必填", 400, 400);
+        }
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        await kbService.writeFile(id, filePath, content, tenantId);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // ── 文件重命名 ──
+
+  router.post(
+    "/api/ai/knowledge-bases/:id/rename",
+    perm("ai:knowledge-base", "update"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const body = await parseBody(ctx.request);
+        const filePath = body.path as string;
+        const newName = body.name as string;
+        if (!filePath || !newName) return fail("path 和 name 字段必填", 400, 400);
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        await kbService.renameFile(id, filePath, newName, tenantId);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // ── 创建目录 ──
+
+  router.post(
+    "/api/ai/knowledge-bases/:id/mkdir",
+    perm("ai:knowledge-base", "update"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const body = await parseBody(ctx.request);
+        const path = body.path as string;
+        if (!path) return fail("path 字段必填", 400, 400);
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        await kbService.mkdir(id, path, tenantId);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // ── 删除文件 ──
+
+  router.delete(
+    "/api/ai/knowledge-bases/:id/files/*",
+    perm("ai:knowledge-base", "delete"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const filePath =
+          (ctx.params as Record<string, string>)["*"] ||
+          (ctx.params as Record<string, string>).path ||
+          "";
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        await kbService.deleteFile(id, filePath, tenantId);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // ── 搜索 ──
+
   router.get(
     "/api/ai/knowledge-bases/:id/search",
     perm("ai:knowledge-base", "list"),
@@ -118,7 +222,7 @@ export function createKnowledgeBaseRoutes(
       const limit = Number(q.limit) || 10;
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
       const results = await kbService.grep(id, query, undefined, tenantId, limit);
-      return ok(results);
+      return success(results);
     },
   );
 
