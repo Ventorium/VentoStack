@@ -50,7 +50,7 @@ const AIAuditPage = () => {
   useEffect(() => { refresh(1); }, []);
 
   const handleSearch = () => { setPage(1); refresh(1); };
-  const handleReset = () => { setSearchText(""); setStatusFilter(undefined); setPage(1); };
+  const handleReset = () => { setSearchText(""); setStatusFilter(undefined); setPage(1); refresh(1, pageSize); };
   const handlePageChange = (p: number, ps: number) => { setPage(p); setPageSize(ps); refresh(p, ps); };
 
   const columns: ColumnsType<AIToolLogItem> = [

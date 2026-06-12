@@ -141,7 +141,7 @@ export default function KnowledgeBaseDetailPage() {
     if (!id || !previewFile) return;
     setSaving(true);
     try {
-      const { error } = await client.put(`/api/ai/knowledge-bases/${id}/files/*`, {
+      const { error } = await client.put("/api/ai/knowledge-bases/:id/files/*", {
         params: { id, "*": previewFile },
         body: { content: editContent },
       });
@@ -162,7 +162,7 @@ export default function KnowledgeBaseDetailPage() {
   const handleCreateDir = useCallback(async () => {
     if (!id || !newDirName.trim()) return;
     const dirPath = currentPath === "." ? newDirName.trim() : `${currentPath}/${newDirName.trim()}`;
-    const { error } = await client.post(`/api/ai/knowledge-bases/${id}/mkdir`, {
+    const { error } = await client.post("/api/ai/knowledge-bases/:id/mkdir", {
       params: { id },
       body: { path: dirPath },
     });
@@ -181,7 +181,7 @@ export default function KnowledgeBaseDetailPage() {
       ? newFileName.trim()
       : `${newFileName.trim()}.md`;
     const filePath = currentPath === "." ? fileName : `${currentPath}/${fileName}`;
-    const { error } = await client.put(`/api/ai/knowledge-bases/${id}/files/*`, {
+    const { error } = await client.put("/api/ai/knowledge-bases/:id/files/*", {
       params: { id, "*": filePath },
       body: { content: `# ${fileName.replace(/\.md$/, "")}\n\n` },
     });
@@ -197,7 +197,7 @@ export default function KnowledgeBaseDetailPage() {
   // ── 重命名 ──
   const handleRename = useCallback(async () => {
     if (!id || !renameModal.path || !renameModal.name.trim()) return;
-    const { error } = await client.post(`/api/ai/knowledge-bases/${id}/rename`, {
+    const { error } = await client.post("/api/ai/knowledge-bases/:id/rename", {
       params: { id },
       body: { path: renameModal.path, name: renameModal.name.trim() },
     });
@@ -217,7 +217,7 @@ export default function KnowledgeBaseDetailPage() {
   const handleDeleteFile = useCallback(
     async (filePath: string) => {
       if (!id) return;
-      const { error } = await client.delete(`/api/ai/knowledge-bases/${id}/files/*`, {
+      const { error } = await client.delete("/api/ai/knowledge-bases/:id/files/*", {
         params: { id, "*": filePath },
       });
       if (!error) {

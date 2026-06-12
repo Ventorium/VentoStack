@@ -1,14 +1,20 @@
+import { client } from "@/api";
 import { streamChat, type ChatStreamParams } from "@/api/sse-client";
 import { Card, theme } from "antd";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ModelOption } from "./types";
-import { MOCK_THREADS, MOCK_MESSAGES, MOCK_SKILLS, MOCK_MODELS } from "./mock-data";
+import { MOCK_THREADS, MOCK_MESSAGES, MOCK_SKILLS } from "./mock-data";
 
 import ThreadList from "./components/ThreadList";
 import TopToolbar from "./components/TopToolbar";
 import ChatArea from "./components/ChatArea";
 import BottomInput from "./components/BottomInput";
 import SkillsModal from "./components/SkillsModal";
+
+/** Fallback model when DB has no models configured */
+const FALLBACK_MODEL: ModelOption = {
+  id: "default", name: "请先在 AI 配置中添加供应商和模型", provider: "", contextWindow: 128000,
+};
 
 export default function AIChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>(MOCK_MESSAGES);
@@ -17,12 +23,50 @@ export default function AIChatPage() {
   const [loading, setLoading] = useState(false);
   const [skillsVisible, setSkillsVisible] = useState(false);
   const [skills, setSkills] = useState(MOCK_SKILLS);
-  const [currentModel, setCurrentModel] = useState<ModelOption>(MOCK_MODELS[0]);
+  const [currentModel, setCurrentModel] = useState<ModelOption>(FALLBACK_MODEL);
+  const [dbModels, setDbModels] = useState<ModelOption[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const abortControllerRef = useRef<AbortController | null>(null);
   const { token } = theme.useToken();
 
   const agentName = "新助手";
+
+  // Fetch models from DB + default model config
+  useEffect(() => {
+    const fetchModels = async () => {
+      try {
+        const { data: models } = await client.get("/api/ai/models") as {
+          data?: Array<{ modelId: string; displayName: string | null; providerName: string; contextLength: number }>;
+        };
+        if (models && models.length > 0) {
+          const options: ModelOption[] = models.map((m) => ({
+            id: m.modelId,
+            name: m.displayName || m.modelId,
+            provider: m.providerName,
+            contextWindow: m.contextLength,
+          }));
+          setDbModels(options);
+
+          // Try to use default model from config
+          try {
+            const { data: cfg } = await client.get("/api/ai/config/:key", { params: { key: "default_model" } }) as {
+              data?: { value: string | null };
+            };
+            if (cfg?.value) {
+              const found = options.find((o) => `${o.provider}/${o.id}` === cfg.value);
+              if (found) setCurrentModel(found);
+              else setCurrentModel(options[0]);
+            } else {
+              setCurrentModel(options[0]);
+            }
+          } catch {
+            setCurrentModel(options[0]);
+          }
+        }
+      } catch {}
+    };
+    fetchModels();
+  }, []);
 
   // Send message
   const handleSend = useCallback(
@@ -210,7 +254,7 @@ export default function AIChatPage() {
             onStop={handleStop}
             loading={loading}
             currentModel={currentModel}
-            models={MOCK_MODELS}
+            models={dbModels.length > 0 ? dbModels : [FALLBACK_MODEL]}
             onModelChange={setCurrentModel}
             contextUsage={contextUsage}
           />

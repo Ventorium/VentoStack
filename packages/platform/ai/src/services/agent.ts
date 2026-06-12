@@ -98,7 +98,7 @@ export function createAgentService(deps: { db: Database }) {
     return { id };
   }
 
-  async function update(id: string, params: UpdateAgentParams): Promise<void> {
+  async function update(id: string, params: UpdateAgentParams, tenantId?: string): Promise<void> {
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -123,10 +123,17 @@ export function createAgentService(deps: { db: Database }) {
     if (sets.length === 0) return;
 
     sets.push(`updated_at = NOW()`);
+    const whereClauses = [`id = $${idx}`];
     values.push(id);
+    idx++;
+    if (tenantId) {
+      whereClauses.push(`tenant_id = $${idx}`);
+      values.push(tenantId);
+      idx++;
+    }
 
     await db.raw(
-      `UPDATE ai_agent SET ${sets.join(", ")} WHERE id = $${idx}`,
+      `UPDATE ai_agent SET ${sets.join(", ")} WHERE ${whereClauses.join(" AND ")}`,
       values,
     );
   }

@@ -5,9 +5,6 @@ import { useNavigate, useParams } from "react-router-dom";
 import { client } from "@/api";
 import type { AgentItem } from "@/api/types";
 
-// AI 接口尚未注册到 OpenAPI schema，临时使用 any
-const aiClient = client as any;
-
 const { Title } = Typography;
 const { TextArea } = Input;
 
@@ -24,14 +21,31 @@ const AgentDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
+  const [modelOptions, setModelOptions] = useState<Array<{ label: string; value: string }>>([]);
+
+  // 从数据库动态加载模型列表
+  useEffect(() => {
+    client.get("/api/ai/models").then(({ data }) => {
+      const models = data as Array<{ modelId: string; displayName: string | null; providerName: string }> | undefined;
+      if (models?.length) {
+        setModelOptions(
+          models.map((m) => ({
+            label: `${m.providerName}/${m.displayName || m.modelId}`,
+            value: m.modelId,
+          })),
+        );
+      }
+    }).catch(() => {});
+  }, []);
 
   const fetchData = async () => {
     if (!id) return;
     setLoading(true);
     try {
-      const res = await aiClient.get(`/api/ai/agents/${id}`);
-      if (!res.error) {
-        const data = res.data as AgentItem;
+      const { error, data } = await client.get("/api/ai/agents/:id", { params: { id } }) as {
+        error?: unknown; data?: AgentItem;
+      };
+      if (!error && data) {
         setAgent(data);
         form.setFieldsValue(data);
       }
@@ -49,7 +63,7 @@ const AgentDetailPage = () => {
     try {
       const values = await form.validateFields();
       setSaving(true);
-      const { error } = await aiClient.put(`/api/ai/agents/${id}`, { body: values });
+      const { error } = await client.put("/api/ai/agents/:id", { params: { id }, body: values });
       if (!error) {
         message.success("保存成功");
         fetchData();
@@ -98,11 +112,12 @@ const AgentDetailPage = () => {
 
           <Form.Item label="模型" name="model">
             <Select
-              options={[
-                { label: "GPT-4o", value: "gpt-4o" },
-                { label: "GPT-4o Mini", value: "gpt-4o-mini" },
-                { label: "Claude 3.5 Sonnet", value: "claude-3-5-sonnet" },
-              ]}
+              options={modelOptions}
+              placeholder="选择模型"
+              showSearch
+              filterOption={(input, option) =>
+                (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+              }
             />
           </Form.Item>
 

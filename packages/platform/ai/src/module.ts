@@ -249,7 +249,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
 
   // Skill 服务
   const skillStoreService = createSkillStoreService();
-  const skillService = createSkillService({ db, eventBus, storeService: skillStoreService, storagePath: \`\${storagePath}/skills\` });
+  const skillService = createSkillService({ db, eventBus, storeService: skillStoreService, storagePath: `${storagePath}/skills` });
   const modelConfigService = createModelConfigService({ db });
   const scopedKBService = createScopedKBService({ db, eventBus });
 

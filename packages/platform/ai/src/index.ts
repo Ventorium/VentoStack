@@ -269,3 +269,6 @@ export { createSkillRoutes } from "./routes/skill";
 
 // ---- Skill Models ----
 export { AiSkillModel, AiAgentSkillModel } from "./models/skill";
+
+// ---- Skill Migration ----
+export { createAiSkillTables } from "./migrations/006_create_ai_skill_tables";

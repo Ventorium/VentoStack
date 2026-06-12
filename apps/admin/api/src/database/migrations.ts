@@ -7,7 +7,7 @@ import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
 import { createI18nTables } from "@ventostack/i18n";
 import { createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
-import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables } from "@ventostack/ai";
+import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables } from "@ventostack/ai";
 import { createNotifyTables } from "@ventostack/notification";
 import { createWorkflowTables, enhanceWorkflowTables, addBusinessType } from "@ventostack/workflow";
 import { createSysTables } from "./migrations/001_create_sys_tables";
