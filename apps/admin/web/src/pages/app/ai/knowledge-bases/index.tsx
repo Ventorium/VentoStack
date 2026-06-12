@@ -30,6 +30,19 @@ import {
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 
+// 知识库卡片 hover 显示删除按钮
+const kbCardStyle = document.createElement("style");
+kbCardStyle.textContent = `
+  .kb-delete-btn { opacity: 0; transition: opacity 0.2s; }
+  .ant-card:hover .kb-delete-btn { opacity: 1; }
+`;
+if (!document.getElementById("kb-card-hover-style")) {
+  kbCardStyle.id = "kb-card-hover-style";
+  document.head.appendChild(kbCardStyle);
+}
+
+
+
 const { Text, Paragraph } = Typography;
 const { TextArea } = Input;
 
@@ -176,7 +189,7 @@ export default function KnowledgeBasesPage() {
                   }}
                 >
                   {/* Header */}
-                  <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                  <div className="kb-card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
                     <div
                       style={{
                         width: 40,
@@ -199,6 +212,7 @@ export default function KnowledgeBasesPage() {
                         danger
                         icon={<DeleteOutlined />}
                         onClick={(e) => handleDelete(kb, e)}
+                        className="kb-delete-btn"
                       />
                     </Tooltip>
                   </div>

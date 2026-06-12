@@ -48,6 +48,7 @@ import {
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
+import ActionColumn from "@/components/ActionColumn";
 
 const { Title, Text } = Typography;
 
@@ -71,6 +72,7 @@ interface ProviderItem {
   headers: Record<string, string> | null;
   extra: Record<string, unknown> | null;
   presetId: string | null;
+  modelsDevSlug: string | null;
   status: number;
   sort: number;
   modelCount: number;
@@ -162,6 +164,14 @@ export default function AISettingsPage() {
   const [modelsList, setModelsList] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
+  const [testingModels, setTestingModels] = useState<Set<string>>(new Set());
+  const [modelTestResults, setModelTestResults] = useState<Record<string, { status: string; elapsed?: number; message?: string }>>({});
+
+  // Add model modal
+  const [addModelOpen, setAddModelOpen] = useState(false);
+  const [addModelForm] = Form.useForm();
+  const [addModelLoading, setAddModelLoading] = useState(false);
 
   // OCR config
   const [ocrEnabled, setOcrEnabled] = useState(true);
@@ -260,12 +270,13 @@ export default function AISettingsPage() {
       setAddLoading(true);
       const preset = presets.find((p) => p.id === values.presetId);
       const body: Record<string, unknown> = {
-        name: preset?.name ?? values.customName,
-        displayName: values.providerDisplayName || preset?.displayName || values.customName,
+        name: preset?.name ?? `custom_${Date.now()}`,
+        displayName: values.providerDisplayName || preset?.displayName || "自定义供应商",
         apiFormat: preset?.apiFormat ?? values.customApiFormat,
         baseUrl: preset?.baseUrl || values.customBaseUrl,
         apiKey: values.apiKey,
         presetId: preset?.id ?? null,
+        modelsDevSlug: preset?.modelsDevSlug ?? (values.customModelsDevSlug || undefined),
       };
       const { error } = await client.post("/api/ai/providers", { body });
       if (!error) {
@@ -288,6 +299,7 @@ export default function AISettingsPage() {
       apiFormat: p.apiFormat,
       baseUrl: p.baseUrl,
       apiKey: p.apiKey,
+      modelsDevSlug: p.modelsDevSlug,
       status: p.status,
       sort: p.sort,
     });
@@ -386,6 +398,110 @@ export default function AISettingsPage() {
     if (!error) {
       msg.success("模型已删除");
       await refreshModels();
+    }
+  };
+
+  // === Add model (manual) ===
+  const handleAddModel = async () => {
+    if (!modelsProvider) return;
+    try {
+      const values = await addModelForm.validateFields();
+      setAddModelLoading(true);
+      // Reconstruct reasoningOptions from effortValues + budget fields
+      const parts: ReasoningOption[] = [];
+      const effortValues: string[] | undefined = values.effortValues;
+      if (effortValues && effortValues.length > 0) {
+        parts.push({ type: "effort", values: effortValues.map((v: string) => v.toLowerCase().trim()).filter(Boolean) });
+      }
+      const budgetMin: number | undefined = values.budgetMin;
+      const budgetMax: number | undefined = values.budgetMax;
+      if (budgetMin != null || budgetMax != null) {
+        parts.push({ type: "budget_tokens", ...(budgetMin != null ? { min: budgetMin } : {}), ...(budgetMax != null ? { max: budgetMax } : {}) });
+      }
+      const reasoningOptions = parts.length > 0 ? parts : null;
+      const { effortValues: _e, budgetMin: _bmin, budgetMax: _bmax, ...body } = values;
+      const { error } = await client.post("/api/ai/providers/:id/models", {
+        params: { id: modelsProvider.id },
+        body: { ...body, reasoningOptions },
+      });
+      if (!error) {
+        msg.success("模型已添加");
+        setAddModelOpen(false);
+        addModelForm.resetFields();
+        await refreshModels();
+      }
+    } catch {} finally {
+      setAddModelLoading(false);
+    }
+  };
+
+  // === Batch delete ===
+  const handleBatchDelete = async () => {
+    if (selectedModelIds.length === 0) return;
+    const { error, data } = await client.post("/api/ai/models/batch-delete", {
+      body: { ids: selectedModelIds },
+    }) as { error?: unknown; data?: { deleted: number } };
+    if (!error) {
+      msg.success(`已删除 ${data?.deleted ?? selectedModelIds.length} 个模型`);
+      setSelectedModelIds([]);
+      await refreshModels();
+    }
+  };
+
+  // === Test connectivity (single) ===
+  const handleTestModel = async (modelId: string) => {
+    setTestingModels((prev) => new Set(prev).add(modelId));
+    setModelTestResults((prev) => ({ ...prev, [modelId]: undefined as unknown as { status: string } }));
+    try {
+      const { data } = await client.post("/api/ai/models/:id/test", {
+        params: { id: modelId },
+      }) as { data?: { status: string; elapsed?: number; message?: string; statusCode?: number } };
+      if (data) {
+        setModelTestResults((prev) => ({ ...prev, [modelId]: data }));
+        if (data.status === "ok") {
+          msg.success(`连通性测试通过 (${data.elapsed}ms)`);
+        } else {
+          msg.error(`连通性测试失败: ${data.message ?? "HTTP " + data.statusCode}`);
+        }
+      }
+    } catch (e) {
+      const result = { status: "error", message: e instanceof Error ? e.message : "测试失败" };
+      setModelTestResults((prev) => ({ ...prev, [modelId]: result }));
+      msg.error(result.message);
+    } finally {
+      setTestingModels((prev) => {
+        const next = new Set(prev);
+        next.delete(modelId);
+        return next;
+      });
+    }
+  };
+
+  // === Batch test ===
+  const handleBatchTest = async () => {
+    if (selectedModelIds.length === 0) return;
+    msg.loading(`正在测试 ${selectedModelIds.length} 个模型...`);
+    setTestingModels(new Set(selectedModelIds));
+    try {
+      const { data } = await client.post("/api/ai/models/batch-test", {
+        body: { ids: selectedModelIds },
+      }) as { data?: Array<{ id: string; status: string; elapsed?: number; message?: string }> };
+      if (data) {
+        const results: Record<string, { status: string; elapsed?: number; message?: string }> = {};
+        let ok = 0;
+        let fail = 0;
+        for (const r of data) {
+          results[r.id] = r;
+          if (r.status === "ok") ok++;
+          else fail++;
+        }
+        setModelTestResults((prev) => ({ ...prev, ...results }));
+        msg.success(`测试完成：${ok} 通过，${fail} 失败`);
+      }
+    } catch (e) {
+      msg.error("批量测试失败: " + (e instanceof Error ? e.message : "未知错误"));
+    } finally {
+      setTestingModels(new Set());
     }
   };
 
@@ -509,25 +625,19 @@ export default function AISettingsPage() {
       render: (_, r) => {
         const isDefault = isDefaultModel(modelsProvider?.name ?? "", r.modelId);
         return (
-          <Space>
-            {isDefault ? (
-              <Button type="link" size="small" icon={<StarFilled style={{ color: "#faad14" }} />} onClick={handleClearDefault}>
-                取消默认
-              </Button>
-            ) : (
-              <Button type="link" size="small" icon={<StarOutlined />} onClick={() => handleSetDefault(modelsProvider?.name ?? "", r.modelId)}>
-                设为默认
-              </Button>
-            )}
-            <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditModel(r)}>
-              编辑
-            </Button>
-            <Popconfirm title="确定删除此模型？" onConfirm={() => handleDeleteModel(r.id)} okText="删除" okType="danger">
-              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-                删除
-              </Button>
-            </Popconfirm>
-          </Space>
+          (() => {
+            const testResult = modelTestResults[r.id];
+            const testLabel = testingModels.has(r.id) ? "测试中..." : testResult?.status === "ok" ? `✓ ${testResult.elapsed}ms` : testResult?.status === "error" ? "✗ 失败" : "测试";
+            const items: Array<{ label: string; onClick: () => void; danger?: boolean; confirm?: string }> = [
+              isDefault
+                ? { label: "取消默认", onClick: handleClearDefault }
+                : { label: "设为默认", onClick: () => handleSetDefault(modelsProvider?.name ?? "", r.modelId) },
+              { label: testLabel, onClick: () => handleTestModel(r.id) },
+              { label: "编辑", onClick: () => openEditModel(r) },
+              { label: "删除", onClick: () => handleDeleteModel(r.id), danger: true, confirm: "确定删除此模型？" },
+            ];
+            return <ActionColumn items={items} maxInline={3} />;
+          })()
         );
       },
     },
@@ -719,7 +829,7 @@ export default function AISettingsPage() {
                 const preset = presets.find((p) => p.id === val) ?? null;
                 setSelectedPreset(preset);
                 if (preset && !preset.baseUrl) {
-                  addForm.setFieldsValue({ customApiFormat: preset.apiFormat, customName: preset.name });
+                  addForm.setFieldsValue({ customApiFormat: preset.apiFormat });
                 }
               }}
               showSearch
@@ -732,9 +842,6 @@ export default function AISettingsPage() {
 
           {selectedPreset && !selectedPreset.baseUrl && (
             <>
-              <Form.Item name="customName" label="标识名 (英文)" rules={[{ required: true }]}>
-                <Input placeholder="如 my-anthropic" />
-              </Form.Item>
               <Form.Item name="customBaseUrl" label="Base URL" rules={[{ required: true }]}>
                 <Input placeholder="https://api.example.com/v1" />
               </Form.Item>
@@ -745,6 +852,9 @@ export default function AISettingsPage() {
                   { value: "anthropic", label: "Anthropic Messages" },
                   { value: "custom", label: "自定义" },
                 ]} />
+              </Form.Item>
+              <Form.Item name="customModelsDevSlug" label="models.dev 供应商名称" extra="填写后可从 models.dev 同步模型列表，如 anthropic, openai, deepseek">
+                <Input placeholder="如 anthropic" />
               </Form.Item>
             </>
           )}
@@ -809,6 +919,9 @@ export default function AISettingsPage() {
           <Form.Item name="apiKey" label="API Key">
             <Input.Password />
           </Form.Item>
+          <Form.Item name="modelsDevSlug" label="models.dev 供应商名称" extra="填写后可从 models.dev 同步模型列表，如 anthropic, openai, deepseek">
+            <Input placeholder="留空则不同步" allowClear />
+          </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="status" label="状态">
@@ -833,30 +946,48 @@ export default function AISettingsPage() {
           <Space>
             <RobotOutlined />
             <span>模型管理 — {modelsProvider?.displayName || modelsProvider?.name}</span>
-            {defaultModel && (
+            {defaultModel && defaultModel.startsWith((modelsProvider?.name ?? "") + "/") && (
               <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
-                当前默认: <Text strong>{defaultModel}</Text>
+                当前默认: <Text strong>{defaultModel.split("/").slice(1).join("/")}</Text>
               </Text>
             )}
           </Space>
         }
         open={modelsOpen}
-        onClose={() => setModelsOpen(false)}
+        onClose={() => { setModelsOpen(false); setSelectedModelIds([]); setModelTestResults({}); }}
         size={960}
         extra={
           <Space>
-            {modelsProvider?.presetId && (
+            {(modelsProvider?.presetId || modelsProvider?.modelsDevSlug) && (
               <Button icon={<CloudSyncOutlined />} loading={syncing} onClick={handleSync}>
                 从 models.dev 同步
               </Button>
             )}
+            <Button icon={<PlusOutlined />} onClick={() => { addModelForm.resetFields(); setAddModelOpen(true); }}>
+              添加模型
+            </Button>
             <Button icon={<ReloadOutlined />} onClick={refreshModels}>刷新</Button>
           </Space>
         }
       >
-        {modelsProvider?.presetId && (
-          <div style={{ marginBottom: 16, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6, fontSize: 13 }}>
-            💡 点击「从 models.dev 同步」自动拉取该供应商的模型列表。价格数据需手动填写（models.dev 不提供）。默认模型排在最前面，点击 ⭐ 按钮可切换。
+        <div style={{ marginBottom: 16, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6, fontSize: 13 }}>
+          💡 {(modelsProvider?.presetId || modelsProvider?.modelsDevSlug) ? "点击「从 models.dev 同步」自动拉取模型列表，或点击「添加模型」手动添加。" : "点击「添加模型」手动添加模型。"} 勾选模型后可批量删除或测试连通性。
+        </div>
+        {selectedModelIds.length > 0 && (
+          <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+            <Text type="secondary">已选 {selectedModelIds.length} 个模型</Text>
+            <Popconfirm
+              title={`确定删除选中的 ${selectedModelIds.length} 个模型？`}
+              onConfirm={handleBatchDelete}
+              okText="删除"
+              okType="danger"
+            >
+              <Button size="small" danger icon={<DeleteOutlined />}>批量删除</Button>
+            </Popconfirm>
+            <Button size="small" icon={<ThunderboltOutlined />} onClick={handleBatchTest}>
+              批量测试连通性
+            </Button>
+            <Button size="small" type="link" onClick={() => setSelectedModelIds([])}>取消选择</Button>
           </div>
         )}
         <Table
@@ -867,8 +998,156 @@ export default function AISettingsPage() {
           size="small"
           scroll={{ x: 'max-content' }}
           pagination={modelsList.length > 20 ? { pageSize: 20 } : false}
+          rowSelection={{
+            selectedRowKeys: selectedModelIds,
+            onChange: (keys) => setSelectedModelIds(keys as string[]),
+          }}
         />
+        {Object.keys(modelTestResults).length > 0 && (
+          <div style={{ marginTop: 16, padding: 12, background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <Text strong style={{ fontSize: 13 }}>连通性测试结果</Text>
+              <Button size="small" type="text" onClick={() => setModelTestResults({})}>清空</Button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflow: "auto" }}>
+              {Object.entries(modelTestResults).map(([id, result]) => {
+                const model = modelsList.find((m) => m.id === id);
+                if (!result) return null;
+                return (
+                  <div key={id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 4, background: result.status === "ok" ? "#f6ffed" : "#fff2f0", fontSize: 12 }}>
+                    {result.status === "ok"
+                      ? <CheckCircleOutlined style={{ color: "#52c41a" }} />
+                      : <CloseCircleOutlined style={{ color: "#ff4d4f" }} />
+                    }
+                    <Text strong style={{ fontSize: 12, minWidth: 160 }}>{model?.displayName || model?.modelId || id}</Text>
+                    {result.status === "ok" ? (
+                      <Text type="secondary" style={{ fontSize: 12 }}>通过 · {result.elapsed}ms</Text>
+                    ) : (
+                      <Text type="danger" style={{ fontSize: 12, flex: 1 }} ellipsis={{ tooltip: result.message }}>失败 · {result.message?.slice(0, 120) || "未知错误"}</Text>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
       </Drawer>
+
+      {/* === Add Model Modal === */}
+      <Modal
+        title={`添加模型 — ${modelsProvider?.displayName || modelsProvider?.name}`}
+        open={addModelOpen}
+        onOk={handleAddModel}
+        onCancel={() => setAddModelOpen(false)}
+        confirmLoading={addModelLoading}
+        destroyOnHidden
+        width={640}
+      >
+        <Form form={addModelForm} layout="vertical">
+          <Form.Item name="modelId" label="模型 ID" rules={[{ required: true, message: "请输入模型 ID" }]}>
+            <Input placeholder="如 gpt-4o, deepseek-v4-flash, claude-sonnet-4" />
+          </Form.Item>
+          <Form.Item name="displayName" label="显示名称">
+            <Input placeholder="留空则使用模型 ID" />
+          </Form.Item>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="contextLength" label="上下文长度" initialValue={128000}>
+                <InputNumber className="w-full" min={1} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="maxOutputTokens" label="最大输出 Tokens" initialValue={4096}>
+                <InputNumber className="w-full" min={1} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Divider style={{ margin: "8px 0 16px" }}>模态支持</Divider>
+          <Row gutter={16}>
+            <Col span={6}><Form.Item name="supportsText" label="文本" valuePropName="checked" initialValue><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsImage" label="图片" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsVideo" label="视频" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsAudio" label="语音" valuePropName="checked"><Switch /></Form.Item></Col>
+          </Row>
+          <Divider style={{ margin: "8px 0 16px" }}>能力</Divider>
+          <Row gutter={16}>
+            <Col span={6}><Form.Item name="supportsFunctionCalling" label="函数调用" valuePropName="checked" initialValue><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsStreaming" label="流式输出" valuePropName="checked" initialValue><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsThinking" label="推理/思考" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsStructuredOutput" label="结构化输出" valuePropName="checked"><Switch /></Form.Item></Col>
+          </Row>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.supportsThinking !== cur.supportsThinking}
+          >
+            {() => {
+              const thinking = addModelForm.getFieldValue("supportsThinking");
+              if (!thinking) return null;
+              return (
+                <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0", marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item name="effortValues" label="思考强度" extra="用户可选择的推理强度级别，输入后自动转为小写">
+                        <Select
+                          mode="tags"
+                          placeholder="输入强度级别，如 low, medium, high"
+                          tokenSeparators={[","]}
+                          options={[
+                            { value: "minimal", label: "minimal" },
+                            { value: "low", label: "low" },
+                            { value: "medium", label: "medium" },
+                            { value: "high", label: "high" },
+                            { value: "xhigh", label: "xhigh" },
+                            { value: "max", label: "max" },
+                          ]}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item name="budgetMin" label="Token 预算下限" extra="留空则无限制">
+                        <InputNumber className="w-full" min={0} placeholder="如 1024" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item name="budgetMax" label="Token 预算上限" extra="留空则无限制">
+                        <InputNumber className="w-full" min={0} placeholder="如 32768" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </div>
+              );
+            }}
+          </Form.Item>
+          <Divider style={{ margin: "8px 0 16px" }}>价格 ($/M tokens)</Divider>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="pricingInput" label="输入价格">
+                <InputNumber className="w-full" min={0} step={0.01} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="pricingOutput" label="输出价格">
+                <InputNumber className="w-full" min={0} step={0.01} />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={12}>
+              <Form.Item name="status" label="状态" initialValue={1}>
+                <Select options={[
+                  { value: 1, label: "启用" },
+                  { value: 0, label: "禁用" },
+                ]} />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="sort" label="排序" initialValue={0}>
+                <InputNumber className="w-full" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </Form>
+      </Modal>
 
       {/* === Edit Model Modal === */}
       <Modal
@@ -927,12 +1206,12 @@ export default function AISettingsPage() {
                           placeholder="输入强度级别，如 low, medium, high"
                           tokenSeparators={[","]}
                           options={[
-                            { value: "minimal", label: "Minimal" },
-                            { value: "low", label: "Low" },
-                            { value: "medium", label: "Medium" },
-                            { value: "high", label: "High" },
-                            { value: "xhigh", label: "XHigh" },
-                            { value: "max", label: "Max" },
+                            { value: "minimal", label: "minimal" },
+                            { value: "low", label: "low" },
+                            { value: "medium", label: "medium" },
+                            { value: "high", label: "high" },
+                            { value: "xhigh", label: "xhigh" },
+                            { value: "max", label: "max" },
                           ]}
                         />
                       </Form.Item>

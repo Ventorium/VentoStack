@@ -155,6 +155,6 @@ describe("ProviderService", () => {
       { id: "p1", name: "custom", display_name: "Custom", api_format: "openai_chat", base_url: "http://localhost", api_key: "k", headers: null, extra: null, preset_id: null, status: 1, sort: 0, model_count: 0, created_at: new Date(), updated_at: new Date() },
     ]);
     const service = createProviderService({ db });
-    await expect(service.syncModels("p1", "default")).rejects.toThrow("Provider has no preset configured");
+    await expect(service.syncModels("p1", "default")).rejects.toThrow("Provider has no models.dev slug configured");
   });
 });

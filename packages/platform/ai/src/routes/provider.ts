@@ -61,6 +61,7 @@ export function createProviderRoutes(
           headers: body.headers as Record<string, string> | undefined,
           extra: body.extra as Record<string, unknown> | undefined,
           presetId: body.presetId as string | undefined,
+          modelsDevSlug: body.modelsDevSlug as string | undefined,
           sort: body.sort as number | undefined,
         });
         return success(result);
@@ -139,6 +140,209 @@ export function createProviderRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         await providerService.deleteModel(id, tenantId);
         return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // 创建模型（手动添加）
+  router.post(
+    "/api/ai/providers/:id/models",
+    perm("ai:provider", "create"),
+    async (ctx) => {
+      try {
+        const providerId = (ctx.params as Record<string, string>).id!;
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        const body = await parseBody(ctx.request);
+        const result = await providerService.createModel(tenantId, {
+          providerId,
+          modelId: body.modelId as string,
+          displayName: body.displayName as string | undefined,
+          contextLength: body.contextLength as number | undefined,
+          maxOutputTokens: body.maxOutputTokens as number | undefined,
+          supportsText: body.supportsText as boolean | undefined,
+          supportsImage: body.supportsImage as boolean | undefined,
+          supportsVideo: body.supportsVideo as boolean | undefined,
+          supportsAudio: body.supportsAudio as boolean | undefined,
+          supportsFunctionCalling: body.supportsFunctionCalling as boolean | undefined,
+          supportsStreaming: body.supportsStreaming as boolean | undefined,
+          supportsThinking: body.supportsThinking as boolean | undefined,
+          supportsStructuredOutput: body.supportsStructuredOutput as boolean | undefined,
+          reasoningOptions: body.reasoningOptions as Parameters<typeof providerService.createModel>[1]["reasoningOptions"],
+          pricingInput: body.pricingInput as number | null | undefined,
+          pricingOutput: body.pricingOutput as number | null | undefined,
+          status: body.status as number | undefined,
+          sort: body.sort as number | undefined,
+        });
+        return success(result);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // 批量删除模型
+  router.post(
+    "/api/ai/models/batch-delete",
+    perm("ai:provider", "delete"),
+    async (ctx) => {
+      try {
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        const body = await parseBody(ctx.request);
+        const ids = body.ids as string[];
+        if (!ids || !Array.isArray(ids) || ids.length === 0) return fail("请选择要删除的模型", 400, 400);
+        const count = await providerService.deleteModels(ids, tenantId);
+        return success({ deleted: count });
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // 测试模型连通性
+  router.post(
+    "/api/ai/models/:id/test",
+    perm("ai:provider", "query"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        const model = await providerService.getModel(id, tenantId);
+        if (!model) return fail("模型不存在", 404, 404);
+
+        const provider = await providerService.getProviderApiKey(model.providerId, tenantId);
+        if (!provider) return fail("供应商不存在", 404, 404);
+
+        const startTime = Date.now();
+
+        // Build request based on API format
+        let url: string;
+        let headers: Record<string, string>;
+        let body: Record<string, unknown>;
+
+        if (provider.apiFormat === "anthropic") {
+          url = `${provider.baseUrl.replace(/\/+$/, "")}/messages`;
+          headers = {
+            "Content-Type": "application/json",
+            "x-api-key": provider.apiKey,
+            "anthropic-version": "2023-06-01",
+          };
+          body = {
+            model: model.modelId,
+            max_tokens: 1,
+            messages: [{ role: "user", content: "1+1=?" }],
+          };
+        } else {
+          // openai_chat / openai_response / custom
+          const endpoint = provider.apiFormat === "openai_response" ? "responses" : "chat/completions";
+          url = `${provider.baseUrl.replace(/\/+$/, "")}/${endpoint}`;
+          headers = {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${provider.apiKey}`,
+          };
+          body = {
+            model: model.modelId,
+            max_tokens: 1,
+            messages: [{ role: "user", content: "1+1=?" }],
+          };
+        }
+
+        const resp = await fetch(url, {
+          method: "POST",
+          headers,
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(30000),
+        });
+
+        const elapsed = Date.now() - startTime;
+
+        if (resp.ok) {
+          return success({ status: "ok", statusCode: resp.status, elapsed });
+        } else {
+          const text = await resp.text().catch(() => "");
+          return success({ status: "error", statusCode: resp.status, elapsed, message: text.slice(0, 200) });
+        }
+      } catch (e) {
+        return success({ status: "error", message: e instanceof Error ? e.message : "连接失败" });
+      }
+    },
+  );
+
+  // 批量测试模型连通性
+  router.post(
+    "/api/ai/models/batch-test",
+    perm("ai:provider", "query"),
+    async (ctx) => {
+      try {
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        const body = await parseBody(ctx.request);
+        const ids = body.ids as string[];
+        if (!ids || !Array.isArray(ids) || ids.length === 0) return fail("请选择要测试的模型", 400, 400);
+
+        const results: Array<{ id: string; status: string; elapsed?: number; message?: string }> = [];
+
+        // Test sequentially to avoid rate limiting
+        for (const id of ids) {
+          const model = await providerService.getModel(id, tenantId);
+          if (!model) { results.push({ id, status: "error", message: "模型不存在" }); continue; }
+
+          const provider = await providerService.getProviderApiKey(model.providerId, tenantId);
+          if (!provider) { results.push({ id, status: "error", message: "供应商不存在" }); continue; }
+
+          try {
+            const startTime = Date.now();
+            let url: string;
+            let headers: Record<string, string>;
+            let reqBody: Record<string, unknown>;
+
+            if (provider.apiFormat === "anthropic") {
+              url = `${provider.baseUrl.replace(/\/+$/, "")}/messages`;
+              headers = {
+                "Content-Type": "application/json",
+                "x-api-key": provider.apiKey,
+                "anthropic-version": "2023-06-01",
+              };
+              reqBody = {
+                model: model.modelId,
+                max_tokens: 1,
+                messages: [{ role: "user", content: "1+1=?" }],
+              };
+            } else {
+              const endpoint = provider.apiFormat === "openai_response" ? "responses" : "chat/completions";
+              url = `${provider.baseUrl.replace(/\/+$/, "")}/${endpoint}`;
+              headers = {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${provider.apiKey}`,
+              };
+              reqBody = {
+                model: model.modelId,
+                max_tokens: 1,
+                messages: [{ role: "user", content: "1+1=?" }],
+              };
+            }
+
+            const resp = await fetch(url, {
+              method: "POST",
+              headers,
+              body: JSON.stringify(reqBody),
+              signal: AbortSignal.timeout(30000),
+            });
+
+            const elapsed = Date.now() - startTime;
+
+            if (resp.ok) {
+              results.push({ id, status: "ok", elapsed });
+            } else {
+              const text = await resp.text().catch(() => "");
+              results.push({ id, status: "error", elapsed, message: `HTTP ${resp.status}: ${text.slice(0, 100)}` });
+            }
+          } catch (e) {
+            results.push({ id, status: "error", message: e instanceof Error ? e.message : "连接失败" });
+          }
+        }
+
+        return success(results);
       } catch (e) {
         return handleError(e);
       }

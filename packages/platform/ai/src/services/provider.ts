@@ -17,6 +17,7 @@ export interface CreateProviderParams {
   headers?: Record<string, string>;
   extra?: Record<string, unknown>;
   presetId?: string;
+  modelsDevSlug?: string;
   sort?: number;
 }
 
@@ -27,6 +28,7 @@ export interface UpdateProviderParams {
   apiKey?: string;
   headers?: Record<string, string>;
   extra?: Record<string, unknown>;
+  modelsDevSlug?: string;
   status?: number;
   sort?: number;
 }
@@ -41,6 +43,7 @@ export interface ProviderItem {
   headers: Record<string, string> | null;
   extra: Record<string, unknown> | null;
   presetId: string | null;
+  modelsDevSlug: string | null;
   status: number;
   sort: number;
   modelCount: number;
@@ -107,8 +110,8 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
   async function createProvider(tenantId: string, params: CreateProviderParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.raw(
-      `INSERT INTO ai_provider (id, name, display_name, api_format, base_url, api_key, headers, extra, preset_id, sort, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+      `INSERT INTO ai_provider (id, name, display_name, api_format, base_url, api_key, headers, extra, preset_id, models_dev_slug, sort, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
       [
         id,
         params.name,
@@ -119,6 +122,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
         params.headers ? JSON.stringify(params.headers) : null,
         params.extra ? JSON.stringify(params.extra) : null,
         params.presetId ?? null,
+        params.modelsDevSlug ?? null,
         params.sort ?? 0,
         tenantId,
       ],
@@ -137,6 +141,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     if (params.apiKey !== undefined) { sets.push(`api_key = $${idx++}`); values.push(params.apiKey); }
     if (params.headers !== undefined) { sets.push(`headers = $${idx++}`); values.push(JSON.stringify(params.headers)); }
     if (params.extra !== undefined) { sets.push(`extra = $${idx++}`); values.push(JSON.stringify(params.extra)); }
+    if (params.modelsDevSlug !== undefined) { sets.push(`models_dev_slug = $${idx++}`); values.push(params.modelsDevSlug); }
     if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
     if (params.sort !== undefined) { sets.push(`sort = $${idx++}`); values.push(params.sort); }
 
@@ -214,6 +219,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     if (params.reasoningOptions !== undefined) { sets.push(`reasoning_options = $${idx++}`); values.push(params.reasoningOptions ? JSON.stringify(params.reasoningOptions) : null); }
     if (params.pricingInput !== undefined) { sets.push(`pricing_input = $${idx++}`); values.push(params.pricingInput); }
     if (params.pricingOutput !== undefined) { sets.push(`pricing_output = $${idx++}`); values.push(params.pricingOutput); }
+    if (params.modelsDevSlug !== undefined) { sets.push(`models_dev_slug = $${idx++}`); values.push(params.modelsDevSlug); }
     if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
     if (params.sort !== undefined) { sets.push(`sort = $${idx++}`); values.push(params.sort); }
 
@@ -234,10 +240,10 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     const provider = await getProviderById(providerId, tenantId);
     if (!provider) throw new Error("Provider not found");
 
-    // Auto-resolve models.dev slug from provider's preset
+    // Auto-resolve models.dev slug: preset first, then provider's own modelsDevSlug
     const preset = provider.presetId ? getPresetById(provider.presetId) : undefined;
-    const providerSlug = preset?.modelsDevSlug;
-    if (!providerSlug) throw new Error("Provider has no preset configured for models.dev sync");
+    const providerSlug = preset?.modelsDevSlug ?? provider.modelsDevSlug;
+    if (!providerSlug) throw new Error("Provider has no models.dev slug configured for sync");
 
     const fetched = await fetchModelsFromDev(providerSlug, cache);
 
@@ -350,6 +356,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
       headers: typeof r.headers === "string" ? JSON.parse(r.headers) : (r.headers as Record<string, string> | null),
       extra: typeof r.extra === "string" ? JSON.parse(r.extra) : (r.extra as Record<string, unknown> | null),
       presetId: (r.preset_id as string) ?? null,
+      modelsDevSlug: (r.models_dev_slug as string) ?? null,
       status: (r.status as number) ?? 1,
       sort: (r.sort as number) ?? 0,
       modelCount: Number(r.model_count ?? 0),
@@ -405,13 +412,47 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     displayName?: string;
     contextLength?: number;
     maxOutputTokens?: number;
+    supportsText?: boolean;
+    supportsImage?: boolean;
+    supportsVideo?: boolean;
+    supportsAudio?: boolean;
+    supportsFunctionCalling?: boolean;
+    supportsStreaming?: boolean;
+    supportsThinking?: boolean;
+    supportsStructuredOutput?: boolean;
+    reasoningOptions?: ReasoningOption[] | null;
+    pricingInput?: number | null;
+    pricingOutput?: number | null;
+    status?: number;
+    sort?: number;
   }): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_model (id, provider_id, model_id, display_name, context_length, max_output_tokens,
-         supports_text, supports_function_calling, supports_streaming, auto_fetched, tenant_id)
-       VALUES ($1, $2, $3, $4, $5, $6, TRUE, TRUE, TRUE, FALSE, $7)`,
-      [id, params.providerId, params.modelId, params.displayName ?? params.modelId, params.contextLength ?? 128000, params.maxOutputTokens ?? 4096, tenantId],
+         supports_text, supports_image, supports_video, supports_audio,
+         supports_function_calling, supports_streaming, supports_thinking, supports_structured_output,
+         reasoning_options, pricing_input, pricing_output, status, sort, auto_fetched, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, FALSE, $20)`,
+      [
+        id, params.providerId, params.modelId,
+        params.displayName ?? params.modelId,
+        params.contextLength ?? 128000,
+        params.maxOutputTokens ?? 4096,
+        params.supportsText ?? true,
+        params.supportsImage ?? false,
+        params.supportsVideo ?? false,
+        params.supportsAudio ?? false,
+        params.supportsFunctionCalling ?? true,
+        params.supportsStreaming ?? true,
+        params.supportsThinking ?? false,
+        params.supportsStructuredOutput ?? false,
+        params.reasoningOptions ? JSON.stringify(params.reasoningOptions) : null,
+        params.pricingInput ?? null,
+        params.pricingOutput ?? null,
+        params.status ?? 1,
+        params.sort ?? 0,
+        tenantId,
+      ],
     );
     return { id };
   }
