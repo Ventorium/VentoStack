@@ -1,5 +1,5 @@
 /**
- * 从 https://models.dev/api.json 获取供应商模型列表（含价格）
+ * 从 https://models.dev/api.json 获取供应商模型列表（含价格、推理选项）
  *
  * 数据结构:
  * {
@@ -12,6 +12,10 @@
  *         "cost": { "input": 0.14, "output": 0.28 },
  *         "limit": { "context": 128000, "output": 8192 },
  *         "reasoning": true,
+ *         "reasoning_options": [
+ *           { "type": "toggle" },
+ *           { "type": "effort", "values": ["low", "medium", "high"] }
+ *         ],
  *         "tool_call": true,
  *         "structured_output": true,
  *         ...
@@ -22,6 +26,26 @@
  *
  * 缓存策略: Redis 缓存 + ETag 校验，TTL 1 天
  */
+
+/** 推理选项：toggle 类型 */
+interface ReasoningToggle {
+  type: "toggle";
+}
+
+/** 推理选项：effort 类型 */
+interface ReasoningEffort {
+  type: "effort";
+  values: string[];
+}
+
+/** 推理选项：budget_tokens 类型 */
+interface ReasoningBudgetTokens {
+  type: "budget_tokens";
+  min?: number;
+  max?: number;
+}
+
+export type ReasoningOption = ReasoningToggle | ReasoningEffort | ReasoningBudgetTokens;
 
 export interface FetchedModel {
   modelId: string;
@@ -35,6 +59,7 @@ export interface FetchedModel {
   supportsFunctionCalling: boolean;
   supportsThinking: boolean;
   supportsStructuredOutput: boolean;
+  reasoningOptions: ReasoningOption[] | null;
   pricingInput: number | null;
   pricingOutput: number | null;
 }
@@ -43,6 +68,12 @@ interface ModelsDevApiModel {
   id: string;
   name: string;
   reasoning?: boolean;
+  reasoning_options?: Array<{
+    type: string;
+    values?: string[];
+    min?: number;
+    max?: number;
+  }>;
   tool_call?: boolean;
   structured_output?: boolean | null;
   attachment?: boolean;
@@ -127,14 +158,12 @@ export async function fetchModelsFromDev(
 
   // 304 Not Modified → 缓存仍有效，刷新 TTL
   if (response.status === 304 && cache) {
-    // 重新设置 TTL
     const cached = await cache.get(cacheKey).catch(() => null);
     if (cached) {
       await cache.set(cacheKey, cached, CACHE_TTL).catch(() => {});
       await cache.set(etagKey, storedEtag ?? "", CACHE_TTL).catch(() => {});
       return JSON.parse(cached) as FetchedModel[];
     }
-    // 缓存丢失但 304，需要无条件重新请求
     const retryResp = await fetch(API_URL, {
       headers: { Accept: "application/json" },
       signal: AbortSignal.timeout(30000),
@@ -188,6 +217,20 @@ function parseApiJson(data: ApiData, providerSlug: string): FetchedModel[] {
     const inputModalities = entry.modalities?.input ?? [];
     const allInput = inputModalities.map((m) => m.toLowerCase());
 
+    // 解析 reasoning_options
+    let reasoningOptions: ReasoningOption[] | null = null;
+    if (entry.reasoning_options && entry.reasoning_options.length > 0) {
+      reasoningOptions = entry.reasoning_options.map((opt) => {
+        if (opt.type === "effort") {
+          return { type: "effort" as const, values: opt.values ?? [] };
+        }
+        if (opt.type === "budget_tokens") {
+          return { type: "budget_tokens" as const, ...(opt.min != null ? { min: opt.min } : {}), ...(opt.max != null ? { max: opt.max } : {}) };
+        }
+        return { type: "toggle" as const };
+      });
+    }
+
     results.push({
       modelId,
       displayName: entry.name ?? modelId,
@@ -200,7 +243,7 @@ function parseApiJson(data: ApiData, providerSlug: string): FetchedModel[] {
       supportsFunctionCalling: entry.tool_call ?? false,
       supportsThinking: entry.reasoning ?? false,
       supportsStructuredOutput: entry.structured_output === true,
-      // cost 单位是 $/M tokens
+      reasoningOptions,
       pricingInput: entry.cost?.input ?? null,
       pricingOutput: entry.cost?.output ?? null,
     });

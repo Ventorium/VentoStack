@@ -1,9 +1,9 @@
 /**
  * PDF → Markdown 解析器
- * 使用 unpdf 提取文本，转换为 Markdown 格式
+ * 使用 @llamaindex/liteparse（Rust 原生，内置 Tesseract OCR，支持远程 PaddleOCR）
  */
 
-import { extractText, getMeta } from "unpdf";
+import { LiteParse } from "@llamaindex/liteparse";
 
 export interface ParsedDocument {
   content: string;
@@ -11,58 +11,55 @@ export interface ParsedDocument {
   title?: string;
 }
 
+export interface PdfParseOptions {
+  ocrEnabled?: boolean;
+  ocrLanguage?: string;
+  ocrServerUrl?: string;
+}
+
 /**
  * 将 PDF 文件内容解析为 Markdown
  * @param buffer PDF 文件的 Buffer
  * @param fileName 原始文件名
+ * @param options OCR 配置选项
  */
-export async function parsePdf(buffer: Buffer, fileName: string): Promise<ParsedDocument> {
-  const uint8 = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
-  const { text, totalPages } = await extractText(uint8);
-  const meta = await getMeta(uint8);
+export async function parsePdf(
+  buffer: Buffer,
+  fileName: string,
+  options: PdfParseOptions = {},
+): Promise<ParsedDocument> {
+  const lp = new LiteParse({
+    ocrEnabled: options.ocrEnabled ?? true,
+    ocrLanguage: options.ocrLanguage,
+    ocrServerUrl: options.ocrServerUrl || undefined,
+    outputFormat: "text",
+    quiet: true,
+  });
 
-  const title = (meta as { info?: { Title?: string } }).info?.Title || fileName.replace(/\.pdf$/i, "");
+  const result = await lp.parse(buffer);
 
+  const title = fileName.replace(/\.pdf$/i, "");
   const lines: string[] = [];
+
   lines.push(`# ${title}`);
   lines.push("");
-
-  const author = (meta as { info?: { Author?: string } }).info?.Author;
-  if (author) {
-    lines.push(`> 作者：${author}`);
-    lines.push("");
-  }
-
-  lines.push(`> 来源文件：${fileName}（共 ${totalPages} 页）`);
+  lines.push(`> 来源文件：${fileName}（共 ${result.pages.length} 页）`);
   lines.push("");
   lines.push("---");
   lines.push("");
 
-  // 处理文本内容
-  const content = (Array.isArray(text) ? text.join("\n\n") : String(text))
-    .replace(/\r\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
-
-  // 尝试识别段落和标题
-  const paragraphs = content.split(/\n\n+/);
-  for (const para of paragraphs) {
-    const trimmed = para.trim();
-    if (!trimmed) continue;
-
-    // 简单启发式：全大写或短行可能是标题
-    if (trimmed.length < 80 && trimmed === trimmed.toUpperCase() && /[A-Z\u4e00-\u9fff]/.test(trimmed)) {
-      lines.push(`## ${trimmed}`);
-      lines.push("");
-    } else {
-      lines.push(trimmed.replace(/\n/g, " "));
+  for (let i = 0; i < result.pages.length; i++) {
+    const page = result.pages[i];
+    const pageText = (page.text ?? "").trim();
+    if (pageText) {
+      lines.push(pageText);
       lines.push("");
     }
   }
 
   return {
     content: lines.join("\n"),
-    pageCount: totalPages,
+    pageCount: result.pages.length,
     title,
   };
 }

@@ -217,14 +217,14 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     ? createPermMiddleware(rbac)
     : () => async (_ctx: unknown, next: () => Promise<Response>) => next();
 
-  // 创建路由
-  const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm);
-
   // Provider 服务
   const providerService = createProviderService({
     db: db as import("@ventostack/database").Database,
     cache: cache as import("@ventostack/cache").Cache | undefined,
   });
+
+  // 创建路由
+  const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm, providerService);
   const providerRouter = createProviderRoutes(providerService, authMiddleware, perm);
 
   // Agent CRUD 服务

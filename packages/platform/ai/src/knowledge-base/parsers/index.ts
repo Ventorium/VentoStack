@@ -4,8 +4,10 @@
  */
 
 import { basename, extname } from "node:path";
-import { parsePdf } from "./pdf";
+import { parsePdf, type PdfParseOptions } from "./pdf";
 import { parseDocx } from "./docx";
+
+export type { PdfParseOptions };
 
 export interface ParsedResult {
   markdown: string;
@@ -18,18 +20,23 @@ export interface ParsedResult {
  * 解析文件为 Markdown
  * @param buffer 文件内容
  * @param fileName 原始文件名（含扩展名）
+ * @param ocrOptions OCR 配置选项（仅对 PDF 生效）
  */
-export async function parseFile(buffer: Buffer, fileName: string): Promise<ParsedResult> {
+export async function parseFile(
+  buffer: Buffer,
+  fileName: string,
+  ocrOptions?: PdfParseOptions,
+): Promise<ParsedResult> {
   const ext = extname(fileName).toLowerCase();
   const baseName = basename(fileName, ext);
 
   switch (ext) {
     case ".pdf": {
-      const result = await parsePdf(buffer, fileName);
+      const result = await parsePdf(buffer, fileName, ocrOptions);
       return {
         markdown: result.content,
         title: result.title ?? baseName,
-        parser: "pdf-parse",
+        parser: "liteparse",
         sourceFileName: fileName,
       };
     }
@@ -39,7 +46,7 @@ export async function parseFile(buffer: Buffer, fileName: string): Promise<Parse
       return {
         markdown: result.content,
         title: result.title ?? baseName,
-        parser: "mammoth",
+        parser: "builtin-docx",
         sourceFileName: fileName,
       };
     }

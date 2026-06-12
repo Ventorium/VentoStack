@@ -11,6 +11,7 @@ export function createKnowledgeBaseRoutes(
   kbService: KnowledgeBaseService,
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
+  providerService?: { getConfig(key: string): Promise<string | null> },
 ): Router {
   const router = createRouter();
   router.use(authMiddleware);
@@ -225,6 +226,13 @@ export function createKnowledgeBaseRoutes(
 
         if (!file) return fail("请上传文件", 400, 400);
 
+        // 读取 OCR 配置
+        const [ocrEnabledCfg, ocrLanguageCfg, ocrServerUrlCfg] = await Promise.all([
+          providerService?.getConfig("ocr_enabled"),
+          providerService?.getConfig("ocr_language"),
+          providerService?.getConfig("ocr_server_url"),
+        ]);
+
         const buffer = Buffer.from(await file.arrayBuffer());
         const result = await kbService.uploadFile(
           id,
@@ -232,6 +240,11 @@ export function createKnowledgeBaseRoutes(
           buffer,
           targetDir,
           tenantId,
+          {
+            ocrEnabled: ocrEnabledCfg !== "false",
+            ocrLanguage: ocrLanguageCfg ?? undefined,
+            ocrServerUrl: ocrServerUrlCfg ?? undefined,
+          },
         );
 
         return success(result);

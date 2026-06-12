@@ -133,6 +133,7 @@ export interface KnowledgeBaseService {
     fileBuffer: Buffer,
     targetDir: string | undefined,
     tenantId: string,
+    ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string },
   ): Promise<{ contentPath: string; sourcePath: string | null }>;
 
   // 获取源文件内容（用于下载/预览）

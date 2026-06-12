@@ -44,6 +44,7 @@ import {
   Divider,
   Badge,
   Descriptions,
+  Tabs,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
@@ -77,6 +78,12 @@ interface ProviderItem {
   updatedAt: string;
 }
 
+// 推理选项类型（与 models.dev reasoning_options 兼容）
+interface ReasoningToggle { type: "toggle" }
+interface ReasoningEffort { type: "effort"; values: string[] }
+interface ReasoningBudgetTokens { type: "budget_tokens"; min?: number; max?: number }
+type ReasoningOption = ReasoningToggle | ReasoningEffort | ReasoningBudgetTokens;
+
 interface ModelItem {
   id: string;
   providerId: string;
@@ -92,7 +99,7 @@ interface ModelItem {
   supportsStreaming: boolean;
   supportsThinking: boolean;
   supportsStructuredOutput: boolean;
-  thinkingIntensity: string | null;
+  reasoningOptions: ReasoningOption[] | null;
   pricingInput: number | null;
   pricingOutput: number | null;
   autoFetched: boolean;
@@ -113,7 +120,20 @@ function CapIcons({ model }: { model: ModelItem }) {
   if (model.supportsVideo) icons.push(<Tooltip key="vid" title="视频"><VideoCameraOutlined style={{ color: "#722ed1" }} /></Tooltip>);
   if (model.supportsAudio) icons.push(<Tooltip key="aud" title="语音"><AudioOutlined style={{ color: "#eb2f96" }} /></Tooltip>);
   if (model.supportsFunctionCalling) icons.push(<Tooltip key="fn" title="函数调用"><CodeOutlined style={{ color: "#52c41a" }} /></Tooltip>);
-  if (model.supportsThinking) icons.push(<Tooltip key="think" title="推理/思考"><ThunderboltOutlined style={{ color: "#fa8c16" }} /></Tooltip>);
+  if (model.supportsThinking) {
+    const opts = model.reasoningOptions;
+    let thinkTip = "推理/思考";
+    if (opts && opts.length > 0) {
+      const parts = opts.map(o => {
+        if (o.type === "toggle") return "开关";
+        if (o.type === "effort") return `强度: ${o.values.join(", ")}`;
+        if (o.type === "budget_tokens") return `预算: ${o.min ?? 0}~${o.max ?? "∞"}`;
+        return o.type;
+      });
+      thinkTip = `推理/思考 — ${parts.join(" + ")}`;
+    }
+    icons.push(<Tooltip key="think" title={thinkTip}><ThunderboltOutlined style={{ color: "#fa8c16" }} /></Tooltip>);
+  }
   if (model.supportsStructuredOutput) icons.push(<Tooltip key="struct" title="结构化输出"><CheckCircleOutlined style={{ color: "#13c2c2" }} /></Tooltip>);
   return <Space size={4}>{icons}</Space>;
 }
@@ -143,6 +163,12 @@ export default function AISettingsPage() {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
 
+  // OCR config
+  const [ocrEnabled, setOcrEnabled] = useState(true);
+  const [ocrLanguage, setOcrLanguage] = useState("chi_sim+eng");
+  const [ocrServerUrl, setOcrServerUrl] = useState("");
+  const [ocrLoading, setOcrLoading] = useState(false);
+
   // Edit model modal
   const [editModelOpen, setEditModelOpen] = useState(false);
   const [editModel, setEditModel] = useState<ModelItem | null>(null);
@@ -166,6 +192,29 @@ export default function AISettingsPage() {
     } catch {}
   }, []);
 
+  const fetchOcrConfig = useCallback(async () => {
+    try {
+      const [enabledRes, langRes, serverUrlRes] = await Promise.all([
+        client.get("/api/ai/config/:key", { params: { key: "ocr_enabled" } }) as Promise<{ error?: unknown; data?: { value: string | null } }>,
+        client.get("/api/ai/config/:key", { params: { key: "ocr_language" } }) as Promise<{ error?: unknown; data?: { value: string | null } }>,
+        client.get("/api/ai/config/:key", { params: { key: "ocr_server_url" } }) as Promise<{ error?: unknown; data?: { value: string | null } }>,
+      ]);
+      if (!enabledRes.error && enabledRes.data?.value !== undefined) {
+        setOcrEnabled(enabledRes.data.value !== "false");
+      }
+      if (!langRes.error && langRes.data?.value) {
+        setOcrLanguage(langRes.data.value);
+      }
+      if (!serverUrlRes.error && serverUrlRes.data?.value) {
+        setOcrServerUrl(serverUrlRes.data.value);
+      }
+    } catch {}
+  }, []);
+
+  const saveOcrConfig = useCallback(async (key: string, value: string) => {
+    await client.put("/api/ai/config/:key", { params: { key }, body: { value } });
+  }, []);
+
   const fetchDefaultModel = useCallback(async () => {
     try {
       const { data } = await client.get("/api/ai/config/:key", { params: { key: "default_model" } }) as { data?: { value: string | null } };
@@ -177,6 +226,7 @@ export default function AISettingsPage() {
     fetchProviders();
     fetchPresets();
     fetchDefaultModel();
+    fetchOcrConfig();
   }, [fetchProviders, fetchPresets, fetchDefaultModel]);
 
   // === Set default model ===
@@ -211,7 +261,7 @@ export default function AISettingsPage() {
       const preset = presets.find((p) => p.id === values.presetId);
       const body: Record<string, unknown> = {
         name: preset?.name ?? values.customName,
-        displayName: values.providerDisplayName || preset?.displayName || values.customDisplayName,
+        displayName: values.providerDisplayName || preset?.displayName || values.customName,
         apiFormat: preset?.apiFormat ?? values.customApiFormat,
         baseUrl: preset?.baseUrl || values.customBaseUrl,
         apiKey: values.apiKey,
@@ -318,7 +368,16 @@ export default function AISettingsPage() {
   // === Edit model ===
   const openEditModel = (m: ModelItem) => {
     setEditModel(m);
-    editModelForm.setFieldsValue(m);
+    // Extract effort and budget values from reasoningOptions for the form
+    const effortOpt = m.reasoningOptions?.find((o) => o.type === "effort") as ReasoningEffort | undefined;
+    const budgetOpt = m.reasoningOptions?.find((o) => o.type === "budget_tokens") as ReasoningBudgetTokens | undefined;
+    const formValues = {
+      ...m,
+      effortValues: effortOpt?.values ?? [],
+      budgetMin: budgetOpt?.min,
+      budgetMax: budgetOpt?.max,
+    };
+    editModelForm.setFieldsValue(formValues);
     setEditModelOpen(true);
   };
 
@@ -334,9 +393,32 @@ export default function AISettingsPage() {
     if (!editModel) return;
     try {
       const values = await editModelForm.validateFields();
+      // Reconstruct reasoningOptions from effortValues + budget fields
+      let reasoningOptions: ReasoningOption[] | null = null;
+      const effortValues: string[] | undefined = values.effortValues;
+      const budgetMin: number | undefined = values.budgetMin;
+      const budgetMax: number | undefined = values.budgetMax;
+      const existing = editModel.reasoningOptions ?? [];
+      const parts: ReasoningOption[] = [];
+      // Keep toggle entries from existing
+      for (const opt of existing) {
+        if (opt.type === "toggle") parts.push(opt);
+      }
+      // Add effort (normalized to lowercase)
+      if (effortValues && effortValues.length > 0) {
+        parts.push({ type: "effort", values: effortValues.map((v: string) => v.toLowerCase().trim()).filter(Boolean) });
+      }
+      // Add budget_tokens if min or max is set
+      if (budgetMin != null || budgetMax != null) {
+        parts.push({ type: "budget_tokens", ...(budgetMin != null ? { min: budgetMin } : {}), ...(budgetMax != null ? { max: budgetMax } : {}) });
+      }
+      if (parts.length > 0) reasoningOptions = parts;
+      // Remove form-only fields from body
+      const { effortValues: _e, budgetMin: _bmin, budgetMax: _bmax, ...rest } = values;
+      const body = { ...rest, reasoningOptions };
       const { error } = await client.put("/api/ai/models/:id", {
         params: { id: editModel.id },
-        body: values,
+        body,
       });
       if (!error) {
         msg.success("模型已更新");
@@ -363,7 +445,8 @@ export default function AISettingsPage() {
       title: "模型 ID",
       dataIndex: "modelId",
       key: "modelId",
-      width: 240,
+      width: 'min-content',
+      fixed: 'left',
       sorter: (a, b) => {
         const aDefault = isDefaultModel(modelsProvider?.name ?? "", a.modelId) ? 0 : 1;
         const bDefault = isDefaultModel(modelsProvider?.name ?? "", b.modelId) ? 0 : 1;
@@ -421,7 +504,8 @@ export default function AISettingsPage() {
     {
       title: "操作",
       key: "action",
-      width: 180,
+      width: 'min-content',
+      fixed: 'right',
       render: (_, r) => {
         const isDefault = isDefaultModel(modelsProvider?.name ?? "", r.modelId);
         return (
@@ -514,16 +598,22 @@ export default function AISettingsPage() {
         AI 配置
       </Title>
 
-      {/* Providers */}
-      <Card
-        title={<Space><ApiOutlined /> 供应商管理</Space>}
-        extra={
-          <Space>
-            <Button icon={<ReloadOutlined />} onClick={fetchProviders}>刷新</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加供应商</Button>
-          </Space>
-        }
-      >
+      <Tabs
+        defaultActiveKey="providers"
+        items={[
+          {
+            key: "providers",
+            label: <Space><ApiOutlined /> 供应商管理</Space>,
+            children: (
+              <Card
+                title={<Space><ApiOutlined /> 供应商管理</Space>}
+                extra={
+                  <Space>
+                    <Button icon={<ReloadOutlined />} onClick={fetchProviders}>刷新</Button>
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>添加供应商</Button>
+                  </Space>
+                }
+              >
         <Table
           rowKey="id"
           columns={providerColumns}
@@ -532,7 +622,83 @@ export default function AISettingsPage() {
           size="small"
           pagination={false}
         />
-      </Card>
+              </Card>
+            ),
+          },
+          {
+            key: "ocr",
+            label: <Space><RobotOutlined /> OCR 配置</Space>,
+            children: (
+              <Card title="OCR 设置" style={{ marginTop: 0 }}>
+                <div style={{ marginBottom: 16, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6, fontSize: 13 }}>
+                  💡 OCR（光学字符识别）用于解析扫描版 PDF 文件。开启后，上传 PDF 时会自动调用内置 Tesseract 引擎识别文字。也可配置远程 PaddleOCR 服务以获得更好的中文识别效果。
+                </div>
+                <Row gutter={24}>
+                  <Col span={12}>
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ marginBottom: 8, fontWeight: 500 }}>启用 OCR</div>
+                      <Switch
+                        checked={ocrEnabled}
+                        onChange={async (checked) => {
+                          setOcrEnabled(checked);
+                          await saveOcrConfig("ocr_enabled", String(checked));
+                          msg.success(checked ? "OCR 已启用" : "OCR 已禁用");
+                        }}
+                      />
+                      <Text type="secondary" style={{ marginLeft: 12 }}>
+                        解析扫描版 PDF 时自动调用 OCR 引擎
+                      </Text>
+                    </div>
+                  </Col>
+                  <Col span={12}>
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ marginBottom: 8, fontWeight: 500 }}>OCR 语言</div>
+                      <Select
+                        value={ocrLanguage}
+                        style={{ width: 240 }}
+                        onChange={async (val) => {
+                          setOcrLanguage(val);
+                          await saveOcrConfig("ocr_language", val);
+                          msg.success("OCR 语言已更新");
+                        }}
+                        options={[
+                          { value: "chi_sim+eng", label: "简体中文 + 英文" },
+                          { value: "chi_tra+eng", label: "繁体中文 + 英文" },
+                          { value: "eng", label: "仅英文" },
+                          { value: "jpn+eng", label: "日文 + 英文" },
+                          { value: "kor+eng", label: "韩文 + 英文" },
+                        ]}
+                      />
+                    </div>
+                  </Col>
+                </Row>
+                <Divider style={{ margin: "8px 0 16px" }} />
+                <div style={{ marginBottom: 8, fontWeight: 500 }}>远程 PaddleOCR 服务</div>
+                <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fff7e6", borderRadius: 6, fontSize: 13 }}>
+                  💡 配置远程 PaddleOCR 服务地址后，将优先使用该服务进行 OCR 识别，适用于需要更高中文识别精度的场景。留空则使用本地 Tesseract 引擎。
+                </div>
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ marginBottom: 8 }}>PaddleOCR 服务地址</div>
+                  <Input
+                    value={ocrServerUrl}
+                    placeholder="http://paddleocr:8866/predict/ocr_system"
+                    style={{ maxWidth: 480 }}
+                    onChange={(e) => setOcrServerUrl(e.target.value)}
+                    onBlur={async () => {
+                      await saveOcrConfig("ocr_server_url", ocrServerUrl);
+                      msg.success(ocrServerUrl ? "PaddleOCR 服务地址已更新" : "已清除 PaddleOCR 服务地址");
+                    }}
+                    allowClear
+                  />
+                  <Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 12 }}>
+                    留空表示使用本地 Tesseract 引擎。填写后将通过远程 PaddleOCR 服务识别。
+                  </Text>
+                </div>
+              </Card>
+            ),
+          },
+        ]}
+      />
 
       {/* === Add Provider Modal === */}
       <Modal
@@ -549,7 +715,13 @@ export default function AISettingsPage() {
             <Select
               placeholder="选择供应商预设..."
               options={presetOptions}
-              onChange={(val) => setSelectedPreset(presets.find((p) => p.id === val) ?? null)}
+              onChange={(val) => {
+                const preset = presets.find((p) => p.id === val) ?? null;
+                setSelectedPreset(preset);
+                if (preset && !preset.baseUrl) {
+                  addForm.setFieldsValue({ customApiFormat: preset.apiFormat, customName: preset.name });
+                }
+              }}
               showSearch
               filterOption={(input, option) => {
                 const p = presets.find((pp) => pp.id === option?.value);
@@ -561,21 +733,18 @@ export default function AISettingsPage() {
           {selectedPreset && !selectedPreset.baseUrl && (
             <>
               <Form.Item name="customName" label="标识名 (英文)" rules={[{ required: true }]}>
-                <Input placeholder="如 my-llm" />
+                <Input placeholder="如 my-anthropic" />
               </Form.Item>
-              <Form.Item name="customDisplayName" label="显示名称">
-                <Input placeholder="如 我的 LLM 服务" />
+              <Form.Item name="customBaseUrl" label="Base URL" rules={[{ required: true }]}>
+                <Input placeholder="https://api.example.com/v1" />
               </Form.Item>
-              <Form.Item name="customApiFormat" label="API 格式" initialValue="openai_chat">
+              <Form.Item name="customApiFormat" label="API 格式">
                 <Select options={[
                   { value: "openai_chat", label: "OpenAI Chat Completions" },
                   { value: "openai_response", label: "OpenAI Response" },
                   { value: "anthropic", label: "Anthropic Messages" },
                   { value: "custom", label: "自定义" },
                 ]} />
-              </Form.Item>
-              <Form.Item name="customBaseUrl" label="Base URL" rules={[{ required: true }]}>
-                <Input placeholder="https://your-llm-api.com/v1" />
               </Form.Item>
             </>
           )}
@@ -673,7 +842,7 @@ export default function AISettingsPage() {
         }
         open={modelsOpen}
         onClose={() => setModelsOpen(false)}
-        width={960}
+        size={960}
         extra={
           <Space>
             {modelsProvider?.presetId && (
@@ -696,6 +865,7 @@ export default function AISettingsPage() {
           dataSource={modelsList}
           loading={modelsLoading}
           size="small"
+          scroll={{ x: 'max-content' }}
           pagination={modelsList.length > 20 ? { pageSize: 20 } : false}
         />
       </Drawer>
@@ -739,18 +909,49 @@ export default function AISettingsPage() {
             <Col span={6}><Form.Item name="supportsThinking" label="推理/思考" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsStructuredOutput" label="结构化输出" valuePropName="checked"><Switch /></Form.Item></Col>
           </Row>
-          <Row gutter={16}>
-            <Col span={24}>
-              <Form.Item name="thinkingIntensity" label="思考强度" extra="设置思考/推理的计算强度，留空表示不支持或使用默认值">
-                <Select allowClear placeholder="选择思考强度" options={[
-                  { value: "low", label: "低 (Low)" },
-                  { value: "medium", label: "中 (Medium)" },
-                  { value: "high", label: "高 (High)" },
-                  { value: "max", label: "最高 (Max)" },
-                ]} />
-              </Form.Item>
-            </Col>
-          </Row>
+          <Form.Item
+            noStyle
+            shouldUpdate={(prev, cur) => prev.supportsThinking !== cur.supportsThinking}
+          >
+            {() => {
+              const thinking = editModelForm.getFieldValue("supportsThinking");
+              if (!thinking) return null;
+              const ro = editModel?.reasoningOptions;
+              return (
+                <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0", marginBottom: 16 }}>
+                  <Row gutter={16}>
+                    <Col span={12}>
+                      <Form.Item name="effortValues" label="思考强度" extra="用户可选择的推理强度级别，输入后自动转为小写">
+                        <Select
+                          mode="tags"
+                          placeholder="输入强度级别，如 low, medium, high"
+                          tokenSeparators={[","]}
+                          options={[
+                            { value: "minimal", label: "Minimal" },
+                            { value: "low", label: "Low" },
+                            { value: "medium", label: "Medium" },
+                            { value: "high", label: "High" },
+                            { value: "xhigh", label: "XHigh" },
+                            { value: "max", label: "Max" },
+                          ]}
+                        />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item name="budgetMin" label="Token 预算下限" extra="留空则无限制">
+                        <InputNumber className="w-full" min={0} placeholder="如 1024" />
+                      </Form.Item>
+                    </Col>
+                    <Col span={6}>
+                      <Form.Item name="budgetMax" label="Token 预算上限" extra="留空则无限制">
+                        <InputNumber className="w-full" min={0} placeholder="如 32768" />
+                      </Form.Item>
+                    </Col>
+                  </Row>
+                </div>
+              );
+            }}
+          </Form.Item>
           <Divider style={{ margin: "8px 0 16px" }}>价格 ($/M tokens)</Divider>
           <Row gutter={16}>
             <Col span={12}>

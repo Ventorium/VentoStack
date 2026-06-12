@@ -3,8 +3,10 @@
  */
 
 import type { Database } from "@ventostack/database";
-import { fetchModelsFromDev, type FetchedModel } from "./models-dev";
+import { fetchModelsFromDev, type FetchedModel, type ReasoningOption } from "./models-dev";
 import { getPresetById } from "./provider-presets";
+
+export type { ReasoningOption } from "./models-dev";
 
 export interface CreateProviderParams {
   name: string;
@@ -61,7 +63,7 @@ export interface ModelItem {
   supportsStreaming: boolean;
   supportsThinking: boolean;
   supportsStructuredOutput: boolean;
-  thinkingIntensity: string | null;
+  reasoningOptions: ReasoningOption[] | null;
   pricingInput: number | null;
   pricingOutput: number | null;
   autoFetched: boolean;
@@ -83,7 +85,7 @@ export interface UpdateModelParams {
   supportsStreaming?: boolean;
   supportsThinking?: boolean;
   supportsStructuredOutput?: boolean;
-  thinkingIntensity?: string | null;
+  reasoningOptions?: ReasoningOption[] | null;
   pricingInput?: number | null;
   pricingOutput?: number | null;
   status?: number;
@@ -149,58 +151,48 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
   }
 
   async function deleteProvider(id: string, tenantId: string): Promise<void> {
-    // CASCADE will delete models
     await db.raw(`DELETE FROM ai_provider WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
   }
 
   async function getProviderById(id: string, tenantId: string): Promise<ProviderItem | null> {
     const rows = await db.raw(
       `SELECT p.*,
-              (SELECT COUNT(*) FROM ai_model m WHERE m.provider_id = p.id) as model_count
+              (SELECT COUNT(*) FROM ai_model m WHERE m.provider_id = p.id) AS model_count
        FROM ai_provider p
        WHERE p.id = $1 AND p.tenant_id = $2`,
       [id, tenantId],
     );
-    if (rows.length === 0) return null;
-    return mapProvider(rows[0]);
+    return rows.length > 0 ? mapProvider(rows[0] as Record<string, unknown>) : null;
   }
 
   async function listProviders(tenantId: string): Promise<ProviderItem[]> {
     const rows = await db.raw(
       `SELECT p.*,
-              (SELECT COUNT(*) FROM ai_model m WHERE m.provider_id = p.id) as model_count
+              (SELECT COUNT(*) FROM ai_model m WHERE m.provider_id = p.id) AS model_count
        FROM ai_provider p
        WHERE p.tenant_id = $1
-       ORDER BY p.sort DESC, p.created_at ASC`,
+       ORDER BY p.sort ASC, p.created_at ASC`,
       [tenantId],
     );
-    return rows.map(mapProvider);
+    return (rows as Array<Record<string, unknown>>).map(mapProvider);
   }
 
   // ============ Model CRUD ============
 
   async function listModels(providerId: string, tenantId: string): Promise<ModelItem[]> {
     const rows = await db.raw(
-      `SELECT * FROM ai_model WHERE provider_id = $1 AND tenant_id = $2 ORDER BY sort DESC, display_name ASC`,
+      `SELECT * FROM ai_model WHERE provider_id = $1 AND tenant_id = $2 ORDER BY status DESC, sort ASC, created_at ASC`,
       [providerId, tenantId],
     );
-    return rows.map(mapModel);
+    return (rows as Array<Record<string, unknown>>).map(mapModel);
   }
 
-  async function listAllModels(tenantId: string): Promise<Array<ModelItem & { providerName: string; providerDisplayName: string }>> {
+  async function listAllModels(tenantId: string): Promise<ModelItem[]> {
     const rows = await db.raw(
-      `SELECT m.*, p.name as provider_name, p.display_name as provider_display_name
-       FROM ai_model m
-       JOIN ai_provider p ON p.id = m.provider_id
-       WHERE m.tenant_id = $1 AND m.status = 1 AND p.status = 1
-       ORDER BY p.sort DESC, m.sort DESC, m.display_name ASC`,
+      `SELECT * FROM ai_model WHERE tenant_id = $1 AND status = 1 ORDER BY sort ASC, created_at ASC`,
       [tenantId],
     );
-    return rows.map((r: Record<string, unknown>) => ({
-      ...mapModel(r),
-      providerName: r.provider_name as string,
-      providerDisplayName: (r.provider_display_name as string) ?? r.provider_name as string,
-    }));
+    return (rows as Array<Record<string, unknown>>).map(mapModel);
   }
 
   async function updateModel(id: string, tenantId: string, params: UpdateModelParams): Promise<void> {
@@ -219,7 +211,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     if (params.supportsStreaming !== undefined) { sets.push(`supports_streaming = $${idx++}`); values.push(params.supportsStreaming); }
     if (params.supportsThinking !== undefined) { sets.push(`supports_thinking = $${idx++}`); values.push(params.supportsThinking); }
     if (params.supportsStructuredOutput !== undefined) { sets.push(`supports_structured_output = $${idx++}`); values.push(params.supportsStructuredOutput); }
-    if (params.thinkingIntensity !== undefined) { sets.push(`thinking_intensity = $${idx++}`); values.push(params.thinkingIntensity); }
+    if (params.reasoningOptions !== undefined) { sets.push(`reasoning_options = $${idx++}`); values.push(params.reasoningOptions ? JSON.stringify(params.reasoningOptions) : null); }
     if (params.pricingInput !== undefined) { sets.push(`pricing_input = $${idx++}`); values.push(params.pricingInput); }
     if (params.pricingOutput !== undefined) { sets.push(`pricing_output = $${idx++}`); values.push(params.pricingOutput); }
     if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
@@ -235,17 +227,19 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     );
   }
 
+  // ============ Sync from models.dev ============
+
   async function syncModels(providerId: string, tenantId: string): Promise<SyncResult> {
-    // 获取供应商信息
+    // Validate provider exists
     const provider = await getProviderById(providerId, tenantId);
     if (!provider) throw new Error("Provider not found");
-    if (!provider.presetId) throw new Error("Provider has no preset, cannot auto-fetch models");
 
-    const preset = getPresetById(provider.presetId);
-    if (!preset?.modelsDevSlug) throw new Error("No models.dev slug for this provider");
+    // Auto-resolve models.dev slug from provider's preset
+    const preset = provider.presetId ? getPresetById(provider.presetId) : undefined;
+    const providerSlug = preset?.modelsDevSlug;
+    if (!providerSlug) throw new Error("Provider has no preset configured for models.dev sync");
 
-    // 从 models.dev 拉取
-    const fetched = await fetchModelsFromDev(preset.modelsDevSlug, cache);
+    const fetched = await fetchModelsFromDev(providerSlug, cache);
 
     // 获取现有模型
     const existingRows = await db.raw(
@@ -270,13 +264,15 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
              display_name = $1, context_length = $2, max_output_tokens = $3,
              supports_text = $4, supports_image = $5, supports_video = $6, supports_audio = $7,
              supports_function_calling = $8, supports_thinking = $9, supports_structured_output = $10,
-             pricing_input = $11, pricing_output = $12,
+             reasoning_options = $11,
+             pricing_input = $12, pricing_output = $13,
              auto_fetched = TRUE, updated_at = NOW()
-           WHERE id = $13`,
+           WHERE id = $14`,
           [
             model.displayName, model.contextLength, model.maxOutputTokens,
             model.supportsText, model.supportsImage, model.supportsVideo, model.supportsAudio,
             model.supportsFunctionCalling, model.supportsThinking, model.supportsStructuredOutput,
+            model.reasoningOptions ? JSON.stringify(model.reasoningOptions) : null,
             model.pricingInput, model.pricingOutput,
             existingId,
           ],
@@ -288,13 +284,15 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
           `INSERT INTO ai_model (id, provider_id, model_id, display_name, context_length, max_output_tokens,
              supports_text, supports_image, supports_video, supports_audio,
              supports_function_calling, supports_thinking, supports_structured_output,
+             reasoning_options,
              pricing_input, pricing_output, auto_fetched, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE, $16)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, TRUE, $17)`,
           [
             crypto.randomUUID(), providerId, model.modelId, model.displayName,
             model.contextLength, model.maxOutputTokens,
             model.supportsText, model.supportsImage, model.supportsVideo, model.supportsAudio,
             model.supportsFunctionCalling, model.supportsThinking, model.supportsStructuredOutput,
+            model.reasoningOptions ? JSON.stringify(model.reasoningOptions) : null,
             model.pricingInput, model.pricingOutput,
             tenantId,
           ],
@@ -307,7 +305,6 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     let removed = 0;
     for (const [modelId, dbId] of existingMap) {
       if (!fetchedIds.has(modelId)) {
-        // 只删除自动拉取的模型
         const check = await db.raw(
           `SELECT auto_fetched FROM ai_model WHERE id = $1`,
           [dbId],
@@ -362,6 +359,16 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
   }
 
   function mapModel(r: Record<string, unknown>): ModelItem {
+    let reasoningOptions: ReasoningOption[] | null = null;
+    const raw = r.reasoning_options;
+    if (raw) {
+      if (typeof raw === "string") {
+        try { reasoningOptions = JSON.parse(raw); } catch { /* ignore */ }
+      } else if (Array.isArray(raw)) {
+        reasoningOptions = raw as ReasoningOption[];
+      }
+    }
+
     return {
       id: r.id as string,
       providerId: r.provider_id as string,
@@ -377,7 +384,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
       supportsStreaming: (r.supports_streaming as boolean) ?? true,
       supportsThinking: (r.supports_thinking as boolean) ?? false,
       supportsStructuredOutput: (r.supports_structured_output as boolean) ?? false,
-      thinkingIntensity: (r.thinking_intensity as string) ?? null,
+      reasoningOptions,
       pricingInput: r.pricing_input != null ? Number(r.pricing_input) : null,
       pricingOutput: r.pricing_output != null ? Number(r.pricing_output) : null,
       autoFetched: (r.auto_fetched as boolean) ?? false,
@@ -392,6 +399,51 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     await db.raw(`DELETE FROM ai_model WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
   }
 
+  async function createModel(tenantId: string, params: {
+    providerId: string;
+    modelId: string;
+    displayName?: string;
+    contextLength?: number;
+    maxOutputTokens?: number;
+  }): Promise<{ id: string }> {
+    const id = crypto.randomUUID();
+    await db.raw(
+      `INSERT INTO ai_model (id, provider_id, model_id, display_name, context_length, max_output_tokens,
+         supports_text, supports_function_calling, supports_streaming, auto_fetched, tenant_id)
+       VALUES ($1, $2, $3, $4, $5, $6, TRUE, TRUE, TRUE, FALSE, $7)`,
+      [id, params.providerId, params.modelId, params.displayName ?? params.modelId, params.contextLength ?? 128000, params.maxOutputTokens ?? 4096, tenantId],
+    );
+    return { id };
+  }
+
+  async function deleteModels(ids: string[], tenantId: string): Promise<number> {
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
+    const result = await db.raw(
+      `DELETE FROM ai_model WHERE id IN (${placeholders}) AND tenant_id = $${ids.length + 1}`,
+      [...ids, tenantId],
+    );
+    return ids.length;
+  }
+
+  async function getModel(id: string, tenantId: string): Promise<ModelItem | null> {
+    const rows = await db.raw(
+      `SELECT * FROM ai_model WHERE id = $1 AND tenant_id = $2`,
+      [id, tenantId],
+    );
+    return rows.length > 0 ? mapModel(rows[0] as Record<string, unknown>) : null;
+  }
+
+  async function getProviderApiKey(providerId: string, tenantId: string): Promise<{ baseUrl: string; apiKey: string; apiFormat: string } | null> {
+    const rows = await db.raw(
+      `SELECT base_url, api_key, api_format FROM ai_provider WHERE id = $1 AND tenant_id = $2`,
+      [providerId, tenantId],
+    );
+    if (rows.length === 0) return null;
+    const r = rows[0] as { base_url: string; api_key: string; api_format: string };
+    return { baseUrl: r.base_url, apiKey: r.api_key, apiFormat: r.api_format };
+  }
+
   return {
     createProvider,
     updateProvider,
@@ -402,6 +454,10 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     listAllModels,
     updateModel,
     deleteModel,
+    createModel,
+    deleteModels,
+    getModel,
+    getProviderApiKey,
     syncModels,
     getConfig,
     setConfig,

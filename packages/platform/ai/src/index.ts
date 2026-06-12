@@ -272,3 +272,6 @@ export { AiSkillModel, AiAgentSkillModel } from "./models/skill";
 
 // ---- Skill Migration ----
 export { createAiSkillTables } from "./migrations/006_create_ai_skill_tables";
+
+// ---- Model Capabilities Migration ----
+export { addReasoningOptions } from "./migrations/008_add_reasoning_options";

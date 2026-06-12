@@ -4,7 +4,7 @@
 import type { Migration } from "@ventostack/database";
 
 export const addModelCapabilities: Migration = {
-  name: "006_add_model_capabilities",
+  name: "007_add_model_capabilities",
   up: async (executor) => {
     await executor(`
       ALTER TABLE ai_model

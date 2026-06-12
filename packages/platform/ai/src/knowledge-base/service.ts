@@ -24,7 +24,7 @@ import type {
 } from "./types";
 import { parseMarkdown } from "./markdown-parser";
 import { parseFile, needsParsing } from "./parsers";
-import { lookup } from "mime-types";
+import { lookupMimeType } from "./parsers/mime";
 
 export interface KnowledgeBaseServiceDeps {
   storagePath: string; // /data/knowledge-bases
@@ -456,7 +456,7 @@ export function createKnowledgeBaseService(
     },
 
     // ── 文件上传（含解析）──
-    async uploadFile(kbId, fileName, fileBuffer, targetDir, tenantId) {
+    async uploadFile(kbId, fileName, fileBuffer, targetDir, tenantId, ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string }) {
       const contentDir = getContentPath(kbId);
       const sourcesDir = getSourcesPath(kbId);
       if (!existsSync(contentDir)) throw aiErrors.kbFileNotFound();
@@ -475,7 +475,7 @@ export function createKnowledgeBaseService(
         sourcePath = safeFileName;
 
         // 解析为 Markdown
-        const parsed = await parseFile(fileBuffer, fileName);
+        const parsed = await parseFile(fileBuffer, fileName, { ocrEnabled: ocrOptions?.ocrEnabled !== false, ocrLanguage: ocrOptions?.ocrLanguage, ocrServerUrl: ocrOptions?.ocrServerUrl });
         const mdFileName = fileName.replace(/\.[^.]+$/, ".md");
         const mdFilePath = join(dir, mdFileName);
         await writeFile(mdFilePath, parsed.markdown, "utf-8");
@@ -518,7 +518,7 @@ export function createKnowledgeBaseService(
       if (!existsSync(filePath)) return null;
 
       const buffer = await readFile(filePath);
-      const mime = lookup(filePath) || "application/octet-stream";
+      const mime = lookupMimeType(filePath);
       return { buffer, mimeType: mime, fileName: basename(filePath) };
     },
 

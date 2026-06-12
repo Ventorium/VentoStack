@@ -1,9 +1,9 @@
 /**
  * DOCX → Markdown 解析器
- * 使用 mammoth 提取 HTML，再转换为 Markdown
+ * 零外部依赖：DOCX = ZIP 内含 XML，直接解析
  */
 
-import mammoth from "mammoth";
+import { readZipEntries } from "./zip-reader";
 
 export interface ParsedDocument {
   content: string;
@@ -17,79 +17,110 @@ export interface ParsedDocument {
  * @param fileName 原始文件名
  */
 export async function parseDocx(buffer: Buffer, fileName: string): Promise<ParsedDocument> {
-  const result = await mammoth.convertToHtml({ buffer }, {
-    styleMap: [
-      "p[style-name='Heading 1'] => h1:fresh",
-      "p[style-name='Heading 2'] => h2:fresh",
-      "p[style-name='Heading 3'] => h3:fresh",
-      "p[style-name='Title'] => h1:fresh",
-      "p[style-name='Subtitle'] => h2:fresh",
-    ],
-  });
+  const entries = readZipEntries(buffer);
 
+  // 读取 document.xml（主文档内容）
+  const docEntry = entries.find((e) => e.name === "word/document.xml");
+  if (!docEntry) {
+    return { content: `# ${fileName.replace(/\.docx$/i, "")}\n\n> 无法解析 DOCX 文件：缺少 document.xml`, title: fileName, warnings: ["Missing word/document.xml"] };
+  }
+
+  const xml = docEntry.data.toString("utf-8");
   const title = fileName.replace(/\.docx$/i, "");
-  const html = result.value;
+  const markdown = docxXmlToMarkdown(xml, title);
 
-  // HTML → Markdown 转换
-  const markdown = htmlToMarkdown(html, title);
-
-  return {
-    content: markdown,
-    title,
-    warnings: result.messages.map((m) => m.message),
-  };
+  return { content: markdown, title, warnings: [] };
 }
 
 /**
- * 简易 HTML → Markdown 转换
+ * 将 DOCX 的 document.xml 转换为 Markdown
  */
-function htmlToMarkdown(html: string, fallbackTitle: string): string {
+function docxXmlToMarkdown(xml: string, fallbackTitle: string): string {
   const lines: string[] = [];
   lines.push(`# ${fallbackTitle}`);
   lines.push("");
 
-  let text = html;
+  // 提取所有段落 <w:p>...</w:p>
+  const paraRegex = /<w:p\b[^>]*>([\s\S]*?)<\/w:p>/g;
+  let paraMatch: RegExpExecArray | null;
 
-  // 标题转换
-  text = text.replace(/<h1[^>]*>(.*?)<\/h1>/gi, (_, content) => `\n# ${stripHtml(content)}\n`);
-  text = text.replace(/<h2[^>]*>(.*?)<\/h2>/gi, (_, content) => `\n## ${stripHtml(content)}\n`);
-  text = text.replace(/<h3[^>]*>(.*?)<\/h3>/gi, (_, content) => `\n### ${stripHtml(content)}\n`);
-  text = text.replace(/<h4[^>]*>(.*?)<\/h4>/gi, (_, content) => `\n#### ${stripHtml(content)}\n`);
+  while ((paraMatch = paraRegex.exec(xml)) !== null) {
+    const paraXml = paraMatch[1];
 
-  // 加粗和斜体
-  text = text.replace(/<strong[^>]*>(.*?)<\/strong>/gi, "**$1**");
-  text = text.replace(/<b[^>]*>(.*?)<\/b>/gi, "**$1**");
-  text = text.replace(/<em[^>]*>(.*?)<\/em>/gi, "*$1*");
-  text = text.replace(/<i[^>]*>(.*?)<\/i>/gi, "*$1*");
+    // 检查段落样式（标题等）
+    const styleMatch = paraXml.match(/<w:pStyle\b[^>]*w:val="([^"]*)"/);
+    const style = styleMatch?.[1] ?? "";
 
-  // 列表
-  text = text.replace(/<li[^>]*>(.*?)<\/li>/gi, "- $1\n");
-  text = text.replace(/<\/?[uo]l[^>]*>/gi, "\n");
+    // 提取段落内的文本
+    const textParts: string[] = [];
+    // 提取文本运行 <w:t>...</w:t>
+    const textRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+    let textMatch: RegExpExecArray | null;
+    while ((textMatch = textRegex.exec(paraXml)) !== null) {
+      textParts.push(textMatch[1]);
+    }
 
-  // 段落和换行
-  text = text.replace(/<p[^>]*>(.*?)<\/p>/gi, "$1\n\n");
-  text = text.replace(/<br\s*\/?>/gi, "\n");
+    const text = textParts.join("").trim();
+    if (!text) continue;
 
-  // 链接
-  text = text.replace(/<a[^>]*href="([^"]*)"[^>]*>(.*?)<\/a>/gi, "[$2]($1)");
+    // 检查是否有加粗
+    const isBold = /<w:b\b/.test(paraXml);
+    // 检查是否有斜体
+    const isItalic = /<w:i\b/.test(paraXml);
 
-  // 表格（简单处理）
-  text = text.replace(/<table[^>]*>/gi, "\n");
-  text = text.replace(/<\/table>/gi, "\n");
-  text = text.replace(/<tr[^>]*>/gi, "");
-  text = text.replace(/<\/tr>/gi, "\n");
-  text = text.replace(/<t[dh][^>]*>(.*?)<\/t[dh]>/gi, "| $1 ");
+    // 根据样式转换
+    if (style.startsWith("Heading1") || style === "Title") {
+      lines.push(`# ${text}`);
+    } else if (style.startsWith("Heading2") || style === "Subtitle") {
+      lines.push(`## ${text}`);
+    } else if (style.startsWith("Heading3")) {
+      lines.push(`### ${text}`);
+    } else if (style.startsWith("Heading4")) {
+      lines.push(`#### ${text}`);
+    } else if (style.startsWith("List")) {
+      lines.push(`- ${formatInline(text, isBold, isItalic)}`);
+    } else {
+      lines.push(formatInline(text, isBold, isItalic));
+    }
+    lines.push("");
+  }
 
-  // 移除剩余 HTML 标签
-  text = stripHtml(text);
+  // 提取表格 <w:tbl>...</w:tbl>
+  const tableRegex = /<w:tbl\b[^>]*>([\s\S]*?)<\/w:tbl>/g;
+  let tableMatch: RegExpExecArray | null;
+  while ((tableMatch = tableRegex.exec(xml)) !== null) {
+    lines.push("");
+    const rowRegex = /<w:tr\b[^>]*>([\s\S]*?)<\/w:tr>/g;
+    let rowMatch: RegExpExecArray | null;
+    let isFirstRow = true;
+    while ((rowMatch = rowRegex.exec(tableMatch[1])) !== null) {
+      const cellRegex = /<w:tc\b[^>]*>([\s\S]*?)<\/w:tc>/g;
+      const cells: string[] = [];
+      let cellMatch: RegExpExecArray | null;
+      while ((cellMatch = cellRegex.exec(rowMatch[1])) !== null) {
+        const cellTexts: string[] = [];
+        const cellTextRegex = /<w:t[^>]*>([^<]*)<\/w:t>/g;
+        let ct: RegExpExecArray | null;
+        while ((ct = cellTextRegex.exec(cellMatch[1])) !== null) {
+          cellTexts.push(ct[1]);
+        }
+        cells.push(cellTexts.join("").trim() || " ");
+      }
+      lines.push(`| ${cells.join(" | ")} |`);
+      if (isFirstRow) {
+        lines.push(`| ${cells.map(() => "---").join(" | ")} |`);
+        isFirstRow = false;
+      }
+    }
+    lines.push("");
+  }
 
-  // 清理多余空行
-  text = text.replace(/\n{3,}/g, "\n\n").trim();
-
-  lines.push(text);
-  return lines.join("\n");
+  return lines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
 }
 
-function stripHtml(html: string): string {
-  return html.replace(/<[^>]+>/g, "").trim();
+function formatInline(text: string, bold: boolean, italic: boolean): string {
+  let result = text;
+  if (bold) result = `**${result}**`;
+  if (italic) result = `*${result}*`;
+  return result;
 }
