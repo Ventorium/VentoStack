@@ -12,6 +12,9 @@ export interface CreateAgentParams {
   systemPrompt: string;
   tools?: unknown[];
   knowledgeBaseIds?: string[];
+  skillIds?: string[];
+  mcpServerIds?: string[];
+  modelOverrides?: Record<string, string>;
   memoryConfig?: Record<string, unknown>;
   config?: Record<string, unknown>;
   maxIterations?: number;
@@ -29,6 +32,9 @@ export interface UpdateAgentParams {
   systemPrompt?: string;
   tools?: unknown[];
   knowledgeBaseIds?: string[];
+  skillIds?: string[];
+  mcpServerIds?: string[];
+  modelOverrides?: Record<string, string>;
   memoryConfig?: Record<string, unknown>;
   config?: Record<string, unknown>;
   maxIterations?: number;
@@ -66,7 +72,7 @@ export function createAgentService(deps: { db: Database }) {
   async function create(params: CreateAgentParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.raw(
-      `INSERT INTO ai_agent (id, name, description, type, system_prompt, model, tools, knowledge_base_ids, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status)
+      `INSERT INTO ai_agent (id, name, description, type, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'draft')`,
       [
         id,
@@ -77,6 +83,9 @@ export function createAgentService(deps: { db: Database }) {
         params.model,
         params.tools ? JSON.stringify(params.tools) : null,
         params.knowledgeBaseIds ? JSON.stringify(params.knowledgeBaseIds) : null,
+        params.skillIds ? JSON.stringify(params.skillIds) : null,
+        params.mcpServerIds ? JSON.stringify(params.mcpServerIds) : null,
+        params.modelOverrides ? JSON.stringify(params.modelOverrides) : null,
         params.memoryConfig ? JSON.stringify(params.memoryConfig) : null,
         params.config ? JSON.stringify(params.config) : null,
         params.maxIterations ?? 10,
@@ -101,6 +110,9 @@ export function createAgentService(deps: { db: Database }) {
     if (params.systemPrompt !== undefined) { sets.push(`system_prompt = $${idx++}`); values.push(params.systemPrompt); }
     if (params.tools !== undefined) { sets.push(`tools = $${idx++}`); values.push(JSON.stringify(params.tools)); }
     if (params.knowledgeBaseIds !== undefined) { sets.push(`knowledge_base_ids = $${idx++}`); values.push(JSON.stringify(params.knowledgeBaseIds)); }
+    if (params.skillIds !== undefined) { sets.push(`skill_ids = $${idx++}`); values.push(JSON.stringify(params.skillIds)); }
+    if (params.mcpServerIds !== undefined) { sets.push(`mcp_server_ids = $${idx++}`); values.push(JSON.stringify(params.mcpServerIds)); }
+    if (params.modelOverrides !== undefined) { sets.push(`model_overrides = $${idx++}`); values.push(JSON.stringify(params.modelOverrides)); }
     if (params.memoryConfig !== undefined) { sets.push(`memory_config = $${idx++}`); values.push(JSON.stringify(params.memoryConfig)); }
     if (params.config !== undefined) { sets.push(`config = $${idx++}`); values.push(JSON.stringify(params.config)); }
     if (params.maxIterations !== undefined) { sets.push(`max_iterations = $${idx++}`); values.push(params.maxIterations); }

@@ -247,3 +247,25 @@ export type { ConversationCrudService, ApprovalCrudService, HealthCheckDeps } fr
 
 // ---- Document Model ----
 export { AiDocumentModel } from "./models/document";
+
+// ---- Skill Store Service ----
+export { createSkillStoreService } from "./services/skill-store";
+export type { StoreSearchResult, StoreSkillDetail, StoreFileItem, StoreEvaluation, StoreRecommendation, SkillStoreService } from "./services/skill-store";
+
+// ---- Skill Service ----
+export { createSkillService } from "./services/skill";
+export type { SkillItem, InstallFromStoreParams, SkillServiceDeps } from "./services/skill";
+
+// ---- Model Config Service ----
+export { createModelConfigService } from "./services/model-config";
+export type { ModelPurposeConfig, ModelConfigService, ModelDetail } from "./services/model-config";
+
+// ---- Scoped KB Service ----
+export { createScopedKBService } from "./services/kb-scope";
+export type { KBScope, ScopedKBItem, ScopedKBDeps } from "./services/kb-scope";
+
+// ---- Skill Routes ----
+export { createSkillRoutes } from "./routes/skill";
+
+// ---- Skill Models ----
+export { AiSkillModel, AiAgentSkillModel } from "./models/skill";

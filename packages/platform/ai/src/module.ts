@@ -58,6 +58,15 @@ import { createChatRoutes, type ConversationService } from "./routes/chat";
 import { createProviderRoutes } from "./routes/provider";
 import { createAuditRoutes } from "./routes/audit";
 import { createProviderService } from "./services/provider";
+import { createSkillStoreService } from "./services/skill-store";
+import { createSkillService } from "./services/skill";
+import { createModelConfigService } from "./services/model-config";
+import { createScopedKBService } from "./services/kb-scope";
+import { createSkillRoutes } from "./routes/skill";
+import type { SkillStoreService } from "./services/skill-store";
+import type { SkillService } from "./services/skill";
+import type { ModelConfigService } from "./services/model-config";
+import type { ScopedKBService } from "./services/kb-scope";
 
 // Auth
 import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
@@ -74,6 +83,10 @@ export interface AIModule {
     skillManager?: SkillManager;
     promptTemplateManager?: PromptTemplateManager;
     eventEmitter: AgentEventEmitter;
+    skillStoreService: SkillStoreService;
+    skillService: SkillService;
+    modelConfigService: ModelConfigService;
+    scopedKBService: ScopedKBService;
   };
   router: Router;
   /** 创建 Agent Harness 实例 */
@@ -234,12 +247,22 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
 
   const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm);
 
+  // Skill 服务
+  const skillStoreService = createSkillStoreService();
+  const skillService = createSkillService({ db, eventBus, storeService: skillStoreService, storagePath: \`\${storagePath}/skills\` });
+  const modelConfigService = createModelConfigService({ db });
+  const scopedKBService = createScopedKBService({ db, eventBus });
+
+  // Skill 路由
+  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm);
+
   // 合并路由
   const router = createRouter();
   router.merge(kbRouter);
   router.merge(agentRouter);
   router.merge(chatRouter);
   router.merge(providerRouter);
+  router.merge(skillRouter);
 
   // 审计日志路由
   const auditRouter = createAuditRoutes(
@@ -296,6 +319,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       skillManager,
       promptTemplateManager,
       eventEmitter,
+      skillStoreService,
+      skillService,
+      modelConfigService,
+      scopedKBService,
     },
     router,
     createHarness,

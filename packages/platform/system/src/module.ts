@@ -49,7 +49,7 @@ import type { UpdateUserParams } from "./services/user";
 import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
 import { type OperationLogEntry, createOperationLogMiddleware } from "./middlewares/operation-log";
 import { createAuthRoutes } from "./routes/auth";
-import { fail, ok, okPage, pageOf, parseBody } from "./routes/common";
+import { fail, success, paginated, pageOf, parseBody } from "@ventostack/core";
 import { createCrudRoutes } from "./routes/crud";
 import { createPasskeyRoutes } from "./routes/passkey";
 import { createUserRoutes } from "./routes/user";
@@ -232,7 +232,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         configService.getValue("sys_password_min_length"),
         configService.getValue("sys_password_complexity"),
       ]);
-      return ok({
+      return success({
         siteName: siteName ?? "VentoStack",
         deptEnabled: deptEnabled !== "false",
         mfaEnabled: mfaEnabled !== "false",
@@ -303,7 +303,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const id = (ctx.params as Record<string, string>).id!;
             const menuIds = await roleService.getRoleMenuIds(id);
-            return ok({ menuIds });
+            return success({ menuIds });
           },
           perm("system", "role:list"),
         );
@@ -320,7 +320,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const body = await parseBody(ctx.request);
             const menuIds = (body.menuIds as string[]) ?? [];
             await roleService.assignMenus(id, menuIds);
-            return ok(null);
+            return success(null);
           },
           perm("system", "role:update"),
         );
@@ -345,7 +345,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
               body.scope as number,
               body.deptIds as string[] | undefined,
             );
-            return ok(null);
+            return success(null);
           },
           perm("system", "role:update"),
         );
@@ -378,7 +378,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
                 skipped++;
               }
             }
-            return ok({ success, skipped });
+            return success({ success, skipped });
           },
           perm("system", "role:delete"),
         );
@@ -455,7 +455,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           },
           async () => {
             const tree = await menuService.getTree();
-            return ok(tree);
+            return success(tree);
           },
           perm("system", "menu:list"),
         );
@@ -518,7 +518,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           },
           async () => {
             const tree = await deptService.getTree();
-            return ok(tree);
+            return success(tree);
           },
           perm("system", "dept:list"),
         );
@@ -551,7 +551,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
                 skipped++;
               }
             }
-            return ok({ success, skipped });
+            return success({ success, skipped });
           },
           perm("system", "dept:delete"),
         );
@@ -616,7 +616,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
                 skipped++;
               }
             }
-            return ok({ success, skipped });
+            return success({ success, skipped });
           },
           perm("system", "post:delete"),
         );
@@ -680,7 +680,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const code = (ctx.params as Record<string, string>).code!;
             const data = await dictService.listDataByType(code);
-            return ok(data);
+            return success(data);
           },
         );
       },
@@ -742,7 +742,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const key = (ctx.params as Record<string, string>).key!;
             const value = await configService.getValue(key);
             if (value === null) return fail("Config not found", 404, 404);
-            return ok({ key, value });
+            return success({ key, value });
           },
           perm("system", "config:query"),
         );
@@ -792,7 +792,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const id = (ctx.params as Record<string, string>).id!;
             const user = ctx.user as { id: string };
             await noticeService.publish(id, user.id);
-            return ok(null);
+            return success(null);
           },
           perm("system", "notice:update"),
         );
@@ -805,7 +805,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const id = (ctx.params as Record<string, string>).id!;
             const user = ctx.user as { id: string };
             await noticeService.markRead(user.id, id);
-            return ok(null);
+            return success(null);
           },
         );
         // Batch publish
@@ -833,7 +833,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
               await noticeService.publish(id, user.id);
               success++;
             }
-            return ok({ success, skipped });
+            return success({ success, skipped });
           },
           perm("system", "notice:update"),
         );
@@ -861,7 +861,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
               await noticeService.revoke(id);
               success++;
             }
-            return ok({ success, skipped });
+            return success({ success, skipped });
           },
           perm("system", "notice:update"),
         );
@@ -885,7 +885,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
                 skipped++;
               }
             }
-            return ok({ success, skipped });
+            return success({ success, skipped });
           },
           perm("system", "notice:delete"),
         );
@@ -919,11 +919,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const user = ctx.user as { id: string } | undefined;
       if (!user?.id) return fail("未登录", 401, 401);
       const detail = await userService.getById(user.id);
-      if (!detail) return ok(null);
+      if (!detail) return success(null);
       const permissions = await menuTreeBuilder.buildPermissionsForUser(user.id);
       const roles =
         ((detail as unknown as Record<string, unknown>).roles as Array<{ code: string }>) ?? [];
-      return ok({
+      return success({
         ...detail,
         roles: roles.map((r: { code: string }) => r.code),
         permissions,
@@ -941,7 +941,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const user = ctx.user as { id: string } | undefined;
       if (!user?.id) return fail("未登录", 401, 401);
       const tree = await menuTreeBuilder.buildRoutesForUser(user.id);
-      return ok(tree);
+      return success(tree);
     },
   );
 
@@ -955,7 +955,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const user = ctx.user as { id: string } | undefined;
       if (!user?.id) return fail("未登录", 401, 401);
       const permissions = await menuTreeBuilder.buildPermissionsForUser(user.id);
-      return ok(permissions);
+      return success(permissions);
     },
   );
 
@@ -993,7 +993,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         if (!Number.isNaN(genderVal)) updates.gender = genderVal;
       }
       await userService.update(user.id, updates as UpdateUserParams);
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -1038,7 +1038,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         password_changed_at: new Date(),
       });
       await cache.del(ns.detailKey("user", user.id));
-      return ok(null);
+      return success(null);
     },
   );
 
@@ -1086,7 +1086,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
       await db.query(UserModel).where("id", "=", user.id).update({ avatar: avatarUrl });
       await cache.del(ns.detailKey("user", user.id));
-      return ok({ avatar: avatarUrl });
+      return success({ avatar: avatarUrl });
     },
   );
 
@@ -1106,7 +1106,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         .select("mfa_enabled")
         .get();
       if (!mfaUser) return fail("用户不存在", 404, 404);
-      return ok({ enabled: mfaUser.mfa_enabled });
+      return success({ enabled: mfaUser.mfa_enabled });
     },
   );
 
@@ -1128,7 +1128,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const body = await parseBody(ctx.request);
       try {
         const result = await dictService.createData(body as unknown as CreateDictDataParams);
-        return ok(result);
+        return success(result);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "创建失败", 400);
       }
@@ -1151,7 +1151,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const body = await parseBody(ctx.request);
       try {
         await dictService.updateData(id, body as Record<string, unknown>);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "更新失败", 400);
       }
@@ -1167,7 +1167,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const id = (ctx.params as Record<string, string>).id!;
       try {
         await dictService.deleteData(id);
-        return ok(null);
+        return success(null);
       } catch (e) {
         return fail(e instanceof Error ? e.message : "删除失败", 400);
       }
@@ -1194,7 +1194,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
         }
       }
-      return ok({ success, skipped });
+      return success({ success, skipped });
     },
     perm("system", "dict:delete"),
   );
@@ -1208,7 +1208,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       await noticeService.revoke(id);
-      return ok(null);
+      return success(null);
     },
     perm("system", "notice:update"),
   );
@@ -1226,7 +1226,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         .where("id", "=", id)
         .update({ locked_until: null, login_attempts: 0 });
       await cache.del(ns.detailKey("user", id));
-      return ok(null);
+      return success(null);
     },
     perm("system", "user:update"),
   );
@@ -1245,7 +1245,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const blacklisted = body.blacklisted as boolean;
       await db.query(UserModel).where("id", "=", id).update({ blacklisted });
       await cache.del(ns.detailKey("user", id));
-      return ok(null);
+      return success(null);
     },
     perm("system", "user:update"),
   );
@@ -1275,7 +1275,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
         }
       }
-      return ok({ success, skipped });
+      return success({ success, skipped });
     },
     perm("system", "user:delete"),
   );
@@ -1310,7 +1310,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         await userService.updateStatus(id, targetStatus);
         success++;
       }
-      return ok({ success, skipped });
+      return success({ success, skipped });
     },
     perm("system", "user:update"),
   );
@@ -1336,7 +1336,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
         }
       }
-      return ok({ success, skipped });
+      return success({ success, skipped });
     },
     perm("system", "user:resetPwd"),
   );
@@ -1393,7 +1393,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         [...params, pageSize, offset],
       );
 
-      return okPage(rows as unknown[], total, page, pageSize);
+      return paginated(rows as unknown[], total, page, pageSize);
     },
     opLogPerm,
   );
@@ -1444,7 +1444,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         [...params, pageSize, offset],
       );
 
-      return okPage(rows as unknown[], total, page, pageSize);
+      return paginated(rows as unknown[], total, page, pageSize);
     },
     opLogPerm,
   );
@@ -1456,7 +1456,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async () => {
       await db.raw(`TRUNCATE TABLE sys_login_log`);
-      return ok(null);
+      return success(null);
     },
     opLogPerm,
   );
@@ -1490,7 +1490,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         noticeService.getUnreadCount(userId),
       ]);
 
-      return ok({ userCount, roleCount, todayLogs, unreadNotices });
+      return success({ userCount, roleCount, todayLogs, unreadNotices });
     },
   );
 
@@ -1521,7 +1521,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const pageSize = Number(query.get("pageSize") ?? "10");
 
       const result = await noticeService.listPublishedForUser(userId, { page, pageSize });
-      return ok(result);
+      return success(result);
     },
   );
 
@@ -1541,10 +1541,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const userId = user?.id ?? "";
       const body = (await ctx.body()) as { ids?: string[] };
       const ids = body?.ids ?? [];
-      if (ids.length === 0) return ok(null);
+      if (ids.length === 0) return success(null);
 
       await noticeService.markBatchRead(userId, ids);
-      return ok(null);
+      return success(null);
     },
   );
 

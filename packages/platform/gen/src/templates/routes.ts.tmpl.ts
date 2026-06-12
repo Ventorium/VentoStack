@@ -8,10 +8,9 @@ export function renderRoutes(table: GenTableInfo, _columns: GenColumnInfo[]): st
   const basePath = `/api/${table.moduleName}/${toPlural(table.className.toLowerCase())}`;
   const permPrefix = `${table.moduleName}:${table.className.toLowerCase()}`;
 
-  return `import { createRouter } from "@ventostack/core";
+  return `import { createRouter, success, paginated, fail, parseBody, pageOf } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { ${table.className}Service } from "../services/${toKebab(table.className)}";
-import { ok, okPage, fail, parseBody, pageOf } from "./common";
 
 export function create${table.className}Routes(
   service: ${table.className}Service,
@@ -21,40 +20,40 @@ export function create${table.className}Routes(
   const router = createRouter();
   router.use(authMiddleware);
 
-  router.get("${basePath}", perm("${permPrefix}", "list"), async (ctx) => {
+  router.get("\${basePath}", perm("\${permPrefix}", "list"), async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const result = await service.list({ ...(ctx.query as Record<string, unknown>), page, pageSize });
-    return okPage(result.items, result.total, result.page, result.pageSize);
+    return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
-  router.get("${basePath}/:id", perm("${permPrefix}", "query"), async (ctx) => {
+  router.get("\${basePath}/:id", perm("\${permPrefix}", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     const item = await service.getById(id);
     if (!item) return fail("资源不存在", 404, 404);
-    return ok(item);
+    return success(item);
   });
 
-  router.post("${basePath}", perm("${permPrefix}", "create"), async (ctx) => {
+  router.post("\${basePath}", perm("\${permPrefix}", "create"), async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
       const result = await service.create(body as any);
-      return ok(result);
+      return success(result);
     } catch (e) {
       return fail(e instanceof Error ? e.message : "创建失败", 400);
     }
   });
 
-  router.put("${basePath}/:id", perm("${permPrefix}", "update"), async (ctx) => {
+  router.put("\${basePath}/:id", perm("\${permPrefix}", "update"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     const body = await parseBody(ctx.request);
     await service.update(id, body as any);
-    return ok(null);
+    return success(null);
   });
 
-  router.delete("${basePath}/:id", perm("${permPrefix}", "delete"), async (ctx) => {
+  router.delete("\${basePath}/:id", perm("\${permPrefix}", "delete"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id;
     await service.delete(id);
-    return ok(null);
+    return success(null);
   });
 
   return router;

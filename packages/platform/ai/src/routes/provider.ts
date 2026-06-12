@@ -130,6 +130,21 @@ export function createProviderRoutes(
     },
   );
 
+  router.delete(
+    "/api/ai/models/:id",
+    perm("ai:provider", "delete"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        await providerService.deleteModel(id, tenantId);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
   // 从 models.dev 同步模型
   router.post(
     "/api/ai/providers/:id/sync",

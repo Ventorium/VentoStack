@@ -60,6 +60,8 @@ export interface ModelItem {
   supportsFunctionCalling: boolean;
   supportsStreaming: boolean;
   supportsThinking: boolean;
+  supportsStructuredOutput: boolean;
+  thinkingIntensity: string | null;
   pricingInput: number | null;
   pricingOutput: number | null;
   autoFetched: boolean;
@@ -80,6 +82,8 @@ export interface UpdateModelParams {
   supportsFunctionCalling?: boolean;
   supportsStreaming?: boolean;
   supportsThinking?: boolean;
+  supportsStructuredOutput?: boolean;
+  thinkingIntensity?: string | null;
   pricingInput?: number | null;
   pricingOutput?: number | null;
   status?: number;
@@ -214,6 +218,8 @@ export function createProviderService(deps: { db: Database }) {
     if (params.supportsFunctionCalling !== undefined) { sets.push(`supports_function_calling = $${idx++}`); values.push(params.supportsFunctionCalling); }
     if (params.supportsStreaming !== undefined) { sets.push(`supports_streaming = $${idx++}`); values.push(params.supportsStreaming); }
     if (params.supportsThinking !== undefined) { sets.push(`supports_thinking = $${idx++}`); values.push(params.supportsThinking); }
+    if (params.supportsStructuredOutput !== undefined) { sets.push(`supports_structured_output = $${idx++}`); values.push(params.supportsStructuredOutput); }
+    if (params.thinkingIntensity !== undefined) { sets.push(`thinking_intensity = $${idx++}`); values.push(params.thinkingIntensity); }
     if (params.pricingInput !== undefined) { sets.push(`pricing_input = $${idx++}`); values.push(params.pricingInput); }
     if (params.pricingOutput !== undefined) { sets.push(`pricing_output = $${idx++}`); values.push(params.pricingOutput); }
     if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
@@ -263,14 +269,14 @@ export function createProviderService(deps: { db: Database }) {
           `UPDATE ai_model SET
              display_name = $1, context_length = $2, max_output_tokens = $3,
              supports_text = $4, supports_image = $5, supports_video = $6, supports_audio = $7,
-             supports_function_calling = $8, supports_thinking = $9,
-             pricing_input = $10, pricing_output = $11,
+             supports_function_calling = $8, supports_thinking = $9, supports_structured_output = $10,
+             pricing_input = $11, pricing_output = $12,
              auto_fetched = TRUE, updated_at = NOW()
-           WHERE id = $12`,
+           WHERE id = $13`,
           [
             model.displayName, model.contextLength, model.maxOutputTokens,
             model.supportsText, model.supportsImage, model.supportsVideo, model.supportsAudio,
-            model.supportsFunctionCalling, model.supportsThinking,
+            model.supportsFunctionCalling, model.supportsThinking, model.supportsStructuredOutput,
             model.pricingInput, model.pricingOutput,
             existingId,
           ],
@@ -281,14 +287,14 @@ export function createProviderService(deps: { db: Database }) {
         await db.raw(
           `INSERT INTO ai_model (id, provider_id, model_id, display_name, context_length, max_output_tokens,
              supports_text, supports_image, supports_video, supports_audio,
-             supports_function_calling, supports_thinking,
+             supports_function_calling, supports_thinking, supports_structured_output,
              pricing_input, pricing_output, auto_fetched, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE, $15)`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, TRUE, $16)`,
           [
             crypto.randomUUID(), providerId, model.modelId, model.displayName,
             model.contextLength, model.maxOutputTokens,
             model.supportsText, model.supportsImage, model.supportsVideo, model.supportsAudio,
-            model.supportsFunctionCalling, model.supportsThinking,
+            model.supportsFunctionCalling, model.supportsThinking, model.supportsStructuredOutput,
             model.pricingInput, model.pricingOutput,
             tenantId,
           ],
@@ -370,6 +376,8 @@ export function createProviderService(deps: { db: Database }) {
       supportsFunctionCalling: (r.supports_function_calling as boolean) ?? false,
       supportsStreaming: (r.supports_streaming as boolean) ?? true,
       supportsThinking: (r.supports_thinking as boolean) ?? false,
+      supportsStructuredOutput: (r.supports_structured_output as boolean) ?? false,
+      thinkingIntensity: (r.thinking_intensity as string) ?? null,
       pricingInput: r.pricing_input != null ? Number(r.pricing_input) : null,
       pricingOutput: r.pricing_output != null ? Number(r.pricing_output) : null,
       autoFetched: (r.auto_fetched as boolean) ?? false,
@@ -378,6 +386,10 @@ export function createProviderService(deps: { db: Database }) {
       createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
       updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at ?? ""),
     };
+  }
+
+  async function deleteModel(id: string, tenantId: string): Promise<void> {
+    await db.raw(`DELETE FROM ai_model WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
   }
 
   return {
@@ -389,6 +401,7 @@ export function createProviderService(deps: { db: Database }) {
     listModels,
     listAllModels,
     updateModel,
+    deleteModel,
     syncModels,
     getConfig,
     setConfig,

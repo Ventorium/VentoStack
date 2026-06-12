@@ -51,6 +51,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(createAiKnowledgeTables);
   runner.addMigration(createAiAgentTables);
   runner.addMigration(createAiProviderTables);
+  runner.addMigration(createAiSkillTables);
 
   const executed = await runner.up();
 

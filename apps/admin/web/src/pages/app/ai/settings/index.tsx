@@ -91,6 +91,8 @@ interface ModelItem {
   supportsFunctionCalling: boolean;
   supportsStreaming: boolean;
   supportsThinking: boolean;
+  supportsStructuredOutput: boolean;
+  thinkingIntensity: string | null;
   pricingInput: number | null;
   pricingOutput: number | null;
   autoFetched: boolean;
@@ -112,6 +114,7 @@ function CapIcons({ model }: { model: ModelItem }) {
   if (model.supportsAudio) icons.push(<Tooltip key="aud" title="语音"><AudioOutlined style={{ color: "#eb2f96" }} /></Tooltip>);
   if (model.supportsFunctionCalling) icons.push(<Tooltip key="fn" title="函数调用"><CodeOutlined style={{ color: "#52c41a" }} /></Tooltip>);
   if (model.supportsThinking) icons.push(<Tooltip key="think" title="推理/思考"><ThunderboltOutlined style={{ color: "#fa8c16" }} /></Tooltip>);
+  if (model.supportsStructuredOutput) icons.push(<Tooltip key="struct" title="结构化输出"><CheckCircleOutlined style={{ color: "#13c2c2" }} /></Tooltip>);
   return <Space size={4}>{icons}</Space>;
 }
 
@@ -208,7 +211,7 @@ export default function AISettingsPage() {
       const preset = presets.find((p) => p.id === values.presetId);
       const body: Record<string, unknown> = {
         name: preset?.name ?? values.customName,
-        displayName: preset?.displayName ?? values.customDisplayName,
+        displayName: values.providerDisplayName || preset?.displayName || values.customDisplayName,
         apiFormat: preset?.apiFormat ?? values.customApiFormat,
         baseUrl: preset?.baseUrl || values.customBaseUrl,
         apiKey: values.apiKey,
@@ -319,6 +322,14 @@ export default function AISettingsPage() {
     setEditModelOpen(true);
   };
 
+  const handleDeleteModel = async (modelId: string) => {
+    const { error } = await client.delete("/api/ai/models/:id", { params: { id: modelId } });
+    if (!error) {
+      msg.success("模型已删除");
+      await refreshModels();
+    }
+  };
+
   const handleEditModel = async () => {
     if (!editModel) return;
     try {
@@ -380,6 +391,13 @@ export default function AISettingsPage() {
       render: (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(0)}M` : `${(v / 1000).toFixed(0)}K`,
     },
     {
+      title: "输出上限",
+      dataIndex: "maxOutputTokens",
+      key: "maxOutputTokens",
+      width: 90,
+      render: (v: number) => v >= 1000000 ? `${(v / 1000000).toFixed(0)}M` : v >= 1000 ? `${(v / 1000).toFixed(0)}K` : String(v),
+    },
+    {
       title: "能力",
       key: "caps",
       width: 110,
@@ -391,7 +409,7 @@ export default function AISettingsPage() {
       width: 120,
       render: (_, r) => r.pricingInput != null && r.pricingInput > 0
         ? <Text type="secondary" style={{ fontSize: 12 }}>${r.pricingInput} / ${r.pricingOutput}</Text>
-        : <Text type="secondary">-</Text>,
+        : <Tooltip title="点击编辑按钮手动填写价格"><Text type="secondary" style={{ cursor: "pointer", fontSize: 11 }}>未设置</Text></Tooltip>,
     },
     {
       title: "状态",
@@ -420,6 +438,11 @@ export default function AISettingsPage() {
             <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEditModel(r)}>
               编辑
             </Button>
+            <Popconfirm title="确定删除此模型？" onConfirm={() => handleDeleteModel(r.id)} okText="删除" okType="danger">
+              <Button type="link" size="small" danger icon={<DeleteOutlined />}>
+                删除
+              </Button>
+            </Popconfirm>
           </Space>
         );
       },
@@ -571,6 +594,16 @@ export default function AISettingsPage() {
             </div>
           )}
 
+          <Form.Item
+            name="providerDisplayName"
+            label="显示名称"
+            extra="用于区分同一供应商的不同实例，如「DeepSeek 个人」和「DeepSeek 公司」"
+            initialValue={selectedPreset?.displayName}
+            key={selectedPreset?.id}
+          >
+            <Input placeholder="如 DeepSeek 个人" />
+          </Form.Item>
+
           <Form.Item name="apiKey" label="API Key" rules={[{ required: true, message: "请输入 API Key" }]}>
             <Input.Password placeholder="sk-..." />
           </Form.Item>
@@ -654,7 +687,7 @@ export default function AISettingsPage() {
       >
         {modelsProvider?.presetId && (
           <div style={{ marginBottom: 16, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6, fontSize: 13 }}>
-            💡 点击「从 models.dev 同步」自动拉取该供应商的模型列表。默认模型排在最前面，点击 ⭐ 按钮可切换。
+            💡 点击「从 models.dev 同步」自动拉取该供应商的模型列表。价格数据需手动填写（models.dev 不提供）。默认模型排在最前面，点击 ⭐ 按钮可切换。
           </div>
         )}
         <Table
@@ -701,9 +734,22 @@ export default function AISettingsPage() {
           </Row>
           <Divider style={{ margin: "8px 0 16px" }}>能力</Divider>
           <Row gutter={16}>
-            <Col span={8}><Form.Item name="supportsFunctionCalling" label="函数调用" valuePropName="checked"><Switch /></Form.Item></Col>
-            <Col span={8}><Form.Item name="supportsStreaming" label="流式输出" valuePropName="checked"><Switch /></Form.Item></Col>
-            <Col span={8}><Form.Item name="supportsThinking" label="推理/思考" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsFunctionCalling" label="函数调用" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsStreaming" label="流式输出" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsThinking" label="推理/思考" valuePropName="checked"><Switch /></Form.Item></Col>
+            <Col span={6}><Form.Item name="supportsStructuredOutput" label="结构化输出" valuePropName="checked"><Switch /></Form.Item></Col>
+          </Row>
+          <Row gutter={16}>
+            <Col span={24}>
+              <Form.Item name="thinkingIntensity" label="思考强度" extra="设置思考/推理的计算强度，留空表示不支持或使用默认值">
+                <Select allowClear placeholder="选择思考强度" options={[
+                  { value: "low", label: "低 (Low)" },
+                  { value: "medium", label: "中 (Medium)" },
+                  { value: "high", label: "高 (High)" },
+                  { value: "max", label: "最高 (Max)" },
+                ]} />
+              </Form.Item>
+            </Col>
           </Row>
           <Divider style={{ margin: "8px 0 16px" }}>价格 ($/M tokens)</Divider>
           <Row gutter={16}>

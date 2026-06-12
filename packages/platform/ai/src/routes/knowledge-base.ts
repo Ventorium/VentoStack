@@ -3,10 +3,9 @@
  */
 import { resolve } from "node:path";
 import { readFile, existsSync } from "node:fs/promises";
-import { createRouter, success, paginated } from "@ventostack/core";
+import { createRouter, success, paginated, fail, handleError, parseBody, pageOf } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { KnowledgeBaseService } from "../knowledge-base/types";
-import { fail, handleError, parseBody, pageOf } from "./common";
 
 export function createKnowledgeBaseRoutes(
   kbService: KnowledgeBaseService,
