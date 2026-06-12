@@ -56,10 +56,33 @@ const SideMenu = () => {
   const menuItems = useMemo(() => convertRoutesToMenuItems(routes), [routes]);
   const isDark = resolvedTheme === "dark";
 
-  // compute selected keys from current path
+  // compute selected keys from current path — 匹配最长前缀（支持动态路由如 /app/ai/knowledge-bases/:id）
   const selectedKeys = useMemo(() => {
-    return [location.pathname];
-  }, [location.pathname]);
+    // 收集所有叶子菜单 key
+    const allKeys: string[] = [];
+    function collectKeys(items: import("@/api/types").FrontendRoute[]): void {
+      for (const r of items) {
+        if (r.meta?.hidden) continue;
+        const key = normalizePath(r.path);
+        if (r.children?.length) {
+          collectKeys(r.children);
+        } else {
+          allKeys.push(key);
+        }
+      }
+    }
+    collectKeys(routes);
+
+    // 精确匹配优先
+    if (allKeys.includes(location.pathname)) return [location.pathname];
+
+    // 最长前缀匹配
+    const best = allKeys
+      .filter((k) => location.pathname.startsWith(k + "/") || location.pathname === k)
+      .sort((a, b) => b.length - a.length)[0];
+
+    return [best ?? location.pathname];
+  }, [routes, location.pathname]);
 
   // 从路由树中找到当前路径的所有祖先菜单 key
   const routeOpenKeys = useMemo(() => {

@@ -97,8 +97,8 @@ export interface SyncResult {
   total: number;
 }
 
-export function createProviderService(deps: { db: Database }) {
-  const { db } = deps;
+export function createProviderService(deps: { db: Database; cache?: { get(key: string): Promise<string | null>; set(key: string, value: string, ttl?: number): Promise<void> } }) {
+  const { db, cache } = deps;
 
   // ============ Provider CRUD ============
 
@@ -245,7 +245,7 @@ export function createProviderService(deps: { db: Database }) {
     if (!preset?.modelsDevSlug) throw new Error("No models.dev slug for this provider");
 
     // 从 models.dev 拉取
-    const fetched = await fetchModelsFromDev(preset.modelsDevSlug);
+    const fetched = await fetchModelsFromDev(preset.modelsDevSlug, cache);
 
     // 获取现有模型
     const existingRows = await db.raw(

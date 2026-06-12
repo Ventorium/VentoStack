@@ -126,6 +126,22 @@ export interface KnowledgeBaseService {
     tenantId: string,
   ): Promise<void>;
 
+  // 文件上传（含解析）
+  uploadFile(
+    kbId: string,
+    fileName: string,
+    fileBuffer: Buffer,
+    targetDir: string | undefined,
+    tenantId: string,
+  ): Promise<{ contentPath: string; sourcePath: string | null }>;
+
+  // 获取源文件内容（用于下载/预览）
+  getSourceFile(
+    kbId: string,
+    path: string,
+    tenantId: string,
+  ): Promise<{ buffer: Buffer; mimeType: string; fileName: string } | null>;
+
   // README 自动生成
   generateReadme(kbId: string, tenantId: string): Promise<void>;
 

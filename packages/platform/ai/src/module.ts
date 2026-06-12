@@ -159,7 +159,7 @@ function createProvider(config: LLMProviderConfig): LLMProvider {
 // ---- Module Factory ----
 
 export function createAIModule(deps: AIModuleDeps): AIModule {
-  const { db, jwt, jwtSecret, rbac, eventBus, storagePath } = deps;
+  const { db, jwt, jwtSecret, rbac, eventBus, storagePath, cache } = deps;
 
   // 创建 LLM providers
   const providers: LLMProvider[] = deps.llmProviders.map(createProvider);
@@ -221,7 +221,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm);
 
   // Provider 服务
-  const providerService = createProviderService({ db: db as import("@ventostack/database").Database });
+  const providerService = createProviderService({
+    db: db as import("@ventostack/database").Database,
+    cache: cache as import("@ventostack/cache").Cache | undefined,
+  });
   const providerRouter = createProviderRoutes(providerService, authMiddleware, perm);
 
   // Agent CRUD 服务

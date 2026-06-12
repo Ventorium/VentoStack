@@ -209,6 +209,67 @@ export function createKnowledgeBaseRoutes(
     },
   );
 
+  // ── 文件上传（支持 PDF/Word/文本）──
+  router.post(
+    "/api/ai/knowledge-bases/:id/upload",
+    perm("ai:knowledge-base", "update"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+
+        // 解析 multipart form data
+        const formData = await ctx.request.formData();
+        const file = formData.get("file") as File | null;
+        const targetDir = (formData.get("dir") as string) || undefined;
+
+        if (!file) return fail("请上传文件", 400, 400);
+
+        const buffer = Buffer.from(await file.arrayBuffer());
+        const result = await kbService.uploadFile(
+          id,
+          file.name,
+          buffer,
+          targetDir,
+          tenantId,
+        );
+
+        return success(result);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
+  // ── 获取源文件（用于预览/下载）──
+  router.get(
+    "/api/ai/knowledge-bases/:id/source/*",
+    perm("ai:knowledge-base", "list"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const filePath =
+          (ctx.params as Record<string, string>)["*"] ||
+          (ctx.params as Record<string, string>).path ||
+          "";
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+
+        const result = await kbService.getSourceFile(id, filePath, tenantId);
+        if (!result) return fail("源文件不存在", 404, 404);
+
+        return new Response(result.buffer, {
+          status: 200,
+          headers: {
+            "Content-Type": result.mimeType,
+            "Content-Disposition": `inline; filename="${encodeURIComponent(result.fileName)}"`,
+          },
+        });
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
   // ── 搜索 ──
 
   router.get(

@@ -23,6 +23,8 @@ import type {
   KnowledgeBaseService,
 } from "./types";
 import { parseMarkdown } from "./markdown-parser";
+import { parseFile, needsParsing } from "./parsers";
+import { lookup } from "mime-types";
 
 export interface KnowledgeBaseServiceDeps {
   storagePath: string; // /data/knowledge-bases
@@ -451,6 +453,73 @@ export function createKnowledgeBaseService(
 
       // 自动刷新 README
       await this.generateReadme(kbId, tenantId);
+    },
+
+    // ── 文件上传（含解析）──
+    async uploadFile(kbId, fileName, fileBuffer, targetDir, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const sourcesDir = getSourcesPath(kbId);
+      if (!existsSync(contentDir)) throw aiErrors.kbFileNotFound();
+
+      const dir = targetDir ? safePath(contentDir, targetDir) : contentDir;
+      await mkdir(dir, { recursive: true });
+      await mkdir(sourcesDir, { recursive: true });
+
+      let contentPath: string;
+      let sourcePath: string | null = null;
+
+      if (needsParsing(fileName)) {
+        // 保存原始文件到 sources/
+        const safeFileName = fileName.replace(/[^\w._-]/g, "_");
+        await writeFile(join(sourcesDir, safeFileName), fileBuffer);
+        sourcePath = safeFileName;
+
+        // 解析为 Markdown
+        const parsed = await parseFile(fileBuffer, fileName);
+        const mdFileName = fileName.replace(/\.[^.]+$/, ".md");
+        const mdFilePath = join(dir, mdFileName);
+        await writeFile(mdFilePath, parsed.markdown, "utf-8");
+        contentPath = relative(contentDir, mdFilePath);
+
+        // 记录映射关系到 manifest
+        const manifestPath = join(getKBPath(kbId), "manifest.json");
+        let manifest: { files: Array<{ source: string | null; content: string; title: string; parser: string }> } = { files: [] };
+        if (existsSync(manifestPath)) {
+          try { manifest = JSON.parse(await readFile(manifestPath, "utf-8")); } catch { /* ignore */ }
+        }
+        // 移除旧映射
+        manifest.files = manifest.files.filter((f) => f.content !== contentPath);
+        manifest.files.push({
+          source: sourcePath,
+          content: contentPath,
+          title: parsed.title,
+          parser: parsed.parser,
+        });
+        await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
+      } else {
+        // 纯文本文件直接保存到 content/
+        const filePath = join(dir, fileName);
+        await writeFile(filePath, fileBuffer);
+        contentPath = relative(contentDir, filePath);
+      }
+
+      // 刷新 README
+      await this.generateReadme(kbId, tenantId);
+
+      return { contentPath, sourcePath };
+    },
+
+    // ── 获取源文件 ──
+    async getSourceFile(kbId, path, tenantId) {
+      const sourcesDir = getSourcesPath(kbId);
+      const filePath = join(sourcesDir, path);
+      // 安全检查：确保路径在 sourcesDir 内
+      if (!filePath.startsWith(sourcesDir)) return null;
+      if (!existsSync(filePath)) return null;
+
+      const buffer = await readFile(filePath);
+      const mime = lookup(filePath) || "application/octet-stream";
+      return { buffer, mimeType: mime, fileName: basename(filePath) };
     },
 
     // ── README 自动生成 ──

@@ -18,18 +18,30 @@ console.log("routes", routes);
 
 /** 从菜单树中递归查找路径匹配的叶子菜单标题 */
 function findLeafMenuTitle(routes: FrontendRoute[], pathname: string): string | null {
-  for (const r of routes) {
-    // 补全路径前缀
-    const fullPath = r.path.startsWith("/app") ? r.path : `/app${r.path.startsWith("/") ? "" : "/"}${r.path}`;
-    if (r.children?.length) {
-      const child = findLeafMenuTitle(r.children, pathname);
-      if (child) return child;
-    }
-    if (fullPath === pathname) {
-      return r.meta?.title ?? r.name;
+  // 收集所有叶子路由的 (path, title) 做前缀匹配
+  const leaves: Array<{ path: string; title: string }> = [];
+  function collect(rs: FrontendRoute[]): void {
+    for (const r of rs) {
+      const fullPath = r.path.startsWith("/app") ? r.path : `/app${r.path.startsWith("/") ? "" : "/"}${r.path}`;
+      if (r.children?.length) {
+        collect(r.children);
+      } else {
+        leaves.push({ path: fullPath, title: r.meta?.title ?? r.name });
+      }
     }
   }
-  return null;
+  collect(routes);
+
+  // 精确匹配优先
+  const exact = leaves.find((l) => l.path === pathname);
+  if (exact) return exact.title;
+
+  // 最长前缀匹配（支持动态路由如 /app/ai/knowledge-bases/:id）
+  const best = leaves
+    .filter((l) => pathname.startsWith(l.path + "/"))
+    .sort((a, b) => b.path.length - a.path.length)[0];
+
+  return best?.title ?? null;
 }
 
 const AppRoutes = () => {

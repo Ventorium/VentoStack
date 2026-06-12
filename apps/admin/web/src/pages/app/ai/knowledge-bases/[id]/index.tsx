@@ -14,6 +14,8 @@ import {
   LockOutlined,
   ReloadOutlined,
   SaveOutlined,
+  UploadOutlined,
+  PaperClipOutlined,
 } from "@ant-design/icons";
 import {
   Breadcrumb,
@@ -64,6 +66,11 @@ export default function KnowledgeBaseDetailPage() {
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [previewLoading, setPreviewLoading] = useState(false);
+
+  // 上传状态
+  const [uploading, setUploading] = useState(false);
+  const [isDragOver, setIsDragOver] = useState(false);
+  const fileInputRef = useState<HTMLInputElement | null>(null);
 
   // 新建操作
   const [newDirModal, setNewDirModal] = useState(false);
@@ -232,6 +239,58 @@ export default function KnowledgeBaseDetailPage() {
     [id, previewFile, fetchFiles, fetchKb],
   );
 
+  // ── 文件上传 ──
+  const handleUpload = useCallback(
+    async (fileList: FileList | null) => {
+      if (!id || !fileList || fileList.length === 0) return;
+      setUploading(true);
+      try {
+        for (const file of Array.from(fileList)) {
+          const formData = new FormData();
+          formData.append("file", file);
+          if (currentPath !== ".") formData.append("dir", currentPath);
+
+          const { error } = await client.post(`/api/ai/knowledge-bases/${id}/upload`, {
+            body: formData,
+          });
+          if (error) {
+            msg.error(`上传失败: ${file.name}`);
+          } else {
+            msg.success(`上传成功: ${file.name}`);
+          }
+        }
+        fetchFiles();
+        fetchKb();
+      } finally {
+        setUploading(false);
+      }
+    },
+    [id, currentPath, fetchFiles, fetchKb],
+  );
+
+  // ── 拖拽处理 ──
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  }, []);
+
+  const handleDrop = useCallback(
+    (e: React.DragEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setIsDragOver(false);
+      handleUpload(e.dataTransfer.files);
+    },
+    [handleUpload],
+  );
+
   // ── 文件列表列定义 ──
   const columns: ColumnsType<FileEntry> = [
     {
@@ -369,8 +428,15 @@ export default function KnowledgeBaseDetailPage() {
       <div style={{ display: "flex", gap: 16, minHeight: 500 }}>
         {/* Left: 文件浏览器 */}
         <Card
-          style={{ flex: previewFile ? "0 0 50%" : "1 1 100%", transition: "flex 0.2s" }}
+          style={{
+            flex: previewFile ? "0 0 50%" : "1 1 100%",
+            transition: "flex 0.2s",
+            ...(isDragOver ? { borderColor: token.colorPrimary, borderStyle: "dashed" } : {}),
+          }}
           styles={{ body: { padding: 0 } }}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onDrop={handleDrop}
           title={
             <div
               style={{
@@ -408,6 +474,21 @@ export default function KnowledgeBaseDetailPage() {
 
               {/* 操作按钮 */}
               <Space size={4}>
+                <Button
+                  size="small"
+                  icon={<UploadOutlined />}
+                  loading={uploading}
+                  onClick={() => {
+                    const input = document.createElement("input");
+                    input.type = "file";
+                    input.multiple = true;
+                    input.accept = ".md,.txt,.pdf,.docx";
+                    input.onchange = (e) => handleUpload((e.target as HTMLInputElement).files);
+                    input.click();
+                  }}
+                >
+                  上传文件
+                </Button>
                 <Button
                   size="small"
                   icon={<FolderAddOutlined />}
@@ -487,6 +568,19 @@ export default function KnowledgeBaseDetailPage() {
                   </>
                 ) : (
                   <>
+                    <Button
+                      size="small"
+                      icon={<PaperClipOutlined />}
+                      onClick={() => {
+                        // 打开源文件（通过 manifest 查找或直接用路径）
+                        const sourceName = previewFile?.split("/").pop()?.replace(/\.md$/, "");
+                        if (sourceName && id) {
+                          window.open(`/api/ai/knowledge-bases/${id}/source/${sourceName}`, "_blank");
+                        }
+                      }}
+                    >
+                      查看源文件
+                    </Button>
                     {!isReadmePreview && (
                       <Button
                         size="small"
