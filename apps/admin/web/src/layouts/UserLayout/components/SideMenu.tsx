@@ -84,18 +84,33 @@ const SideMenu = () => {
     return [best ?? location.pathname];
   }, [routes, location.pathname]);
 
-  // 从路由树中找到当前路径的所有祖先菜单 key
+  // 从路由树中找到当前路径的所有祖先菜单 key（支持动态路由前缀匹配）
   const routeOpenKeys = useMemo(() => {
     const parentMap = new Map<string, string>();
     buildParentMap(routes, null, parentMap);
+
+    // 精确匹配或最长前缀匹配查找 key
+    function findKey(path: string): string | undefined {
+      if (parentMap.has(path)) return path;
+      // 从前缀匹配：/app/ai/knowledge-bases/abc123 → /app/ai/knowledge-bases
+      const allKeys = Array.from(parentMap.keys());
+      const best = allKeys
+        .filter((k) => path.startsWith(k + "/") || path === k)
+        .sort((a, b) => b.length - a.length)[0];
+      return best;
+    }
 
     const keys: string[] = [];
     let current: string | undefined = location.pathname;
     while (current) {
       keys.push(current);
-      current = parentMap.get(current);
+      const matchedKey = findKey(current);
+      current = matchedKey ? parentMap.get(matchedKey) : undefined;
+      if (matchedKey && matchedKey !== current) {
+        keys.push(matchedKey);
+      }
     }
-    return keys;
+    return [...new Set(keys)];
   }, [routes, location.pathname]);
 
   // 受控 openKeys：路由变化时自动同步，用户点击时手动更新
