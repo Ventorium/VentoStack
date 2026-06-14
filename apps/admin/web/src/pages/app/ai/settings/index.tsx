@@ -338,9 +338,16 @@ export default function AISettingsPage() {
     setModelsProvider(p);
     setModelsOpen(true);
     setModelsLoading(true);
+    setSelectedModelIds([]);
+    setModelTestResults({});
     try {
-      const { data } = await client.get("/api/ai/providers/:id/models", { params: { id: p.id } }) as { data?: ModelItem[] };
-      if (data) setModelsList(data);
+      const [modelsRes, defaultRes] = await Promise.all([
+        client.get("/api/ai/providers/:id/models", { params: { id: p.id } }) as Promise<{ data?: ModelItem[] }>,
+        client.get("/api/ai/config/:key", { params: { key: "default_model" } }) as Promise<{ data?: { value: string | null } }>,
+      ]);
+      if (modelsRes.data) setModelsList(modelsRes.data);
+      if (defaultRes.data?.value) setDefaultModel(defaultRes.data.value);
+      else setDefaultModel("");
     } finally {
       setModelsLoading(false);
     }
@@ -663,14 +670,13 @@ export default function AISettingsPage() {
       dataIndex: "baseUrl",
       key: "baseUrl",
       ellipsis: true,
-      render: (v: string) => <Text type="secondary" copyable>{v}</Text>,
+      render: (v: string) => <Text type="secondary">{v}</Text>,
     },
     {
       title: "模型数",
       dataIndex: "modelCount",
       key: "modelCount",
-      width: 80,
-      render: (v: number) => <Badge count={v} showZero style={{ backgroundColor: v > 0 ? "#52c41a" : "#d9d9d9" }} />,
+      width: 80
     },
     {
       title: "状态",
@@ -682,21 +688,20 @@ export default function AISettingsPage() {
     {
       title: "操作",
       key: "action",
-      width: 220,
+      width: 132,
+      fixed: 'right',
       render: (_, r) => (
-        <Space>
-          <Button type="link" size="small" icon={<CloudSyncOutlined />} onClick={() => openModels(r)}>
-            模型
-          </Button>
-          <Button type="link" size="small" icon={<EditOutlined />} onClick={() => openEdit(r)}>
-            编辑
-          </Button>
-          <Popconfirm title="确定删除此供应商及其所有模型？" onConfirm={() => handleDeleteProvider(r.id)} okText="删除" okType="danger">
-            <Button type="link" size="small" danger icon={<DeleteOutlined />}>
-              删除
-            </Button>
-          </Popconfirm>
-        </Space>
+        <ActionColumn items={[
+          { label: '模型', onClick() {
+            openModels(r)
+          },},
+          { label: '编辑', onClick() {
+            openEdit(r)
+          },},
+          { label: '删除', danger: true, confirm: '确定删除此供应商及其所有模型？', onClick() {
+            handleDeleteProvider(r.id)
+          },},
+        ]} />
       ),
     },
   ];
@@ -716,7 +721,6 @@ export default function AISettingsPage() {
             label: <Space><ApiOutlined /> 供应商管理</Space>,
             children: (
               <Card
-                title={<Space><ApiOutlined /> 供应商管理</Space>}
                 extra={
                   <Space>
                     <Button icon={<ReloadOutlined />} onClick={fetchProviders}>刷新</Button>

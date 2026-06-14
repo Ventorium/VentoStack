@@ -54,6 +54,7 @@ export interface ProviderItem {
 export interface ModelItem {
   id: string;
   providerId: string;
+  providerName: string;
   modelId: string;
   displayName: string | null;
   contextLength: number;
@@ -194,7 +195,11 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
 
   async function listAllModels(tenantId: string): Promise<ModelItem[]> {
     const rows = await db.raw(
-      `SELECT * FROM ai_model WHERE tenant_id = $1 AND status = 1 ORDER BY sort ASC, created_at ASC`,
+      `SELECT m.*, p.display_name AS provider_display_name, p.name AS provider_name
+       FROM ai_model m
+       JOIN ai_provider p ON m.provider_id = p.id
+       WHERE m.tenant_id = $1 AND m.status = 1
+       ORDER BY p.sort ASC, p.name ASC, m.sort ASC, m.created_at ASC`,
       [tenantId],
     );
     return (rows as Array<Record<string, unknown>>).map(mapModel);
@@ -379,6 +384,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     return {
       id: r.id as string,
       providerId: r.provider_id as string,
+      providerName: (r.provider_display_name as string) ?? (r.provider_name as string) ?? "",
       modelId: r.model_id as string,
       displayName: (r.display_name as string) ?? null,
       contextLength: (r.context_length as number) ?? 128000,

@@ -57,6 +57,9 @@ export interface ToolExecutionResult {
 }
 
 /** 工具注册表，负责工具的注册、发现、参数校验和执行 */
+/** 工具简写别名 */
+export type Tool = ToolDefinition;
+
 export interface ToolRegistry {
   /**
    * 注册工具

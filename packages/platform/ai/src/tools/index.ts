@@ -21,3 +21,11 @@ export { createCalculatorTool } from "./calculator";
 export { createTerminalTool } from "./terminal";
 export { createFileReadTool, createFileWriteTool } from "./file-ops";
 export { createSQLQueryTool } from "./sql-query";
+
+// Web 工具
+export { createWebSearchTool } from "./web-search";
+
+// 通用实用工具
+export { createDatetimeTool } from "./datetime";
+export { createWebFetchTool } from "./web-fetch";
+export { createJsonFormatTool, createUuidTool, createBase64Tool, createHashTool } from "./json-utils";

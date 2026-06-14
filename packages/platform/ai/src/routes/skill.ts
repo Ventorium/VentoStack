@@ -2,9 +2,8 @@
  * Skill 管理路由
  * 包含商店搜索/详情 + 已安装 CRUD + 安装/同步/升级
  */
-import { createRouter } from "@ventostack/core";
+import { createRouter, success, paginated, fail, handleError, parseBody, pageOf } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import { ok, okPage, fail, handleError, parseBody, pageOf } from "./common";
 import type { SkillStoreService } from "../services/skill-store";
 import type { createSkillService } from "../services/skill";
 
@@ -30,7 +29,7 @@ export function createSkillRoutes(
         const page = Number(q.page) || 1;
         const pageSize = Math.min(50, Number(q.pageSize) || 24);
         const result = await storeService.search(keyword, page, pageSize);
-        return ok(result);
+        return success(result);
       } catch (e) { return handleError(e); }
     },
   );
@@ -45,7 +44,7 @@ export function createSkillRoutes(
         const detail = await storeService.getDetail(slug);
         const evaluation = await storeService.getEvaluation(slug);
         const recommendations = await storeService.getRecommendations(slug, 3);
-        return ok({ ...detail, evaluation, recommendations });
+        return success({ ...detail, evaluation, recommendations });
       } catch (e) { return handleError(e); }
     },
   );
@@ -61,7 +60,7 @@ export function createSkillRoutes(
         const version = (q.version as string) ?? "";
         if (!version) return fail("version 参数必填", 400, 400);
         const files = await storeService.getFiles(slug, version);
-        return ok(files);
+        return success(files);
       } catch (e) { return handleError(e); }
     },
   );
@@ -78,7 +77,7 @@ export function createSkillRoutes(
         const version = (q.version as string) ?? "";
         if (!path || !version) return fail("path 和 version 参数必填", 400, 400);
         const content = await storeService.getFileContent(slug, path, version);
-        return ok({ path, content });
+        return success({ path, content });
       } catch (e) { return handleError(e); }
     },
   );
@@ -97,7 +96,7 @@ export function createSkillRoutes(
           version: body.version as string | undefined,
           tenantId,
         });
-        return ok(result);
+        return success(result);
       } catch (e) { return handleError(e); }
     },
   );
@@ -114,7 +113,7 @@ export function createSkillRoutes(
         const source = q.source as string | undefined;
         const enabled = q.enabled !== undefined ? q.enabled === "true" || q.enabled === true : undefined;
         const result = await skillService.list(tenantId, { source, enabled, page, pageSize });
-        return okPage(result.list, result.total, page, pageSize);
+        return paginated(result.list, result.total, page, pageSize);
       } catch (e) { return handleError(e); }
     },
   );
@@ -128,7 +127,7 @@ export function createSkillRoutes(
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const skill = await skillService.getById(id, tenantId);
       if (!skill) return fail("Skill 不存在", 404, 404);
-      return ok(skill);
+      return success(skill);
     },
   );
 
@@ -141,7 +140,13 @@ export function createSkillRoutes(
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const skill = await skillService.getById(id, tenantId);
       if (!skill) return fail("Skill 不存在", 404, 404);
-      return ok(skill.fileTree ?? []);
+      // 上传的技能从磁盘重新扫描，确保路径正确
+      if (skill.source === "upload") {
+        const files = await skillService.rescanFileTree(id, tenantId);
+        return success(files);
+      }
+      const tree = typeof skill.fileTree === "string" ? JSON.parse(skill.fileTree) : (skill.fileTree ?? []);
+      return success(tree);
     },
   );
 
@@ -158,7 +163,26 @@ export function createSkillRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const content = await skillService.getFileContent(id, path, tenantId);
         if (content === null) return fail("文件不存在", 404, 404);
-        return ok({ path, content });
+        return success({ path, content });
+      } catch (e) { return handleError(e); }
+    },
+  );
+
+  // ── 写入文件内容（仅上传安装的技能） ──
+  router.put(
+    "/api/ai/skills/:id/file",
+    perm("ai:skill", "update"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const q = ctx.query as Record<string, unknown>;
+        const path = q.path as string;
+        if (!path) return fail("path 参数必填", 400, 400);
+        const body = await parseBody(ctx.request);
+        if (typeof body.content !== "string") return fail("content 字段必填", 400, 400);
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        await skillService.writeFileContent(id, path, body.content as string, tenantId);
+        return success(null);
       } catch (e) { return handleError(e); }
     },
   );
@@ -175,7 +199,7 @@ export function createSkillRoutes(
         if (body.enabled !== undefined) {
           await skillService.setEnabled(id, tenantId, body.enabled as boolean);
         }
-        return ok(null);
+        return success(null);
       } catch (e) { return handleError(e); }
     },
   );
@@ -189,7 +213,7 @@ export function createSkillRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         await skillService.uninstall(id, tenantId);
-        return ok(null);
+        return success(null);
       } catch (e) { return handleError(e); }
     },
   );
@@ -203,7 +227,7 @@ export function createSkillRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const result = await skillService.syncSkill(id, tenantId);
-        return ok(result);
+        return success(result);
       } catch (e) { return handleError(e); }
     },
   );
@@ -217,7 +241,7 @@ export function createSkillRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const result = await skillService.upgrade(id, tenantId);
-        return ok(result);
+        return success(result);
       } catch (e) { return handleError(e); }
     },
   );
@@ -230,7 +254,7 @@ export function createSkillRoutes(
       try {
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const updates = await skillService.checkUpdates(tenantId);
-        return ok({ updates, count: updates.length });
+        return success({ updates, count: updates.length });
       } catch (e) { return handleError(e); }
     },
   );
@@ -256,7 +280,7 @@ export function createSkillRoutes(
         const result = await skillService.installFromUpload({
           slug, name, description: description ?? undefined, zipBuffer, tenantId,
         });
-        return ok(result);
+        return success(result);
       } catch (e) { return handleError(e); }
     },
   );

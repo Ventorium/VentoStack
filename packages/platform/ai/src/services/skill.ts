@@ -6,9 +6,10 @@ import type { Database } from "@ventostack/database";
 import type { EventBus } from "@ventostack/events";
 import { createSkillStoreService } from "./skill-store";
 import type { SkillStoreService } from "./skill-store";
-import { join } from "node:path";
+import { join, dirname } from "node:path";
 import { mkdir, writeFile, rm, readdir, stat } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { readZipEntries } from "@ventostack/file2md/parsers/zip-reader";
 
 // ---- Types ----
 
@@ -74,7 +75,7 @@ export function createSkillService(deps: SkillServiceDeps) {
       latestVersion: latest,
       installedVersion: installed,
       changelog: (r.changelog as string) ?? null,
-      fileTree: r.file_tree,
+      fileTree: typeof r.file_tree === "string" ? JSON.parse(r.file_tree) : r.file_tree,
       skillMdContent: (r.skill_md_content as string) ?? null,
       readmeContent: (r.readme_content as string) ?? null,
       evaluation: r.evaluation,
@@ -343,39 +344,91 @@ export function createSkillService(deps: SkillServiceDeps) {
     const skillDir = join(storagePath, slug, "uploaded");
     await mkdir(skillDir, { recursive: true });
 
-    // 写入 zip
-    const zipPath = join(skillDir, `${slug}.zip`);
-    await writeFile(zipPath, params.zipBuffer);
+    // 使用内置 ZIP 解析器解压
+    const entries = readZipEntries(params.zipBuffer);
 
-    // 使用 bun 解压
-    const proc = Bun.spawn(["unzip", "-o", zipPath, "-d", skillDir], { stdout: "pipe", stderr: "pipe" });
-    await proc.exited;
+    // 预检: 检查是否包含 SKILL.md（可能在子目录中）
+    const skillMdEntry = entries.find(e => e.name === "SKILL.md" || e.name.endsWith("/SKILL.md"));
+    if (!skillMdEntry) {
+      throw new Error("ZIP 包中缺少 SKILL.md 文件，无法安装");
+    }
 
-    // 扫描文件树
-    const files = await scanDir(skillDir);
+    // 检测是否有公共根目录前缀（如 my-skill/SKILL.md → "my-skill"）
+    // 只有当所有条目共享同一个第一层目录时才去掉前缀
+    const fileEntries = entries.filter(e => !e.name.endsWith("/"));
+    let stripPrefix = "";
+    if (fileEntries.length > 0) {
+      const firstSegments = new Set(
+        fileEntries.map(e => {
+          const idx = e.name.indexOf("/");
+          return idx > 0 ? e.name.slice(0, idx) : "";
+        }),
+      );
+      // 所有文件共享同一个第一层目录 → 这是 ZIP 包装目录，需要去掉
+      if (firstSegments.size === 1 && !firstSegments.has("")) {
+        stripPrefix = firstSegments.values().next().value!;
+      }
+    }
+
+    // 写入所有文件到磁盘
+    const files: Array<{ path: string; size: number }> = [];
+    for (const entry of fileEntries) {
+      let entryPath = entry.name;
+      if (stripPrefix && entryPath.startsWith(stripPrefix + "/")) {
+        entryPath = entryPath.slice(stripPrefix.length + 1);
+      }
+      if (!entryPath) continue;
+
+      const fullPath = join(skillDir, entryPath);
+      await mkdir(dirname(fullPath), { recursive: true });
+      await writeFile(fullPath, entry.data);
+      files.push({ path: entryPath, size: entry.data.length });
+    }
 
     // 读取 SKILL.md
-    let skillMdContent: string | null = null;
-    const skillMdPath = join(skillDir, "SKILL.md");
-    if (existsSync(skillMdPath)) {
-      skillMdContent = await Bun.file(skillMdPath).text();
-    }
+    const skillMdContent = skillMdEntry.data.toString("utf-8");
 
-    let readmeContent: string | null = null;
-    const readmePath = join(skillDir, "README.md");
-    if (existsSync(readmePath)) {
-      readmeContent = await Bun.file(readmePath).text();
-    }
+    // 读取 README.md
+    const readmeEntry = entries.find(e => e.name === "README.md" || e.name.endsWith("/README.md"));
+    const readmeContent = readmeEntry ? readmeEntry.data.toString("utf-8") : null;
 
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_skill (id, slug, name, description, source, file_tree, skill_md_content, readme_content, installed_version, enabled, installed_at, tenant_id)
-       VALUES ($1,$2,$3,$4,'upload',$5,$6,$6,'uploaded',TRUE,NOW(),$7)`,
+       VALUES ($1,$2,$3,$4,'upload',$5,$6,$7,'uploaded',TRUE,NOW(),$8)`,
       [id, slug, name, params.description ?? null, JSON.stringify(files), skillMdContent, readmeContent, tenantId],
     );
 
     await eventBus?.emit("ai.skill.installed", { id, slug, source: "upload", tenantId });
     return (await getById(id, tenantId))!;
+  }
+
+  // ---- Rescan file tree from disk (for uploaded skills with stale data) ----
+
+  async function rescanFileTree(skillId: string, tenantId: string): Promise<Array<{ path: string; size: number }>> {
+    const skill = await getById(skillId, tenantId);
+    if (!skill) return [];
+    const skillDir = join(storagePath, skill.slug, skill.installedVersion ?? "uploaded");
+    if (!existsSync(skillDir)) return [];
+
+    const files: Array<{ path: string; size: number }> = [];
+    async function walk(dir: string, rel: string) {
+      const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
+      for (const item of items) {
+        const itemRel = rel ? `${rel}/${item.name}` : item.name;
+        if (item.isDirectory()) {
+          await walk(join(dir, item.name), itemRel);
+        } else {
+          const s = await stat(join(dir, item.name)).catch(() => null);
+          files.push({ path: itemRel, size: s?.size ?? 0 });
+        }
+      }
+    }
+    await walk(skillDir, "");
+
+    // 更新 DB 中的 file_tree
+    await db.raw(`UPDATE ai_skill SET file_tree = $1 WHERE id = $2 AND tenant_id = $3`, [JSON.stringify(files), skillId, tenantId]);
+    return files;
   }
 
   // ---- File content access ----
@@ -407,11 +460,30 @@ export function createSkillService(deps: SkillServiceDeps) {
     return null;
   }
 
+  async function writeFileContent(skillId: string, filePath: string, content: string, tenantId: string): Promise<boolean> {
+    const skill = await getById(skillId, tenantId);
+    if (!skill) return false;
+    if (skill.source !== "upload") throw new Error("仅上传安装的技能支持编辑文件");
+
+    const version = skill.installedVersion ?? "uploaded";
+    const localPath = join(storagePath, skill.slug, version, filePath);
+    await mkdir(dirname(localPath), { recursive: true });
+    await writeFile(localPath, content, "utf-8");
+
+    // 如果是 SKILL.md 或 README.md，同步更新 DB
+    if (filePath === "SKILL.md") {
+      await db.raw(`UPDATE ai_skill SET skill_md_content = $1, updated_at = NOW() WHERE id = $2`, [content, skillId]);
+    } else if (filePath === "README.md") {
+      await db.raw(`UPDATE ai_skill SET readme_content = $1, updated_at = NOW() WHERE id = $2`, [content, skillId]);
+    }
+    return true;
+  }
+
   return {
     list, getById, getBySlug, setEnabled, uninstall,
     installFromStore, installFromUpload,
     syncSkill, upgrade, checkUpdates,
-    getFileContent,
+    getFileContent, rescanFileTree, writeFileContent,
   };
 }
 

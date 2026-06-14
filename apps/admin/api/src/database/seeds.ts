@@ -12,6 +12,7 @@ import { initDictSeed } from "./seeds/003_init_dict";
 import { addDashboardMenuSeed } from "./seeds/004_add_dashboard_menu";
 import { addWorkflowMenuSeed } from "./seeds/005_add_workflow_menu";
 import { noticeWorkflowSeed } from "./seeds/006_notice_workflow";
+import { addAIMenusSeed } from "./seeds/007_ai_menus";
 
 const log = createTagLogger("seeds");
 
@@ -23,6 +24,7 @@ export async function runSeeds(executor: SqlExecutor): Promise<void> {
   runner.addSeed(addDashboardMenuSeed);
   runner.addSeed(addWorkflowMenuSeed);
   runner.addSeed(noticeWorkflowSeed);
+  runner.addSeed(addAIMenusSeed);
 
   await runner.run();
   log.info("All seeds executed");

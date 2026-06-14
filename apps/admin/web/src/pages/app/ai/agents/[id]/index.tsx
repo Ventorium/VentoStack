@@ -21,20 +21,41 @@ const AgentDetailPage = () => {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [form] = Form.useForm();
-  const [modelOptions, setModelOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [modelOptions, setModelOptions] = useState<Array<{ label: string; options: Array<{ label: string; value: string }> }>>([]);
+  const [kbOptions, setKbOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [skillOptions, setSkillOptions] = useState<Array<{ label: string; value: string }>>([]);
 
-  // 从数据库动态加载模型列表
+  // 从数据库动态加载模型列表，按供应商分组
   useEffect(() => {
     client.get("/api/ai/models").then(({ data }) => {
       const models = data as Array<{ modelId: string; displayName: string | null; providerName: string }> | undefined;
       if (models?.length) {
+        const groupMap = new Map<string, Array<{ label: string; value: string }>>();
+        for (const m of models) {
+          const group = m.providerName || "其他";
+          if (!groupMap.has(group)) groupMap.set(group, []);
+          groupMap.get(group)!.push({ label: m.displayName || m.modelId, value: m.modelId });
+        }
         setModelOptions(
-          models.map((m) => ({
-            label: `${m.providerName}/${m.displayName || m.modelId}`,
-            value: m.modelId,
-          })),
+          Array.from(groupMap.entries()).map(([label, options]) => ({ label, options })),
         );
       }
+    }).catch(() => {});
+  }, []);
+
+  // Fetch knowledge bases
+  useEffect(() => {
+    client.get("/api/ai/knowledge-bases", { query: { pageSize: 100 } }).then(({ data }) => {
+      const list = (data as { list?: Array<{ id: string; name: string }> })?.list;
+      if (list?.length) setKbOptions(list.map((kb) => ({ label: kb.name, value: kb.id })));
+    }).catch(() => {});
+  }, []);
+
+  // Fetch installed skills
+  useEffect(() => {
+    client.get("/api/ai/skills", { query: { pageSize: 100 } }).then(({ data }) => {
+      const list = (data as { list?: Array<{ id: string; name: string }> })?.list;
+      if (list?.length) setSkillOptions(list.map((s) => ({ label: s.name, value: s.id })));
     }).catch(() => {});
   }, []);
 
@@ -100,17 +121,7 @@ const AgentDetailPage = () => {
             <TextArea rows={2} placeholder="Agent 描述" />
           </Form.Item>
 
-          <Form.Item label="类型" name="type">
-            <Select
-              options={[
-                { label: "聊天机器人", value: "chatbot" },
-                { label: "问答助手", value: "qa" },
-                { label: "数据查询", value: "data_query" },
-              ]}
-            />
-          </Form.Item>
-
-          <Form.Item label="模型" name="model">
+<Form.Item label="模型" name="model">
             <Select
               options={modelOptions}
               placeholder="选择模型"
@@ -123,6 +134,16 @@ const AgentDetailPage = () => {
 
           <Form.Item label="系统提示词" name="systemPrompt">
             <TextArea rows={6} placeholder="定义 Agent 的行为和能力..." />
+          </Form.Item>
+
+          <Form.Item label="知识库" name="knowledgeBaseIds">
+            <Select mode="multiple" options={kbOptions} placeholder="选择知识库（可选）" allowClear
+              showSearch filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())} />
+          </Form.Item>
+
+          <Form.Item label="技能" name="skillIds">
+            <Select mode="multiple" options={skillOptions} placeholder="选择技能（可选）" allowClear
+              showSearch filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())} />
           </Form.Item>
 
           <Form.Item label="公开" name="isPublic" valuePropName="checked">

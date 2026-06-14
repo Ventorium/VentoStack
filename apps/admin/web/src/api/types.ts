@@ -373,7 +373,6 @@ export interface AgentItem {
   name: string;
   description: string | null;
   avatar: string | null;
-  type: string;
   model: string;
   systemPrompt: string;
   tools: string[] | null;
@@ -427,4 +426,89 @@ export interface FileEntry {
   size: number;
   modifiedAt: string;
   children?: FileEntry[];
+}
+
+// ===== AI MCP Server =====
+export interface McpServerItem {
+  id: string;
+  name: string;
+  description: string | null;
+  transportType: "stdio" | "sse";
+  command: string | null;
+  args: string[] | null;
+  env: Record<string, string> | null;
+  url: string | null;
+  headers: Record<string, string> | null;
+  enabled: boolean;
+  status: "pending" | "connected" | "error";
+  lastError: string | null;
+  toolCount: number;
+  toolsSnapshot: McpToolInfo[] | null;
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface McpToolInfo {
+  name: string;
+  description: string;
+  inputSchema?: Record<string, unknown>;
+}
+
+// ===== AI Skill (installed) =====
+export interface SkillItem {
+  id: string;
+  slug: string;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
+  source: string;
+  sourceUrl: string | null;
+  latestVersion: string | null;
+  installedVersion: string | null;
+  changelog: string | null;
+  fileTree: unknown;
+  skillMdContent: string | null;
+  readmeContent: string | null;
+  evaluation: unknown;
+  securityReports: unknown;
+  labels: unknown;
+  stats: unknown;
+  owner: unknown;
+  enabled: boolean;
+  installedAt: string | null;
+  lastSyncedAt: string | null;
+  hasUpdate: boolean;
+  tenantId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+// ===== AI Tool (registered) =====
+export interface AIToolItem {
+  name: string;
+  description: string;
+  parameters: Array<{
+    name: string;
+    type: string;
+    description: string;
+    required?: boolean;
+  }>;
+  riskLevel: "low" | "medium" | "high" | "critical";
+  requiresApproval: boolean;
+  timeout: number;
+}
+
+// ===== Store Skill =====
+export interface StoreSkillItem {
+  slug: string;
+  name: string;
+  description: string;
+  iconUrl: string | null;
+  version: string;
+  downloads: number;
+  stars: number;
+  ownerName: string;
+  source: string;
+  score: number;
 }

@@ -63,6 +63,18 @@ import { createSkillService } from "./services/skill";
 import { createModelConfigService } from "./services/model-config";
 import { createScopedKBService } from "./services/kb-scope";
 import { createSkillRoutes } from "./routes/skill";
+import { createMcpServerRoutes } from "./routes/mcp-server";
+import { createMcpServerService } from "./services/mcp-server";
+import type { McpServerService } from "./services/mcp-server";
+import { createToolRegistryRoutes } from "./routes/tool-registry";
+import { createToolRegistry } from "./tool-registry";
+import {
+  createCalculatorTool, createDatetimeTool, createWebFetchTool, createWebSearchTool,
+  createJsonFormatTool, createUuidTool, createBase64Tool, createHashTool,
+  createKBBrowseTool, createKBReadTool, createKBSearchTool, createKBFollowLinkTool,
+  createFsLsTool, createFsCatTool, createFsGrepTool, createFsFindTool, createFsHeadTool, createFsTailTool,
+  createFileReadTool, createFileWriteTool,
+} from "./tools";
 import type { SkillStoreService } from "./services/skill-store";
 import type { SkillService } from "./services/skill";
 import type { ModelConfigService } from "./services/model-config";
@@ -87,6 +99,7 @@ export interface AIModule {
     skillService: SkillService;
     modelConfigService: ModelConfigService;
     scopedKBService: ScopedKBService;
+    mcpServerService: McpServerService;
   };
   router: Router;
   /** 创建 Agent Harness 实例 */
@@ -201,12 +214,44 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     ? createPromptTemplateManager({ paths: deps.templatePaths })
     : undefined;
 
+  // 创建工具注册表并注册所有内置工具
+  const toolRegistry = createToolRegistry();
+
+  // 无依赖工具
+  toolRegistry.register(createCalculatorTool());
+  toolRegistry.register(createDatetimeTool());
+  toolRegistry.register(createWebFetchTool());
+  toolRegistry.register(createWebSearchTool());
+  toolRegistry.register(createJsonFormatTool());
+  toolRegistry.register(createUuidTool());
+  toolRegistry.register(createBase64Tool());
+  toolRegistry.register(createHashTool());
+
+  // 知识库工具
+  toolRegistry.register(createKBBrowseTool({ kbService: knowledgeBase, tenantId: "default" }));
+  toolRegistry.register(createKBReadTool({ kbService: knowledgeBase, tenantId: "default" }));
+  toolRegistry.register(createKBSearchTool({ kbService: knowledgeBase, tenantId: "default" }));
+  toolRegistry.register(createKBFollowLinkTool({ kbService: knowledgeBase, tenantId: "default" }));
+
+  // 文件系统工具
+  toolRegistry.register(createFsLsTool(knowledgeBase, ""));
+  toolRegistry.register(createFsCatTool(knowledgeBase, ""));
+  toolRegistry.register(createFsGrepTool(knowledgeBase, ""));
+  toolRegistry.register(createFsFindTool(knowledgeBase, ""));
+  toolRegistry.register(createFsHeadTool(knowledgeBase, ""));
+  toolRegistry.register(createFsTailTool(knowledgeBase, ""));
+
+  // 文件读写工具
+  toolRegistry.register(createFileReadTool({ allowedPaths: [storagePath] }));
+  toolRegistry.register(createFileWriteTool({ allowedPaths: [storagePath] }));
+
   // 创建 Agent Loop（向后兼容）
   const agentLoop = createAgentLoop({
     llmGateway,
     knowledgeBase,
     memory,
     eventEmitter,
+    toolRegistry,
     beforeToolCall: deps.hooks?.beforeToolCall,
     afterToolCall: deps.hooks?.afterToolCall,
   });
@@ -259,6 +304,13 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // Skill 路由
   const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm);
 
+  // MCP Server 服务
+  const mcpServerService = createMcpServerService({ db: db as import("@ventostack/database").Database }) as unknown as McpServerService;
+  const mcpRouter = createMcpServerRoutes(mcpServerService, authMiddleware, perm);
+
+  // 工具注册表路由
+  const toolRegistryRouter = createToolRegistryRoutes(toolRegistry, authMiddleware, perm);
+
   // 合并路由
   const router = createRouter();
   router.merge(kbRouter);
@@ -266,6 +318,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(chatRouter);
   router.merge(providerRouter);
   router.merge(skillRouter);
+  router.merge(mcpRouter);
+  router.merge(toolRegistryRouter);
 
   // 审计日志路由
   const auditRouter = createAuditRoutes(
@@ -326,6 +380,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       skillService,
       modelConfigService,
       scopedKBService,
+      mcpServerService,
     },
     router,
     createHarness,

@@ -923,10 +923,15 @@ export function createRouter(): Router {
                 if (k !== "*") prefix = prefix.replace(`:${k}`, String(v));
               }
               if (url.pathname.startsWith(prefix)) {
-                coercedParams["*"] = url.pathname.slice(prefix.length);
+                coercedParams["*"] = decodeURIComponent(url.pathname.slice(prefix.length));
               }
               break;
             }
+          }
+
+          // Also decode wildcard param if Bun populated it but left it encoded
+          if (typeof coercedParams["*"] === "string" && coercedParams["*"].includes("%")) {
+            try { coercedParams["*"] = decodeURIComponent(coercedParams["*"]); } catch { /* already decoded */ }
           }
 
           const schema = route.schemaConfig;

@@ -64,6 +64,24 @@ export function createKnowledgeBaseRoutes(
     },
   );
 
+  router.put(
+    "/api/ai/knowledge-bases/:id",
+    perm("ai:knowledge-base", "update"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const body = await parseBody(ctx.request);
+        await kbService.updateMeta(id, {
+          name: body.name as string | undefined,
+          description: body.description as string | undefined,
+        });
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+  );
+
   router.delete(
     "/api/ai/knowledge-bases/:id",
     perm("ai:knowledge-base", "delete"),

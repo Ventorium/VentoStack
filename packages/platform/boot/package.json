@@ -21,6 +21,7 @@
     "@ventostack/i18n": "workspace:*",
     "@ventostack/workflow": "workspace:*",
     "@ventostack/oss": "workspace:*",
-    "@ventostack/scheduler": "workspace:*"
+    "@ventostack/scheduler": "workspace:*",
+    "@ventostack/file2md": "workspace:*"
   }
 }

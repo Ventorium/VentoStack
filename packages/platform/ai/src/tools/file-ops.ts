@@ -3,6 +3,7 @@
  * 提供受控的文件读写能力
  * 安全措施：路径白名单、大小限制、权限检查
  */
+import { resolve } from "node:path";
 
 export interface FileOpsToolDeps {
   /** 允许访问的基础目录 */
@@ -35,10 +36,10 @@ export function createFileReadTool(deps: FileOpsToolDeps) {
       const filePath = params.path as string;
       if (!filePath) return { error: "路径不能为空" };
 
-      // 路径安全检查
-      const resolved = Bun.resolve(filePath, ".");
+      // 路径安全检查：使用 node:path 的同步 resolve（Bun.resolve 是异步的）
+      const resolved = resolve(filePath);
       const isAllowed = deps.allowedPaths.some(
-        (p) => resolved.startsWith(Bun.resolve(p, ".")),
+        (p) => resolved.startsWith(resolve(p)),
       );
       if (!isAllowed) {
         return { error: "不允许访问该路径" };
@@ -93,10 +94,10 @@ export function createFileWriteTool(deps: FileOpsToolDeps) {
         return { error: `内容过大 (${content.length} bytes)，最大允许 ${maxWriteSize} bytes` };
       }
 
-      // 路径安全检查
-      const resolved = Bun.resolve(filePath, ".");
+      // 路径安全检查：使用 node:path 的同步 resolve（Bun.resolve 是异步的）
+      const resolved = resolve(filePath);
       const isAllowed = deps.allowedPaths.some(
-        (p) => resolved.startsWith(Bun.resolve(p, ".")),
+        (p) => resolved.startsWith(resolve(p)),
       );
       if (!isAllowed) {
         return { error: "不允许写入该路径" };

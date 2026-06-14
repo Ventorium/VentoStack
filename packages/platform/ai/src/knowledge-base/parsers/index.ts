@@ -1,13 +1,9 @@
 /**
  * 文件解析器入口
- * 根据文件扩展名选择对应的解析器
+ * 委托给 @ventostack/file2md 进行实际解析
  */
-
-import { basename, extname } from "node:path";
-import { parsePdf, type PdfParseOptions } from "./pdf";
-import { parseDocx } from "./docx";
-
-export type { PdfParseOptions };
+import { extname } from "node:path";
+import type { OCRService } from "@ventostack/file2md";
 
 export interface ParsedResult {
   markdown: string;
@@ -17,58 +13,50 @@ export interface ParsedResult {
 }
 
 /**
- * 解析文件为 Markdown
- * @param buffer 文件内容
- * @param fileName 原始文件名（含扩展名）
- * @param ocrOptions OCR 配置选项（仅对 PDF 生效）
+ * 解析文件为 Markdown（委托给 @ventostack/file2md）
  */
 export async function parseFile(
   buffer: Buffer,
   fileName: string,
-  ocrOptions?: PdfParseOptions,
+  ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string },
 ): Promise<ParsedResult> {
-  const ext = extname(fileName).toLowerCase();
-  const baseName = basename(fileName, ext);
+  const { createFile2MdModule, createRemoteOCRService } = await import("@ventostack/file2md");
 
-  switch (ext) {
-    case ".pdf": {
-      const result = await parsePdf(buffer, fileName, ocrOptions);
-      return {
-        markdown: result.content,
-        title: result.title ?? baseName,
-        parser: "liteparse",
-        sourceFileName: fileName,
-      };
-    }
-
-    case ".docx": {
-      const result = await parseDocx(buffer, fileName);
-      return {
-        markdown: result.content,
-        title: result.title ?? baseName,
-        parser: "builtin-docx",
-        sourceFileName: fileName,
-      };
-    }
-
-    case ".md":
-    case ".txt": {
-      const text = buffer.toString("utf-8");
-      return {
-        markdown: text,
-        title: baseName,
-        parser: "raw",
-        sourceFileName: fileName,
-      };
-    }
-
-    default:
-      throw new Error(`不支持的文件格式: ${ext}`);
+  let ocrService: OCRService | undefined;
+  if (ocrOptions?.ocrEnabled && ocrOptions?.ocrServerUrl) {
+    ocrService = createRemoteOCRService({
+      serverUrl: ocrOptions.ocrServerUrl,
+      defaultLanguage: ocrOptions.ocrLanguage ?? "ch",
+    });
   }
+
+  const file2md = createFile2MdModule({
+    ocr: ocrService,
+    defaultCleaner: { enabled: true },
+  });
+
+  const result = await file2md.convertFile(buffer, fileName);
+  const mainOutput = result.outputs[0];
+  if (!mainOutput) {
+    throw new Error(`解析 ${fileName} 未产生任何输出`);
+  }
+
+  return {
+    markdown: mainOutput.content,
+    title: mainOutput.title,
+    parser: result.parser,
+    sourceFileName: result.sourceFileName,
+  };
 }
 
-/** 判断文件是否需要解析（非纯文本格式） */
+/**
+ * 判断文件是否需要特殊解析（非纯文本格式）
+ */
 export function needsParsing(fileName: string): boolean {
   const ext = extname(fileName).toLowerCase();
-  return [".pdf", ".docx"].includes(ext);
+  return [
+    ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff", ".tif",
+    ".html", ".htm", ".xhtml", ".epub", ".zip",
+  ].includes(ext);
 }

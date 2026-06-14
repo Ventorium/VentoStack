@@ -5,6 +5,7 @@ import { fmtDate } from "@/utils/fmtDate";
 import {
   DatabaseOutlined,
   DeleteOutlined,
+  EditOutlined,
   FileOutlined,
   FolderOutlined,
   PlusOutlined,
@@ -29,12 +30,14 @@ import {
 } from "antd";
 import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import KnowledgeBaseBrowser from "./components/KnowledgeBaseBrowser";
+import { Drawer } from "antd";
 
 // 知识库卡片 hover 显示删除按钮
 const kbCardStyle = document.createElement("style");
 kbCardStyle.textContent = `
-  .kb-delete-btn { opacity: 0; transition: opacity 0.2s; }
-  .ant-card:hover .kb-delete-btn { opacity: 1; }
+  .kb-card-btn { opacity: 0; transition: opacity 0.2s; }
+  .kb-grid-card:hover .kb-card-btn { opacity: 1; }
 `;
 if (!document.getElementById("kb-card-hover-style")) {
   kbCardStyle.id = "kb-card-hover-style";
@@ -58,6 +61,13 @@ export default function KnowledgeBasesPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [form] = Form.useForm();
+  const [editModalOpen, setEditModalOpen] = useState(false);
+  const [editKb, setEditKb] = useState<KnowledgeBaseItem | null>(null);
+  const [editForm] = Form.useForm();
+  const [editLoading, setEditLoading] = useState(false);
+  const [drawerKbId, setDrawerKbId] = useState<string | null>(null);
+  const [drawerKbName, setDrawerKbName] = useState<string>("");
+  const [breadcrumb, setBreadcrumb] = useState<React.ReactNode>(null);
 
   const refresh = useCallback(
     async (p?: number, ps?: number) => {
@@ -101,6 +111,32 @@ export default function KnowledgeBasesPage() {
     } catch {
     } finally {
       setModalLoading(false);
+    }
+  };
+
+  const handleOpenEdit = (record: KnowledgeBaseItem, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setEditKb(record);
+    editForm.setFieldsValue({ name: record.name, description: record.description });
+    setEditModalOpen(true);
+  };
+
+  const handleEditKb = async () => {
+    if (!editKb) return;
+    try {
+      const values = await editForm.validateFields();
+      setEditLoading(true);
+      const { error } = await client.put("/api/ai/knowledge-bases/:id", {
+        params: { id: editKb.id },
+        body: values,
+      });
+      if (!error) {
+        msg.success("更新成功");
+        setEditModalOpen(false);
+        refresh();
+      }
+    } catch {} finally {
+      setEditLoading(false);
     }
   };
 
@@ -179,7 +215,8 @@ export default function KnowledgeBasesPage() {
               <Col key={kb.id} xs={24} sm={12} md={8} lg={6}>
                 <Card
                   hoverable
-                  onClick={() => navigate(`/app/ai/knowledge-bases/${kb.id}`)}
+                  className="kb-grid-card"
+                  onClick={() => { setDrawerKbId(kb.id); setDrawerKbName(kb.name); }}
                   style={{
                     height: "100%",
                     borderColor: token.colorBorderSecondary,
@@ -205,16 +242,27 @@ export default function KnowledgeBasesPage() {
                     >
                       <FolderOutlined />
                     </div>
-                    <Tooltip title="删除">
-                      <Button
-                        type="text"
-                        size="small"
-                        danger
-                        icon={<DeleteOutlined />}
-                        onClick={(e) => handleDelete(kb, e)}
-                        className="kb-delete-btn"
-                      />
-                    </Tooltip>
+                    <div className="flex gap-1">
+                      <Tooltip title="编辑">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          onClick={(e) => handleOpenEdit(kb, e)}
+                          className="kb-card-btn"
+                        />
+                      </Tooltip>
+                      <Tooltip title="删除">
+                        <Button
+                          type="text"
+                          size="small"
+                          danger
+                          icon={<DeleteOutlined />}
+                          onClick={(e) => handleDelete(kb, e)}
+                          className="kb-card-btn"
+                        />
+                      </Tooltip>
+                    </div>
                   </div>
 
                   {/* Name & Description */}
@@ -263,8 +311,26 @@ export default function KnowledgeBasesPage() {
         )}
       </Card>
 
+      {/* 知识库文件浏览器 Drawer */}
+      <Drawer
+        title={
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ fontWeight: 600 }}>{drawerKbName}</span>
+            {breadcrumb}
+          </div>
+        }
+        open={!!drawerKbId}
+        onClose={() => { setDrawerKbId(null); setBreadcrumb(null); }}
+        placement="bottom"
+        size="large"
+        destroyOnClose
+        styles={{ body: { padding: 0, display: "flex", flexDirection: "column" } }}
+      >
+        {drawerKbId && <KnowledgeBaseBrowser kbId={drawerKbId} onBreadcrumb={setBreadcrumb} />}
+      </Drawer>
+
       <Modal
-        title="创建知识库"
+        title="创建知识库" 
         open={modalOpen}
         onOk={handleCreate}
         onCancel={() => {
@@ -282,6 +348,24 @@ export default function KnowledgeBasesPage() {
             rules={[{ required: true, message: "请输入知识库名称" }]}
           >
             <Input placeholder="例如：产品文档" />
+          </Form.Item>
+          <Form.Item label="描述" name="description">
+            <TextArea rows={3} placeholder="知识库描述（可选）" />
+          </Form.Item>
+        </Form>
+      </Modal>
+      <Modal
+        title="编辑知识库"
+        open={editModalOpen}
+        onOk={handleEditKb}
+        onCancel={() => { setEditModalOpen(false); editForm.resetFields(); }}
+        confirmLoading={editLoading}
+        okText="保存"
+        cancelText="取消"
+      >
+        <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入知识库名称" }]}>
+            <Input placeholder="知识库名称" />
           </Form.Item>
           <Form.Item label="描述" name="description">
             <TextArea rows={3} placeholder="知识库描述（可选）" />

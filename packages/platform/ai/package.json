@@ -9,7 +9,8 @@
   "dependencies": {
     "@ventostack/core": "workspace:*",
     "ajv": "^8.18.0",
-    "@llamaindex/liteparse": "^2.0.8"
+    "@llamaindex/liteparse": "^2.0.8",
+    "@ventostack/file2md": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "latest"

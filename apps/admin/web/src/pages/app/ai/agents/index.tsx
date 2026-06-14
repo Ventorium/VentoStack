@@ -15,12 +15,6 @@ import { useNavigate } from "react-router-dom";
 
 const { TextArea } = Input;
 
-const typeMap: Record<string, { label: string; color: string }> = {
-  chatbot: { label: "聊天机器人", color: "blue" },
-  qa: { label: "问答助手", color: "green" },
-  data_query: { label: "数据查询", color: "orange" },
-};
-
 const statusMap: Record<string, { label: string; color: string }> = {
   draft: { label: "草稿", color: "default" },
   active: { label: "已发布", color: "green" },
@@ -38,15 +32,41 @@ const AgentsPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [modalLoading, setModalLoading] = useState(false);
   const [form] = Form.useForm();
-  const [modelOptions, setModelOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [modelOptions, setModelOptions] = useState<Array<{ label: string; options: Array<{ label: string; value: string }> }>>([]);
+  const [kbOptions, setKbOptions] = useState<Array<{ label: string; value: string }>>([]);
+  const [skillOptions, setSkillOptions] = useState<Array<{ label: string; value: string }>>([]);
 
-  // Fetch models for the create form
+  // Fetch models for the create form, grouped by provider
   useEffect(() => {
     client.get("/api/ai/models").then(({ data }) => {
       const models = data as Array<{ modelId: string; displayName: string | null; providerName: string }> | undefined;
       if (models?.length) {
-        setModelOptions(models.map((m) => ({ label: `${m.providerName}/${m.displayName || m.modelId}`, value: m.modelId })));
+        const groupMap = new Map<string, Array<{ label: string; value: string }>>();
+        for (const m of models) {
+          const group = m.providerName || "其他";
+          if (!groupMap.has(group)) groupMap.set(group, []);
+          groupMap.get(group)!.push({ label: m.displayName || m.modelId, value: m.modelId });
+        }
+        setModelOptions(
+          Array.from(groupMap.entries()).map(([label, options]) => ({ label, options })),
+        );
       }
+    }).catch(() => {});
+  }, []);
+
+  // Fetch knowledge bases
+  useEffect(() => {
+    client.get("/api/ai/knowledge-bases", { query: { pageSize: 100 } }).then(({ data }) => {
+      const list = (data as { list?: Array<{ id: string; name: string }> })?.list;
+      if (list?.length) setKbOptions(list.map((kb) => ({ label: kb.name, value: kb.id })));
+    }).catch(() => {});
+  }, []);
+
+  // Fetch installed skills
+  useEffect(() => {
+    client.get("/api/ai/skills", { query: { pageSize: 100 } }).then(({ data }) => {
+      const list = (data as { list?: Array<{ id: string; name: string }> })?.list;
+      if (list?.length) setSkillOptions(list.map((s) => ({ label: s.name, value: s.id })));
     }).catch(() => {});
   }, []);
 
@@ -119,11 +139,7 @@ const AgentsPage = () => {
       ),
     },
     { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
-    {
-      title: "类型", dataIndex: "type", key: "type", width: 120,
-      render: (type: string) => { const t = typeMap[type] || { label: type, color: "default" }; return <Tag color={t.color}>{t.label}</Tag>; },
-    },
-    { title: "模型", dataIndex: "model", key: "model", width: 120 },
+{ title: "模型", dataIndex: "model", key: "model", width: 120 },
     {
       title: "状态", dataIndex: "status", key: "status", width: 100,
       render: (status: string) => { const s = statusMap[status] || { label: status, color: "default" }; return <Tag color={s.color}>{s.label}</Tag>; },
@@ -174,22 +190,27 @@ const AgentsPage = () => {
       <Modal title="创建 Agent" open={modalOpen} onOk={handleCreate}
         onCancel={() => { setModalOpen(false); form.resetFields(); }}
         confirmLoading={modalLoading} okText="创建" cancelText="取消" width={600}>
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }} initialValues={{ type: "chatbot" }}>
+        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入 Agent 名称" }]}>
             <Input placeholder="例如：智能客服助手" />
           </Form.Item>
           <Form.Item label="描述" name="description">
             <TextArea rows={2} placeholder="Agent 描述（可选）" />
           </Form.Item>
-          <Form.Item label="类型" name="type" rules={[{ required: true }]}>
-            <Select options={[{ label: "聊天机器人", value: "chatbot" }, { label: "问答助手", value: "qa" }, { label: "数据查询", value: "data_query" }]} />
-          </Form.Item>
-          <Form.Item label="模型" name="model" rules={[{ required: true }]}>
+<Form.Item label="模型" name="model" rules={[{ required: true }]}>
             <Select options={modelOptions} placeholder="选择模型" showSearch
               filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())} />
           </Form.Item>
           <Form.Item label="系统提示词" name="systemPrompt" rules={[{ required: true, message: "请输入系统提示词" }]}>
             <TextArea rows={4} placeholder="定义 Agent 的行为和能力..." />
+          </Form.Item>
+          <Form.Item label="知识库" name="knowledgeBaseIds">
+            <Select mode="multiple" options={kbOptions} placeholder="选择知识库（可选）" allowClear
+              showSearch filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())} />
+          </Form.Item>
+          <Form.Item label="技能" name="skillIds">
+            <Select mode="multiple" options={skillOptions} placeholder="选择技能（可选）" allowClear
+              showSearch filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())} />
           </Form.Item>
         </Form>
       </Modal>

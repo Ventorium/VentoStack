@@ -1,5 +1,6 @@
 /**
  * 文件安全校验
+ * 更新：支持 file2md 的全部格式
  */
 
 export interface FileSecurityConfig {
@@ -12,18 +13,25 @@ const DEFAULT_SECURITY_CONFIG: FileSecurityConfig = {
   maxFileSize: 500 * 1024 * 1024, // 500MB
   maxFilesPerKB: 5000,
   allowedExtensions: [
-    ".md",
-    ".txt",
-    ".pdf",
-    ".docx",
-    ".xlsx",
-    ".csv",
-    ".png",
-    ".jpg",
-    ".jpeg",
-    ".gif",
-    ".html",
-    ".json",
+    // 文本/Markdown
+    ".md", ".mdx", ".txt", ".log",
+    // 文档
+    ".pdf", ".docx", ".doc", ".pptx", ".ppt", ".xlsx", ".xls",
+    // 数据格式
+    ".csv", ".json", ".yaml", ".yml", ".toml", ".xml",
+    // 图片（OCR）
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".tiff",
+    // 网页
+    ".html", ".htm",
+    // 电子书
+    ".epub",
+    // 压缩包
+    ".zip",
+    // 源代码
+    ".ts", ".tsx", ".js", ".jsx", ".py", ".go", ".rs", ".java",
+    ".c", ".cpp", ".cs", ".sql", ".sh", ".vue", ".svelte",
+    // 配置
+    ".ini", ".cfg", ".env", ".conf", ".properties",
   ],
 };
 
@@ -46,7 +54,6 @@ export function createFileValidator(
 
   return {
     validateFile(file) {
-      // 文件大小检查
       if (file.size > maxFileSize) {
         return {
           valid: false,
@@ -54,7 +61,6 @@ export function createFileValidator(
         };
       }
 
-      // 扩展名检查
       const ext = file.name.toLowerCase().slice(file.name.lastIndexOf("."));
       if (!allowedExtensions.includes(ext)) {
         return {
@@ -67,7 +73,6 @@ export function createFileValidator(
     },
 
     sanitizePath(path) {
-      // 移除路径分隔符，防止路径穿越
       return path
         .replace(/\.\./g, "")
         .replace(/[/\\]/g, "_")
@@ -75,7 +80,6 @@ export function createFileValidator(
     },
 
     sanitizeFileName(name) {
-      // 只保留安全字符
       return name
         .replace(/[^\w._-]/g, "_")
         .replace(/_{2,}/g, "_")

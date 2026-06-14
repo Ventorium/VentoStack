@@ -113,36 +113,31 @@ export function createKnowledgeBaseService(
   }
 
   /**
-   * 递归生成 README.md 索引
+   * 递归收集所有文件的相对路径（目录在前，文件在后）
    */
   async function buildReadmeTree(
     dirPath: string,
     basePath: string,
-    indent: number = 0,
-  ): Promise<string> {
-    const lines: string[] = [];
+  ): Promise<string[]> {
+    const results: string[] = [];
     const items = await readdir(dirPath, { withFileTypes: true }).catch(() => []);
-    const prefix = "  ".repeat(indent);
 
-    // 目录在前
     const dirs = items.filter((i) => i.isDirectory()).sort((a, b) => a.name.localeCompare(b.name));
-    const files = items
-      .filter((i) => i.isFile() && (i.name.endsWith(".md") || i.name.endsWith(".txt")))
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const files = items.filter((i) => i.isFile()).sort((a, b) => a.name.localeCompare(b.name));
 
     for (const dir of dirs) {
-      lines.push(`${prefix}- 📁 **${dir.name}/**`);
-      const childTree = await buildReadmeTree(join(dirPath, dir.name), basePath, indent + 1);
-      if (childTree) lines.push(childTree);
+      const childFiles = await buildReadmeTree(join(dirPath, dir.name), basePath);
+      results.push(...childFiles);
     }
 
     for (const file of files) {
-      if (file.name.toUpperCase() === "README.MD") continue; // 跳过自身
+      if (file.name.toUpperCase() === "README.MD") continue;
       const relPath = relative(basePath, join(dirPath, file.name));
-      lines.push(`${prefix}- 📄 [${file.name}](${relPath})`);
+      const encodedPath = relPath.split("/").map(encodeURIComponent).join("/");
+      results.push(`- [${relPath}](${encodedPath})`);
     }
 
-    return lines.join("\n");
+    return results;
   }
 
   return {
@@ -200,6 +195,21 @@ export function createKnowledgeBaseService(
         createdAt: new Date(),
         updatedAt: new Date(),
       };
+    },
+
+    async updateMeta(id: string, params: { name?: string; description?: string }) {
+      const kbPath = getKBPath(id);
+      if (!existsSync(kbPath)) throw aiErrors.kbFileNotFound();
+      const metaPath = join(kbPath, "meta.json");
+      let meta: { name: string; description: string } = { name: id, description: "" };
+      if (existsSync(metaPath)) {
+        try { meta = JSON.parse(await readFile(metaPath, "utf-8")); } catch { /* ignore */ }
+      }
+      if (params.name !== undefined) meta.name = params.name;
+      if (params.description !== undefined) meta.description = params.description;
+      await writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+      // Regenerate README with new name
+      await this.generateReadme(id, "");
     },
 
     async list(params) {
@@ -537,16 +547,16 @@ export function createKnowledgeBaseService(
           kbName = meta.name ?? kbName;
         } catch { /* ignore */ }
       }
-      const fileTree = await buildReadmeTree(contentDir, contentDir);
+      const fileList = await buildReadmeTree(contentDir, contentDir);
 
       const readmeContent = [
         `# ${kbName}`,
         "",
-        `> 本文档由系统自动生成，请勿手动修改。`,
+        `> 当前知识库的文件目录树如下：`,
         "",
         "## 文件索引",
         "",
-        fileTree || "_暂无文件_",
+        fileList.join("\n") || "_暂无文件_",
         "",
         `---`,
         `*最后更新：${new Date().toISOString()}*`,

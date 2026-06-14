@@ -7,7 +7,6 @@ import type { Database } from "@ventostack/database";
 export interface CreateAgentParams {
   name: string;
   description?: string;
-  type?: string;
   model: string;
   systemPrompt: string;
   tools?: unknown[];
@@ -27,7 +26,6 @@ export interface CreateAgentParams {
 export interface UpdateAgentParams {
   name?: string;
   description?: string;
-  type?: string;
   model?: string;
   systemPrompt?: string;
   tools?: unknown[];
@@ -47,7 +45,6 @@ export interface AgentItem {
   id: string;
   name: string;
   description: string | null;
-  type: string;
   model: string;
   systemPrompt: string;
   status: string;
@@ -72,13 +69,12 @@ export function createAgentService(deps: { db: Database }) {
   async function create(params: CreateAgentParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.raw(
-      `INSERT INTO ai_agent (id, name, description, type, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, 'draft')`,
+      `INSERT INTO ai_agent (id, name, description, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft')`,
       [
         id,
         params.name,
         params.description ?? null,
-        params.type ?? "chatbot",
         params.systemPrompt,
         params.model,
         params.tools ? JSON.stringify(params.tools) : null,
@@ -105,7 +101,6 @@ export function createAgentService(deps: { db: Database }) {
 
     if (params.name !== undefined) { sets.push(`name = $${idx++}`); values.push(params.name); }
     if (params.description !== undefined) { sets.push(`description = $${idx++}`); values.push(params.description); }
-    if (params.type !== undefined) { sets.push(`type = $${idx++}`); values.push(params.type); }
     if (params.model !== undefined) { sets.push(`model = $${idx++}`); values.push(params.model); }
     if (params.systemPrompt !== undefined) { sets.push(`system_prompt = $${idx++}`); values.push(params.systemPrompt); }
     if (params.tools !== undefined) { sets.push(`tools = $${idx++}`); values.push(JSON.stringify(params.tools)); }
@@ -140,7 +135,7 @@ export function createAgentService(deps: { db: Database }) {
 
   async function getById(id: string, tenantId: string): Promise<AgentItem | null> {
     const rows = await db.raw(
-      `SELECT id, name, description, type, model, system_prompt as "systemPrompt",
+      `SELECT id, name, description, model, system_prompt as "systemPrompt",
               status, is_public as "isPublic", tenant_id as "tenantId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
@@ -152,7 +147,6 @@ export function createAgentService(deps: { db: Database }) {
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
-      type: r.type as string,
       model: r.model as string,
       systemPrompt: r.systemPrompt as string,
       status: r.status as string,
@@ -182,7 +176,7 @@ export function createAgentService(deps: { db: Database }) {
     const limitIdx = queryParams.length + 1;
     const offsetIdx = queryParams.length + 2;
     const rows = await db.raw(
-      `SELECT id, name, description, type, model, system_prompt as "systemPrompt",
+      `SELECT id, name, description, model, system_prompt as "systemPrompt",
               status, is_public as "isPublic", tenant_id as "tenantId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent ${whereClause}
@@ -195,7 +189,6 @@ export function createAgentService(deps: { db: Database }) {
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
-      type: r.type as string,
       model: r.model as string,
       systemPrompt: r.systemPrompt as string,
       status: r.status as string,

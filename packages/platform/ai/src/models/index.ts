@@ -11,3 +11,4 @@ export { AiToolLogModel } from "./tool-log";
 export { AiApprovalRequestModel } from "./approval";
 export { AiLongTermMemoryModel } from "./long-term-memory";
 export { AiSkillModel, AiAgentSkillModel } from "./skill";
+export { AiMcpServerModel, AiAgentMcpModel } from "./mcp-server";
