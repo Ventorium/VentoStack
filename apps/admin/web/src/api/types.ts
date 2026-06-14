@@ -377,6 +377,8 @@ export interface AgentItem {
   systemPrompt: string;
   tools: string[] | null;
   knowledgeBaseIds: string[] | null;
+  skillIds: string[] | null;
+  mcpServerIds: string[] | null;
   status: string;
   isPublic: boolean;
   tenantId: string;

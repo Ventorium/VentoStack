@@ -136,6 +136,8 @@ export function createAgentService(deps: { db: Database }) {
   async function getById(id: string, tenantId: string): Promise<AgentItem | null> {
     const rows = await db.raw(
       `SELECT id, name, description, model, system_prompt as "systemPrompt",
+              tools, knowledge_base_ids as "knowledgeBaseIds",
+              skill_ids as "skillIds", mcp_server_ids as "mcpServerIds",
               status, is_public as "isPublic", tenant_id as "tenantId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
@@ -143,12 +145,17 @@ export function createAgentService(deps: { db: Database }) {
     );
     if (rows.length === 0) return null;
     const r = rows[0] as Record<string, unknown>;
+    const parseJSON = (v: unknown) => typeof v === "string" ? JSON.parse(v) : v;
     return {
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
       model: r.model as string,
       systemPrompt: r.systemPrompt as string,
+      tools: parseJSON(r.tools) ?? null,
+      knowledgeBaseIds: parseJSON(r.knowledgeBaseIds) ?? null,
+      skillIds: parseJSON(r.skillIds) ?? null,
+      mcpServerIds: parseJSON(r.mcpServerIds) ?? null,
       status: r.status as string,
       isPublic: r.isPublic as boolean,
       tenantId: r.tenantId as string,
@@ -177,6 +184,8 @@ export function createAgentService(deps: { db: Database }) {
     const offsetIdx = queryParams.length + 2;
     const rows = await db.raw(
       `SELECT id, name, description, model, system_prompt as "systemPrompt",
+              tools, knowledge_base_ids as "knowledgeBaseIds",
+              skill_ids as "skillIds", mcp_server_ids as "mcpServerIds",
               status, is_public as "isPublic", tenant_id as "tenantId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent ${whereClause}
@@ -185,19 +194,25 @@ export function createAgentService(deps: { db: Database }) {
       [...queryParams, pageSize, offset],
     );
 
-    const list = (rows as Array<Record<string, unknown>>).map((r) => ({
+    const list = (rows as Array<Record<string, unknown>>).map((r) => {
+      const pj = (v: unknown) => typeof v === "string" ? JSON.parse(v) : v;
+      return {
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
       model: r.model as string,
       systemPrompt: r.systemPrompt as string,
+      tools: pj(r.tools) ?? null,
+      knowledgeBaseIds: pj(r.knowledgeBaseIds) ?? null,
+      skillIds: pj(r.skillIds) ?? null,
+      mcpServerIds: pj(r.mcpServerIds) ?? null,
       status: r.status as string,
       isPublic: r.isPublic as boolean,
       tenantId: r.tenantId as string,
       createdBy: r.createdBy as string,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
       updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
-    }));
+    }; });
 
     return { list, total };
   }

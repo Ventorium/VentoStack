@@ -302,7 +302,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const scopedKBService = createScopedKBService({ db, eventBus });
 
   // Skill 路由
-  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm);
+  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm, { llmGateway, storagePath: `${storagePath}/skills` });
 
   // MCP Server 服务
   const mcpServerService = createMcpServerService({ db: db as import("@ventostack/database").Database }) as unknown as McpServerService;

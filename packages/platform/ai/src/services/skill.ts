@@ -334,6 +334,10 @@ export function createSkillService(deps: SkillServiceDeps) {
     description?: string;
     zipBuffer: Buffer;
     tenantId: string;
+    filesOverride?: Array<{ path: string; content: Buffer }>;
+    skillMdContentOverride?: string;
+    readmeContentOverride?: string | null;
+    fileTreeOverride?: Array<{ path: string; size: number }>;
   }): Promise<SkillItem> {
     const { slug, name, tenantId } = params;
 
@@ -343,6 +347,30 @@ export function createSkillService(deps: SkillServiceDeps) {
     // 解压到本地
     const skillDir = join(storagePath, slug, "uploaded");
     await mkdir(skillDir, { recursive: true });
+
+    // 在线创建模式：直接使用 override 文件
+    if (params.filesOverride) {
+      const files = params.fileTreeOverride ?? [];
+      for (const f of params.filesOverride) {
+        const fullPath = join(skillDir, f.path);
+        await mkdir(join(fullPath, ".."), { recursive: true });
+        await writeFile(fullPath, f.content);
+        if (!files.find(x => x.path === f.path)) {
+          files.push({ path: f.path, size: f.content.length });
+        }
+      }
+      const skillMdContent = params.skillMdContentOverride ?? "";
+      const readmeContent = params.readmeContentOverride ?? null;
+
+      const id = crypto.randomUUID();
+      await db.raw(
+        `INSERT INTO ai_skill (id, slug, name, description, source, file_tree, skill_md_content, readme_content, installed_version, enabled, installed_at, tenant_id)
+         VALUES ($1,$2,$3,$4,'upload',$5,$6,$7,'uploaded',TRUE,NOW(),$8)`,
+        [id, slug, name, params.description ?? null, JSON.stringify(files), skillMdContent, readmeContent, tenantId],
+      );
+      await eventBus?.emit("ai.skill.installed", { id, slug, source: "upload", tenantId });
+      return (await getById(id, tenantId))!;
+    }
 
     // 使用内置 ZIP 解析器解压
     const entries = readZipEntries(params.zipBuffer);

@@ -25,6 +25,7 @@ import {
   ReloadOutlined,
   SaveOutlined,
   SearchOutlined,
+  SendOutlined,
   SettingOutlined,
   StarFilled,
   ThunderboltOutlined,
@@ -90,7 +91,7 @@ function SkillsTab() {
   const [storeLoading, setStoreLoading] = useState(false);
   const [storePage, setStorePage] = useState(1);
   const [storeHasMore, setStoreHasMore] = useState(false);
-  const [mode, setMode] = useState<"installed" | "store">("installed");
+  const [mode, setMode] = useState<"installed" | "store" | "online">("installed");
 
   // 详情抽屉
   const [fileDrawerOpen, setFileDrawerOpen] = useState(false);
@@ -108,6 +109,17 @@ function SkillsTab() {
   const [uploadForm] = Form.useForm();
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
+
+  // 在线创建
+  const [onlineSessionId, setOnlineSessionId] = useState<string | null>(null);
+  const [onlineMessages, setOnlineMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
+  const [onlineInput, setOnlineInput] = useState("");
+  const [onlineLoading, setOnlineLoading] = useState(false);
+  const [onlineFileTree, setOnlineFileTree] = useState<Array<{ path: string; size: number }>>([]);
+  const [onlinePreviewPath, setOnlinePreviewPath] = useState<string | null>(null);
+  const [onlinePreviewContent, setOnlinePreviewContent] = useState("");
+  const [onlineFilePath, setOnlineFilePath] = useState(".");
+  const onlineChatRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -234,6 +246,58 @@ function SkillsTab() {
   const isEditable = detailSkill?.source === "upload";
   const isMdFile = fileContentPath.endsWith(".md");
 
+  const startOnlineSession = useCallback(async () => {
+    setOnlineMessages([]);
+    setOnlineFileTree([]);
+    setOnlinePreviewPath(null);
+    setOnlinePreviewContent("");
+    setOnlineFilePath(".");
+    setOnlineSessionId(null);
+    try {
+      const { error, data } = (await client.post("/api/ai/skills/create-online/start", { body: {} })) as { error?: unknown; data?: { sessionId: string; message: string } };
+      if (!error && data) {
+        setOnlineSessionId(data.sessionId);
+        setOnlineMessages([{ role: "assistant", content: data.message }]);
+      }
+    } catch { msg.error("启动失败"); }
+  }, []);
+
+  const handleOnlineSend = useCallback(async () => {
+    if (!onlineInput.trim() || !onlineSessionId || onlineLoading) return;
+    const userMsg = onlineInput.trim();
+    setOnlineInput("");
+    setOnlineMessages(prev => [...prev, { role: "user", content: userMsg }]);
+    setOnlineLoading(true);
+    try {
+      const { error, data } = (await client.post("/api/ai/skills/create-online/message", {
+        body: { sessionId: onlineSessionId, message: userMsg },
+      })) as { error?: unknown; data?: { content: string; filesWritten: string[]; fileTree: Array<{ path: string; size: number }> } };
+      if (!error && data) {
+        setOnlineMessages(prev => [...prev, { role: "assistant", content: data.content }]);
+        if (data.fileTree?.length) setOnlineFileTree(data.fileTree);
+        if (data.filesWritten?.length) msg.success(`生成了 ${data.filesWritten.length} 个文件`);
+      }
+    } catch { msg.error("发送失败"); }
+    finally { setOnlineLoading(false); }
+  }, [onlineInput, onlineSessionId, onlineLoading]);
+
+  const handleOnlinePreviewFile = useCallback(async (path: string) => {
+    if (!onlineSessionId) return;
+    setOnlinePreviewPath(path);
+    const { error, data } = (await client.get(`/api/ai/skills/create-online/${onlineSessionId}/file`, { query: { path } })) as { error?: unknown; data?: { content: string } };
+    if (!error && data) setOnlinePreviewContent(data.content);
+  }, [onlineSessionId]);
+
+  const handleOnlineInstall = useCallback(async () => {
+    if (!onlineSessionId) return;
+    const { error } = (await client.post(`/api/ai/skills/create-online/${onlineSessionId}/install`, { body: {} })) as { error?: unknown };
+    if (!error) {
+      msg.success("技能安装成功");
+      setMode("installed");
+      refresh();
+    }
+  }, [onlineSessionId, refresh]);
+
   const handleUpload = useCallback(async () => {
     if (!uploadFile) { msg.error("请选择 ZIP 文件"); return; }
     const values = await uploadForm.validateFields();
@@ -302,9 +366,10 @@ function SkillsTab() {
   return (
     <div>
       <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Radio.Group value={mode} onChange={e => setMode(e.target.value)} buttonStyle="solid">
+        <Radio.Group value={mode} onChange={e => { setMode(e.target.value); if (e.target.value === "online" && !onlineSessionId) startOnlineSession(); }} buttonStyle="solid">
           <Radio.Button value="installed">已安装 ({total})</Radio.Button>
           <Radio.Button value="store">技能商店</Radio.Button>
+          <Radio.Button value="online"><PlusOutlined /> 在线创建</Radio.Button>
         </Radio.Group>
         <Space>
           <Button icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传 ZIP</Button>
@@ -322,7 +387,7 @@ function SkillsTab() {
           size="small"
           scroll={{ x: 900 }}
         />
-      ) : (
+      ) : mode === "store" ? (
         <div>
           <Space style={{ marginBottom: 16 }}>
             <Input
@@ -387,6 +452,90 @@ function SkillsTab() {
             </div>
           )}
           {storeResults.length === 0 && !storeLoading && <Empty description="搜索技能商店" />}
+        </div>
+      ) : (
+        /* 在线创建 Tab */
+        <div style={{ display: "flex", gap: 16, minHeight: 500 }}>
+          {/* 左侧：对话区 */}
+          <div style={{ flex: 1, display: "flex", flexDirection: "column", border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgTextHover, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <Text strong><ThunderboltOutlined /> AI 技能创建助手</Text>
+              <Button size="small" icon={<ReloadOutlined />} onClick={startOnlineSession}>重新开始</Button>
+            </div>
+            <div ref={onlineChatRef} style={{ flex: 1, overflow: "auto", padding: 16 }}>
+              {onlineMessages.length === 0 && !onlineLoading && (
+                <Empty description="描述你想创建的技能，AI 将为你生成" image={Empty.PRESENTED_IMAGE_SIMPLE} />
+              )}
+              {onlineMessages.map((msg, i) => (
+                <div key={i} style={{ marginBottom: 16, display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
+                  <div style={{
+                    maxWidth: "85%", padding: "10px 14px", borderRadius: 8,
+                    background: msg.role === "user" ? token.colorPrimaryBg : token.colorBgElevated,
+                    border: `1px solid ${msg.role === "user" ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
+                  }}>
+                    <MarkdownPreview content={msg.content} />
+                  </div>
+                </div>
+              ))}
+              {onlineLoading && (
+                <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 16 }}>
+                  <div style={{ padding: "10px 14px", borderRadius: 8, background: token.colorBgElevated, border: `1px solid ${token.colorBorderSecondary}` }}>
+                    <LoadingOutlined /> 思考中...
+                  </div>
+                </div>
+              )}
+            </div>
+            <div style={{ padding: 12, borderTop: `1px solid ${token.colorBorderSecondary}`, display: "flex", gap: 8 }}>
+              <Input
+                placeholder="描述你想要的技能功能..."
+                value={onlineInput}
+                onChange={e => setOnlineInput(e.target.value)}
+                onPressEnter={handleOnlineSend}
+                disabled={!onlineSessionId || onlineLoading}
+              />
+              <Button type="primary" icon={<SendOutlined />} onClick={handleOnlineSend} loading={onlineLoading} disabled={!onlineSessionId}>发送</Button>
+            </div>
+          </div>
+
+          {/* 右侧：文件预览 + 安装 */}
+          <div style={{ width: 360, display: "flex", flexDirection: "column", border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, overflow: "hidden" }}>
+            <div style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgTextHover }}>
+              <Text strong><FolderOutlined /> 生成文件</Text>
+              {onlineFileTree.length > 0 && <Tag style={{ marginLeft: 8 }}>{onlineFileTree.length} 个文件</Tag>}
+            </div>
+            <div style={{ flex: 1, overflow: "auto" }}>
+              {onlineFileTree.length === 0 ? (
+                <Empty description="等待 AI 生成文件" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: 40 }} />
+              ) : (
+                onlineFileTree.map(f => (
+                  <div
+                    key={f.path}
+                    onClick={() => handleOnlinePreviewFile(f.path)}
+                    style={{
+                      cursor: "pointer", padding: "6px 16px", display: "flex", alignItems: "center", gap: 8,
+                      background: onlinePreviewPath === f.path ? token.controlItemBgActive : undefined,
+                      borderLeft: onlinePreviewPath === f.path ? `2px solid ${token.colorPrimary}` : "2px solid transparent",
+                    }}
+                  >
+                    <FileTextOutlined style={{ fontSize: 13, color: onlinePreviewPath === f.path ? token.colorPrimary : token.colorTextSecondary }} />
+                    <Text ellipsis style={{ flex: 1, fontSize: 13 }}>{f.path}</Text>
+                    <Text type="secondary" style={{ fontSize: 11 }}>{(f.size / 1024).toFixed(1)}K</Text>
+                  </div>
+                ))
+              )}
+            </div>
+            {onlinePreviewPath && (
+              <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, maxHeight: 200, overflow: "auto", padding: 12 }}>
+                <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 4 }}>{onlinePreviewPath}</Text>
+                <pre style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>{onlinePreviewContent}</pre>
+              </div>
+            )}
+            {onlineFileTree.length > 0 && (
+              <div style={{ padding: 12, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+                <Button type="primary" block icon={<CloudDownloadOutlined />} onClick={handleOnlineInstall}>安装此技能</Button>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
