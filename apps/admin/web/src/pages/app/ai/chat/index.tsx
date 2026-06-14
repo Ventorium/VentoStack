@@ -1,77 +1,145 @@
 import { client } from "@/api";
 import { streamChat, type ChatStreamParams } from "@/api/sse-client";
-import { Card, theme } from "antd";
+import { Card, Empty, Button, Space, Tag, Typography, theme, Spin } from "antd";
+import { RobotOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { ChatMessage, ModelOption } from "./types";
-import { MOCK_THREADS, MOCK_MESSAGES, MOCK_SKILLS } from "./mock-data";
 
 import ThreadList from "./components/ThreadList";
 import TopToolbar from "./components/TopToolbar";
 import ChatArea from "./components/ChatArea";
 import BottomInput from "./components/BottomInput";
-import SkillsModal from "./components/SkillsModal";
+
+const { Text } = Typography;
 
 /** Fallback model when DB has no models configured */
 const FALLBACK_MODEL: ModelOption = {
   id: "default", name: "请先在 AI 配置中添加供应商和模型", provider: "", contextWindow: 128000,
 };
 
+interface AgentInfo {
+  id: string;
+  name: string;
+  description: string | null;
+  model: string;
+  systemPrompt: string;
+  tools: string[];
+  skills: Array<{ id: string; name: string; description: string | null }>;
+  mcpServers: Array<{ id: string; name: string; description: string | null; toolCount: number }>;
+  knowledgeBases: Array<{ id: string; name: string; description: string | null }>;
+}
+
 export default function AIChatPage() {
-  const [messages, setMessages] = useState<ChatMessage[]>(MOCK_MESSAGES);
-  const [threads] = useState(MOCK_THREADS);
-  const [activeThreadId, setActiveThreadId] = useState("1");
+  const { token } = theme.useToken();
+  const [agents, setAgents] = useState<AgentInfo[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
+  const [loadingAgents, setLoadingAgents] = useState(true);
+
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [threads, setThreads] = useState<Array<{ id: string; title: string; lastMessage: string; updatedAt: string }>>([]);
+  const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [skillsVisible, setSkillsVisible] = useState(false);
-  const [skills, setSkills] = useState(MOCK_SKILLS);
   const [currentModel, setCurrentModel] = useState<ModelOption>(FALLBACK_MODEL);
   const [dbModels, setDbModels] = useState<ModelOption[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
   const abortControllerRef = useRef<AbortController | null>(null);
-  const { token } = theme.useToken();
 
-  const agentName = "新助手";
+  // 能力开关状态
+  const [enabledTools, setEnabledTools] = useState<string[]>([]);
+  const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
+  const [enabledMcp, setEnabledMcp] = useState<string[]>([]);
+  const [enabledKbs, setEnabledKbs] = useState<string[]>([]);
 
-  // Fetch models from DB + default model config
+  // Fetch agents list
   useEffect(() => {
-    const fetchModels = async () => {
-      try {
-        const { data: models } = await client.get("/api/ai/models") as {
-          data?: Array<{ modelId: string; displayName: string | null; providerName: string; contextLength: number }>;
-        };
-        if (models && models.length > 0) {
-          const options: ModelOption[] = models.map((m) => ({
-            id: m.modelId,
-            name: m.displayName || m.modelId,
-            provider: m.providerName,
-            contextWindow: m.contextLength,
+    setLoadingAgents(true);
+    client.get("/api/ai/agents", { query: { pageSize: 100, status: "active" } })
+      .then(({ data }) => {
+        const list = (data as { list?: Array<{ id: string; name: string; description: string | null; model: string; systemPrompt: string; tools: string[] | null; skillIds: string[] | null; mcpServerIds: string[] | null; knowledgeBaseIds: string[] | null }> })?.list;
+        if (list?.length) {
+          // For each agent, we need to fetch full details including skills/mcp/kb names
+          // For now, we'll use the list data and fetch details on selection
+          const agentInfos: AgentInfo[] = list.map(a => ({
+            id: a.id,
+            name: a.name,
+            description: a.description,
+            model: a.model,
+            systemPrompt: a.systemPrompt,
+            tools: a.tools ?? [],
+            skills: [], // Will be populated on selection
+            mcpServers: [], // Will be populated on selection
+            knowledgeBases: [], // Will be populated on selection
           }));
-          setDbModels(options);
-
-          // Try to use default model from config
-          try {
-            const { data: cfg } = await client.get("/api/ai/config/:key", { params: { key: "default_model" } }) as {
-              data?: { value: string | null };
-            };
-            if (cfg?.value) {
-              const found = options.find((o) => `${o.provider}/${o.id}` === cfg.value);
-              if (found) setCurrentModel(found);
-              else setCurrentModel(options[0]);
-            } else {
-              setCurrentModel(options[0]);
-            }
-          } catch {
-            setCurrentModel(options[0]);
-          }
+          setAgents(agentInfos);
         }
-      } catch {}
-    };
-    fetchModels();
+      })
+      .catch(() => {})
+      .finally(() => setLoadingAgents(false));
   }, []);
+
+  // Fetch models from DB
+  useEffect(() => {
+    client.get("/api/ai/models").then(({ data }) => {
+      const models = data as Array<{ modelId: string; displayName: string | null; providerName: string; contextLength: number }> | undefined;
+      if (models?.length) {
+        const options: ModelOption[] = models.map((m) => ({
+          id: m.modelId,
+          name: m.displayName || m.modelId,
+          provider: m.providerName,
+          contextWindow: m.contextLength,
+        }));
+        setDbModels(options);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Select agent and fetch its full details
+  const handleSelectAgent = useCallback(async (agent: AgentInfo) => {
+    setSelectedAgent(agent);
+    setMessages([]);
+    setThreads([]);
+    setActiveThreadId(null);
+    setSessionId(undefined);
+
+    // Set default model based on agent config
+    if (agent.model && dbModels.length > 0) {
+      const found = dbModels.find(m => m.id === agent.model);
+      if (found) setCurrentModel(found);
+    }
+
+    // Fetch full agent details with skills/mcp/kb info
+    try {
+      const { data: detail } = await client.get("/api/ai/agents/:id", { params: { id: agent.id } }) as {
+        data?: {
+          tools: string[] | null;
+          skills: Array<{ id: string; name: string; description: string | null }>;
+          mcpServers: Array<{ id: string; name: string; description: string | null; toolCount: number }>;
+          knowledgeBases: Array<{ id: string; name: string; description: string | null }>;
+        };
+      };
+
+      if (detail) {
+        const fullAgent: AgentInfo = {
+          ...agent,
+          tools: detail.tools ?? agent.tools,
+          skills: detail.skills ?? [],
+          mcpServers: detail.mcpServers ?? [],
+          knowledgeBases: detail.knowledgeBases ?? [],
+        };
+        setSelectedAgent(fullAgent);
+        // Enable all by default
+        setEnabledTools(fullAgent.tools);
+        setEnabledSkills(fullAgent.skills.map(s => s.id));
+        setEnabledMcp(fullAgent.mcpServers.map(m => m.id));
+        setEnabledKbs(fullAgent.knowledgeBases.map(k => k.id));
+      }
+    } catch {}
+  }, [dbModels]);
 
   // Send message
   const handleSend = useCallback(
     async (content: string) => {
-      if (loading) return;
+      if (loading || !selectedAgent) return;
 
       const userMessage: ChatMessage = {
         id: crypto.randomUUID(),
@@ -96,9 +164,14 @@ export default function AIChatPage() {
       abortControllerRef.current = controller;
 
       const params: ChatStreamParams = {
-        agentId: "default",
+        agentId: selectedAgent.id,
         message: content,
         sessionId,
+        // Send enabled abilities
+        tools: enabledTools,
+        skillIds: enabledSkills,
+        mcpServerIds: enabledMcp,
+        knowledgeBaseIds: enabledKbs,
       };
 
       await streamChat(
@@ -157,7 +230,7 @@ export default function AIChatPage() {
         controller.signal,
       );
     },
-    [loading, currentModel, sessionId],
+    [loading, selectedAgent, currentModel, sessionId, enabledTools, enabledSkills, enabledMcp, enabledKbs],
   );
 
   // Stop generation
@@ -175,30 +248,6 @@ export default function AIChatPage() {
     setSessionId(undefined);
   }, []);
 
-  // Toggle skill capability
-  const handleToggleCapability = useCallback(
-    (skillId: string, capabilityId: string, enabled: boolean) => {
-      setSkills((prev) =>
-        prev.map((s) =>
-          s.id === skillId
-            ? {
-                ...s,
-                capabilities: s.capabilities.map((c) =>
-                  c.id === capabilityId ? { ...c, enabled } : c,
-                ),
-                enabledCount: s.capabilities.reduce(
-                  (sum, c) =>
-                    sum + (c.id === capabilityId ? (enabled ? 1 : 0) : c.enabled ? 1 : 0),
-                  0,
-                ),
-              }
-            : s,
-        ),
-      );
-    },
-    [],
-  );
-
   // Context usage (mock)
   const contextUsage = {
     used: messages.reduce(
@@ -207,6 +256,63 @@ export default function AIChatPage() {
     ) || 6200,
     total: currentModel.contextWindow,
   };
+
+  // Agent selection screen
+  if (!selectedAgent) {
+    return (
+      <Card
+        title="选择智能体"
+        styles={{ body: { padding: 24, minHeight: 400 } }}
+      >
+        {loadingAgents ? (
+          <div style={{ textAlign: "center", padding: 40 }}><Spin size="large" /></div>
+        ) : agents.length === 0 ? (
+          <Empty description="暂无可用的智能体，请先在 Agent 管理中创建">
+            <Button type="primary" href="/app/ai/agents">前往创建</Button>
+          </Empty>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(280px, 1fr))", gap: 16 }}>
+            {agents.map(agent => (
+              <Card
+                key={agent.id}
+                hoverable
+                onClick={() => handleSelectAgent(agent)}
+                style={{ borderColor: token.colorBorderSecondary }}
+              >
+                <Space direction="vertical" style={{ width: "100%" }}>
+                  <Space>
+                    <div
+                      style={{
+                        width: 40, height: 40, borderRadius: 8,
+                        background: token.colorPrimaryBg,
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                      }}
+                    >
+                      <RobotOutlined style={{ fontSize: 20, color: token.colorPrimary }} />
+                    </div>
+                    <div>
+                      <Text strong>{agent.name}</Text>
+                      <div>
+                        <Text type="secondary" style={{ fontSize: 12 }}>{agent.model}</Text>
+                      </div>
+                    </div>
+                  </Space>
+                  {agent.description && (
+                    <Text type="secondary" style={{ fontSize: 12 }} ellipsis={{ rows: 2 }}>
+                      {agent.description}
+                    </Text>
+                  )}
+                  <Space size={4} wrap>
+                    {agent.tools.length > 0 && <Tag>{agent.tools.length} 工具</Tag>}
+                  </Space>
+                </Space>
+              </Card>
+            ))}
+          </div>
+        )}
+      </Card>
+    );
+  }
 
   return (
     <Card
@@ -222,8 +328,29 @@ export default function AIChatPage() {
     >
       {/* Top Toolbar */}
       <TopToolbar
-        agentName={agentName}
-        onOpenSkills={() => setSkillsVisible(true)}
+        agentName={selectedAgent.name}
+        agent={selectedAgent}
+        enabledTools={enabledTools}
+        enabledSkills={enabledSkills}
+        enabledMcp={enabledMcp}
+        enabledKbs={enabledKbs}
+        onToggleTool={(tool, enabled) => {
+          setEnabledTools(prev => enabled ? [...prev, tool] : prev.filter(t => t !== tool));
+        }}
+        onToggleSkill={(id, enabled) => {
+          setEnabledSkills(prev => enabled ? [...prev, id] : prev.filter(s => s !== id));
+        }}
+        onToggleMcp={(id, enabled) => {
+          setEnabledMcp(prev => enabled ? [...prev, id] : prev.filter(m => m !== id));
+        }}
+        onToggleKb={(id, enabled) => {
+          setEnabledKbs(prev => enabled ? [...prev, id] : prev.filter(k => k !== id));
+        }}
+        onBack={() => {
+          setSelectedAgent(null);
+          setMessages([]);
+          setThreads([]);
+        }}
       />
 
       {/* Main Body: Thread List + Chat */}
@@ -231,7 +358,7 @@ export default function AIChatPage() {
         {/* Thread List */}
         <ThreadList
           threads={threads}
-          activeId={activeThreadId}
+          activeId={activeThreadId ?? undefined}
           onSelect={setActiveThreadId}
           onNew={handleNewChat}
         />
@@ -246,7 +373,7 @@ export default function AIChatPage() {
           }}
         >
           {/* Chat Area */}
-          <ChatArea messages={messages} agentName={agentName} />
+          <ChatArea messages={messages} agentName={selectedAgent.name} />
 
           {/* Bottom Input */}
           <BottomInput
@@ -260,14 +387,6 @@ export default function AIChatPage() {
           />
         </div>
       </div>
-
-      {/* Skills Modal */}
-      <SkillsModal
-        visible={skillsVisible}
-        skills={skills}
-        onClose={() => setSkillsVisible(false)}
-        onToggleCapability={handleToggleCapability}
-      />
     </Card>
   );
 }

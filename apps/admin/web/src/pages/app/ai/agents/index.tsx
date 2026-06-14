@@ -20,6 +20,9 @@ const statusMap: Record<string, { label: string; color: string }> = {
   disabled: { label: "已停用", color: "red" },
 };
 
+// 默认选中的工具
+const DEFAULT_TOOLS = ["file_read", "file_write", "file_edit", "web_search", "web_fetch", "datetime"];
+
 // ── 能力选择面板组件 ──
 
 function AbilityPanel({
@@ -116,7 +119,7 @@ const AgentsPage = () => {
   const [knowledgeBases, setKnowledgeBases] = useState<Array<{ id: string; name: string; description: string | null }>>([]);
 
   // 选中的能力
-  const [selectedTools, setSelectedTools] = useState<string[]>([]);
+  const [selectedTools, setSelectedTools] = useState<string[]>(DEFAULT_TOOLS);
   const [selectedSkills, setSelectedSkills] = useState<string[]>([]);
   const [selectedMcp, setSelectedMcp] = useState<string[]>([]);
   const [selectedKbs, setSelectedKbs] = useState<string[]>([]);
@@ -137,11 +140,16 @@ const AgentsPage = () => {
     }).catch(() => {});
   }, []);
 
-  // Fetch tools
+  // Fetch tools and set defaults
   useEffect(() => {
     client.get("/api/ai/tools").then(({ data }) => {
       const list = data as Array<{ name: string; description: string; riskLevel: string }> | undefined;
-      if (list?.length) setTools(list.map((t, i) => ({ id: `tool_${i}`, ...t })));
+      if (list?.length) {
+        setTools(list.map(t => ({ id: t.name, ...t })));
+        // Filter default tools to only include existing ones
+        const existingToolNames = list.map(t => t.name);
+        setSelectedTools(DEFAULT_TOOLS.filter(name => existingToolNames.includes(name)));
+      }
     }).catch(() => {});
   }, []);
 
@@ -196,7 +204,7 @@ const AgentsPage = () => {
 
   const resetModal = () => {
     form.resetFields();
-    setSelectedTools([]);
+    setSelectedTools(DEFAULT_TOOLS.filter(name => tools.some(t => t.name === name)));
     setSelectedSkills([]);
     setSelectedMcp([]);
     setSelectedKbs([]);
@@ -339,14 +347,12 @@ const AgentsPage = () => {
                     children: (
                       <AbilityPanel
                         title="内置工具" icon={<ToolOutlined />}
-                        items={tools.map(t => ({ ...t, id: t.name }))}
+                        items={tools}
                         selected={selectedTools} onChange={setSelectedTools}
                         renderItem={item => (
                           <div>
-                            <Space>
-                              <Text strong style={{ fontSize: 13 }}>{item.name}</Text>
-                              {item.description && <Text type="secondary" style={{ fontSize: 12 }}>— {item.description}</Text>}
-                            </Space>
+                            <div style={{ fontWeight: 500, fontSize: 13 }}>{item.name}</div>
+                            {item.description && <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>}
                           </div>
                         )}
                       />

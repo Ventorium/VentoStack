@@ -15,6 +15,11 @@ export interface ChatStreamParams {
   agentId: string;
   message: string;
   sessionId?: string;
+  // 能力开关
+  tools?: string[];
+  skillIds?: string[];
+  mcpServerIds?: string[];
+  knowledgeBaseIds?: string[];
 }
 
 // Token 刷新状态

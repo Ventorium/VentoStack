@@ -368,6 +368,7 @@ Be concise. Ask one question at a time. When the user says "done" or "install", 
         const session = onlineSessions.get(sessionId);
         if (!session) return fail("会话不存在", 404, 404);
         if (!deps?.llmGateway) return fail("LLM 服务未配置", 500, 500);
+        if (deps.llmGateway.listProviders().length === 0) return fail("未配置任何 LLM 供应商，请先在 AI 设置中添加供应商", 500, 500);
 
         session.messages.push({ role: "user", content: message });
 
