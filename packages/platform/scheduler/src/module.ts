@@ -6,7 +6,7 @@ import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router } from "@ventostack/core";
 import type { Database } from "@ventostack/database";
 import type { Scheduler } from "@ventostack/events";
-import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { createSchedulerRoutes } from "./routes/scheduler";
 import { createSchedulerService } from "./services/scheduler";
 import type { JobHandlerMap } from "./services/scheduler";

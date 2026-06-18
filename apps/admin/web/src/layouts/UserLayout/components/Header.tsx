@@ -73,13 +73,8 @@ const Header = () => {
 
   return (
     <AntHeader
-      className="flex items-center justify-between px-6"
-      style={{
-        background: token.colorBgContainer,
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        height: 48,
-        lineHeight: "48px",
-      }}
+      className="flex items-center justify-between h-12 px-6"
+      style={{ background: token.colorBgContainer, borderBottom: `1px solid ${token.colorBorderSecondary}`, lineHeight: "48px" }}
     >
       <div className="text-lg cursor-pointer" onClick={toggleCollapsed}>
         {collapsed ? <MenuUnfoldOutlined /> : <MenuFoldOutlined />}

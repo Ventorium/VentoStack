@@ -99,9 +99,8 @@ const LoginPage = () => {
     }
     setPwdLoading(true);
     const { error } = (await client.post("/api/auth/reset-password-by-token", {
-      body: { token: expiredInfo?.tempToken, newPassword: values.newPassword },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any)) as { error?: unknown };
+      body: { token: expiredInfo?.tempToken ?? "", newPassword: values.newPassword },
+    })) as { error?: unknown };
     setPwdLoading(false);
     if (!error) {
       msg.success("密码修改成功，请重新登录");

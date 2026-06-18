@@ -164,13 +164,13 @@ const NotificationPage = () => {
       <Card className="mb-4">
         <Form form={searchForm} layout="inline">
           <Form.Item name="title">
-            <Input placeholder="消息标题" prefix={<SearchOutlined />} style={{ width: 200 }} />
+            <Input placeholder="消息标题" prefix={<SearchOutlined />} className="w-[200px]" />
           </Form.Item>
           <Form.Item name="channel">
-            <Select placeholder="渠道" allowClear options={channelOptions} style={{ width: 120 }} />
+            <Select placeholder="渠道" allowClear options={channelOptions} className="w-[120px]" />
           </Form.Item>
           <Form.Item name="status">
-            <Select placeholder="状态" allowClear options={statusOptions} style={{ width: 100 }} />
+            <Select placeholder="状态" allowClear options={statusOptions} className="w-[100px]" />
           </Form.Item>
           <Space>
             <Button type="primary" onClick={handleSearch}>

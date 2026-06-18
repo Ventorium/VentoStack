@@ -183,10 +183,10 @@ const NotifyTemplatesPage = () => {
       <Card className="mb-4">
         <Form form={searchForm} layout="inline">
           <Form.Item name="channel">
-            <Select placeholder="渠道" allowClear options={channelOptions} style={{ width: 120 }} />
+            <Select placeholder="渠道" allowClear options={channelOptions} className="w-[120px]" />
           </Form.Item>
           <Form.Item name="type">
-            <Input placeholder="类型" prefix={<SearchOutlined />} style={{ width: 200 }} />
+            <Input placeholder="类型" prefix={<SearchOutlined />} className="w-[200px]" />
           </Form.Item>
           <Space>
             <Button type="primary" onClick={handleSearch}>

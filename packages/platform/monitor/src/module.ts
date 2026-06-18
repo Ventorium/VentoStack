@@ -6,7 +6,7 @@ import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Middleware, Router } from "@ventostack/core";
 import type { Database } from "@ventostack/database";
 import type { HealthCheck } from "@ventostack/observability";
-import { createAuthMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware } from "@ventostack/auth";
 import { createMonitorRoutes } from "./routes/monitor";
 import { createMonitorService } from "./services/monitor";
 import type { CacheStatus, DataSourceStatus, MonitorService } from "./services/monitor";

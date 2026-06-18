@@ -48,3 +48,10 @@ client.get(`/api/system/users/${id}`)
 - 不要在页面内手写分页 loading/data 状态，用 `useTable`
 - 不要用 `any` 类型，用 `unknown` + 类型收窄
 - 不要创建新的全局状态 store，除非有跨页面共享需求
+
+## 样式约束
+
+- **禁止使用 `style={}` 内联样式**。所有样式必须使用 UnoCSS 工具类（`className`）。
+- 唯一例外：当值是动态的（运行时计算、主题 token、条件表达式）且无法用静态 class 表达时，才允许 `style={{}}`。
+- 动态值示例：`token.colorPrimary`、`token.borderRadiusLG`、模板字符串 `repeat(${n}, 1fr)`、条件表达式 `selected ? "#000" : meta.color`。
+- 禁止创建独立的 `.css` / `.scss` / `.less` 文件，所有样式通过 UnoCSS 工具类内联。

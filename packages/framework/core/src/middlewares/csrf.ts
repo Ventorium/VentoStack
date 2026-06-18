@@ -112,7 +112,7 @@ export function csrf(options: CSRFOptions = {}): Middleware {
  */
 function setTokenCookie(response: Response, cookieName: string, token: string): Response {
   const headers = new Headers(response.headers);
-  headers.append("Set-Cookie", `${cookieName}=${token}; Path=/; HttpOnly; SameSite=Strict`);
+  headers.append("Set-Cookie", `${cookieName}=${token}; Path=/; HttpOnly; Secure; SameSite=Strict`);
   return new Response(response.body, {
     status: response.status,
     statusText: response.statusText,

@@ -53,6 +53,7 @@ const PURPOSE_DEFINITIONS: Array<{ purpose: string; label: string; description: 
   { purpose: "fast_task", label: "快速任务模型", description: "简单任务、分类、提取等低延迟场景" },
   { purpose: "advanced_task", label: "高阶任务模型", description: "复杂推理、长文本分析等高质量场景" },
   { purpose: "coding", label: "代码生成模型", description: "代码生成、审查、调试等编程场景" },
+  { purpose: "skill_creator", label: "技能创建模型", description: "在线创建 AI 技能（Skill）时使用的模型" },
 ];
 
 const CONFIG_KEY_PREFIX = "model_purpose_";

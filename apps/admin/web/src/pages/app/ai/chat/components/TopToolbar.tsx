@@ -7,7 +7,7 @@ import {
   SafetyOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
-import { Avatar, Badge, Button, Checkbox, Popover, Space, Tag, theme, Typography } from "antd";
+import { Avatar, Button, Checkbox, Popover, Space, Tag, theme, Typography } from "antd";
 
 const { Text } = Typography;
 
@@ -49,32 +49,28 @@ function AbilityPopover({
   const { token } = theme.useToken();
 
   return (
-    <div style={{ width: 280, maxHeight: 320, overflow: "auto" }}>
-      <div style={{ padding: "8px 12px", borderBottom: `1px solid ${token.colorBorderSecondary}`, fontWeight: 500 }}>
+    <div className="w-[280px] max-h-[320px] overflow-auto">
+      <div className="font-medium" style={{ padding: "8px 12px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
         {title}
       </div>
       {items.length === 0 ? (
-        <div style={{ padding: 16, textAlign: "center", color: token.colorTextSecondary }}>暂无</div>
+        <div className="p-4 text-center" style={{ color: token.colorTextSecondary }}>暂无</div>
       ) : (
-        <div style={{ padding: 4 }}>
+        <div className="p-1">
           {items.map(item => {
             const checked = selected.includes(item.id);
             return (
               <div
                 key={item.id}
-                style={{
-                  display: "flex", alignItems: "flex-start", gap: 8, padding: "6px 8px",
-                  borderRadius: 4, cursor: "pointer",
-                  background: checked ? token.colorPrimaryBg : "transparent",
-                }}
+                className="flex items-start gap-2 rounded cursor-pointer" style={{ padding: "6px 8px", background: checked ? token.colorPrimaryBg : "transparent" }}
                 onClick={() => onToggle(item.id, !checked)}
               >
-                <Checkbox checked={checked} style={{ marginTop: 2 }} />
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <Checkbox checked={checked} className="mt-0.5" />
+                <div className="flex-1 min-w-0">
                   {renderItem ? renderItem(item) : (
                     <>
-                      <div style={{ fontSize: 13 }}>{item.name}</div>
-                      {item.description && <Text type="secondary" style={{ fontSize: 11 }}>{item.description}</Text>}
+                      <div className="text-[13px]">{item.name}</div>
+                      {item.description && <Text type="secondary" className="text-[11px]">{item.description}</Text>}
                     </>
                   )}
                 </div>
@@ -97,30 +93,18 @@ export default function TopToolbar({
 
   return (
     <div
-      style={{
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "space-between",
-        padding: "8px 16px",
-        borderBottom: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
-      }}
+      className="flex items-center justify-between" style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
       {/* Left: Back + Agent Info */}
       <Space size={10}>
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} size="small" />
         <Avatar
           size={32}
-          style={{
-            background: token.colorPrimary,
-            borderRadius: token.borderRadiusSM,
-            fontSize: 12,
-            fontWeight: 600,
-          }}
+          className="text-xs font-semibold" style={{ background: token.colorPrimary, borderRadius: token.borderRadiusSM }}
         >
           {agentName.slice(0, 2)}
         </Avatar>
-        <Text strong style={{ fontSize: 14 }}>
+        <Text strong className="text-sm">
           {agentName}
         </Text>
         <Tag color="success" style={{ borderRadius: token.borderRadiusSM }}>
@@ -144,11 +128,9 @@ export default function TopToolbar({
               />
             }
           >
-            <Badge size="small" count={enabledTools.length} offset={[-4, 0]}>
-              <Button size="small" icon={<ToolOutlined />} style={{ borderRadius: token.borderRadiusLG, fontSize: 12 }}>
-                工具
-              </Button>
-            </Badge>
+            <Button size="small" icon={<ToolOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
+              工具{enabledTools.length > 0 ? ` (${enabledTools.length})` : ""}
+            </Button>
           </Popover>
 
           {/* Skills */}
@@ -164,11 +146,9 @@ export default function TopToolbar({
               />
             }
           >
-            <Badge size="small" count={enabledSkills.length} offset={[-4, 0]}>
-              <Button size="small" icon={<BlockOutlined />} style={{ borderRadius: token.borderRadiusLG, fontSize: 12 }}>
-                技能
-              </Button>
-            </Badge>
+            <Button size="small" icon={<BlockOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
+              技能{enabledSkills.length > 0 ? ` (${enabledSkills.length})` : ""}
+            </Button>
           </Popover>
 
           {/* MCP */}
@@ -184,20 +164,18 @@ export default function TopToolbar({
                 renderItem={item => (
                   <div>
                     <Space>
-                      <Text style={{ fontSize: 13 }}>{item.name}</Text>
-                      {item.toolCount && item.toolCount > 0 && <Tag style={{ fontSize: 10 }}>{item.toolCount} 工具</Tag>}
+                      <Text className="text-[13px]">{item.name}</Text>
+                      {item.toolCount && item.toolCount > 0 && <Tag className="text-[10px]">{item.toolCount} 工具</Tag>}
                     </Space>
-                    {item.description && <div><Text type="secondary" style={{ fontSize: 11 }}>{item.description}</Text></div>}
+                    {item.description && <div><Text type="secondary" className="text-[11px]">{item.description}</Text></div>}
                   </div>
                 )}
               />
             }
           >
-            <Badge size="small" count={enabledMcp.length} offset={[-4, 0]}>
-              <Button size="small" icon={<ApiOutlined />} style={{ borderRadius: token.borderRadiusLG, fontSize: 12 }}>
-                MCP
-              </Button>
-            </Badge>
+            <Button size="small" icon={<ApiOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
+              MCP{enabledMcp.length > 0 ? ` (${enabledMcp.length})` : ""}
+            </Button>
           </Popover>
 
           {/* Knowledge Bases */}
@@ -213,17 +191,15 @@ export default function TopToolbar({
               />
             }
           >
-            <Badge size="small" count={enabledKbs.length} offset={[-4, 0]}>
-              <Button size="small" icon={<BookOutlined />} style={{ borderRadius: token.borderRadiusLG, fontSize: 12 }}>
-                知识库
-              </Button>
-            </Badge>
+            <Button size="small" icon={<BookOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
+              知识库{enabledKbs.length > 0 ? ` (${enabledKbs.length})` : ""}
+            </Button>
           </Popover>
 
           <Tag
             icon={<SafetyOutlined />}
             color="success"
-            style={{ marginLeft: 8, borderRadius: token.borderRadiusSM }}
+            className="ml-2" style={{ borderRadius: token.borderRadiusSM }}
           >
             沙箱
           </Tag>

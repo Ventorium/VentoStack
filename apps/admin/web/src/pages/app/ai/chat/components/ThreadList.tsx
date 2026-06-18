@@ -33,31 +33,18 @@ export default function ThreadList({
 
   return (
     <div
-      style={{
-        width: 260,
-        height: "100%",
-        display: "flex",
-        flexDirection: "column",
-        borderRight: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
-        flexShrink: 0,
-      }}
+      className="w-[260px] h-full flex flex-col shrink-0" style={{ borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
       {/* Header */}
       <div
-        style={{
-          padding: "12px 12px 8px",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-        }}
+        className="flex items-center justify-between" style={{ padding: "12px 12px 8px" }}
       >
-        <Text strong style={{ fontSize: 15 }}>
+        <Text strong className="text-[15px]">
           会话列表
         </Text>
         <PlusOutlined
           onClick={onNew}
-          style={{ cursor: "pointer", color: token.colorPrimary, fontSize: 14 }}
+          className="cursor-pointer text-sm" style={{ color: token.colorPrimary }}
         />
       </div>
 
@@ -74,12 +61,12 @@ export default function ThreadList({
       </div>
 
       {/* Thread List */}
-      <div style={{ flex: 1, overflow: "auto", padding: "0 4px" }}>
+      <div className="flex-1 overflow-auto px-[4px]" >
         {filtered.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
             description="暂无会话"
-            style={{ marginTop: 48 }}
+            className="mt-12"
           />
         ) : (
           filtered.map((thread) => {
@@ -101,17 +88,7 @@ export default function ThreadList({
               >
                 <div
                   onClick={() => onSelect?.(thread.id)}
-                  style={{
-                    padding: "10px 12px",
-                    borderRadius: token.borderRadiusLG,
-                    cursor: "pointer",
-                    marginBottom: 2,
-                    background: isActive ? token.controlItemBgActive : "transparent",
-                    borderLeft: isActive
-                      ? `3px solid ${token.colorPrimary}`
-                      : "3px solid transparent",
-                    transition: "all 0.15s ease",
-                  }}
+                  className="cursor-pointer mb-0.5" style={{ padding: "10px 12px", borderRadius: token.borderRadiusLG, background: isActive ? token.controlItemBgActive : "transparent", borderLeft: isActive ? `3px solid ${token.colorPrimary}` : "3px solid transparent", transition: "all 0.15s ease" }}
                   onMouseEnter={(e) => {
                     if (!isActive) e.currentTarget.style.background = token.controlItemBgHover;
                   }}
@@ -120,33 +97,23 @@ export default function ThreadList({
                   }}
                 >
                   <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginBottom: 4,
-                    }}
+                    className="flex items-center justify-between mb-1"
                   >
                     <Text
                       strong={isActive}
                       ellipsis
-                      style={{
-                        flex: 1,
-                        marginRight: 8,
-                        fontSize: 13,
-                        color: isActive ? token.colorPrimary : token.colorText,
-                      }}
+                      className="flex-1 mr-2 text-[13px]" style={{ color: isActive ? token.colorPrimary : token.colorText }}
                     >
                       {thread.title}
                     </Text>
-                    <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>
+                    <Text type="secondary" className="text-[11px] shrink-0">
                       {thread.updatedAt}
                     </Text>
                   </div>
                   <Text
                     type="secondary"
                     ellipsis
-                    style={{ fontSize: 12, display: "block" }}
+                    className="text-xs block"
                   >
                     {thread.lastMessage}
                   </Text>

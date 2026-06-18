@@ -157,10 +157,9 @@ export default function ProfilePage() {
         nickname: values.nickname,
         email: values.email,
         phone: values.phone,
-        gender: Number(values.gender),
+        gender: String(values.gender),
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    });
     if (!error) {
       msg.success("保存成功");
       fetchProfile();
@@ -181,10 +180,7 @@ export default function ProfilePage() {
   const handleCropConfirm = async (blob: Blob) => {
     setCropperFile(null);
     const file = new File([blob], "avatar.png", { type: "image/png" });
-    const formData = new FormData();
-    formData.append("file", file);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const result = await client.post("/api/system/user/profile/avatar", { body: formData } as any);
+    const result = await client.post("/api/system/user/profile/avatar", { body: { file } });
     if (!result.error) {
       msg.success("头像上传成功");
       fetchProfile();
@@ -201,8 +197,7 @@ export default function ProfilePage() {
         oldPassword: values.oldPassword,
         newPassword: values.newPassword,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    });
     if (!error) {
       msg.success("密码修改成功");
       passwordForm.resetFields();
@@ -240,8 +235,7 @@ export default function ProfilePage() {
       body: {
         code: values.code,
       },
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    } as any);
+    });
     if (!error) {
       msg.success("MFA启用成功");
       setMfaEnabled(true);
@@ -266,18 +260,18 @@ export default function ProfilePage() {
     try {
       const { error: beginError, data: beginData } = await client.post(
         "/api/auth/passkey/register-begin" as unknown as "/api/system/users",
-        { body: {} } as any,
+        { body: {} } as Record<string, unknown>,
       );
       if (beginError || !beginData) {
         msg.error("获取注册信息失败");
         return;
       }
-      const credential = await startRegistration({ optionsJSON: beginData.options as any });
+      const credential = await startRegistration({ optionsJSON: beginData.options as unknown as PublicKeyCredentialCreationOptionsJSON });
       const { error: finishError } = await client.post(
         "/api/auth/passkey/register-finish" as unknown as "/api/system/users",
         {
           body: { name: newPasskeyName, challengeId: beginData.challengeId, credential },
-        } as any,
+        } as Record<string, unknown>,
       );
       if (!finishError) {
         msg.success("通行密钥添加成功");
@@ -398,7 +392,7 @@ export default function ProfilePage() {
 
   const mfaTab = (
     <Card>
-      <Space orientation="vertical" size="large" style={{ width: "100%" }}>
+      <Space orientation="vertical" size="large" className="w-full">
         {mfaForce && !mfaEnabled && mfaStep === "idle" && (
           <Alert
             message="安全要求"
@@ -436,7 +430,7 @@ export default function ProfilePage() {
               <Text code copyable={{ text: mfaSetupData.secret }}>
                 {mfaSetupData.secret}
               </Text>
-              <pre style={{ marginTop: 16, padding: 16, background: token.colorFillQuaternary, color: token.colorText, borderRadius: 4 }}>
+              <pre className="mt-4 p-4 rounded" style={{ background: token.colorFillQuaternary, color: token.colorText }}>
                 <code>{mfaSetupData.qrCodeUri}</code>
               </pre>
             </div>
@@ -576,8 +570,8 @@ export default function ProfilePage() {
 
   const passkeyTab = (
     <Card>
-      <Space orientation="vertical" size="middle" style={{ width: "100%" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+      <Space orientation="vertical" size="middle" className="w-full">
+        <div className="flex justify-between items-center">
           <Text strong>通行密钥管理</Text>
           <Button
             type="primary"
@@ -746,7 +740,7 @@ export default function ProfilePage() {
   ];
 
   return (
-    <div style={{ padding: 24 }}>
+    <div className="p-6">
       <Title level={2}>个人中心</Title>
       <Tabs defaultActiveKey="basic" items={tabItems} />
       {cropperFile && (

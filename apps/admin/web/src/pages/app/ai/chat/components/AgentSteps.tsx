@@ -22,57 +22,32 @@ export default function AgentSteps({ steps }: AgentStepsProps) {
   if (!steps.length) return null;
 
   return (
-    <div style={{ marginBottom: 12 }}>
+    <div className="mb-3">
       {/* Toggle */}
       <div
         onClick={() => setExpanded(!expanded)}
-        style={{
-          display: "inline-flex",
-          alignItems: "center",
-          gap: 6,
-          padding: "3px 10px",
-          borderRadius: token.borderRadiusSM,
-          background: token.colorFillQuaternary,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          cursor: "pointer",
-          marginBottom: expanded ? 8 : 0,
-          fontSize: 12,
-          color: token.colorTextSecondary,
-          userSelect: "none",
-        }}
+        className="inline-flex items-center gap-1.5 cursor-pointer text-xs select-none" style={{ padding: "3px 10px", borderRadius: token.borderRadiusSM, background: token.colorFillQuaternary, border: `1px solid ${token.colorBorderSecondary}`, marginBottom: expanded ? 8 : 0, color: token.colorTextSecondary }}
       >
         <RightOutlined
-          style={{
-            fontSize: 10,
-            transform: expanded ? "rotate(90deg)" : "rotate(0deg)",
-            transition: "transform 0.2s ease",
-          }}
+          className="text-[10px]" style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}
         />
         {steps.length} 步执行完成
       </div>
 
       {expanded && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 2, padding: "4px 0" }}>
+        <div className="flex flex-col gap-0.5 py-[4px]" >
           {steps.map((step) => (
             <div
               key={step.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-                padding: "4px 8px",
-                borderRadius: token.borderRadiusSM,
-                fontSize: 12,
-                color: token.colorTextSecondary,
-              }}
+              className="flex items-center gap-2 text-xs" style={{ padding: "4px 8px", borderRadius: token.borderRadiusSM, color: token.colorTextSecondary }}
             >
               {/* Status icon */}
               {step.status === "completed" ? (
-                <CheckCircleOutlined style={{ color: token.colorSuccess, fontSize: 13, flexShrink: 0 }} />
+                <CheckCircleOutlined className="text-[13px] shrink-0" style={{ color: token.colorSuccess }} />
               ) : step.status === "error" ? (
-                <CloseCircleOutlined style={{ color: token.colorError, fontSize: 13, flexShrink: 0 }} />
+                <CloseCircleOutlined className="text-[13px] shrink-0" style={{ color: token.colorError }} />
               ) : (
-                <LoadingOutlined style={{ color: token.colorPrimary, fontSize: 13, flexShrink: 0 }} />
+                <LoadingOutlined className="text-[13px] shrink-0" style={{ color: token.colorPrimary }} />
               )}
 
               {/* Type icon */}
@@ -81,11 +56,7 @@ export default function AgentSteps({ steps }: AgentStepsProps) {
               {/* Name */}
               <Text
                 strong={step.type === "skill"}
-                style={{
-                  fontSize: 12,
-                  color: step.type === "skill" ? token.colorPrimary : token.colorText,
-                  whiteSpace: "nowrap",
-                }}
+                className="text-xs whitespace-nowrap" style={{ color: step.type === "skill" ? token.colorPrimary : token.colorText }}
               >
                 {step.name}
               </Text>
@@ -94,13 +65,13 @@ export default function AgentSteps({ steps }: AgentStepsProps) {
               <Text
                 type="secondary"
                 ellipsis
-                style={{ flex: 1, fontSize: 12 }}
+                className="flex-1 text-xs"
               >
                 {step.description}
               </Text>
 
               {/* Duration */}
-              <Tag style={{ fontSize: 11, margin: 0, lineHeight: "18px" }}>
+              <Tag className="text-[11px] m-0 leading-[18px]" >
                 {formatDuration(step.durationMs)}
               </Tag>
             </div>

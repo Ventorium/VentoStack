@@ -6,7 +6,7 @@ import {
   RobotOutlined,
   UserOutlined,
 } from "@ant-design/icons";
-import { Avatar, Button, Divider, Empty, Space, theme, Tooltip, Typography } from "antd";
+import { Avatar, Button, Divider, Empty, Space, theme, Tooltip, Typography, message as msg } from "antd";
 import { useCallback, useEffect, useRef } from "react";
 import type { ChatMessage } from "../types";
 import AgentSteps from "./AgentSteps";
@@ -16,6 +16,8 @@ const { Text, Paragraph } = Typography;
 interface ChatAreaProps {
   messages: ChatMessage[];
   agentName?: string;
+  onCopy?: (content: string) => void;
+  onRegenerate?: (messageId: string) => void;
 }
 
 /** 行内渲染：加粗 */
@@ -47,16 +49,10 @@ function renderContent(content: string, token: ReturnType<typeof theme.useToken>
         elements.push(
           <div
             key={`tbl-h-${i}`}
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${cells.length}, 1fr)`,
-              borderBottom: `1px solid ${token.colorBorderSecondary}`,
-              paddingBottom: 4,
-              marginBottom: 2,
-            }}
+            className="grid pb-1 mb-0.5" style={{ gridTemplateColumns: `repeat(${cells.length}, 1fr)`, borderBottom: `1px solid ${token.colorBorderSecondary}` }}
           >
             {cells.map((c, ci) => (
-              <Text key={ci} strong style={{ fontSize: 12, padding: "2px 8px" }}>
+              <Text key={ci} strong className="text-xs py-[2px] px-[8px]" >
                 {renderInline(c)}
               </Text>
             ))}
@@ -66,14 +62,10 @@ function renderContent(content: string, token: ReturnType<typeof theme.useToken>
         elements.push(
           <div
             key={`tbl-r-${i}`}
-            style={{
-              display: "grid",
-              gridTemplateColumns: `repeat(${cells.length}, 1fr)`,
-              marginBottom: 2,
-            }}
+            className="grid mb-0.5" style={{ gridTemplateColumns: `repeat(${cells.length}, 1fr)` }}
           >
             {cells.map((c, ci) => (
-              <Text key={ci} style={{ fontSize: 13, padding: "2px 8px" }}>
+              <Text key={ci} className="text-[13px] py-[2px] px-[8px]" >
                 {renderInline(c)}
               </Text>
             ))}
@@ -86,22 +78,22 @@ function renderContent(content: string, token: ReturnType<typeof theme.useToken>
     }
 
     if (!line.trim()) {
-      elements.push(<div key={`br-${i}`} style={{ height: 8 }} />);
+      elements.push(<div key={`br-${i}`} className="h-2" />);
       continue;
     }
 
     if (line.startsWith("• ") || line.startsWith("- ")) {
       elements.push(
-        <div key={`li-${i}`} style={{ display: "flex", gap: 8, paddingLeft: 4, marginBottom: 2 }}>
-          <span style={{ color: token.colorPrimary, flexShrink: 0 }}>•</span>
-          <Text style={{ fontSize: 13 }}>{renderInline(line.replace(/^[•\-]\s*/, ""))}</Text>
+        <div key={`li-${i}`} className="flex gap-2 pl-1 mb-0.5">
+          <span className="shrink-0" style={{ color: token.colorPrimary }}>•</span>
+          <Text className="text-[13px]">{renderInline(line.replace(/^[•\-]\s*/, ""))}</Text>
         </div>,
       );
       continue;
     }
 
     elements.push(
-      <Text key={`p-${i}`} style={{ fontSize: 13, display: "block", lineHeight: "22px", marginBottom: 2 }}>
+      <Text key={`p-${i}`} className="text-[13px] block mb-0.5 leading-[22px]" >
         {renderInline(line)}
       </Text>,
     );
@@ -115,24 +107,53 @@ function formatTokenCount(n: number): string {
   return String(n);
 }
 
-function MessageActions() {
+function MessageActions({ content, messageId, onCopy, onRegenerate }: {
+  content: string;
+  messageId: string;
+  onCopy?: (content: string) => void;
+  onRegenerate?: (messageId: string) => void;
+}) {
   return (
-    <Space size={2} style={{ marginTop: 8 }}>
-      {[
-        { icon: <CopyOutlined />, tip: "复制" },
-        { icon: <ReloadOutlined />, tip: "重新生成" },
-        { icon: <LikeOutlined />, tip: "有用" },
-        { icon: <DislikeOutlined />, tip: "无用" },
-      ].map((a) => (
-        <Tooltip key={a.tip} title={a.tip}>
-          <Button type="text" size="small" icon={a.icon} style={{ color: "inherit", opacity: 0.5 }} />
-        </Tooltip>
-      ))}
+    <Space size={2} className="mt-2">
+      <Tooltip title="复制">
+        <Button
+          type="text" size="small" icon={<CopyOutlined />}
+          className="opacity-50" className="color-inherit"
+          onClick={() => {
+            if (onCopy) {
+              onCopy(content);
+            } else {
+              navigator.clipboard.writeText(content).then(() => msg.success("已复制"));
+            }
+          }}
+        />
+      </Tooltip>
+      <Tooltip title="重新生成">
+        <Button
+          type="text" size="small" icon={<ReloadOutlined />}
+          className="opacity-50" className="color-inherit"
+          onClick={() => onRegenerate?.(messageId)}
+        />
+      </Tooltip>
+      <Tooltip title="有用">
+        <Button
+          type="text" size="small" icon={<LikeOutlined />}
+          className="opacity-50" className="color-inherit"
+          onClick={() => msg.success("感谢反馈")}
+        />
+      </Tooltip>
+      <Tooltip title="无用">
+        <Button
+          type="text" size="small" icon={<DislikeOutlined />}
+          className="opacity-50" className="color-inherit"
+          onClick={() => msg.success("感谢反馈")}
+        />
+      </Tooltip>
     </Space>
   );
 }
 
-export default function ChatArea({ messages, agentName = "新助手" }: ChatAreaProps) {
+export default function ChatArea({ messages, agentName = "新助手", onCopy, onRegenerate }: ChatAreaProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
 
@@ -147,30 +168,18 @@ export default function ChatArea({ messages, agentName = "新助手" }: ChatArea
   if (messages.length === 0) {
     return (
       <div
-        style={{
-          flex: 1,
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          justifyContent: "center",
-          gap: 16,
-        }}
+        className="flex-1 flex flex-col items-center justify-center gap-4"
       >
         <Avatar
           size={64}
-          style={{
-            background: token.colorPrimary,
-            borderRadius: token.borderRadiusLG,
-            fontSize: 28,
-            fontWeight: 700,
-          }}
+          className="text-[28px] font-bold" style={{ background: token.colorPrimary, borderRadius: token.borderRadiusLG }}
         >
           {agentName.slice(0, 1)}
         </Avatar>
-        <Text strong style={{ fontSize: 20 }}>
+        <Text strong className="text-xl">
           {agentName}
         </Text>
-        <Text type="secondary" style={{ fontSize: 14, maxWidth: 400, textAlign: "center" }}>
+        <Text type="secondary" className="text-sm max-w-[400px] text-center">
           有什么可以帮助你的？可以问我任何问题，或者让我帮你执行任务。
         </Text>
       </div>
@@ -178,51 +187,36 @@ export default function ChatArea({ messages, agentName = "新助手" }: ChatArea
   }
 
   return (
-    <div style={{ flex: 1, overflow: "auto", padding: "16px 0" }}>
-      <div style={{ maxWidth: 820, margin: "0 auto", padding: "0 16px" }}>
+    <div className="flex-1 overflow-auto py-[16px]" >
+      <div className="max-w-[820px]" style={{ margin: "0 auto", padding: "0 16px" }}>
         {messages.map((msg) => {
           const isUser = msg.role === "user";
           return (
             <div
               key={msg.id}
-              style={{
-                display: "flex",
-                gap: 12,
-                marginBottom: 20,
-                flexDirection: isUser ? "row-reverse" : "row",
-              }}
+              className="flex gap-3 mb-5" style={{ flexDirection: isUser ? "row-reverse" : "row" }}
             >
               {/* Avatar */}
               {isUser ? (
                 <Avatar
                   size={32}
                   icon={<UserOutlined />}
-                  style={{ background: token.colorPrimaryBg, color: token.colorPrimary, flexShrink: 0 }}
+                  className="shrink-0" style={{ background: token.colorPrimaryBg, color: token.colorPrimary }}
                 />
               ) : (
                 <Avatar
                   size={32}
-                  style={{
-                    background: token.colorPrimary,
-                    fontSize: 12,
-                    fontWeight: 600,
-                    flexShrink: 0,
-                  }}
+                  className="text-xs font-semibold shrink-0" style={{ background: token.colorPrimary }}
                 >
                   {agentName.slice(0, 2)}
                 </Avatar>
               )}
 
               {/* Content */}
-              <div style={{ flex: 1, maxWidth: isUser ? "70%" : "100%", minWidth: 0 }}>
+              <div className="flex-1 min-w-0" style={{ maxWidth: isUser ? "70%" : "100%" }}>
                 <Text
                   type="secondary"
-                  style={{
-                    fontSize: 12,
-                    display: "block",
-                    marginBottom: 4,
-                    textAlign: isUser ? "right" : "left",
-                  }}
+                  className="text-xs block mb-1" style={{ textAlign: isUser ? "right" : "left" }}
                 >
                   {isUser ? "你" : agentName}
                 </Text>
@@ -242,18 +236,11 @@ export default function ChatArea({ messages, agentName = "新助手" }: ChatArea
                   <div>{renderContent(msg.content, token)}</div>
 
                   {msg.isStreaming && (
-                    <Space size={4} style={{ marginTop: 8 }}>
+                    <Space size={4} className="mt-2">
                       {[0, 1, 2].map((i) => (
                         <div
                           key={i}
-                          style={{
-                            width: 6,
-                            height: 6,
-                            borderRadius: "50%",
-                            background: token.colorPrimary,
-                            opacity: 0.6,
-                            animation: `chat-pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
-                          }}
+                          className="w-1.5 h-1.5 opacity-60" style={{ borderRadius: "50%", background: token.colorPrimary, animation: `chat-pulse 1.4s ease-in-out ${i * 0.2}s infinite` }}
                         />
                       ))}
                     </Space>
@@ -262,17 +249,17 @@ export default function ChatArea({ messages, agentName = "新助手" }: ChatArea
 
                 {!isUser && !msg.isStreaming && (
                   <>
-                    <MessageActions />
+                    <MessageActions content={msg.content} messageId={msg.id} onCopy={onCopy} onRegenerate={onRegenerate} />
                     {(msg.model || msg.tokensUsed) && (
-                      <Space size={8} style={{ marginTop: 6 }}>
+                      <Space size={8} className="mt-1.5">
                         {msg.model && (
-                          <Text type="secondary" style={{ fontSize: 11 }}>
-                            <RobotOutlined style={{ marginRight: 4 }} />
+                          <Text type="secondary" className="text-[11px]">
+                            <RobotOutlined className="mr-1" />
                             {msg.model}
                           </Text>
                         )}
                         {msg.tokensUsed && (
-                          <Text type="secondary" style={{ fontSize: 11 }}>
+                          <Text type="secondary" className="text-[11px]">
                             {formatTokenCount(msg.tokensUsed.input)} / {formatTokenCount(msg.tokensUsed.output)} tokens
                           </Text>
                         )}

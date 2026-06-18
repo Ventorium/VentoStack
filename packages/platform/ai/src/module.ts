@@ -81,7 +81,7 @@ import type { ModelConfigService } from "./services/model-config";
 import type { ScopedKBService } from "./services/kb-scope";
 
 // Auth
-import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 
 // ---- Types ----
 
@@ -245,13 +245,25 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   toolRegistry.register(createFileReadTool({ allowedPaths: [storagePath] }));
   toolRegistry.register(createFileWriteTool({ allowedPaths: [storagePath] }));
 
-  // 创建 Agent Loop（向后兼容）
+  // Agent CRUD 服务（先创建，供 AgentLoop 使用）
+  const agentDbService = createAgentService({ db: db as import("@ventostack/database").Database });
+  const agentCrudService: AgentCrudService = {
+    create: (params) => agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
+    getById: (id, tenantId) => agentDbService.getById(id, tenantId),
+    list: (params) => agentDbService.list(params),
+    update: (id, params, tenantId) => agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId),
+    delete: (id, tenantId) => agentDbService.delete(id, tenantId),
+    publish: (id, tenantId) => agentDbService.publish(id, tenantId),
+  };
+
+  // 创建 Agent Loop
   const agentLoop = createAgentLoop({
     llmGateway,
     knowledgeBase,
     memory,
     eventEmitter,
     toolRegistry,
+    agentService: agentCrudService,
     beforeToolCall: deps.hooks?.beforeToolCall,
     afterToolCall: deps.hooks?.afterToolCall,
   });
@@ -271,21 +283,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // 创建路由
   const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm, providerService);
   const providerRouter = createProviderRoutes(providerService, authMiddleware, perm);
-
-  // Agent CRUD 服务
-  const agentDbService = createAgentService({ db: db as import("@ventostack/database").Database });
-  const agentCrudService: AgentCrudService = {
-    create: (params) => agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
-    getById: (id, tenantId) => agentDbService.getById(id, tenantId),
-    list: (params) => agentDbService.list(params),
-    update: (id, params, tenantId) => agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId),
-    delete: (id, tenantId) => agentDbService.delete(id, tenantId),
-    publish: (id, tenantId) => agentDbService.publish(id, tenantId),
-  };
-
-  const agentRouter = createAgentRoutes(agentCrudService, authMiddleware, perm);
-
-  // 对话服务
+  const agentRouter = createAgentRoutes(agentCrudService, authMiddleware, perm, { storagePath: `${storagePath}/skills/.workspace` });
   const conversationService: ConversationService = {
     async create(params) { return { id: crypto.randomUUID() }; },
     async getById(id, userId) { return null; },
@@ -302,7 +300,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const scopedKBService = createScopedKBService({ db, eventBus });
 
   // Skill 路由
-  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm, { llmGateway, storagePath: `${storagePath}/skills` });
+  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm, { storagePath: `${storagePath}/skills`, workspacePath: `${storagePath}/skills/.workspace` });
 
   // MCP Server 服务
   const mcpServerService = createMcpServerService({ db: db as import("@ventostack/database").Database }) as unknown as McpServerService;

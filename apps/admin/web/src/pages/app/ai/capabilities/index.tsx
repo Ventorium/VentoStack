@@ -25,7 +25,6 @@ import {
   ReloadOutlined,
   SaveOutlined,
   SearchOutlined,
-  SendOutlined,
   SettingOutlined,
   StarFilled,
   ThunderboltOutlined,
@@ -54,7 +53,6 @@ import {
   Progress,
   Radio,
   Row,
-  Select,
   Space,
   Switch,
   Table,
@@ -69,8 +67,9 @@ import type { ColumnsType } from "antd/es/table";
 import ActionColumn from "@/components/ActionColumn";
 import MilkdownEditor from "@/components/MilkdownEditor";
 import MarkdownPreview from "@/components/MarkdownPreview";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { fmtDate } from "@/utils/fmtDate";
+import { useNavigate } from "react-router-dom";
 
 const { Text, Title, Paragraph } = Typography;
 const { TextArea } = Input;
@@ -82,6 +81,7 @@ const { Dragger } = Upload;
 
 function SkillsTab() {
   const { token } = theme.useToken();
+  const navigate = useNavigate();
   const [installed, setInstalled] = useState<SkillItem[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
@@ -91,7 +91,7 @@ function SkillsTab() {
   const [storeLoading, setStoreLoading] = useState(false);
   const [storePage, setStorePage] = useState(1);
   const [storeHasMore, setStoreHasMore] = useState(false);
-  const [mode, setMode] = useState<"installed" | "store" | "online">("installed");
+  const [mode, setMode] = useState<"installed" | "store">("installed");
 
   // 详情抽屉
   const [fileDrawerOpen, setFileDrawerOpen] = useState(false);
@@ -109,17 +109,6 @@ function SkillsTab() {
   const [uploadForm] = Form.useForm();
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [installingSlug, setInstallingSlug] = useState<string | null>(null);
-
-  // 在线创建
-  const [onlineSessionId, setOnlineSessionId] = useState<string | null>(null);
-  const [onlineMessages, setOnlineMessages] = useState<Array<{ role: "user" | "assistant"; content: string }>>([]);
-  const [onlineInput, setOnlineInput] = useState("");
-  const [onlineLoading, setOnlineLoading] = useState(false);
-  const [onlineFileTree, setOnlineFileTree] = useState<Array<{ path: string; size: number }>>([]);
-  const [onlinePreviewPath, setOnlinePreviewPath] = useState<string | null>(null);
-  const [onlinePreviewContent, setOnlinePreviewContent] = useState("");
-  const [onlineFilePath, setOnlineFilePath] = useState(".");
-  const onlineChatRef = useRef<HTMLDivElement>(null);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -246,58 +235,6 @@ function SkillsTab() {
   const isEditable = detailSkill?.source === "upload";
   const isMdFile = fileContentPath.endsWith(".md");
 
-  const startOnlineSession = useCallback(async () => {
-    setOnlineMessages([]);
-    setOnlineFileTree([]);
-    setOnlinePreviewPath(null);
-    setOnlinePreviewContent("");
-    setOnlineFilePath(".");
-    setOnlineSessionId(null);
-    try {
-      const { error, data } = (await client.post("/api/ai/skills/create-online/start", { body: {} })) as { error?: unknown; data?: { sessionId: string; message: string } };
-      if (!error && data) {
-        setOnlineSessionId(data.sessionId);
-        setOnlineMessages([{ role: "assistant", content: data.message }]);
-      }
-    } catch { msg.error("启动失败"); }
-  }, []);
-
-  const handleOnlineSend = useCallback(async () => {
-    if (!onlineInput.trim() || !onlineSessionId || onlineLoading) return;
-    const userMsg = onlineInput.trim();
-    setOnlineInput("");
-    setOnlineMessages(prev => [...prev, { role: "user", content: userMsg }]);
-    setOnlineLoading(true);
-    try {
-      const { error, data } = (await client.post("/api/ai/skills/create-online/message", {
-        body: { sessionId: onlineSessionId, message: userMsg },
-      })) as { error?: unknown; data?: { content: string; filesWritten: string[]; fileTree: Array<{ path: string; size: number }> } };
-      if (!error && data) {
-        setOnlineMessages(prev => [...prev, { role: "assistant", content: data.content }]);
-        if (data.fileTree?.length) setOnlineFileTree(data.fileTree);
-        if (data.filesWritten?.length) msg.success(`生成了 ${data.filesWritten.length} 个文件`);
-      }
-    } catch { msg.error("发送失败"); }
-    finally { setOnlineLoading(false); }
-  }, [onlineInput, onlineSessionId, onlineLoading]);
-
-  const handleOnlinePreviewFile = useCallback(async (path: string) => {
-    if (!onlineSessionId) return;
-    setOnlinePreviewPath(path);
-    const { error, data } = (await client.get(`/api/ai/skills/create-online/${onlineSessionId}/file`, { query: { path } })) as { error?: unknown; data?: { content: string } };
-    if (!error && data) setOnlinePreviewContent(data.content);
-  }, [onlineSessionId]);
-
-  const handleOnlineInstall = useCallback(async () => {
-    if (!onlineSessionId) return;
-    const { error } = (await client.post(`/api/ai/skills/create-online/${onlineSessionId}/install`, { body: {} })) as { error?: unknown };
-    if (!error) {
-      msg.success("技能安装成功");
-      setMode("installed");
-      refresh();
-    }
-  }, [onlineSessionId, refresh]);
-
   const handleUpload = useCallback(async () => {
     if (!uploadFile) { msg.error("请选择 ZIP 文件"); return; }
     const values = await uploadForm.validateFields();
@@ -305,6 +242,7 @@ function SkillsTab() {
     formData.append("file", uploadFile);
     formData.append("slug", values.slug);
     formData.append("name", values.name);
+    if (values.version) formData.append("version", values.version);
     if (values.description) formData.append("description", values.description);
 
     const { error } = (await client.post("/api/ai/skills/upload", { body: formData })) as { error?: unknown };
@@ -322,10 +260,10 @@ function SkillsTab() {
       title: "技能", dataIndex: "name", width: 220,
       render: (_: unknown, r: SkillItem) => (
         <Space>
-          {r.iconUrl ? <img src={r.iconUrl} style={{ width: 28, height: 28, borderRadius: 6 }} /> : <BlockOutlined style={{ fontSize: 20 }} />}
+          {r.iconUrl ? <img src={r.iconUrl} className="w-7 h-7 rounded-md" /> : <BlockOutlined className="text-xl" />}
           <div>
-            <div style={{ fontWeight: 500 }}>{r.name}</div>
-            <Text type="secondary" style={{ fontSize: 12 }}>{r.slug}</Text>
+            <div className="font-medium">{r.name}</div>
+            <Text type="secondary" className="text-xs">{r.slug}</Text>
           </div>
         </Space>
       ),
@@ -345,8 +283,8 @@ function SkillsTab() {
       title: "启用", dataIndex: "enabled", width: 70,
       render: (v: boolean, r: SkillItem) => <Switch size="small" checked={v} onChange={(checked) => toggleEnabled(r.id, checked)} />,
     },
-    { title: "创建时间", dataIndex: "createdAt", width: 160, render: (v: string) => <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(v)}</Text> },
-    { title: "更新时间", dataIndex: "updatedAt", width: 160, render: (v: string) => <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(v)}</Text> },
+    { title: "创建时间", dataIndex: "createdAt", width: 160, render: (v: string) => <Text type="secondary" className="text-xs">{fmtDate(v)}</Text> },
+    { title: "更新时间", dataIndex: "updatedAt", width: 160, render: (v: string) => <Text type="secondary" className="text-xs">{fmtDate(v)}</Text> },
     {
       title: "操作", width: 200, fixed: "right",
       render: (_: unknown, r: SkillItem) => (
@@ -365,12 +303,14 @@ function SkillsTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-        <Radio.Group value={mode} onChange={e => { setMode(e.target.value); if (e.target.value === "online" && !onlineSessionId) startOnlineSession(); }} buttonStyle="solid">
-          <Radio.Button value="installed">已安装 ({total})</Radio.Button>
-          <Radio.Button value="store">技能商店</Radio.Button>
-          <Radio.Button value="online"><PlusOutlined /> 在线创建</Radio.Button>
-        </Radio.Group>
+      <div className="mb-4 flex justify-between items-center">
+        <Space size={8}>
+          <Radio.Group value={mode} onChange={e => setMode(e.target.value)} buttonStyle="solid">
+            <Radio.Button value="installed">已安装 ({total})</Radio.Button>
+            <Radio.Button value="store">技能商店</Radio.Button>
+          </Radio.Group>
+          <Button type="primary" ghost icon={<ThunderboltOutlined />} onClick={() => navigate("/app/ai/chat?agent=Skill%20Creator")}>在线创建</Button>
+        </Space>
         <Space>
           <Button icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传 ZIP</Button>
           <Button icon={<ReloadOutlined />} onClick={refresh} />
@@ -389,14 +329,14 @@ function SkillsTab() {
         />
       ) : mode === "store" ? (
         <div>
-          <Space style={{ marginBottom: 16 }}>
+          <Space className="mb-4">
             <Input
               placeholder="搜索技能商店..."
               prefix={<SearchOutlined />}
               value={storeSearch}
               onChange={e => setStoreSearch(e.target.value)}
               onPressEnter={() => searchStore(storeSearch, 1)}
-              style={{ width: 360 }}
+              className="w-[360px]"
             />
             <Button type="primary" icon={<SearchOutlined />} onClick={() => searchStore(storeSearch, 1)} loading={storeLoading}>搜索</Button>
           </Space>
@@ -415,28 +355,28 @@ function SkillsTab() {
                       isInstalled
                         ? canUpdate
                           ? <CloudSyncOutlined key="update" onClick={() => upgrade(installedSkill!.id)} />
-                          : <CheckCircleOutlined key="installed" style={{ color: "#52c41a" }} />
+                          : <CheckCircleOutlined key="installed" className="text-[#52c41a]" />
                         : installingSlug === skill.slug
                           ? <LoadingOutlined key="installing" style={{ color: token.colorPrimary }} />
                           : <CloudDownloadOutlined key="install" onClick={() => installFromStore(skill.slug)} />,
                     ]}
                   >
                     <Card.Meta
-                      avatar={skill.iconUrl ? <img src={skill.iconUrl} style={{ width: 40, height: 40, borderRadius: 8 }} /> : <BlockOutlined style={{ fontSize: 28 }} />}
+                      avatar={skill.iconUrl ? <img src={skill.iconUrl} className="w-10 h-10 rounded-lg" /> : <BlockOutlined className="text-[28px]" />}
                       title={
                         <Space>
                           {skill.name}
-                          {isInstalled && <Tag color="green" style={{ fontSize: 11 }}>已安装</Tag>}
-                          {canUpdate && <Tag color="orange" style={{ fontSize: 11 }}>可更新</Tag>}
+                          {isInstalled && <Tag color="green" className="text-[11px]">已安装</Tag>}
+                          {canUpdate && <Tag color="orange" className="text-[11px]">可更新</Tag>}
                         </Space>
                       }
                       description={
                         <div>
-                          <Paragraph ellipsis={{ rows: 2 }} style={{ marginBottom: 4, fontSize: 12 }}>{skill.description}</Paragraph>
+                          <Paragraph ellipsis={{ rows: 2 }} className="mb-1 text-xs">{skill.description}</Paragraph>
                           <Space size={4}>
                             <Tag>v{skill.version}</Tag>
-                            <Text type="secondary" style={{ fontSize: 11 }}><DownloadOutlined /> {skill.downloads}</Text>
-                            <Text type="secondary" style={{ fontSize: 11 }}><StarFilled style={{ color: "#faad14" }} /> {skill.stars}</Text>
+                            <Text type="secondary" className="text-[11px]"><DownloadOutlined /> {skill.downloads}</Text>
+                            <Text type="secondary" className="text-[11px]"><StarFilled className="text-[#faad14]" /> {skill.stars}</Text>
                           </Space>
                         </div>
                       }
@@ -447,97 +387,13 @@ function SkillsTab() {
             })}
           </Row>
           {storeHasMore && (
-            <div style={{ textAlign: "center", marginTop: 16 }}>
+            <div className="text-center mt-4">
               <Button onClick={() => searchStore(storeSearch, storePage + 1)} loading={storeLoading}>加载更多</Button>
             </div>
           )}
           {storeResults.length === 0 && !storeLoading && <Empty description="搜索技能商店" />}
         </div>
-      ) : (
-        /* 在线创建 Tab */
-        <div style={{ display: "flex", gap: 16, minHeight: 500 }}>
-          {/* 左侧：对话区 */}
-          <div style={{ flex: 1, display: "flex", flexDirection: "column", border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgTextHover, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-              <Text strong><ThunderboltOutlined /> AI 技能创建助手</Text>
-              <Button size="small" icon={<ReloadOutlined />} onClick={startOnlineSession}>重新开始</Button>
-            </div>
-            <div ref={onlineChatRef} style={{ flex: 1, overflow: "auto", padding: 16 }}>
-              {onlineMessages.length === 0 && !onlineLoading && (
-                <Empty description="描述你想创建的技能，AI 将为你生成" image={Empty.PRESENTED_IMAGE_SIMPLE} />
-              )}
-              {onlineMessages.map((msg, i) => (
-                <div key={i} style={{ marginBottom: 16, display: "flex", justifyContent: msg.role === "user" ? "flex-end" : "flex-start" }}>
-                  <div style={{
-                    maxWidth: "85%", padding: "10px 14px", borderRadius: 8,
-                    background: msg.role === "user" ? token.colorPrimaryBg : token.colorBgElevated,
-                    border: `1px solid ${msg.role === "user" ? token.colorPrimaryBorder : token.colorBorderSecondary}`,
-                  }}>
-                    <MarkdownPreview content={msg.content} />
-                  </div>
-                </div>
-              ))}
-              {onlineLoading && (
-                <div style={{ display: "flex", justifyContent: "flex-start", marginBottom: 16 }}>
-                  <div style={{ padding: "10px 14px", borderRadius: 8, background: token.colorBgElevated, border: `1px solid ${token.colorBorderSecondary}` }}>
-                    <LoadingOutlined /> 思考中...
-                  </div>
-                </div>
-              )}
-            </div>
-            <div style={{ padding: 12, borderTop: `1px solid ${token.colorBorderSecondary}`, display: "flex", gap: 8 }}>
-              <Input
-                placeholder="描述你想要的技能功能..."
-                value={onlineInput}
-                onChange={e => setOnlineInput(e.target.value)}
-                onPressEnter={handleOnlineSend}
-                disabled={!onlineSessionId || onlineLoading}
-              />
-              <Button type="primary" icon={<SendOutlined />} onClick={handleOnlineSend} loading={onlineLoading} disabled={!onlineSessionId}>发送</Button>
-            </div>
-          </div>
-
-          {/* 右侧：文件预览 + 安装 */}
-          <div style={{ width: 360, display: "flex", flexDirection: "column", border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, overflow: "hidden" }}>
-            <div style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgTextHover }}>
-              <Text strong><FolderOutlined /> 生成文件</Text>
-              {onlineFileTree.length > 0 && <Tag style={{ marginLeft: 8 }}>{onlineFileTree.length} 个文件</Tag>}
-            </div>
-            <div style={{ flex: 1, overflow: "auto" }}>
-              {onlineFileTree.length === 0 ? (
-                <Empty description="等待 AI 生成文件" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: 40 }} />
-              ) : (
-                onlineFileTree.map(f => (
-                  <div
-                    key={f.path}
-                    onClick={() => handleOnlinePreviewFile(f.path)}
-                    style={{
-                      cursor: "pointer", padding: "6px 16px", display: "flex", alignItems: "center", gap: 8,
-                      background: onlinePreviewPath === f.path ? token.controlItemBgActive : undefined,
-                      borderLeft: onlinePreviewPath === f.path ? `2px solid ${token.colorPrimary}` : "2px solid transparent",
-                    }}
-                  >
-                    <FileTextOutlined style={{ fontSize: 13, color: onlinePreviewPath === f.path ? token.colorPrimary : token.colorTextSecondary }} />
-                    <Text ellipsis style={{ flex: 1, fontSize: 13 }}>{f.path}</Text>
-                    <Text type="secondary" style={{ fontSize: 11 }}>{(f.size / 1024).toFixed(1)}K</Text>
-                  </div>
-                ))
-              )}
-            </div>
-            {onlinePreviewPath && (
-              <div style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, maxHeight: 200, overflow: "auto", padding: 12 }}>
-                <Text type="secondary" style={{ fontSize: 11, display: "block", marginBottom: 4 }}>{onlinePreviewPath}</Text>
-                <pre style={{ fontSize: 12, lineHeight: 1.6, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0 }}>{onlinePreviewContent}</pre>
-              </div>
-            )}
-            {onlineFileTree.length > 0 && (
-              <div style={{ padding: 12, borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-                <Button type="primary" block icon={<CloudDownloadOutlined />} onClick={handleOnlineInstall}>安装此技能</Button>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      ) : null}
 
       {/* 上传 Modal — dropzone 风格 */}
       <Modal title="上传安装技能" open={uploadOpen} onCancel={() => { setUploadOpen(false); setUploadFile(null); }} footer={null} width={480}>
@@ -548,7 +404,7 @@ function SkillsTab() {
             fileList={uploadFile ? [{ uid: "-1", name: uploadFile.name, status: "done" }] : []}
             beforeUpload={(file) => { setUploadFile(file); return false; }}
             onRemove={() => setUploadFile(null)}
-            style={{ marginBottom: 16 }}
+            className="mb-4"
           >
             <p className="ant-upload-drag-icon"><InboxOutlined /></p>
             <p className="ant-upload-text">点击或拖拽 ZIP 文件到此处</p>
@@ -559,6 +415,9 @@ function SkillsTab() {
           </Form.Item>
           <Form.Item name="name" label="名称" rules={[{ required: true }]}>
             <Input placeholder="技能显示名称" />
+          </Form.Item>
+          <Form.Item name="version" label="版本号" initialValue="1.0.0">
+            <Input placeholder="如 1.0.0" />
           </Form.Item>
           <Form.Item name="description" label="说明">
             <TextArea rows={2} />
@@ -572,7 +431,7 @@ function SkillsTab() {
       {/* 文件浏览 Drawer — 左侧文件树 + 右侧文件内容 */}
       <Drawer
         title={
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+          <div className="flex items-center gap-3">
             <BlockOutlined />
             <Breadcrumb
               items={[
@@ -599,17 +458,13 @@ function SkillsTab() {
         size="large"
         styles={{ body: { padding: 0, height: "70vh" } }}
       >
-        <div style={{ display: "flex", height: "100%" }}>
+        <div className="flex h-full">
           {/* 左侧：文件目录 */}
           <div
-            style={{
-              width: 300, flexShrink: 0, overflow: "auto",
-              borderRight: `1px solid ${token.colorBorderSecondary}`,
-              display: "flex", flexDirection: "column",
-            }}
+            className="w-[300px] shrink-0 overflow-auto flex flex-col" style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
           >
             {/* 文件列表 */}
-            <div style={{ flex: 1, overflow: "auto" }}>
+            <div className="flex-1 overflow-auto">
               {(() => {
                 // 构建当前目录下的条目
                 const dirs = new Map<string, boolean>();
@@ -629,7 +484,7 @@ function SkillsTab() {
                 files.sort((a, b) => a.name.localeCompare(b.name));
 
                 if (sortedDirs.length === 0 && files.length === 0) {
-                  return <Empty description="空目录" image={Empty.PRESENTED_IMAGE_SIMPLE} style={{ padding: 40 }} />;
+                  return <Empty description="空目录" image={Empty.PRESENTED_IMAGE_SIMPLE} className="p-10" />;
                 }
 
                 return (
@@ -637,15 +492,13 @@ function SkillsTab() {
                     {sortedDirs.map(dirName => (
                       <div
                         key={dirName}
-                        style={{
-                          cursor: "pointer", padding: "6px 12px", display: "flex", alignItems: "center", gap: 8,
-                        }}
+                        className="cursor-pointer flex items-center gap-2 py-[6px] px-[12px]" 
                         onClick={() => setSkillFilePath(skillFilePath === "." ? dirName : `${skillFilePath}/${dirName}`)}
                         onMouseEnter={e => { e.currentTarget.style.background = token.colorBgTextHover; }}
                         onMouseLeave={e => { e.currentTarget.style.background = ""; }}
                       >
-                        <FolderOutlined style={{ fontSize: 14, color: "#52c41a" }} />
-                        <Text ellipsis style={{ flex: 1, fontSize: 13 }}>{dirName}</Text>
+                        <FolderOutlined className="text-sm text-[#52c41a]" />
+                        <Text ellipsis className="flex-1 text-[13px]">{dirName}</Text>
                       </div>
                     ))}
                     {files.map(file => {
@@ -655,18 +508,14 @@ function SkillsTab() {
                       return (
                         <div
                           key={file.path}
-                          style={{
-                            cursor: "pointer", padding: "6px 12px", display: "flex", alignItems: "center", gap: 8,
-                            background: isActive ? token.controlItemBgActive : undefined,
-                            borderLeft: isActive ? `2px solid ${token.colorPrimary}` : "2px solid transparent",
-                          }}
+                          className="cursor-pointer flex items-center gap-2" style={{ padding: "6px 12px", background: isActive ? token.controlItemBgActive : undefined, borderLeft: isActive ? `2px solid ${token.colorPrimary}` : "2px solid transparent" }}
                           onClick={() => detailSkill && viewFileContent(detailSkill.id, file.path)}
                           onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = token.colorBgTextHover; }}
                           onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = ""; }}
                         >
-                          <span style={{ fontSize: 13, color: isActive ? token.colorPrimary : token.colorTextSecondary }}>{icon}</span>
-                          <Text ellipsis style={{ flex: 1, fontSize: 13, fontWeight: isActive ? 500 : 400 }}>{file.name}</Text>
-                          <Text type="secondary" style={{ fontSize: 11, flexShrink: 0 }}>{(file.size / 1024).toFixed(1)}K</Text>
+                          <span className="text-[13px]" style={{ color: isActive ? token.colorPrimary : token.colorTextSecondary }}>{icon}</span>
+                          <Text ellipsis className="flex-1 text-[13px]" style={{ fontWeight: isActive ? 500 : 400 }}>{file.name}</Text>
+                          <Text type="secondary" className="text-[11px] shrink-0">{(file.size / 1024).toFixed(1)}K</Text>
                         </div>
                       );
                     })}
@@ -677,19 +526,19 @@ function SkillsTab() {
           </div>
 
           {/* 右侧：文件内容 */}
-          <div style={{ flex: 1, overflow: "auto", display: "flex", flexDirection: "column", background: token.colorBgContainer }}>
+          <div className="flex-1 overflow-auto flex flex-col" style={{ background: token.colorBgContainer }}>
             {fileContent === null ? (
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, color: token.colorTextQuaternary }}>
+              <div className="flex items-center justify-center flex-1" style={{ color: token.colorTextQuaternary }}>
                 <Empty description="选择文件查看内容" image={Empty.PRESENTED_IMAGE_SIMPLE} />
               </div>
             ) : (
-              <div style={{ display: "flex", flexDirection: "column", flex: 1 }}>
+              <div className="flex flex-col flex-1">
                 {/* 标题栏 */}
-                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, flexShrink: 0 }}>
+                <div className="flex items-center justify-between shrink-0" style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
                   <Space>
                     <FileTextOutlined />
                     <Text strong>{fileContentPath.split("/").pop()}</Text>
-                    <Text type="secondary" style={{ fontSize: 12 }}>{fileContentPath}</Text>
+                    <Text type="secondary" className="text-xs">{fileContentPath}</Text>
                     {editingFile && <Tag color="orange">编辑中</Tag>}
                   </Space>
                   <Space size={4}>
@@ -706,9 +555,9 @@ function SkillsTab() {
                   </Space>
                 </div>
                 {/* 内容区域 */}
-                <div style={{ flex: 1, overflow: "auto" }}>
+                <div className="flex-1 overflow-auto">
                   {editingFile && isMdFile ? (
-                    <div style={{ padding: 16 }}>
+                    <div className="p-4">
                       <MilkdownEditor value={editContent} onChange={setEditContent} />
                     </div>
                   ) : editingFile ? (
@@ -716,14 +565,14 @@ function SkillsTab() {
                       value={editContent}
                       onChange={e => setEditContent(e.target.value)}
                       autoSize={{ minRows: 20 }}
-                      style={{ border: "none", borderRadius: 0, fontSize: 13, fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace", lineHeight: 1.7, resize: "none" }}
+                      className="border-none rounded-none text-[13px] leading-1.7" style={{ fontFamily: "\'JetBrains Mono\', \'Fira Code\', Consolas, monospace", resize: "none" }}
                     />
                   ) : isMdFile ? (
-                    <div style={{ padding: "12px 16px" }}>
+                    <div className="py-[12px] px-[16px]">
                       <MarkdownPreview content={fileContent ?? ""} />
                     </div>
                   ) : (
-                    <pre style={{ fontSize: 13, lineHeight: 1.7, whiteSpace: "pre-wrap", wordBreak: "break-word", margin: 0, padding: 16, fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace" }}>{fileContent}</pre>
+                    <pre className="text-[13px] leading-1.7 whitespace-pre-wrap break-words m-0 p-4" style={{ fontFamily: "\'JetBrains Mono\', \'Fira Code\', Consolas, monospace" }}>{fileContent}</pre>
                   )}
                 </div>
               </div>
@@ -955,8 +804,8 @@ function McpTab() {
         <Space>
           <ApiOutlined style={{ color: r.enabled ? "#1677ff" : "#d9d9d9" }} />
           <div>
-            <div style={{ fontWeight: 500 }}>{v}</div>
-            {r.description && <Text type="secondary" style={{ fontSize: 12 }}>{r.description}</Text>}
+            <div className="font-medium">{v}</div>
+            {r.description && <Text type="secondary" className="text-xs">{r.description}</Text>}
           </div>
         </Space>
       ),
@@ -968,7 +817,7 @@ function McpTab() {
     {
       title: "地址", width: 260,
       render: (_: unknown, r: McpServerItem) => (
-        <Text ellipsis style={{ fontSize: 12, maxWidth: 240 }}>
+        <Text ellipsis className="text-xs max-w-[240px]">
           {r.transportType === "stdio" ? `${r.command} ${(r.args ?? []).join(" ")}` : r.url}
         </Text>
       ),
@@ -1010,8 +859,8 @@ function McpTab() {
         />
       ),
     },
-    { title: "创建时间", dataIndex: "createdAt", width: 160, render: (v: string) => <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(v)}</Text> },
-    { title: "更新时间", dataIndex: "updatedAt", width: 160, render: (v: string) => <Text type="secondary" style={{ fontSize: 12 }}>{fmtDate(v)}</Text> },
+    { title: "创建时间", dataIndex: "createdAt", width: 160, render: (v: string) => <Text type="secondary" className="text-xs">{fmtDate(v)}</Text> },
+    { title: "更新时间", dataIndex: "updatedAt", width: 160, render: (v: string) => <Text type="secondary" className="text-xs">{fmtDate(v)}</Text> },
     {
       title: "操作", width: 180, fixed: "right",
       render: (_: unknown, r: McpServerItem) => (
@@ -1030,7 +879,7 @@ function McpTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+      <div className="mb-4 flex justify-between">
         <Text type="secondary">MCP (Model Context Protocol) 标准的服务端连接管理。支持 stdio（本地进程）和 SSE（远程 HTTP）两种传输方式。</Text>
         <Space>
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openEdit()}>添加 MCP 服务</Button>
@@ -1051,15 +900,15 @@ function McpTab() {
       >
         <Form form={form} layout="vertical" initialValues={{ transportType: "stdio" }}>
           {!editItem && (
-            <div style={{ marginBottom: 16, padding: 12, background: token.colorBgTextHover, borderRadius: 8, border: `1px dashed ${token.colorBorder}` }}>
-              <Text type="secondary" style={{ fontSize: 12, display: "block", marginBottom: 8 }}>
+            <div className="mb-4 p-3 rounded-lg" style={{ background: token.colorBgTextHover, border: `1px dashed ${token.colorBorder}` }}>
+              <Text type="secondary" className="text-xs block mb-2">
                 📋 粘贴 MCP 配置自动填充（支持 JSON 配置 或 命令行格式）
               </Text>
               <Input.TextArea
                 rows={2}
                 placeholder={'粘贴 JSON 配置或命令行，如：\n{"command":"npx","args":["-y","firecrawl-mcp"],"env":{"API_KEY":"xxx"}}\n或\nAPI_KEY=xxx npx -y firecrawl-mcp'}
                 onPaste={handlePaste}
-                style={{ fontSize: 12 }}
+                className="text-xs"
               />
             </div>
           )}
@@ -1115,14 +964,14 @@ function McpTab() {
             {(toolsDrawer?.toolsSnapshot ?? []).map((tool: { name: string; description: string; inputSchema?: Record<string, unknown> }) => (
               <div key={tool.name} style={{ padding: "12px 0", borderBottom: "1px solid " + token.colorBorderSecondary }}>
                 <Space align="start">
-                  <FunctionOutlined style={{ fontSize: 18, color: "#1677ff", marginTop: 2 }} />
+                  <FunctionOutlined className="text-lg text-[#1677ff] mt-0.5" />
                   <div>
                     <Text strong>{tool.name}</Text>
-                    <div><Text style={{ fontSize: 13 }}>{tool.description}</Text></div>
+                    <div><Text className="text-[13px]">{tool.description}</Text></div>
                     {tool.inputSchema && (
-                      <Collapse size="small" ghost style={{ marginTop: 4 }}>
-                        <Collapse.Panel key="schema" header={<Text type="secondary" style={{ fontSize: 11 }}>参数 Schema</Text>}>
-                          <pre style={{ fontSize: 11, margin: 0 }}>{JSON.stringify(tool.inputSchema, null, 2)}</pre>
+                      <Collapse size="small" ghost className="mt-1">
+                        <Collapse.Panel key="schema" header={<Text type="secondary" className="text-[11px]">参数 Schema</Text>}>
+                          <pre className="text-[11px] m-0">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
                         </Collapse.Panel>
                       </Collapse>
                     )}
@@ -1163,16 +1012,16 @@ function ToolsTab() {
   };
 
   const categoryIcons: Record<string, React.ReactNode> = {
-    terminal: <CodeOutlined style={{ color: "#722ed1" }} />,
-    calculator: <FunctionOutlined style={{ color: "#13c2c2" }} />,
-    sql_query: <BlockOutlined style={{ color: "#eb2f96" }} />,
+    terminal: <CodeOutlined className="text-[#722ed1]" />,
+    calculator: <FunctionOutlined className="text-[#13c2c2]" />,
+    sql_query: <BlockOutlined className="text-[#eb2f96]" />,
   };
 
   const getIcon = (name: string) => {
-    if (name.startsWith("fs_")) return <FolderOutlined style={{ color: "#52c41a" }} />;
-    if (name.startsWith("kb_")) return <AppstoreOutlined style={{ color: "#1677ff" }} />;
-    if (name.startsWith("file_")) return <FileOutlined style={{ color: "#faad14" }} />;
-    return categoryIcons[name] ?? <ToolOutlined style={{ color: "#666" }} />;
+    if (name.startsWith("fs_")) return <FolderOutlined className="text-[#52c41a]" />;
+    if (name.startsWith("kb_")) return <AppstoreOutlined className="text-[#1677ff]" />;
+    if (name.startsWith("file_")) return <FileOutlined className="text-[#faad14]" />;
+    return categoryIcons[name] ?? <ToolOutlined className="text-[#666]" />;
   };
 
   const columns: ColumnsType<AIToolItem> = [
@@ -1182,8 +1031,8 @@ function ToolsTab() {
         <Space>
           {getIcon(v)}
           <div>
-            <div style={{ fontWeight: 500, fontFamily: "monospace" }}>{v}</div>
-            <Text type="secondary" style={{ fontSize: 12 }}>{r.description}</Text>
+            <div className="font-medium" style={{ fontFamily: "monospace" }}>{v}</div>
+            <Text type="secondary" className="text-xs">{r.description}</Text>
           </div>
         </Space>
       ),
@@ -1214,7 +1063,7 @@ function ToolsTab() {
 
   return (
     <div>
-      <div style={{ marginBottom: 16, display: "flex", justifyContent: "space-between" }}>
+      <div className="mb-4 flex justify-between">
         <Text type="secondary">系统已注册的内置工具。这些工具由 AI Agent 在对话中自动调用。</Text>
         <Button icon={<ReloadOutlined />} onClick={refresh} />
       </div>
@@ -1231,7 +1080,7 @@ function ToolsTab() {
       >
         {detailTool && (
           <div>
-            <Descriptions column={2} size="small" style={{ marginBottom: 16 }}>
+            <Descriptions column={2} size="small" className="mb-4">
               <Descriptions.Item label="风险等级">
                 <Tag color={riskColor[detailTool.riskLevel] ?? "default"}>{detailTool.riskLevel}</Tag>
               </Descriptions.Item>
@@ -1269,7 +1118,7 @@ function ToolsTab() {
 
 export default function AICapabilitiesPage() {
   return (
-    <div style={{ padding: 24 }}>
+    <div className="p-6">
       <Card styles={{ body: { paddingTop: 12 } }}>
         <Tabs
           defaultActiveKey="skills"

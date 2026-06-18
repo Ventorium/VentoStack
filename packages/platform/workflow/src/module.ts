@@ -6,7 +6,7 @@ import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router } from "@ventostack/core";
 import type { Database } from "@ventostack/database";
 import type { EventBus } from "@ventostack/events";
-import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { createWorkflowRoutes } from "./routes/workflow";
 import { createWorkflowService } from "./services";
 import type { WorkflowService } from "./services";

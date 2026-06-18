@@ -118,10 +118,10 @@ const FORMAT_LABELS: Record<string, { label: string; color: string }> = {
 
 function CapIcons({ model }: { model: ModelItem }) {
   const icons: React.ReactNode[] = [];
-  if (model.supportsImage) icons.push(<Tooltip key="img" title="图片"><PictureOutlined style={{ color: "#1677ff" }} /></Tooltip>);
-  if (model.supportsVideo) icons.push(<Tooltip key="vid" title="视频"><VideoCameraOutlined style={{ color: "#722ed1" }} /></Tooltip>);
-  if (model.supportsAudio) icons.push(<Tooltip key="aud" title="语音"><AudioOutlined style={{ color: "#eb2f96" }} /></Tooltip>);
-  if (model.supportsFunctionCalling) icons.push(<Tooltip key="fn" title="函数调用"><CodeOutlined style={{ color: "#52c41a" }} /></Tooltip>);
+  if (model.supportsImage) icons.push(<Tooltip key="img" title="图片"><PictureOutlined className="text-[#1677ff]" /></Tooltip>);
+  if (model.supportsVideo) icons.push(<Tooltip key="vid" title="视频"><VideoCameraOutlined className="text-[#722ed1]" /></Tooltip>);
+  if (model.supportsAudio) icons.push(<Tooltip key="aud" title="语音"><AudioOutlined className="text-[#eb2f96]" /></Tooltip>);
+  if (model.supportsFunctionCalling) icons.push(<Tooltip key="fn" title="函数调用"><CodeOutlined className="text-[#52c41a]" /></Tooltip>);
   if (model.supportsThinking) {
     const opts = model.reasoningOptions;
     let thinkTip = "推理/思考";
@@ -134,9 +134,9 @@ function CapIcons({ model }: { model: ModelItem }) {
       });
       thinkTip = `推理/思考 — ${parts.join(" + ")}`;
     }
-    icons.push(<Tooltip key="think" title={thinkTip}><ThunderboltOutlined style={{ color: "#fa8c16" }} /></Tooltip>);
+    icons.push(<Tooltip key="think" title={thinkTip}><ThunderboltOutlined className="text-[#fa8c16]" /></Tooltip>);
   }
-  if (model.supportsStructuredOutput) icons.push(<Tooltip key="struct" title="结构化输出"><CheckCircleOutlined style={{ color: "#13c2c2" }} /></Tooltip>);
+  if (model.supportsStructuredOutput) icons.push(<Tooltip key="struct" title="结构化输出"><CheckCircleOutlined className="text-[#13c2c2]" /></Tooltip>);
   return <Space size={4}>{icons}</Space>;
 }
 
@@ -581,10 +581,10 @@ export default function AISettingsPage() {
         const isDefault = isDefaultModel(modelsProvider?.name ?? "", r.modelId);
         return (
           <Space>
-            {isDefault && <StarFilled style={{ color: "#faad14", fontSize: 14 }} />}
+            {isDefault && <StarFilled className="text-[#faad14] text-sm" />}
             <Text strong>{r.displayName || text}</Text>
             {isDefault && <Tag color="gold">默认</Tag>}
-            {r.autoFetched && <Tag color="blue" style={{ fontSize: 10 }}>自动</Tag>}
+            {r.autoFetched && <Tag color="blue" className="text-[10px]">自动</Tag>}
           </Space>
         );
       },
@@ -614,8 +614,8 @@ export default function AISettingsPage() {
       key: "price",
       width: 120,
       render: (_, r) => r.pricingInput != null && r.pricingInput > 0
-        ? <Text type="secondary" style={{ fontSize: 12 }}>${r.pricingInput} / ${r.pricingOutput}</Text>
-        : <Tooltip title="点击编辑按钮手动填写价格"><Text type="secondary" style={{ cursor: "pointer", fontSize: 11 }}>未设置</Text></Tooltip>,
+        ? <Text type="secondary" className="text-xs">${r.pricingInput} / ${r.pricingOutput}</Text>
+        : <Tooltip title="点击编辑按钮手动填写价格"><Text type="secondary" className="cursor-pointer text-[11px]">未设置</Text></Tooltip>,
     },
     {
       title: "状态",
@@ -658,7 +658,7 @@ export default function AISettingsPage() {
       width: 220,
       render: (_, r) => (
         <Space>
-          <span style={{ fontWeight: 600 }}>{r.displayName || r.name}</span>
+          <span className="font-semibold">{r.displayName || r.name}</span>
           <Tag color={FORMAT_LABELS[r.apiFormat]?.color ?? "default"}>
             {FORMAT_LABELS[r.apiFormat]?.label ?? r.apiFormat}
           </Tag>
@@ -709,7 +709,7 @@ export default function AISettingsPage() {
   return (
     <div>
       <Title level={3}>
-        <SettingOutlined style={{ marginRight: 8 }} />
+        <SettingOutlined className="mr-2" />
         AI 配置
       </Title>
 
@@ -743,14 +743,14 @@ export default function AISettingsPage() {
             key: "ocr",
             label: <Space><RobotOutlined /> OCR 配置</Space>,
             children: (
-              <Card title="OCR 设置" style={{ marginTop: 0 }}>
-                <div style={{ marginBottom: 16, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6, fontSize: 13 }}>
+              <Card title="OCR 设置" className="mt-0">
+                <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]" >
                   💡 OCR（光学字符识别）用于解析扫描版 PDF 文件。开启后，上传 PDF 时会自动调用内置 Tesseract 引擎识别文字。也可配置远程 PaddleOCR 服务以获得更好的中文识别效果。
                 </div>
                 <Row gutter={24}>
                   <Col span={12}>
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ marginBottom: 8, fontWeight: 500 }}>启用 OCR</div>
+                    <div className="mb-4">
+                      <div className="mb-2 font-medium">启用 OCR</div>
                       <Switch
                         checked={ocrEnabled}
                         onChange={async (checked) => {
@@ -759,17 +759,17 @@ export default function AISettingsPage() {
                           msg.success(checked ? "OCR 已启用" : "OCR 已禁用");
                         }}
                       />
-                      <Text type="secondary" style={{ marginLeft: 12 }}>
+                      <Text type="secondary" className="ml-3">
                         解析扫描版 PDF 时自动调用 OCR 引擎
                       </Text>
                     </div>
                   </Col>
                   <Col span={12}>
-                    <div style={{ marginBottom: 16 }}>
-                      <div style={{ marginBottom: 8, fontWeight: 500 }}>OCR 语言</div>
+                    <div className="mb-4">
+                      <div className="mb-2 font-medium">OCR 语言</div>
                       <Select
                         value={ocrLanguage}
-                        style={{ width: 240 }}
+                        className="w-[240px]"
                         onChange={async (val) => {
                           setOcrLanguage(val);
                           await saveOcrConfig("ocr_language", val);
@@ -786,17 +786,17 @@ export default function AISettingsPage() {
                     </div>
                   </Col>
                 </Row>
-                <Divider style={{ margin: "8px 0 16px" }} />
-                <div style={{ marginBottom: 8, fontWeight: 500 }}>远程 PaddleOCR 服务</div>
-                <div style={{ marginBottom: 12, padding: "8px 12px", background: "#fff7e6", borderRadius: 6, fontSize: 13 }}>
+                <Divider className="mt-[8px] mb-[16px]" />
+                <div className="mb-2 font-medium">远程 PaddleOCR 服务</div>
+                <div className="mb-3 bg-[#fff7e6] rounded-md text-[13px] py-[8px] px-[12px]" >
                   💡 配置远程 PaddleOCR 服务地址后，将优先使用该服务进行 OCR 识别，适用于需要更高中文识别精度的场景。留空则使用本地 Tesseract 引擎。
                 </div>
-                <div style={{ marginBottom: 16 }}>
-                  <div style={{ marginBottom: 8 }}>PaddleOCR 服务地址</div>
+                <div className="mb-4">
+                  <div className="mb-2">PaddleOCR 服务地址</div>
                   <Input
                     value={ocrServerUrl}
                     placeholder="http://paddleocr:8866/predict/ocr_system"
-                    style={{ maxWidth: 480 }}
+                    className="max-w-[480px]"
                     onChange={(e) => setOcrServerUrl(e.target.value)}
                     onBlur={async () => {
                       await saveOcrConfig("ocr_server_url", ocrServerUrl);
@@ -804,7 +804,7 @@ export default function AISettingsPage() {
                     }}
                     allowClear
                   />
-                  <Text type="secondary" style={{ display: "block", marginTop: 4, fontSize: 12 }}>
+                  <Text type="secondary" className="block mt-1 text-xs">
                     留空表示使用本地 Tesseract 引擎。填写后将通过远程 PaddleOCR 服务识别。
                   </Text>
                 </div>
@@ -864,7 +864,7 @@ export default function AISettingsPage() {
           )}
 
           {selectedPreset && selectedPreset.baseUrl && (
-            <div style={{ marginBottom: 16, padding: 12, background: "#f6f8fa", borderRadius: 8 }}>
+            <div className="mb-4 p-3 bg-[#f6f8fa] rounded-lg">
               <Descriptions column={1} size="small">
                 <Descriptions.Item label="供应商">{selectedPreset.displayName}</Descriptions.Item>
                 <Descriptions.Item label="API 格式">
@@ -951,7 +951,7 @@ export default function AISettingsPage() {
             <RobotOutlined />
             <span>模型管理 — {modelsProvider?.displayName || modelsProvider?.name}</span>
             {defaultModel && defaultModel.startsWith((modelsProvider?.name ?? "") + "/") && (
-              <Text type="secondary" style={{ fontSize: 12, marginLeft: 8 }}>
+              <Text type="secondary" className="text-xs ml-2">
                 当前默认: <Text strong>{defaultModel.split("/").slice(1).join("/")}</Text>
               </Text>
             )}
@@ -974,11 +974,11 @@ export default function AISettingsPage() {
           </Space>
         }
       >
-        <div style={{ marginBottom: 16, padding: "8px 12px", background: "#e6f4ff", borderRadius: 6, fontSize: 13 }}>
+        <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]" >
           💡 {(modelsProvider?.presetId || modelsProvider?.modelsDevSlug) ? "点击「从 models.dev 同步」自动拉取模型列表，或点击「添加模型」手动添加。" : "点击「添加模型」手动添加模型。"} 勾选模型后可批量删除或测试连通性。
         </div>
         {selectedModelIds.length > 0 && (
-          <div style={{ marginBottom: 12, display: "flex", gap: 8, alignItems: "center" }}>
+          <div className="mb-3 flex gap-2 items-center">
             <Text type="secondary">已选 {selectedModelIds.length} 个模型</Text>
             <Popconfirm
               title={`确定删除选中的 ${selectedModelIds.length} 个模型？`}
@@ -1008,26 +1008,26 @@ export default function AISettingsPage() {
           }}
         />
         {Object.keys(modelTestResults).length > 0 && (
-          <div style={{ marginTop: 16, padding: 12, background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-              <Text strong style={{ fontSize: 13 }}>连通性测试结果</Text>
+          <div className="mt-4 p-3 bg-[#fafafa] rounded-lg" style={{ border: "1px solid #f0f0f0" }}>
+            <div className="flex justify-between items-center mb-2">
+              <Text strong className="text-[13px]">连通性测试结果</Text>
               <Button size="small" type="text" onClick={() => setModelTestResults({})}>清空</Button>
             </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 200, overflow: "auto" }}>
+            <div className="flex flex-col gap-1 max-h-[200px] overflow-auto">
               {Object.entries(modelTestResults).map(([id, result]) => {
                 const model = modelsList.find((m) => m.id === id);
                 if (!result) return null;
                 return (
-                  <div key={id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 8px", borderRadius: 4, background: result.status === "ok" ? "#f6ffed" : "#fff2f0", fontSize: 12 }}>
+                  <div key={id} className="flex items-center gap-2 rounded text-xs" style={{ padding: "4px 8px", background: result.status === "ok" ? "#f6ffed" : "#fff2f0" }}>
                     {result.status === "ok"
-                      ? <CheckCircleOutlined style={{ color: "#52c41a" }} />
-                      : <CloseCircleOutlined style={{ color: "#ff4d4f" }} />
+                      ? <CheckCircleOutlined className="text-[#52c41a]" />
+                      : <CloseCircleOutlined className="text-[#ff4d4f]" />
                     }
-                    <Text strong style={{ fontSize: 12, minWidth: 160 }}>{model?.displayName || model?.modelId || id}</Text>
+                    <Text strong className="text-xs min-w-[160px]">{model?.displayName || model?.modelId || id}</Text>
                     {result.status === "ok" ? (
-                      <Text type="secondary" style={{ fontSize: 12 }}>通过 · {result.elapsed}ms</Text>
+                      <Text type="secondary" className="text-xs">通过 · {result.elapsed}ms</Text>
                     ) : (
-                      <Text type="danger" style={{ fontSize: 12, flex: 1 }} ellipsis={{ tooltip: result.message }}>失败 · {result.message?.slice(0, 120) || "未知错误"}</Text>
+                      <Text type="danger" className="text-xs flex-1" ellipsis={{ tooltip: result.message }}>失败 · {result.message?.slice(0, 120) || "未知错误"}</Text>
                     )}
                   </div>
                 );
@@ -1066,14 +1066,14 @@ export default function AISettingsPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Divider style={{ margin: "8px 0 16px" }}>模态支持</Divider>
+          <Divider className="mt-[8px] mb-[16px]">模态支持</Divider>
           <Row gutter={16}>
             <Col span={6}><Form.Item name="supportsText" label="文本" valuePropName="checked" initialValue><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsImage" label="图片" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsVideo" label="视频" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsAudio" label="语音" valuePropName="checked"><Switch /></Form.Item></Col>
           </Row>
-          <Divider style={{ margin: "8px 0 16px" }}>能力</Divider>
+          <Divider className="mt-[8px] mb-[16px]">能力</Divider>
           <Row gutter={16}>
             <Col span={6}><Form.Item name="supportsFunctionCalling" label="函数调用" valuePropName="checked" initialValue><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsStreaming" label="流式输出" valuePropName="checked" initialValue><Switch /></Form.Item></Col>
@@ -1088,7 +1088,7 @@ export default function AISettingsPage() {
               const thinking = addModelForm.getFieldValue("supportsThinking");
               if (!thinking) return null;
               return (
-                <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0", marginBottom: 16 }}>
+                <div className="bg-[#fafafa] rounded-lg mb-4" style={{ padding: "8px 12px", border: "1px solid #f0f0f0" }}>
                   <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item name="effortValues" label="思考强度" extra="用户可选择的推理强度级别，输入后自动转为小写">
@@ -1122,7 +1122,7 @@ export default function AISettingsPage() {
               );
             }}
           </Form.Item>
-          <Divider style={{ margin: "8px 0 16px" }}>价格 ($/M tokens)</Divider>
+          <Divider className="mt-[8px] mb-[16px]">价格 ($/M tokens)</Divider>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="pricingInput" label="输入价格">
@@ -1178,14 +1178,14 @@ export default function AISettingsPage() {
               </Form.Item>
             </Col>
           </Row>
-          <Divider style={{ margin: "8px 0 16px" }}>模态支持</Divider>
+          <Divider className="mt-[8px] mb-[16px]">模态支持</Divider>
           <Row gutter={16}>
             <Col span={6}><Form.Item name="supportsText" label="文本" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsImage" label="图片" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsVideo" label="视频" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsAudio" label="语音" valuePropName="checked"><Switch /></Form.Item></Col>
           </Row>
-          <Divider style={{ margin: "8px 0 16px" }}>能力</Divider>
+          <Divider className="mt-[8px] mb-[16px]">能力</Divider>
           <Row gutter={16}>
             <Col span={6}><Form.Item name="supportsFunctionCalling" label="函数调用" valuePropName="checked"><Switch /></Form.Item></Col>
             <Col span={6}><Form.Item name="supportsStreaming" label="流式输出" valuePropName="checked"><Switch /></Form.Item></Col>
@@ -1201,7 +1201,7 @@ export default function AISettingsPage() {
               if (!thinking) return null;
               const ro = editModel?.reasoningOptions;
               return (
-                <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 8, border: "1px solid #f0f0f0", marginBottom: 16 }}>
+                <div className="bg-[#fafafa] rounded-lg mb-4" style={{ padding: "8px 12px", border: "1px solid #f0f0f0" }}>
                   <Row gutter={16}>
                     <Col span={12}>
                       <Form.Item name="effortValues" label="思考强度" extra="用户可选择的推理强度级别，输入后自动转为小写">
@@ -1235,7 +1235,7 @@ export default function AISettingsPage() {
               );
             }}
           </Form.Item>
-          <Divider style={{ margin: "8px 0 16px" }}>价格 ($/M tokens)</Divider>
+          <Divider className="mt-[8px] mb-[16px]">价格 ($/M tokens)</Divider>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="pricingInput" label="输入价格">

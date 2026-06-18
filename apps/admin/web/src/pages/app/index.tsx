@@ -214,7 +214,7 @@ const DashboardPage = () => {
         ellipsis: true,
         render: (title: string, record) => (
           <Space>
-            {!record.isRead && <Badge status="processing" style={{ marginRight: 0 }} />}
+            {!record.isRead && <Badge status="processing" className="mr-0" />}
             <Text strong={!record.isRead}>{title}</Text>
           </Space>
         ),
@@ -338,7 +338,7 @@ const DashboardPage = () => {
                         title={<span className="text-xs">{card.title}</span>}
                         value={card.value}
                         prefix={
-                          <span style={{ color: card.color, fontSize: 16 }}>{card.icon}</span>
+                          <span className="text-base" style={{ color: card.color }}>{card.icon}</span>
                         }
                         valueStyle={{ fontSize: 24 }}
                       />
@@ -378,20 +378,20 @@ const DashboardPage = () => {
                       >
                         <div className="flex items-center gap-2 min-w-0 flex-1">
                           {!notice.isRead && (
-                            <Badge status="processing" style={{ flexShrink: 0 }} />
+                            <Badge status="processing" className="shrink-0" />
                           )}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center gap-2">
                               <Text
                                 strong={!notice.isRead}
-                                className="truncate text-sm"
-                                style={{ maxWidth: 200 }}
+                                className="truncate text-sm max-w-[200px]"
+                                
                               >
                                 {notice.title}
                               </Text>
                               <Tag
                                 color={NOTICE_TYPE_MAP[notice.type]?.color ?? "blue"}
-                                style={{ flexShrink: 0, fontSize: 11 }}
+                                className="shrink-0 text-[11px]"
                               >
                                 {NOTICE_TYPE_MAP[notice.type]?.label ?? "通知"}
                               </Tag>

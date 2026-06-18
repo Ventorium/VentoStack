@@ -29,32 +29,6 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
-export interface SkillCapability {
-  id: string;
-  name: string;
-  description: string;
-  enabled: boolean;
-  readonly?: boolean;
-}
-
-export interface Skill {
-  id: string;
-  name: string;
-  icon: string;
-  color?: string;
-  description: string;
-  enabledCount: number;
-  totalCount: number;
-  capabilities: SkillCapability[];
-}
-
-export interface BottomTab {
-  key: string;
-  label: string;
-  icon: string;
-  count?: number;
-}
-
 export interface ModelOption {
   id: string;
   name: string;

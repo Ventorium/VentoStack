@@ -166,7 +166,7 @@ const SchedulerPage = () => {
             <Input placeholder="任务名称" prefix={<SearchOutlined />} />
           </Form.Item>
           <Form.Item name="status" initialValue={undefined}>
-            <Select placeholder="状态" style={{ width: 120 }} allowClear>
+            <Select placeholder="状态" className="w-[120px]" allowClear>
               <Select.Option value="RUNNING">运行中</Select.Option>
               <Select.Option value="PAUSED">已暂停</Select.Option>
             </Select>

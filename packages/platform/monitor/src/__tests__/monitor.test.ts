@@ -21,12 +21,12 @@ describe("MonitorService", () => {
     it("should return server status", async () => {
       const status = await service.getServerStatus();
 
-      expect(status.uptime).toBeGreaterThanOrEqual(0);
-      expect(status.memoryTotal).toBeGreaterThanOrEqual(0);
-      expect(status.memoryUsed).toBeGreaterThanOrEqual(0);
-      expect(status.memoryUsage).toBeGreaterThanOrEqual(0);
-      expect(status.memoryUsage).toBeLessThanOrEqual(1);
-      expect(typeof status.cpuUsage).toBe("number");
+      expect(status.process.uptime).toBeGreaterThanOrEqual(0);
+      expect(status.memory.total).toBeGreaterThanOrEqual(0);
+      expect(status.memory.used).toBeGreaterThanOrEqual(0);
+      expect(status.memory.usage).toBeGreaterThanOrEqual(0);
+      expect(status.memory.usage).toBeLessThanOrEqual(1);
+      expect(typeof status.cpu.usage).toBe("number");
     });
   });
 
@@ -34,7 +34,8 @@ describe("MonitorService", () => {
     it("should return default stats when no provider", async () => {
       const stats = await service.getCacheStats();
       expect(stats.keyCount).toBe(0);
-      expect(stats.hitRate).toBe(0);
+      expect(stats.hitRate).toBeUndefined();
+      expect(stats.memory).toBe("0B");
     });
 
     it("should use provider when available", async () => {
@@ -55,7 +56,11 @@ describe("MonitorService", () => {
   describe("getDataSourceStatus", () => {
     it("should return status when no provider", async () => {
       const status = await service.getDataSourceStatus();
-      expect(["UP", "DOWN", "UNKNOWN"]).toContain(status.status);
+      // db mock is provided, SELECT 1 probe succeeds
+      expect(status.connected).toBe(true);
+      expect(status.poolSize).toBe(0);
+      expect(status.activeConnections).toBe(1);
+      expect(status.idleConnections).toBe(0);
     });
 
     it("should use provider when available", async () => {

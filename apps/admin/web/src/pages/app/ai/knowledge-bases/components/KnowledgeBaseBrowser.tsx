@@ -387,8 +387,8 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     <div className="flex h-full">
       {/* ── 左侧：文件目录 ── */}
       <div
-        className="flex flex-col flex-shrink-0 overflow-hidden relative"
-        style={{ width: 360, borderRight: `1px solid ${token.colorBorderSecondary}` }}
+        className="flex flex-col flex-shrink-0 overflow-hidden relative w-[360px]"
+         style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
         onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
         onDragLeave={(e) => { e.preventDefault(); setIsDragOver(false); }}
         onDrop={(e) => { e.preventDefault(); setIsDragOver(false); handleUpload(e.dataTransfer.files); }}

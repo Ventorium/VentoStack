@@ -77,7 +77,7 @@ const WorkflowTasksPage = () => {
 
   return (
     <Card>
-      <Form form={searchForm} layout="inline" style={{ marginBottom: 16 }}
+      <Form form={searchForm} layout="inline" className="mb-4"
         onFinish={() => onSearch({})}>
         <Form.Item>
           <Space>

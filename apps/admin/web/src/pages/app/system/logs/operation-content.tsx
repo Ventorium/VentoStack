@@ -114,7 +114,7 @@ const OperationLogPage = () => {
             <Input placeholder="模块" />
           </Form.Item>
           <Form.Item name="result">
-            <Select placeholder="结果" allowClear style={{ width: 120 }}>
+            <Select placeholder="结果" allowClear className="w-[120px]">
               <Select.Option value={1}>成功</Select.Option>
               <Select.Option value={0}>失败</Select.Option>
             </Select>

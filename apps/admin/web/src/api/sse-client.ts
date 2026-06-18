@@ -1,12 +1,15 @@
 /**
  * SSE 客户端（使用 fetch + ReadableStream）
  * 支持 token 认证，自动重连
+ *
+ * Token 刷新复用 token-helper.ts 的共享逻辑，不重复实现。
  */
-import { getAccessToken, getRefreshToken, setAccessToken, setRefreshToken } from "@/store/token";
+import { getValidToken } from "./token-helper";
 
 export interface StreamCallbacks {
   onContent: (delta: string) => void;
   onToolCall?: (toolCall: { id: string; name: string }) => void;
+  onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void;
   onError: (error: { code: string; message: string; recoverable: boolean }) => void;
   onDone: () => void;
 }
@@ -15,52 +18,10 @@ export interface ChatStreamParams {
   agentId: string;
   message: string;
   sessionId?: string;
-  // 能力开关
   tools?: string[];
   skillIds?: string[];
   mcpServerIds?: string[];
   knowledgeBaseIds?: string[];
-}
-
-// Token 刷新状态
-let isRefreshing = false;
-let refreshPromise: Promise<string | null> | null = null;
-
-async function getValidToken(): Promise<string | null> {
-  const token = getAccessToken();
-  if (token) return token;
-
-  // 尝试刷新
-  if (!refreshPromise) {
-    refreshPromise = (async () => {
-      const refreshToken = getRefreshToken();
-      if (!refreshToken) return null;
-
-      isRefreshing = true;
-      try {
-        const res = await fetch("/api/auth/refresh", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ refreshToken }),
-        });
-        const json = await res.json();
-        const data = json?.data ?? json;
-        if (res.ok && data?.accessToken) {
-          setAccessToken(data.accessToken);
-          if (data.refreshToken) setRefreshToken(data.refreshToken);
-          return data.accessToken as string;
-        }
-        return null;
-      } catch {
-        return null;
-      } finally {
-        isRefreshing = false;
-        refreshPromise = null;
-      }
-    })();
-  }
-
-  return refreshPromise;
 }
 
 /**
@@ -184,6 +145,12 @@ function handleStreamChunk(chunk: Record<string, unknown>, callbacks: StreamCall
       if (chunk.toolCall) {
         const tc = chunk.toolCall as { id: string; name: string };
         callbacks.onToolCall?.(tc);
+      }
+      break;
+    case "usage":
+      if (chunk.usage) {
+        const u = chunk.usage as { promptTokens: number; completionTokens: number };
+        callbacks.onUsage?.(u);
       }
       break;
     case "error":

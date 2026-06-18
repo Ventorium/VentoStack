@@ -224,7 +224,7 @@ const OSSPage = () => {
           src: previewImage,
           onOpenChange: (vis) => setPreviewOpen(vis),
         }}
-        style={{ display: "none" }}
+        className="hidden"
       />
     </div>
   );

@@ -119,6 +119,16 @@ export type {
 export { createPasskeyService } from "./passkey";
 export type { PasskeyService } from "./passkey";
 
+// TagService (PaginatedResult already exported from UserService, omitted here to avoid conflict)
+export { createTagService } from "./tag";
+export type {
+  CreateTagParams,
+  UpdateTagParams,
+  TagItem,
+  TagListParams,
+  TagService,
+} from "./tag";
+
 // PasswordPolicy
 export { validatePassword } from "./password-policy";
 export type {

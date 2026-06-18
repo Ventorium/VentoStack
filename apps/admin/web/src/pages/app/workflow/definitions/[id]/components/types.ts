@@ -13,7 +13,7 @@ export interface NodeConfig {
   strategy?: "sequential" | "parallel_and" | "parallel_or" | "percentage";
   percentage?: number;
   assignee?: {
-    mode: "fixed" | "role" | "department" | "lookup" | "form_field" | "tag" | "dept_tag";
+    mode: "fixed" | "role" | "department" | "lookup" | "form_field" | "dept_tag";
     userIds?: string[];
     roleId?: string;
     deptId?: string;
@@ -21,6 +21,14 @@ export interface NodeConfig {
     formField?: string;
     tagId?: string;
     tagCode?: string;
+    /** dept_tag 模式: 标签标识列表 */
+    tagCodes?: string[];
+    /** dept_tag 模式: 匹配模式 */
+    tagMatchMode?: "and" | "or";
+    /** dept_tag 模式: 是否向上遍历父部门 */
+    deptTraversal?: boolean;
+    /** dept_tag 模式: 最大遍历层级，0=不限 */
+    traversalLevels?: number;
   };
   rejectAction?: "terminate" | "return_to_previous" | "return_to_start";
   counterSign?: boolean;

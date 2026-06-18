@@ -9,7 +9,6 @@ import { client } from "@/api";
 import type { AgentItem, PaginatedData } from "@/api/types";
 import ActionColumn from "@/components/ActionColumn";
 import { fmtDate } from "@/utils/fmtDate";
-import { useNavigate } from "react-router-dom";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -40,7 +39,7 @@ function AbilityPanel({
 
   return (
     <div>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+      <div className="flex justify-between items-center mb-2">
         <Space>
           {icon}
           <Text strong>{title}</Text>
@@ -55,35 +54,29 @@ function AbilityPanel({
       {items.length === 0 ? (
         <Empty description={`暂无${title}`} image={Empty.PRESENTED_IMAGE_SIMPLE} />
       ) : (
-        <div style={{ maxHeight: 360, overflow: "auto" }}>
+        <div className="max-h-[360px] overflow-auto">
           {items.map(item => {
             const checked = selected.includes(item.id);
             return (
               <div
                 key={item.id}
-                style={{
-                  display: "flex", alignItems: "flex-start", gap: 8, padding: "8px 12px",
-                  borderRadius: 6, marginBottom: 4, cursor: item.disabled ? "not-allowed" : "pointer",
-                  background: checked ? token.colorPrimaryBg : "transparent",
-                  border: `1px solid ${checked ? token.colorPrimaryBorder : "transparent"}`,
-                  opacity: item.disabled ? 0.5 : 1,
-                }}
+                className="flex items-start gap-2 rounded-md mb-1" style={{ padding: "8px 12px", cursor: item.disabled ? "not-allowed" : "pointer", background: checked ? token.colorPrimaryBg : "transparent", border: `1px solid ${checked ? token.colorPrimaryBorder : "transparent"}`, opacity: item.disabled ? 0.5 : 1 }}
                 onClick={() => {
                   if (item.disabled) return;
                   onChange(checked ? selected.filter(id => id !== item.id) : [...selected, item.id]);
                 }}
               >
-                <Checkbox checked={checked} disabled={item.disabled} style={{ marginTop: 2 }}
+                <Checkbox checked={checked} disabled={item.disabled} className="mt-0.5"
                   onChange={e => {
                     if (item.disabled) return;
                     onChange(e.target.checked ? [...selected, item.id] : selected.filter(id => id !== item.id));
                   }}
                 />
-                <div style={{ flex: 1, minWidth: 0 }}>
+                <div className="flex-1 min-w-0">
                   {renderItem ? renderItem(item) : (
                     <>
-                      <div style={{ fontWeight: 500, fontSize: 13 }}>{item.name}</div>
-                      {item.description && <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>}
+                      <div className="font-medium text-[13px]">{item.name}</div>
+                      {item.description && <Text type="secondary" className="text-xs">{item.description}</Text>}
                     </>
                   )}
                 </div>
@@ -99,7 +92,6 @@ function AbilityPanel({
 // ── 主页面 ──
 
 const AgentsPage = () => {
-  const navigate = useNavigate();
   const { token } = theme.useToken();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<AgentItem[]>([]);
@@ -107,7 +99,11 @@ const AgentsPage = () => {
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [searchText, setSearchText] = useState("");
+  
+  // Modal 状态
   const [modalOpen, setModalOpen] = useState(false);
+  const [modalMode, setModalMode] = useState<"create" | "edit">("create");
+  const [editingAgent, setEditingAgent] = useState<AgentItem | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [form] = Form.useForm();
 
@@ -146,9 +142,6 @@ const AgentsPage = () => {
       const list = data as Array<{ name: string; description: string; riskLevel: string }> | undefined;
       if (list?.length) {
         setTools(list.map(t => ({ id: t.name, ...t })));
-        // Filter default tools to only include existing ones
-        const existingToolNames = list.map(t => t.name);
-        setSelectedTools(DEFAULT_TOOLS.filter(name => existingToolNames.includes(name)));
       }
     }).catch(() => {});
   }, []);
@@ -208,6 +201,36 @@ const AgentsPage = () => {
     setSelectedSkills([]);
     setSelectedMcp([]);
     setSelectedKbs([]);
+    setEditingAgent(null);
+  };
+
+  // 打开新增 Modal
+  const handleOpenCreate = () => {
+    setModalMode("create");
+    resetModal();
+    setModalOpen(true);
+  };
+
+  // 打开编辑 Modal
+  const handleOpenEdit = async (record: AgentItem) => {
+    setModalMode("edit");
+    setEditingAgent(record);
+    setModalOpen(true);
+    
+    // 设置表单值
+    form.setFieldsValue({
+      name: record.name,
+      description: record.description,
+      model: record.model,
+      systemPrompt: record.systemPrompt,
+      isPublic: record.isPublic,
+    });
+    
+    // 设置选中的能力
+    setSelectedTools(record.tools ?? []);
+    setSelectedSkills(record.skillIds ?? []);
+    setSelectedMcp(record.mcpServerIds ?? []);
+    setSelectedKbs(record.knowledgeBaseIds ?? []);
   };
 
   const handleCreate = async () => {
@@ -227,6 +250,33 @@ const AgentsPage = () => {
         setModalOpen(false);
         resetModal();
         refresh(1);
+      }
+    } catch {} finally {
+      setModalLoading(false);
+    }
+  };
+
+  const handleUpdate = async () => {
+    if (!editingAgent) return;
+    try {
+      const values = await form.validateFields();
+      setModalLoading(true);
+      const body = {
+        ...values,
+        tools: selectedTools.length > 0 ? selectedTools : null,
+        skillIds: selectedSkills.length > 0 ? selectedSkills : null,
+        mcpServerIds: selectedMcp.length > 0 ? selectedMcp : null,
+        knowledgeBaseIds: selectedKbs.length > 0 ? selectedKbs : null,
+      };
+      const { error } = await client.put("/api/ai/agents/:id", { 
+        params: { id: editingAgent.id },
+        body 
+      });
+      if (!error) {
+        message.success("更新成功");
+        setModalOpen(false);
+        resetModal();
+        refresh();
       }
     } catch {} finally {
       setModalLoading(false);
@@ -255,8 +305,8 @@ const AgentsPage = () => {
     {
       title: "名称", dataIndex: "name", key: "name",
       render: (text: string, record) => (
-        <a onClick={() => navigate(`/app/ai/agents/${record.id}`)}>
-          <RobotOutlined style={{ marginRight: 8 }} />{text}
+        <a onClick={() => handleOpenEdit(record)}>
+          <RobotOutlined className="mr-2" />{text}
         </a>
       ),
     },
@@ -279,7 +329,7 @@ const AgentsPage = () => {
       render: (_, record) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => navigate(`/app/ai/agents/${record.id}`) },
+            { label: "编辑", onClick: () => handleOpenEdit(record) },
             ...(record.status === "draft" ? [{ label: "发布", onClick: () => handlePublish(record) }] : []),
             { label: "删除", onClick: () => handleDelete(record), danger: true, confirm: "确定删除？" },
           ]}
@@ -295,13 +345,13 @@ const AgentsPage = () => {
         extra={
           <Space>
             <Button icon={<ReloadOutlined />} onClick={() => refresh()}>刷新</Button>
-            <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>创建 Agent</Button>
+            <Button type="primary" icon={<PlusOutlined />} onClick={handleOpenCreate}>创建 Agent</Button>
           </Space>
         }
       >
-        <Space style={{ marginBottom: 16 }}>
+        <Space className="mb-4">
           <Input placeholder="搜索 Agent..." prefix={<SearchOutlined />} value={searchText}
-            onChange={(e) => setSearchText(e.target.value)} style={{ width: 300 }} onPressEnter={handleSearch} />
+            onChange={(e) => setSearchText(e.target.value)} className="w-[300px]" onPressEnter={handleSearch} />
           <Button onClick={handleSearch}>搜索</Button>
           <Button onClick={handleReset}>重置</Button>
         </Space>
@@ -309,10 +359,17 @@ const AgentsPage = () => {
           pagination={{ current: page, pageSize, total, onChange: handlePageChange }} />
       </Card>
 
-      <Modal title="创建 Agent" open={modalOpen} onOk={handleCreate}
+      <Modal 
+        title={modalMode === "create" ? "创建 Agent" : "编辑 Agent"} 
+        open={modalOpen} 
+        onOk={modalMode === "create" ? handleCreate : handleUpdate}
         onCancel={() => { setModalOpen(false); resetModal(); }}
-        confirmLoading={modalLoading} okText="创建" cancelText="取消" width={960}>
-        <Row gutter={24} style={{ marginTop: 16 }}>
+        confirmLoading={modalLoading} 
+        okText={modalMode === "create" ? "创建" : "保存"} 
+        cancelText="取消" 
+        width={960}
+      >
+        <Row gutter={24} className="mt-4">
           {/* ── 左列：基础信息 ── */}
           <Col xs={24} lg={10}>
             <Form form={form} layout="vertical">
@@ -337,7 +394,7 @@ const AgentsPage = () => {
 
           {/* ── 右列：能力配置 ── */}
           <Col xs={24} lg={14}>
-            <div style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: 8, padding: 16 }}>
+            <div className="rounded-lg p-4" style={{ border: `1px solid ${token.colorBorderSecondary}` }}>
               <Tabs
                 size="small"
                 items={[
@@ -351,8 +408,8 @@ const AgentsPage = () => {
                         selected={selectedTools} onChange={setSelectedTools}
                         renderItem={item => (
                           <div>
-                            <div style={{ fontWeight: 500, fontSize: 13 }}>{item.name}</div>
-                            {item.description && <Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text>}
+                            <div className="font-medium text-[13px]">{item.name}</div>
+                            {item.description && <Text type="secondary" className="text-xs">{item.description}</Text>}
                           </div>
                         )}
                       />
@@ -369,10 +426,10 @@ const AgentsPage = () => {
                         renderItem={item => (
                           <div>
                             <Space>
-                              <Text strong style={{ fontSize: 13 }}>{item.name}</Text>
-                              {!item.enabled && <Tag color="red" style={{ fontSize: 11 }}>已禁用</Tag>}
+                              <Text strong className="text-[13px]">{item.name}</Text>
+                              {!item.enabled && <Tag color="red" className="text-[11px]">已禁用</Tag>}
                             </Space>
-                            {item.description && <div><Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text></div>}
+                            {item.description && <div><Text type="secondary" className="text-xs">{item.description}</Text></div>}
                           </div>
                         )}
                       />
@@ -394,11 +451,11 @@ const AgentsPage = () => {
                           return (
                             <div>
                               <Space>
-                                <Text strong style={{ fontSize: 13 }}>{item.name}</Text>
-                                {mcp && <Tag color={mcp.status === "connected" ? "green" : "red"} style={{ fontSize: 11 }}>{mcp.status === "connected" ? "已连接" : "未连接"}</Tag>}
-                                {mcp && mcp.toolCount > 0 && <Tag style={{ fontSize: 11 }}>{mcp.toolCount} 工具</Tag>}
+                                <Text strong className="text-[13px]">{item.name}</Text>
+                                {mcp && <Tag color={mcp.status === "connected" ? "green" : "red"} className="text-[11px]">{mcp.status === "connected" ? "已连接" : "未连接"}</Tag>}
+                                {mcp && mcp.toolCount > 0 && <Tag className="text-[11px]">{mcp.toolCount} 工具</Tag>}
                               </Space>
-                              {item.description && <div><Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text></div>}
+                              {item.description && <div><Text type="secondary" className="text-xs">{item.description}</Text></div>}
                             </div>
                           );
                         }}
@@ -415,8 +472,8 @@ const AgentsPage = () => {
                         selected={selectedKbs} onChange={setSelectedKbs}
                         renderItem={item => (
                           <div>
-                            <Text strong style={{ fontSize: 13 }}>{item.name}</Text>
-                            {item.description && <div><Text type="secondary" style={{ fontSize: 12 }}>{item.description}</Text></div>}
+                            <Text strong className="text-[13px]">{item.name}</Text>
+                            {item.description && <div><Text type="secondary" className="text-xs">{item.description}</Text></div>}
                           </div>
                         )}
                       />

@@ -85,17 +85,11 @@ export default function MilkdownEditor({ value, onChange, readOnly = false }: Mi
   }, [value, ready]);
 
   return (
-    <div style={{ position: "relative" }}>
-      {!ready && <Spin style={{ display: "block", margin: "40px auto" }} />}
+    <div className="relative">
+      {!ready && <Spin className="block" style={{ margin: "40px auto" }} />}
       <div
         ref={containerRef}
-        style={{
-          minHeight: 300,
-          border: `1px solid ${token.colorBorderSecondary}`,
-          borderRadius: token.borderRadius,
-          opacity: ready ? 1 : 0,
-          transition: "opacity 0.2s",
-        }}
+        className="min-h-[300px]" style={{ border: `1px solid ${token.colorBorderSecondary}`, borderRadius: token.borderRadius, opacity: ready ? 1 : 0, transition: "opacity 0.2s" }}
       />
     </div>
   );

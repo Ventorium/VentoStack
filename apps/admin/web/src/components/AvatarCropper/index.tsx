@@ -150,17 +150,11 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
       destroyOnHidden
       width={640}
     >
-      <div style={{ display: "flex", gap: 16 }}>
+      <div className="flex gap-4">
         {/* 左：裁剪区域 */}
-        <div style={{ flex: 1 }}>
+        <div className="flex-1">
           <div
-            style={{
-              position: "relative",
-              width: "100%",
-              height: 340,
-              background: "#1a1a1a",
-              borderRadius: 8,
-            }}
+            className="relative w-full h-[340px] bg-[#1a1a1a] rounded-lg"
           >
             <Cropper
               image={imageUrl}
@@ -180,37 +174,23 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
 
         {/* 右：预览 + 操作按钮 */}
         <div
-          style={{
-            width: 140,
-            display: "flex",
-            flexDirection: "column",
-            alignItems: "center",
-            gap: 16,
-            paddingTop: 8,
-          }}
+          className="w-[140px] flex flex-col items-center gap-4 pt-2"
         >
           {/* 预览 */}
           <div
-            style={{
-              width: 80,
-              height: 80,
-              borderRadius: "50%",
-              overflow: "hidden",
-              border: "2px solid #d9d9d9",
-              background: "#f5f5f5",
-            }}
+            className="w-[80px] h-[80px] overflow-hidden bg-[#f5f5f5]" style={{ borderRadius: "50%", border: "2px solid #d9d9d9" }}
           >
             {previewUrl && (
               <img
                 src={previewUrl}
                 alt="预览"
-                style={{ width: "100%", height: "100%", objectFit: "cover" }}
+                className="w-full h-full object-cover"
               />
             )}
           </div>
 
           {/* 缩放按钮 */}
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <div className="flex gap-2 justify-center">
             <Tooltip title="缩小">
               <Button
                 icon={<ZoomOutOutlined style={iconStyle} />}
@@ -226,7 +206,7 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
           </div>
 
           {/* 旋转按钮 */}
-          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+          <div className="flex gap-2 justify-center">
             <Tooltip title="左旋90°">
               <Button
                 icon={<RotateLeftOutlined style={iconStyle} />}

@@ -72,8 +72,8 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
 
   if (!node || !d) {
     return (
-      <Card size="small" style={{ width: 300, borderRadius: 8 }}>
-        <div style={{ color: "#999", textAlign: "center", padding: 40 }}>点击节点查看属性</div>
+      <Card size="small" className="w-[300px] rounded-lg">
+        <div className="text-[#999] text-center p-10">点击节点查看属性</div>
       </Card>
     );
   }
@@ -120,11 +120,11 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
   return (
     <Card
       size="small"
-      style={{ width: 340, borderRadius: 8 }}
+      className="w-[340px] rounded-lg"
       title={
         <Space>
           <Tag color={meta.color}>{meta.icon} {meta.label}</Tag>
-          <span style={{ fontSize: 13 }}>属性配置</span>
+          <span className="text-[13px]">属性配置</span>
         </Space>
       }
       extra={
@@ -142,7 +142,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
         {/* ===== 审批/抄送节点配置 ===== */}
         {!isStart && !isEnd && !isCondition && (
           <>
-            <Divider style={{ margin: "8px 0" }}>审批人配置</Divider>
+            <Divider className="my-[8px]">审批人配置</Divider>
             <Form.Item name="assigneeMode" label="指定方式">
               <Select
                 options={[
@@ -196,7 +196,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
 
             {isApprove && (
               <>
-                <Divider style={{ margin: "8px 0" }}>审批策略</Divider>
+                <Divider className="my-[8px]">审批策略</Divider>
                 <Form.Item name="strategy" label="审批方式">
                   <Select options={[
                     { value: "sequential", label: "依次审批（按顺序逐个审批）" },
@@ -209,7 +209,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                   {({ getFieldValue }) =>
                     getFieldValue("strategy") === "percentage" && (
                       <Form.Item name="percentage" label="通过百分比">
-                        <InputNumber min={1} max={100} addonAfter="%" style={{ width: "100%" }} />
+                        <InputNumber min={1} max={100} addonAfter="%" className="w-full" />
                       </Form.Item>
                     )
                   }
@@ -243,19 +243,19 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
         {/* ===== 条件网关配置 ===== */}
         {isCondition && (
           <>
-            <Divider style={{ margin: "8px 0" }}>条件规则</Divider>
+            <Divider className="my-[8px]">条件规则</Divider>
             <Form.List name="conditions">
               {(fields, { add, remove }) => (
                 <>
                   {fields.map(({ key, name }) => (
-                    <div key={key} style={{ border: "1px solid #f0f0f0", borderRadius: 6, padding: 8, marginBottom: 8 }}>
-                      <Space style={{ width: "100%" }} direction="vertical" size={4}>
+                    <div key={key} className="rounded-md p-2 mb-2" style={{ border: "1px solid #f0f0f0" }}>
+                      <Space className="w-full" direction="vertical" size={4}>
                         <Space>
                           <Form.Item name={[name, "field"]} noStyle>
-                            <Input placeholder="字段 如 formData.days" style={{ width: 140 }} />
+                            <Input placeholder="字段 如 formData.days" className="w-[140px]" />
                           </Form.Item>
                           <Form.Item name={[name, "operator"]} noStyle>
-                            <Select style={{ width: 70 }} placeholder="运算" options={[
+                            <Select className="w-[70px]" placeholder="运算" options={[
                               { value: "==", label: "==" },
                               { value: "!=", label: "!=" },
                               { value: ">", label: ">" },
@@ -265,12 +265,12 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                             ]} />
                           </Form.Item>
                           <Form.Item name={[name, "value"]} noStyle>
-                            <Input placeholder="值" style={{ width: 80 }} />
+                            <Input placeholder="值" className="w-[80px]" />
                           </Form.Item>
                           <Button type="text" danger size="small" onClick={() => remove(name)}>删</Button>
                         </Space>
-                        <Form.Item name={[name, "targetNodeId"]} label="满足时走向" style={{ marginBottom: 0 }}>
-                          <Select placeholder="选择目标节点" options={otherNodes} allowClear style={{ width: "100%" }} />
+                        <Form.Item name={[name, "targetNodeId"]} label="满足时走向" className="mb-0">
+                          <Select placeholder="选择目标节点" options={otherNodes} allowClear className="w-full" />
                         </Form.Item>
                       </Space>
                     </div>
@@ -281,13 +281,13 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                 </>
               )}
             </Form.List>
-            <Form.Item name="defaultNodeId" label="默认路径（不满足任何条件时）" style={{ marginTop: 8 }}>
+            <Form.Item name="defaultNodeId" label="默认路径（不满足任何条件时）" className="mt-2">
               <Select placeholder="选择默认目标节点" options={otherNodes} allowClear />
             </Form.Item>
           </>
         )}
 
-        <Divider style={{ margin: "8px 0" }} />
+        <Divider className="my-[8px]" />
         <Space>
           <Button type="primary" size="small" onClick={handleSave}>保存</Button>
           <Button size="small" onClick={onClose}>取消</Button>

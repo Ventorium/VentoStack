@@ -293,7 +293,7 @@ const NoticePage = () => {
               typeCode="sys_notice_type"
               placeholder="类型"
               allowClear
-              style={{ width: 120 }}
+              className="w-[120px]"
             />
           </Form.Item>
           <Form.Item name="status">
@@ -301,7 +301,7 @@ const NoticePage = () => {
               typeCode="sys_notice_status"
               placeholder="状态"
               allowClear
-              style={{ width: 120 }}
+              className="w-[120px]"
             />
           </Form.Item>
           <Space>

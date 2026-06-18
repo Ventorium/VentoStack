@@ -12,6 +12,7 @@ import type { ConfigService } from "./config";
 import { createCacheKeyNamespace } from "./cache-key";
 import type { CacheKeyNamespace } from "./cache-key";
 import { validatePassword } from "./password-policy";
+import { TagModel, UserTagModel } from "../models/tag";
 
 /** 创建用户参数 */
 export interface CreateUserParams {
@@ -63,6 +64,7 @@ export interface UserListItem {
   phone: string | null;
   status: number;
   deptId: string | null;
+  tags?: Array<{ id: string; name: string; code: string }>;
   createdAt: string;
 }
 
@@ -301,6 +303,27 @@ export function createUserService(deps: {
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));
+
+      // 批量获取用户标签
+      if (list.length > 0) {
+        const userIds = list.map((u) => u.id);
+        const tagRows = await db.raw(
+          `SELECT ut.user_id, t.id, t.name, t.code
+           FROM sys_user_tag ut
+           JOIN sys_tag t ON t.id = ut.tag_id
+           WHERE ut.user_id = ANY($1) AND t.status = 1 AND t.deleted_at IS NULL`,
+          [userIds],
+        );
+        const tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
+        for (const tr of tagRows as Array<{ user_id: string; id: string; name: string; code: string }>) {
+          const arr = tagMap.get(tr.user_id) ?? [];
+          arr.push({ id: tr.id, name: tr.name, code: tr.code });
+          tagMap.set(tr.user_id, arr);
+        }
+        for (const item of list) {
+          item.tags = tagMap.get(item.id) ?? [];
+        }
+      }
 
       return {
         items: list,

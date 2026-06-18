@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, mock, test } from "bun:test";
-import { createAuthMiddleware, createPermMiddleware } from "../middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { createMockJWTManager, createMockRBAC } from "./helpers";
 
 function createContext(overrides: Record<string, any> = {}) {

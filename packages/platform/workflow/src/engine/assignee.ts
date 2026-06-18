@@ -11,7 +11,7 @@ import { workflowErrors } from "./errors";
 
 /** 审批人配置 */
 export interface AssigneeConfig {
-  mode: "fixed" | "role" | "department" | "lookup" | "form_field";
+  mode: "fixed" | "role" | "department" | "lookup" | "form_field" | "dept_tag";
   userIds?: string[];
   roleId?: string;
   deptId?: string;
@@ -25,6 +25,14 @@ export interface AssigneeConfig {
     mustHaveRole?: string;
     mustBeInDept?: string;
   };
+  /** dept_tag 模式: 标签标识列表 */
+  tagCodes?: string[];
+  /** dept_tag 模式: 匹配模式 — and=且(全部满足) or=或(任一满足) */
+  tagMatchMode?: "and" | "or";
+  /** dept_tag 模式: 是否沿部门层级向上遍历 */
+  deptTraversal?: boolean;
+  /** dept_tag 模式: 最大遍历层级，0 或 undefined 表示不限 */
+  traversalLevels?: number;
 }
 
 /** 审批节点 config */
@@ -129,6 +137,60 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
         return [userId];
       }
 
+      case "dept_tag": {
+        const { tagCodes, tagMatchMode = "or", deptTraversal = false, traversalLevels } = assignee;
+        if (!tagCodes?.length) return [];
+
+        // 获取发起人所在部门
+        const initiator = await resolveInitiatorDetail(db, ctx.initiator.id);
+        if (!initiator.deptId) return [];
+
+        // 获取部门祖先链
+        const deptChain = await getDeptAncestorChain(db, initiator.deptId, deptTraversal ? (traversalLevels ?? 0) : 1);
+
+        // 对每个部门查找匹配标签的用户
+        const matchedUserIds = new Set<string>();
+        for (const deptId of deptChain) {
+          // 获取该部门下所有有效用户
+          const users = await db.raw(
+            `SELECT id FROM sys_user WHERE dept_id = $1 AND status = 1`,
+            [deptId],
+          );
+          if (users.length === 0) continue;
+
+          // 批量获取这些用户的标签
+          const userIds = (users as Array<{ id: string }>).map((u) => u.id);
+          const userTagRows = await db.raw(
+            `SELECT ut.user_id, t.code
+             FROM sys_user_tag ut
+             JOIN sys_tag t ON t.id = ut.tag_id
+             WHERE ut.user_id = ANY($1) AND t.status = 1 AND t.deleted_at IS NULL`,
+            [userIds],
+          );
+
+          // 按用户分组标签
+          const userTagMap = new Map<string, Set<string>>();
+          for (const row of userTagRows as Array<{ user_id: string; code: string }>) {
+            const set = userTagMap.get(row.user_id) ?? new Set();
+            set.add(row.code);
+            userTagMap.set(row.user_id, set);
+          }
+
+          // 按匹配模式过滤
+          for (const userId of userIds) {
+            const userTags = userTagMap.get(userId);
+            if (!userTags) continue;
+            const matched =
+              tagMatchMode === "and"
+                ? tagCodes.every((code) => userTags.has(code))
+                : tagCodes.some((code) => userTags.has(code));
+            if (matched) matchedUserIds.add(userId);
+          }
+        }
+
+        return [...matchedUserIds];
+      }
+
       default:
         return [];
     }
@@ -187,4 +249,36 @@ export async function resolveInitiatorDetail(
   }
 
   return result;
+}
+
+/**
+ * 获取部门祖先链（从当前部门向上遍历）
+ * @param db 数据库实例
+ * @param deptId 起始部门 ID
+ * @param maxLevels 最大遍历层级，0 表示不限
+ * @returns 部门 ID 数组（从当前部门到顶层）
+ */
+async function getDeptAncestorChain(
+  db: Database,
+  deptId: string,
+  maxLevels: number,
+): Promise<string[]> {
+  const chain: string[] = [deptId];
+  let currentId = deptId;
+  let level = 0;
+
+  while (maxLevels === 0 || level < maxLevels) {
+    const rows = await db.raw(
+      `SELECT parent_id FROM sys_dept WHERE id = $1 AND deleted_at IS NULL`,
+      [currentId],
+    );
+    if (rows.length === 0) break;
+    const parentId = (rows[0] as { parent_id: string | null }).parent_id;
+    if (!parentId) break;
+    chain.push(parentId);
+    currentId = parentId;
+    level++;
+  }
+
+  return chain;
 }

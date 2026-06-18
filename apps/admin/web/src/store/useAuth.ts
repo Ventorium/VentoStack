@@ -149,9 +149,9 @@ export const useAuth = create<AuthState>((set, get) => ({
     try {
       const { error: beginError, data: resp } = await client.post("/api/auth/passkey/login-begin", {
         body: { username },
-      } as any);
+      });
       if (beginError || !resp) return null;
-      const beginData = (resp as any).data ?? resp;
+      const beginData = resp as unknown as { challengeId: string; options: unknown };
       if (!beginData?.options) return null;
 
       const assertion = await startAuthentication({ optionsJSON: beginData.options });
@@ -159,10 +159,10 @@ export const useAuth = create<AuthState>((set, get) => ({
         "/api/auth/passkey/login-finish",
         {
           body: { challengeId: beginData.challengeId, assertion },
-        } as any,
+        },
       );
       if (finishError || !finishResp) return null;
-      const finishData = (finishResp as any).data ?? finishResp;
+      const finishData = finishResp as unknown as { accessToken: string; refreshToken?: string };
 
       setAccessToken(finishData.accessToken);
       if (finishData.refreshToken) setRefreshToken(finishData.refreshToken);

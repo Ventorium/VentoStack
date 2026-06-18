@@ -331,7 +331,8 @@ export function createSkillService(deps: SkillServiceDeps) {
   async function installFromUpload(params: {
     slug: string;
     name: string;
-    description?: string;
+    description?: string | undefined;
+    version?: string | undefined;
     zipBuffer: Buffer;
     tenantId: string;
     filesOverride?: Array<{ path: string; content: Buffer }>;
@@ -340,12 +341,13 @@ export function createSkillService(deps: SkillServiceDeps) {
     fileTreeOverride?: Array<{ path: string; size: number }>;
   }): Promise<SkillItem> {
     const { slug, name, tenantId } = params;
+    const version = params.version ?? "1.0.0";
 
     const existing = await getBySlug(slug, tenantId);
     if (existing) throw new Error(`Skill "${slug}" 已安装`);
 
     // 解压到本地
-    const skillDir = join(storagePath, slug, "uploaded");
+    const skillDir = join(storagePath, slug, version);
     await mkdir(skillDir, { recursive: true });
 
     // 在线创建模式：直接使用 override 文件
@@ -365,8 +367,8 @@ export function createSkillService(deps: SkillServiceDeps) {
       const id = crypto.randomUUID();
       await db.raw(
         `INSERT INTO ai_skill (id, slug, name, description, source, file_tree, skill_md_content, readme_content, installed_version, enabled, installed_at, tenant_id)
-         VALUES ($1,$2,$3,$4,'upload',$5,$6,$7,'uploaded',TRUE,NOW(),$8)`,
-        [id, slug, name, params.description ?? null, JSON.stringify(files), skillMdContent, readmeContent, tenantId],
+         VALUES ($1,$2,$3,$4,'upload',$5,$6,$7,$8,TRUE,NOW(),$9)`,
+        [id, slug, name, params.description ?? null, JSON.stringify(files), skillMdContent, readmeContent, version, tenantId],
       );
       await eventBus?.emit("ai.skill.installed", { id, slug, source: "upload", tenantId });
       return (await getById(id, tenantId))!;
@@ -423,8 +425,8 @@ export function createSkillService(deps: SkillServiceDeps) {
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_skill (id, slug, name, description, source, file_tree, skill_md_content, readme_content, installed_version, enabled, installed_at, tenant_id)
-       VALUES ($1,$2,$3,$4,'upload',$5,$6,$7,'uploaded',TRUE,NOW(),$8)`,
-      [id, slug, name, params.description ?? null, JSON.stringify(files), skillMdContent, readmeContent, tenantId],
+       VALUES ($1,$2,$3,$4,'upload',$5,$6,$7,$8,TRUE,NOW(),$9)`,
+      [id, slug, name, params.description ?? null, JSON.stringify(files), skillMdContent, readmeContent, version, tenantId],
     );
 
     await eventBus?.emit("ai.skill.installed", { id, slug, source: "upload", tenantId });
@@ -436,7 +438,7 @@ export function createSkillService(deps: SkillServiceDeps) {
   async function rescanFileTree(skillId: string, tenantId: string): Promise<Array<{ path: string; size: number }>> {
     const skill = await getById(skillId, tenantId);
     if (!skill) return [];
-    const skillDir = join(storagePath, skill.slug, skill.installedVersion ?? "uploaded");
+    const skillDir = join(storagePath, skill.slug, skill.installedVersion ?? "1.0.0");
     if (!existsSync(skillDir)) return [];
 
     const files: Array<{ path: string; size: number }> = [];
@@ -470,7 +472,7 @@ export function createSkillService(deps: SkillServiceDeps) {
     if (filePath === "README.md" && skill.readmeContent) return skill.readmeContent;
 
     // 从本地文件系统读取
-    const version = skill.installedVersion ?? "uploaded";
+    const version = skill.installedVersion ?? "1.0.0";
     const localPath = join(storagePath, skill.slug, version, filePath);
     if (existsSync(localPath)) {
       return Bun.file(localPath).text();
@@ -493,7 +495,7 @@ export function createSkillService(deps: SkillServiceDeps) {
     if (!skill) return false;
     if (skill.source !== "upload") throw new Error("仅上传安装的技能支持编辑文件");
 
-    const version = skill.installedVersion ?? "uploaded";
+    const version = skill.installedVersion ?? "1.0.0";
     const localPath = join(storagePath, skill.slug, version, filePath);
     await mkdir(dirname(localPath), { recursive: true });
     await writeFile(localPath, content, "utf-8");

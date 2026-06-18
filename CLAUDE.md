@@ -515,6 +515,12 @@ const { error, data } = await client.get('/api/system/users', { query: cleanPara
 // ❌ 禁止模板字符串拼接 URL
 ```
 
+
+### 样式约束
+- **禁止使用 `style={}` 内联样式**。所有样式必须使用 UnoCSS 工具类（`className`）。
+- 唯一例外：当值是动态的（运行时计算、主题 token、条件表达式）且无法用静态 class 表达时，才允许 `style={{}}`。
+- 动态值示例：`token.colorPrimary`、`token.borderRadiusLG`、模板字符串、条件表达式。
+- 禁止创建独立的 `.css` / `.scss` / `.less` 文件（全局 reset 除外）。
 ### CRUD 页面模板
 使用 `useTable` hook + `ActionColumn` + `DictSelect` 组合。
 参考 `.claude/skills/admin-crud-page/SKILL.md`。

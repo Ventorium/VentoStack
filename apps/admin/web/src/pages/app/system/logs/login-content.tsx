@@ -128,7 +128,7 @@ const LoginLogPage = () => {
             <Input placeholder="用户名" prefix={<SearchOutlined />} />
           </Form.Item>
           <Form.Item name="status">
-            <Select placeholder="状态" allowClear style={{ width: 120 }}>
+            <Select placeholder="状态" allowClear className="w-[120px]">
               <Select.Option value={1}>成功</Select.Option>
               <Select.Option value={0}>失败</Select.Option>
             </Select>

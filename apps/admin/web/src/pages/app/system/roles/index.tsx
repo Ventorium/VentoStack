@@ -291,7 +291,7 @@ const RolePage = () => {
               typeCode="sys_status"
               placeholder="状态"
               allowClear
-              style={{ width: 100 }}
+              className="w-[100px]"
             />
           </Form.Item>
           <Space>
@@ -397,7 +397,7 @@ const RolePage = () => {
           <p className="text-gray-500 dark:text-gray-400 mb-2">内置超级管理员角色拥有所有权限</p>
         )}
         {menuTree.length > 0 && (
-          <div style={{ maxHeight: "60vh", overflowY: "auto" }}>
+          <div className="overflow-y-auto" style={{ maxHeight: "60vh" }}>
           <Tree
             checkable
             defaultExpandAll

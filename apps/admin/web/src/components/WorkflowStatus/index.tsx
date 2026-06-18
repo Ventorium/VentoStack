@@ -80,21 +80,21 @@ export default function WorkflowBanner({ businessType, businessId, currentUserId
   };
 
   return (
-    <div style={{ padding: "8px 12px", background: "#fafafa", borderRadius: 6, border: "1px solid #e8e8e8", marginBottom: 12 }}>
-      <Space style={{ marginBottom: 8 }}>
+    <div className="px-3 py-2 bg-[#fafafa] rounded-md border border-[#e8e8e8] mb-3">
+      <Space className="mb-2">
         <Tag color={status.color}>{status.label}</Tag>
-        {data.title && <span style={{ fontSize: 13, color: "#666" }}>{data.title}</span>}
+        {data.title && <span className="text-[13px] text-[#666]">{data.title}</span>}
         <Button type="text" size="small" icon={<ReloadOutlined />} onClick={refresh} />
       </Space>
 
       {/* 审批节点状态 */}
       {data.tasks.length > 0 && (
-        <div style={{ marginBottom: 8 }}>
+        <div className="mb-2">
           <Space wrap size={[4, 4]}>
             {data.tasks.map((t) => {
               const ts = TaskStatusMap[t.status] ?? { label: "未知", color: "default" };
               return (
-                <Tag key={t.id} color={ts.color} style={{ fontSize: 11 }}>
+                <Tag key={t.id} color={ts.color} className="text-[11px]">
                   {t.assigneeName || t.assigneeId}: {ts.label}
                   {t.comment ? ` (${t.comment})` : ""}
                 </Tag>
@@ -107,14 +107,14 @@ export default function WorkflowBanner({ businessType, businessId, currentUserId
       {/* 操作历史 */}
       {data.history.length > 0 && (
         <Timeline
-          style={{ marginTop: 4, fontSize: 12 }}
+          className="mt-1 text-xs"
           items={data.history.map((h) => ({
             color: h.action === "approve" ? "green" : h.action === "reject" ? "red" : h.action === "start" ? "blue" : "gray",
             children: (
-              <span style={{ fontSize: 12 }}>
+              <span className="text-xs">
                 {ActionLabel[h.action] ?? h.action}
                 {h.comment ? ` — ${h.comment}` : ""}
-                <span style={{ color: "#999", marginLeft: 8 }}>{new Date(h.createdAt).toLocaleString()}</span>
+                <span className="text-[#999] ml-2">{new Date(h.createdAt).toLocaleString()}</span>
               </span>
             ),
           }))}
@@ -123,7 +123,7 @@ export default function WorkflowBanner({ businessType, businessId, currentUserId
 
       {/* 当前用户可操作 */}
       {myPendingTasks.length > 0 && (
-        <Space style={{ marginTop: 8 }}>
+        <Space className="mt-2">
           {myPendingTasks.map((t) => (
             <Space key={t.id}>
               <Button

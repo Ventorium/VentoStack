@@ -5,7 +5,7 @@
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router } from "@ventostack/core";
 import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
-import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { createGenRoutes } from "./routes/gen";
 import { createGenService } from "./services/gen";
 

@@ -126,7 +126,7 @@ export function useTable<T, P extends PaginatedParams = PaginatedParams>(
 
   const rowSelection: TableRowSelection<T> = {
     selectedRowKeys,
-    onChange: onSelectChange as any,
+    onChange: onSelectChange as (keys: React.Key[], rows: T[]) => void,
   };
 
   // 初始加载

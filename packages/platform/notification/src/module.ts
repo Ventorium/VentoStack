@@ -5,7 +5,7 @@
 import type { JWTManager, RBAC } from "@ventostack/auth";
 import type { Router } from "@ventostack/core";
 import type { Database } from "@ventostack/database";
-import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { createNotificationRoutes } from "./routes/notification";
 import { createNotificationService } from "./services/notification";
 import type { NotificationService, NotifyChannel } from "./services/notification";

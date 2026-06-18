@@ -22,7 +22,7 @@ async function fetchDictData(typeCode: string): Promise<DictItem[]> {
   const { client } = await import("@/api");
   const { data } = (await client.get("/api/system/dict/types/:code/data", {
     params: { code: typeCode },
-  } as any)) as { data?: DictItem[]; error?: unknown };
+  } as unknown as Parameters<typeof client.get>[1])) as { data?: DictItem[]; error?: unknown };
   return data ?? [];
 }
 

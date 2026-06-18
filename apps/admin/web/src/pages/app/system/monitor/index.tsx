@@ -67,7 +67,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="服务器状态" size="small">
               {serverStatus ? (
-                <Space orientation="vertical" style={{ width: "100%" }}>
+                <Space orientation="vertical" className="w-full">
                   <div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">CPU使用率</div>
                     <Progress percent={Math.round(serverStatus.cpu.usage * 100)} size="small" />
@@ -123,7 +123,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="缓存状态" size="small">
               {cacheStatus ? (
-                <Space orientation="vertical" style={{ width: "100%" }}>
+                <Space orientation="vertical" className="w-full">
                   <Statistic title="键数量" value={cacheStatus.keyCount} />
                   {cacheStatus.hitRate != null && (
                     <div>
@@ -145,7 +145,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="数据源状态" size="small">
               {dataSourceStatus ? (
-                <Space orientation="vertical" style={{ width: "100%" }}>
+                <Space orientation="vertical" className="w-full">
                   <div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">连接状态</div>
                     <Tag color={dataSourceStatus.connected ? "green" : "red"}>
@@ -165,7 +165,7 @@ const MonitorPage = () => {
           <Col span={6}>
             <Card title="健康检查" size="small">
               {healthStatus ? (
-                <Space orientation="vertical" style={{ width: "100%" }}>
+                <Space orientation="vertical" className="w-full">
                   <div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">总体状态</div>
                     <Tag color={healthStatus.status === "UP" ? "green" : "red"}>
@@ -179,7 +179,7 @@ const MonitorPage = () => {
                         <span className="text-xs">{check.name}</span>
                         <Tag
                           color={check.status === "UP" ? "green" : "red"}
-                          style={{ fontSize: 10 }}
+                          className="text-[10px]"
                         >
                           {check.status}
                         </Tag>

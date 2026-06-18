@@ -67,10 +67,10 @@ const AIAuditPage = () => {
   return (
     <Card title={<Space><FileSearchOutlined />AI 审计日志</Space>}
       extra={<Button icon={<ReloadOutlined />} onClick={() => refresh()}>刷新</Button>}>
-      <Space style={{ marginBottom: 16 }}>
+      <Space className="mb-4">
         <Input placeholder="搜索工具名称..." prefix={<SearchOutlined />} value={searchText}
-          onChange={(e) => setSearchText(e.target.value)} style={{ width: 200 }} onPressEnter={handleSearch} />
-        <Select placeholder="状态筛选" allowClear style={{ width: 120 }} value={statusFilter}
+          onChange={(e) => setSearchText(e.target.value)} className="w-[200px]" onPressEnter={handleSearch} />
+        <Select placeholder="状态筛选" allowClear className="w-[120px]" value={statusFilter}
           onChange={(value) => setStatusFilter(value)}
           options={[{ label: "成功", value: "success" }, { label: "失败", value: "error" }, { label: "超时", value: "timeout" }]} />
         <Button onClick={handleSearch}>搜索</Button>

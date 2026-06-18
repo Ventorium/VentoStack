@@ -180,13 +180,13 @@ export default function KnowledgeBasesPage() {
           </Space>
         }
       >
-        <Space style={{ marginBottom: 16 }}>
+        <Space className="mb-4">
           <Input
             placeholder="搜索知识库..."
             prefix={<SearchOutlined />}
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 300 }}
+            className="w-[300px]"
             onPressEnter={() => {
               setPage(1);
               refresh(1);
@@ -204,7 +204,7 @@ export default function KnowledgeBasesPage() {
         </Space>
 
         {data.length === 0 && !loading ? (
-          <Empty description="暂无知识库" style={{ padding: "60px 0" }}>
+          <Empty description="暂无知识库" className="py-[60px]">
             <Button type="primary" icon={<PlusOutlined />} onClick={() => setModalOpen(true)}>
               创建知识库
             </Button>
@@ -217,28 +217,15 @@ export default function KnowledgeBasesPage() {
                   hoverable
                   className="kb-grid-card"
                   onClick={() => { setDrawerKbId(kb.id); setDrawerKbName(kb.name); }}
-                  style={{
-                    height: "100%",
-                    borderColor: token.colorBorderSecondary,
-                  }}
+                  className="h-full" style={{ borderColor: token.colorBorderSecondary }}
                   styles={{
                     body: { padding: 16, display: "flex", flexDirection: "column", gap: 12 },
                   }}
                 >
                   {/* Header */}
-                  <div className="kb-card-header" style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between" }}>
+                  <div className="kb-card-header flex items-start justify-between" >
                     <div
-                      style={{
-                        width: 40,
-                        height: 40,
-                        borderRadius: token.borderRadius,
-                        background: token.colorPrimaryBg,
-                        display: "flex",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        fontSize: 18,
-                        color: token.colorPrimary,
-                      }}
+                      className="w-10 h-10 flex items-center justify-center text-lg" style={{ borderRadius: token.borderRadius, background: token.colorPrimaryBg, color: token.colorPrimary }}
                     >
                       <FolderOutlined />
                     </div>
@@ -270,14 +257,14 @@ export default function KnowledgeBasesPage() {
                     <Text
                       strong
                       ellipsis
-                      style={{ fontSize: 15, display: "block", marginBottom: 4 }}
+                      className="text-[15px] block mb-1"
                     >
                       {kb.name}
                     </Text>
                     <Paragraph
                       type="secondary"
                       ellipsis={{ rows: 2 }}
-                      style={{ fontSize: 12, marginBottom: 0, minHeight: 36 }}
+                      className="text-xs mb-0 min-h-9"
                     >
                       {kb.description || "暂无描述"}
                     </Paragraph>
@@ -285,22 +272,15 @@ export default function KnowledgeBasesPage() {
 
                   {/* Meta */}
                   <div
-                    style={{
-                      display: "flex",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      marginTop: "auto",
-                      paddingTop: 8,
-                      borderTop: `1px solid ${token.colorBorderSecondary}`,
-                    }}
+                    className="flex items-center justify-between mt-auto pt-2" style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}
                   >
                     <Space size={4}>
-                      <FileOutlined style={{ fontSize: 12, color: token.colorTextSecondary }} />
-                      <Text type="secondary" style={{ fontSize: 12 }}>
+                      <FileOutlined className="text-xs" style={{ color: token.colorTextSecondary }} />
+                      <Text type="secondary" className="text-xs">
                         {kb.fileCount} 文件
                       </Text>
                     </Space>
-                    <Text type="secondary" style={{ fontSize: 11 }}>
+                    <Text type="secondary" className="text-[11px]">
                       {fmtDate(kb.updatedAt)}
                     </Text>
                   </div>
@@ -314,8 +294,8 @@ export default function KnowledgeBasesPage() {
       {/* 知识库文件浏览器 Drawer */}
       <Drawer
         title={
-          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-            <span style={{ fontWeight: 600 }}>{drawerKbName}</span>
+          <div className="flex items-center gap-3">
+            <span className="font-semibold">{drawerKbName}</span>
             {breadcrumb}
           </div>
         }
@@ -341,7 +321,7 @@ export default function KnowledgeBasesPage() {
         okText="创建"
         cancelText="取消"
       >
-        <Form form={form} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={form} layout="vertical" className="mt-4">
           <Form.Item
             label="名称"
             name="name"
@@ -363,7 +343,7 @@ export default function KnowledgeBasesPage() {
         okText="保存"
         cancelText="取消"
       >
-        <Form form={editForm} layout="vertical" style={{ marginTop: 16 }}>
+        <Form form={editForm} layout="vertical" className="mt-4">
           <Form.Item label="名称" name="name" rules={[{ required: true, message: "请输入知识库名称" }]}>
             <Input placeholder="知识库名称" />
           </Form.Item>

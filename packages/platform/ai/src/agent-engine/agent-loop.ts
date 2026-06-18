@@ -53,6 +53,10 @@ export interface AgentConfig {
   tenantId: string;
 }
 
+export interface AgentCrudService {
+  getById(id: string, tenantId: string): Promise<AgentConfig | null>;
+}
+
 export interface AgentLoopDeps {
   llmGateway: LLMGateway;
   toolRegistry?: ToolRegistry;
@@ -60,6 +64,7 @@ export interface AgentLoopDeps {
   memory?: MemoryService;
   promptGuard?: PromptGuard;
   eventEmitter?: AgentEventEmitter;
+  agentService?: AgentCrudService;
   /** Agent 级别的 tools（增强版，支持 hooks） */
   agentTools?: AgentTool[];
   /** beforeToolCall 钩子 */
@@ -77,10 +82,11 @@ export interface AgentRunParams {
   message: string;
   tenantId: string;
   signal?: AbortSignal;
-}
-
-export interface AgentLoop {
-  runStream(params: AgentRunParams): AsyncIterable<StreamChunk>;
+  // 能力过滤器
+  tools?: string[];
+  skillIds?: string[];
+  mcpServerIds?: string[];
+  knowledgeBaseIds?: string[];
 }
 
 // ---- 辅助函数 ----
@@ -102,8 +108,13 @@ function isEarlyTermination(
 }
 
 /** 从 ToolRegistry 包装为 AgentTool[] */
-function wrapRegistryTools(registry: ToolRegistry): AgentTool[] {
-  return registry.list().map((toolDef) => ({
+function wrapRegistryTools(registry: ToolRegistry, filterTools?: string[]): AgentTool[] {
+  const allTools = registry.list();
+  const filtered = filterTools && filterTools.length > 0
+    ? allTools.filter(t => filterTools.includes(t.name))
+    : allTools;
+  
+  return filtered.map((toolDef) => ({
     name: toolDef.name,
     description: toolDef.description,
     parameters: {
@@ -179,140 +190,38 @@ async function prepareToolCall(
     // beforeToolCall 钩子
     if (beforeToolCall) {
       const hookResult = await beforeToolCall(
-        { assistantMessage, toolCall, args, context },
+        { assistantMessage, toolCall, args },
         signal,
       );
-      if (signal?.aborted) {
+      if (hookResult.skip) {
         return {
           kind: "immediate",
-          result: createErrorToolResult("Operation aborted"),
-          isError: true,
-        };
-      }
-      if (hookResult?.block) {
-        return {
-          kind: "immediate",
-          result: createErrorToolResult(
-            hookResult.reason || "Tool execution was blocked",
-          ),
-          isError: true,
+          result: createErrorToolResult(hookResult.reason ?? "Tool call skipped by hook"),
+          isError: false,
         };
       }
     }
 
-    if (signal?.aborted) {
-      return {
-        kind: "immediate",
-        result: createErrorToolResult("Operation aborted"),
-        isError: true,
-      };
-    }
-
-    return { kind: "prepared", toolCall, tool, args };
-  } catch (error) {
+    return {
+      kind: "prepared",
+      toolCall,
+      tool,
+      args,
+    };
+  } catch (err) {
     return {
       kind: "immediate",
-      result: createErrorToolResult(
-        error instanceof Error ? error.message : String(error),
-      ),
+      result: createErrorToolResult(`Tool preparation failed: ${err instanceof Error ? err.message : String(err)}`),
       isError: true,
     };
   }
 }
-
-// ---- 工具执行 ----
-
-interface ExecutedToolCall {
-  result: AgentToolResult;
-  isError: boolean;
-}
-
-async function executePreparedToolCall(
-  prepared: PreparedToolCall,
-  signal: AbortSignal | undefined,
-  onToolUpdate?: (event: {
-    toolCallId: string;
-    toolName: string;
-    partialResult: AgentToolResult;
-  }) => void,
-): Promise<ExecutedToolCall> {
-  try {
-    const result = await prepared.tool.execute(
-      prepared.toolCall.id,
-      prepared.args as Record<string, unknown>,
-      signal,
-      onToolUpdate
-        ? (partialResult) =>
-            onToolUpdate({
-              toolCallId: prepared.toolCall.id,
-              toolName: prepared.toolCall.name,
-              partialResult,
-            })
-        : undefined,
-    );
-    return { result, isError: false };
-  } catch (error) {
-    return {
-      result: createErrorToolResult(
-        error instanceof Error ? error.message : String(error),
-      ),
-      isError: true,
-    };
-  }
-}
-
-// ---- 工具结果后处理 ----
 
 interface FinalizedToolCall {
   toolCall: { id: string; name: string; arguments: Record<string, unknown> };
   result: AgentToolResult;
-  isError: boolean;
+  durationMs: number;
 }
-
-async function finalizeToolCall(
-  context: AgentContext,
-  assistantMessage: AgentEventMessage,
-  prepared: PreparedToolCall,
-  executed: ExecutedToolCall,
-  afterToolCall: AgentLoopConfig["afterToolCall"],
-  signal?: AbortSignal,
-): Promise<FinalizedToolCall> {
-  let result = executed.result;
-  let isError = executed.isError;
-
-  if (afterToolCall) {
-    try {
-      const afterResult = await afterToolCall(
-        {
-          assistantMessage,
-          toolCall: prepared.toolCall,
-          args: prepared.args,
-          result,
-          isError,
-          context,
-        },
-        signal,
-      );
-      if (afterResult) {
-        result = {
-          content: afterResult.content ?? result.content,
-          details: afterResult.details ?? result.details,
-          terminate: afterResult.terminate ?? result.terminate,
-        };
-        isError = afterResult.isError ?? isError;
-      }
-    } catch (error) {
-      result = createErrorToolResult(
-        error instanceof Error ? error.message : String(error),
-      );
-      isError = true;
-    }
-  }
-
-  return { toolCall: prepared.toolCall, result, isError };
-}
-
-// ---- 顺序执行工具 ----
 
 async function executeToolCallsSequential(
   context: AgentContext,
@@ -321,40 +230,33 @@ async function executeToolCallsSequential(
   agentTools: AgentTool[],
   beforeToolCall: AgentLoopConfig["beforeToolCall"],
   afterToolCall: AgentLoopConfig["afterToolCall"],
-  emit: (event: import("./events").AgentEvent, signal?: AbortSignal) => Promise<void>,
+  emit: (event: AgentEventMessage, signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
 ): Promise<FinalizedToolCall[]> {
-  const finalized: FinalizedToolCall[] = [];
-
+  const results: FinalizedToolCall[] = [];
   for (const tc of toolCalls) {
-    const prepared = await prepareToolCall(
-      context, assistantMessage, tc, agentTools, beforeToolCall, signal,
-    );
-
+    if (signal?.aborted) break;
+    const prepared = await prepareToolCall(context, assistantMessage, tc, agentTools, beforeToolCall, signal);
     if (prepared.kind === "immediate") {
-      finalized.push({ toolCall: tc, result: prepared.result, isError: prepared.isError });
-      await emit({ type: "tool_execution_end", toolCallId: tc.id, toolName: tc.name, result: prepared.result, isError: prepared.isError }, signal);
+      results.push({ toolCall: tc, result: prepared.result, durationMs: 0 });
       continue;
     }
-
-    await emit({ type: "tool_execution_start", toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
-
-    const executed = await executePreparedToolCall(prepared, signal, async (update) => {
-      await emit({ type: "tool_execution_update", toolCallId: update.toolCallId, toolName: update.toolName, args: tc.arguments, partialResult: update.partialResult }, signal);
-    });
-
-    const fin = await finalizeToolCall(context, assistantMessage, prepared, executed, afterToolCall, signal);
-    finalized.push(fin);
-
-    await emit({ type: "tool_execution_end", toolCallId: fin.toolCall.id, toolName: fin.toolCall.name, result: fin.result, isError: fin.isError }, signal);
-
-    if (fin.result.terminate) break;
+    const { tool, args } = prepared;
+    const start = Date.now();
+    try {
+      const result = await tool.execute(tc.id, args);
+      const durationMs = Date.now() - start;
+      results.push({ toolCall: tc, result, durationMs });
+      if (afterToolCall) {
+        await afterToolCall({ assistantMessage, toolCall: tc, result, durationMs }, signal);
+      }
+    } catch (err) {
+      const durationMs = Date.now() - start;
+      results.push({ toolCall: tc, result: createErrorToolResult(`Tool execution failed: ${err instanceof Error ? err.message : String(err)}`), durationMs });
+    }
   }
-
-  return finalized;
+  return results;
 }
-
-// ---- 并行执行工具 ----
 
 async function executeToolCallsParallel(
   context: AgentContext,
@@ -363,47 +265,33 @@ async function executeToolCallsParallel(
   agentTools: AgentTool[],
   beforeToolCall: AgentLoopConfig["beforeToolCall"],
   afterToolCall: AgentLoopConfig["afterToolCall"],
-  emit: (event: import("./events").AgentEvent, signal?: AbortSignal) => Promise<void>,
+  emit: (event: AgentEventMessage, signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
 ): Promise<FinalizedToolCall[]> {
-  // 准备阶段（顺序）
-  const preparations: Array<{
-    tc: { id: string; name: string; arguments: Record<string, unknown> };
-    prepared: PrepareResult;
-  }> = [];
-
-  for (const tc of toolCalls) {
-    const prepared = await prepareToolCall(
-      context, assistantMessage, tc, agentTools, beforeToolCall, signal,
-    );
-    preparations.push({ tc, prepared });
-
+  const results: FinalizedToolCall[] = [];
+  const promises = toolCalls.map(async (tc) => {
+    if (signal?.aborted) return;
+    const prepared = await prepareToolCall(context, assistantMessage, tc, agentTools, beforeToolCall, signal);
     if (prepared.kind === "immediate") {
-      await emit({ type: "tool_execution_start", toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
+      results.push({ toolCall: tc, result: prepared.result, durationMs: 0 });
+      return;
     }
-  }
-
-  // 执行阶段（并行）
-  const executionPromises = preparations.map(async ({ tc, prepared }) => {
-    if (prepared.kind === "immediate") {
-      await emit({ type: "tool_execution_end", toolCallId: tc.id, toolName: tc.name, result: prepared.result, isError: prepared.isError }, signal);
-      return { toolCall: tc, result: prepared.result, isError: prepared.isError };
+    const { tool, args } = prepared;
+    const start = Date.now();
+    try {
+      const result = await tool.execute(tc.id, args);
+      const durationMs = Date.now() - start;
+      results.push({ toolCall: tc, result, durationMs });
+      if (afterToolCall) {
+        await afterToolCall({ assistantMessage, toolCall: tc, result, durationMs }, signal);
+      }
+    } catch (err) {
+      const durationMs = Date.now() - start;
+      results.push({ toolCall: tc, result: createErrorToolResult(`Tool execution failed: ${err instanceof Error ? err.message : String(err)}`), durationMs });
     }
-
-    await emit({ type: "tool_execution_start", toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
-
-    const executed = await executePreparedToolCall(prepared, signal, async (update) => {
-      await emit({ type: "tool_execution_update", toolCallId: update.toolCallId, toolName: update.toolName, args: tc.arguments, partialResult: update.partialResult }, signal);
-    });
-
-    const fin = await finalizeToolCall(context, assistantMessage, prepared, executed, afterToolCall, signal);
-
-    await emit({ type: "tool_execution_end", toolCallId: fin.toolCall.id, toolName: fin.toolCall.name, result: fin.result, isError: fin.isError }, signal);
-
-    return fin;
   });
-
-  return Promise.all(executionPromises);
+  await Promise.all(promises);
+  return results;
 }
 
 // ---- 主循环 ----
@@ -411,14 +299,47 @@ async function executeToolCallsParallel(
 export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
   const guard = deps.promptGuard ?? createPromptGuard();
   const emitter = deps.eventEmitter ?? createEventEmitter();
-  const agentTools = deps.agentTools ?? (deps.toolRegistry ? wrapRegistryTools(deps.toolRegistry) : []);
   const toolExecMode = deps.toolExecutionMode ?? "sequential";
 
   return {
     async *runStream(params: AgentRunParams): AsyncIterable<StreamChunk> {
-      const { message, tenantId, userId, signal } = params;
+      const { message, tenantId, userId, signal, agentId } = params;
 
-      // 1. 输入安全检查
+      // 1. 获取 Agent 配置
+      let agentConfig: AgentConfig | null = null;
+      if (deps.agentService) {
+        try {
+          agentConfig = await deps.agentService.getById(agentId, tenantId);
+        } catch (err) {
+          console.error("Failed to fetch agent config:", err);
+        }
+      }
+
+      const systemPrompt = agentConfig?.systemPrompt ?? "你是一个智能助手。";
+      const model = agentConfig?.model ?? "default";
+      const maxIterations = agentConfig?.maxIterations ?? 10;
+
+      // 2. 根据 Agent 配置和过滤器获取工具
+      let agentTools = deps.agentTools ?? [];
+      if (deps.toolRegistry) {
+        // 合并 Agent 配置的工具和请求过滤器
+        const agentToolNames = agentConfig?.tools ?? [];
+        const requestFilter = params.tools ?? [];
+        
+        // 如果有过滤器，使用交集；否则使用 Agent 配置的工具
+        let effectiveTools: string[] = [];
+        if (requestFilter.length > 0 && agentToolNames.length > 0) {
+          effectiveTools = agentToolNames.filter(t => requestFilter.includes(t));
+        } else if (requestFilter.length > 0) {
+          effectiveTools = requestFilter;
+        } else if (agentToolNames.length > 0) {
+          effectiveTools = agentToolNames;
+        }
+        
+        agentTools = wrapRegistryTools(deps.toolRegistry, effectiveTools.length > 0 ? effectiveTools : undefined);
+      }
+
+      // 3. 输入安全检查
       const inputCheck = guard.checkInput(message);
       if (!inputCheck.safe && inputCheck.level === "blocked") {
         await emitter.emit({ type: "error", error: { code: "AI_PROMPT_INJECTION", message: inputCheck.reason ?? "检测到不安全的输入", recoverable: false } }, signal);
@@ -426,22 +347,36 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         return;
       }
 
-      // 2. 加载对话历史
+      // 4. 加载对话历史
       let history: ChatMessage[] = [];
       if (deps.memory && params.sessionId) {
         try { history = await deps.memory.getHistory(params.sessionId, 20); } catch { /* 失败则以空历史继续 */ }
       }
 
-      // 3. 组装消息
+      // 5. 加载知识库上下文（如果有）
+      let kbContext = "";
+      if (agentConfig?.knowledgeBaseIds && agentConfig.knowledgeBaseIds.length > 0 && deps.knowledgeBase) {
+        try {
+          const kbResults = await deps.knowledgeBase.search(message, {
+            knowledgeBaseIds: params.knowledgeBaseIds ?? agentConfig.knowledgeBaseIds,
+            limit: 3,
+          });
+          if (kbResults.length > 0) {
+            kbContext = "\n\n参考知识库内容：\n" + kbResults.map(r => `- ${r.content}`).join("\n");
+          }
+        } catch { /* 知识库搜索失败不影响对话 */ }
+      }
+
+      // 6. 组装消息
       const messages: ChatMessage[] = [
-        { role: "system", content: "你是一个智能助手。" },
+        { role: "system", content: systemPrompt + kbContext },
         ...history,
         { role: "user", content: message },
       ];
 
-      const context: AgentContext = { systemPrompt: "你是一个智能助手。", messages, tools: agentTools };
+      const context: AgentContext = { systemPrompt, messages, tools: agentTools };
 
-      // 4. 工具定义
+      // 7. 工具定义
       const toolDefs = agentTools.length > 0
         ? agentTools.map((t) => ({
             name: t.name,
@@ -450,8 +385,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           }))
         : undefined;
 
-      // 5. Agent 循环
-      const maxIterations = 10;
+      // 8. Agent 循环
       let iteration = 0;
       let fullContent = "";
 
@@ -462,14 +396,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         iteration++;
         if (signal?.aborted) break;
 
-        await emitter.emit({ type: "before_provider_request", model: "default", messageCount: messages.length }, signal);
+        await emitter.emit({ type: "before_provider_request", model, messageCount: messages.length }, signal);
 
         // Token 预算裁剪
         const trimmedMessages = fitMessagesToBudget(messages);
 
         // 调用 LLM
         const stream = deps.llmGateway.chatStream({
-          model: "default",
+          model,
           messages: trimmedMessages,
           tools: toolDefs,
           signal,
@@ -598,7 +532,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         if (isEarlyTermination(finalized)) break;
       }
 
-      // 6. 保存对话
+      // 9. 保存对话
       if (deps.memory && params.sessionId) {
         try {
           await deps.memory.appendMessage(params.sessionId, { role: "user", content: message });

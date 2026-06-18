@@ -18,11 +18,22 @@ export interface UserItem {
   deptName?: string;
   roles: Array<{ id: string; name: string; code: string }>;
   posts: Array<{ id: string; name: string; code: string }>;
+  tags?: Array<{ id: string; name: string; code: string }>;
   mfaEnabled: boolean;
   lockedUntil?: string | null;
   blacklisted?: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+export interface TagItem {
+  id: string;
+  name: string;
+  code: string;
+  sort: number;
+  status: number;
+  remark: string;
+  createdAt: string;
 }
 
 export interface RoleItem {

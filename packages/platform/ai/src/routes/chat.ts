@@ -100,6 +100,11 @@ export function createChatRoutes(
           sessionId: body.sessionId as string | undefined,
           message: body.message as string,
           tenantId,
+          // 能力过滤器
+          tools: body.tools as string[] | undefined,
+          skillIds: body.skillIds as string[] | undefined,
+          mcpServerIds: body.mcpServerIds as string[] | undefined,
+          knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
         });
 
         // 收集流式结果
@@ -145,6 +150,11 @@ export function createChatRoutes(
           message: body.message as string,
           tenantId,
           signal: ctx.request.signal,
+          // 能力过滤器
+          tools: body.tools as string[] | undefined,
+          skillIds: body.skillIds as string[] | undefined,
+          mcpServerIds: body.mcpServerIds as string[] | undefined,
+          knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
         });
 
         return createSSEResponse(stream, {

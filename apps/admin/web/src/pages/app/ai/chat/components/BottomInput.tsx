@@ -8,7 +8,7 @@ import {
   SoundOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
-import { Button, Dropdown, Space, Tabs, Tag, theme, Tooltip, Typography } from "antd";
+import { Button, Select, Space, Tabs, Tag, theme, Tooltip, Typography } from "antd";
 import { useCallback, useRef, useState } from "react";
 import type { ModelOption } from "../types";
 
@@ -21,6 +21,12 @@ interface BottomTab {
   count?: number;
 }
 
+interface WorkspaceFile {
+  path: string;
+  size: number;
+  modifiedAt: string;
+}
+
 interface BottomInputProps {
   onSend?: (message: string) => void;
   onStop?: () => void;
@@ -29,14 +35,18 @@ interface BottomInputProps {
   models?: ModelOption[];
   onModelChange?: (model: ModelOption) => void;
   contextUsage?: { used: number; total: number };
+  workspaceFiles?: WorkspaceFile[];
+  isSkillCreator?: boolean;
+  onExportSkill?: () => void;
+  onPreviewFile?: (path: string) => void;
 }
 
 const BOTTOM_TABS: BottomTab[] = [
   { key: "chat", label: "对话", icon: <SoundOutlined /> },
-  { key: "files", label: "文件", icon: <FileOutlined />, count: 1 },
-  { key: "memory", label: "记忆", icon: <DatabaseOutlined />, count: 1 },
-  { key: "knowledge", label: "知识库", icon: <DatabaseOutlined />, count: 1 },
-  { key: "mapping", label: "目录映射", icon: <FolderOutlined />, count: 1 },
+  { key: "files", label: "文件", icon: <FileOutlined /> },
+  { key: "memory", label: "记忆", icon: <DatabaseOutlined /> },
+  { key: "knowledge", label: "知识库", icon: <DatabaseOutlined /> },
+  { key: "mapping", label: "目录映射", icon: <FolderOutlined /> },
   { key: "scheduler", label: "定时任务", icon: <ClockCircleOutlined /> },
   { key: "terminal", label: "终端", icon: <ToolOutlined /> },
   { key: "audit", label: "审计", icon: <AuditOutlined /> },
@@ -55,6 +65,10 @@ export default function BottomInput({
   models = [],
   onModelChange,
   contextUsage,
+  workspaceFiles = [],
+  isSkillCreator = false,
+  onExportSkill,
+  onPreviewFile,
 }: BottomInputProps) {
   const [input, setInput] = useState("");
   const [activeTab, setActiveTab] = useState("chat");
@@ -88,11 +102,7 @@ export default function BottomInput({
 
   return (
     <div
-      style={{
-        flexShrink: 0,
-        borderTop: `1px solid ${token.colorBorderSecondary}`,
-        background: token.colorBgContainer,
-      }}
+      className="shrink-0" style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
       {/* Function Tabs */}
       <div style={{ padding: "8px 16px 0", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
@@ -106,31 +116,53 @@ export default function BottomInput({
               <Space size={4}>
                 {tab.icon}
                 <span>{tab.label}</span>
-                {tab.count !== undefined && tab.count > 0 && (
-                  <Tag style={{ fontSize: 10, lineHeight: "14px", padding: "0 4px", margin: 0 }}>
-                    {tab.count}
+                {tab.key === "files" && workspaceFiles.length > 0 && (
+                  <Tag className="text-[10px] m-0" style={{ lineHeight: "14px", padding: "0 4px" }}>
+                    {workspaceFiles.length}
                   </Tag>
                 )}
               </Space>
             ),
           }))}
-          style={{ marginBottom: 0 }}
+          className="mb-0"
         />
       </div>
 
-      {/* Input Area */}
+      {/* Files Tab Content */}
+      {activeTab === "files" ? (
+        <div className="max-h-[240px] overflow-auto py-[8px] px-[16px]" >
+          {workspaceFiles.length === 0 ? (
+            <Text type="secondary" className="text-xs">暂无文件。与 AI 对话时创建的文件将显示在这里。</Text>
+          ) : (
+            <div className="flex flex-col gap-0.5">
+              {workspaceFiles.map((f) => (
+                <div
+                  key={f.path}
+                  onClick={() => onPreviewFile?.(f.path)}
+                  className="cursor-pointer flex items-center gap-2 text-xs" style={{ padding: "4px 8px", borderRadius: token.borderRadiusSM }}
+                  onMouseEnter={(e) => { (e.currentTarget as HTMLDivElement).style.background = token.controlItemBgHover; }}
+                  onMouseLeave={(e) => { (e.currentTarget as HTMLDivElement).style.background = "transparent"; }}
+                >
+                  <FileOutlined className="text-xs" style={{ color: token.colorTextSecondary }} />
+                  <Text ellipsis className="flex-1 text-xs">{f.path}</Text>
+                  <Text type="secondary" className="text-[11px]">{(f.size / 1024).toFixed(1)}K</Text>
+                </div>
+              ))}
+            </div>
+          )}
+          {isSkillCreator && workspaceFiles.some(f => f.path === "SKILL.md") && (
+            <div className="mt-2 pt-2" style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+              <Button type="primary" size="small" block onClick={onExportSkill}>
+                导出为 Skill
+              </Button>
+            </div>
+          )}
+        </div>
+      ) : (
+      /* Input Area */
       <div style={{ padding: "10px 16px 12px" }}>
         <div
-          style={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: 10,
-            border: `1px solid ${token.colorBorder}`,
-            borderRadius: token.borderRadiusLG,
-            padding: "8px 12px",
-            background: token.colorBgContainer,
-            transition: "border-color 0.2s",
-          }}
+          className="flex items-end gap-2.5" style={{ border: `1px solid ${token.colorBorder}`, borderRadius: token.borderRadiusLG, padding: "8px 12px", background: token.colorBgContainer, transition: "border-color 0.2s" }}
           onFocus={(e) => {
             (e.currentTarget as HTMLDivElement).style.borderColor = token.colorPrimary;
           }}
@@ -139,39 +171,29 @@ export default function BottomInput({
           }}
         >
           {/* Model Selector */}
-          <Dropdown
-            menu={{
-              items: models.map((m) => ({
-                key: m.id,
-                label: (
-                  <div>
-                    <div style={{ fontSize: 13 }}>{m.name}</div>
-                    <Text type="secondary" style={{ fontSize: 11 }}>{m.provider}</Text>
-                  </div>
-                ),
-              })),
-              selectedKeys: currentModel ? [currentModel.id] : [],
-              onClick: ({ key }) => {
-                const model = models.find((m) => m.id === key);
-                if (model) onModelChange?.(model);
-              },
+          <Select
+            size="small"
+            variant="borderless"
+            className="min-w-[120px] max-w-[160px]"
+            placeholder="选择模型"
+            value={currentModel?.id}
+            onChange={(value) => {
+              const model = models.find((m) => m.id === value);
+              if (model) onModelChange?.(model);
             }}
-            trigger={["click"]}
-          >
-            <Text
-              style={{
-                fontSize: 12,
-                color: token.colorTextSecondary,
-                cursor: "pointer",
-                whiteSpace: "nowrap",
-                flexShrink: 0,
-              }}
-            >
-              {currentModel?.name || "选择模型"} ▾
-            </Text>
-          </Dropdown>
+            showSearch
+            popupMatchSelectWidth={240}
+            options={(() => {
+              const groups = new Map<string, Array<{ label: string; value: string }>>();
+              for (const m of models) {
+                if (!groups.has(m.provider)) groups.set(m.provider, []);
+                groups.get(m.provider)!.push({ label: m.name, value: m.id });
+              }
+              return [...groups.entries()].map(([provider, opts]) => ({ label: provider, options: opts }));
+            })()}
+          />
 
-          <div style={{ width: 1, height: 20, background: token.colorBorderSecondary, flexShrink: 0 }} />
+          <div className="w-px h-5 shrink-0" style={{ background: token.colorBorderSecondary }} />
 
           {/* Textarea */}
           <textarea
@@ -181,34 +203,18 @@ export default function BottomInput({
             onKeyDown={handleKeyDown}
             placeholder="输入消息...（Enter 发送, Shift+Enter 换行）"
             rows={1}
-            style={{
-              flex: 1,
-              background: "transparent",
-              border: "none",
-              outline: "none",
-              resize: "none",
-              color: token.colorText,
-              fontSize: 13,
-              lineHeight: "20px",
-              minHeight: 20,
-              maxHeight: 120,
-              fontFamily: "inherit",
-            }}
+            className="flex-1 border-none text-[13px] min-h-5 max-h-[120px]" style={{ background: "transparent", outline: "none", resize: "none", color: token.colorText, lineHeight: "20px", fontFamily: "inherit" }}
           />
 
           {/* Right Actions */}
-          <Space size={6} style={{ flexShrink: 0 }}>
+          <Space size={6} className="shrink-0">
             {contextUsage && (
               <Tooltip title={`上下文：${formatTokens(contextUsage.used)} / ${formatTokens(contextUsage.total)}`}>
-                <Text type="secondary" style={{ fontSize: 11, whiteSpace: "nowrap" }}>
+                <Text type="secondary" className="text-[11px] whitespace-nowrap">
                   {formatTokens(contextUsage.used)} / {formatTokens(contextUsage.total)}
                 </Text>
               </Tooltip>
             )}
-
-            <Tooltip title="语音输入">
-              <Button type="text" size="small" icon={<SoundOutlined />} />
-            </Tooltip>
 
             {loading ? (
               <Button
@@ -234,6 +240,7 @@ export default function BottomInput({
           </Space>
         </div>
       </div>
+      )}
     </div>
   );
 }

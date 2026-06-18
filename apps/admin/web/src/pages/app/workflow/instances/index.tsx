@@ -70,7 +70,7 @@ const WorkflowInstancesPage = () => {
 
   return (
     <Card>
-      <Form form={searchForm} layout="inline" style={{ marginBottom: 16 }}
+      <Form form={searchForm} layout="inline" className="mb-4"
         onFinish={() => onSearch({ title: searchForm.getFieldValue("title") })}>
         <Form.Item name="title">
           <Input placeholder="搜索标题" allowClear />

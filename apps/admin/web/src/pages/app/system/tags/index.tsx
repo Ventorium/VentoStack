@@ -175,7 +175,7 @@ const TagPage = () => {
               typeCode="sys_status"
               placeholder="状态"
               allowClear
-              style={{ width: 100 }}
+              className="w-[100px]"
             />
           </Form.Item>
           <Space>

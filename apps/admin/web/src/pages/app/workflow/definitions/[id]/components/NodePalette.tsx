@@ -22,10 +22,10 @@ export default function NodePalette({ onAddNode }: Props) {
     <Card
       title="节点面板"
       size="small"
-      style={{ width: 180, borderRadius: 8 }}
+      className="w-[180px] rounded-lg"
       styles={{ body: { padding: 8 } }}
     >
-      <div style={{ fontSize: 11, color: "#999", padding: "0 4px 8px" }}>
+      <div className="text-[11px] text-[#999]" style={{ padding: "0 4px 8px" }}>
         拖拽或点击添加到画布
       </div>
       {draggableTypes.map((type) => {
@@ -36,19 +36,7 @@ export default function NodePalette({ onAddNode }: Props) {
             draggable
             onDragStart={(e) => onDragStart(e, type)}
             onClick={() => onAddNode(type)}
-            style={{
-              display: "flex",
-              alignItems: "center",
-              gap: 8,
-              padding: "8px 12px",
-              marginBottom: 4,
-              borderRadius: 6,
-              border: `1px solid ${meta.color}40`,
-              background: `${meta.color}08`,
-              cursor: "grab",
-              transition: "all 0.2s",
-              userSelect: "none",
-            }}
+            className="flex items-center gap-2 mb-1 rounded-md cursor-grab select-none" style={{ padding: "8px 12px", border: `1px solid ${meta.color}40`, background: `${meta.color}08`, transition: "all 0.2s" }}
             onMouseEnter={(e) => {
               (e.currentTarget as HTMLDivElement).style.background = `${meta.color}18`;
             }}
@@ -56,12 +44,12 @@ export default function NodePalette({ onAddNode }: Props) {
               (e.currentTarget as HTMLDivElement).style.background = `${meta.color}08`;
             }}
           >
-            <span style={{ fontSize: 16 }}>{meta.icon}</span>
-            <Text style={{ fontSize: 13 }}>{meta.label}</Text>
+            <span className="text-base">{meta.icon}</span>
+            <Text className="text-[13px]">{meta.label}</Text>
           </div>
         );
       })}
-      <div style={{ fontSize: 11, color: "#999", padding: "12px 4px 4px", borderTop: "1px solid #f0f0f0", marginTop: 8 }}>
+      <div className="text-[11px] text-[#999] mt-2" style={{ padding: "12px 4px 4px", borderTop: "1px solid #f0f0f0" }}>
         提示：开始和结束节点已自动添加
       </div>
     </Card>

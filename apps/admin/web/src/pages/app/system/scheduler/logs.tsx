@@ -95,7 +95,7 @@ const SchedulerLogsPage = () => {
       <Card className="mb-4">
         <Form form={searchForm} layout="inline">
           <Form.Item name="status" initialValue={undefined}>
-            <Select placeholder="状态" style={{ width: 120 }} allowClear>
+            <Select placeholder="状态" className="w-[120px]" allowClear>
               <Select.Option value="SUCCESS">成功</Select.Option>
               <Select.Option value="FAILED">失败</Select.Option>
             </Select>

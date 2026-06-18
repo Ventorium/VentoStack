@@ -255,18 +255,18 @@ export default function WorkflowDesignerPage() {
 
   if (loading) {
     return (
-      <div style={{ display: "flex", justifyContent: "center", alignItems: "center", height: "100vh" }}>
+      <div className="flex justify-center items-center h-screen">
         <Spin size="large" description="加载中..." />
       </div>
     );
   }
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "calc(100vh - 56px)", background: "#f5f5f5" }}>
-      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "8px 16px", background: "#fff", borderBottom: "1px solid #e8e8e8" }}>
+    <div className="flex flex-col bg-[#f5f5f5]" style={{ height: "calc(100vh - 56px)" }}>
+      <div className="flex items-center justify-between bg-[#fff]" style={{ padding: "8px 16px", borderBottom: "1px solid #e8e8e8" }}>
         <Space>
           <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/app/workflow/definitions")}>返回列表</Button>
-          <Title level={5} style={{ margin: 0 }}>流程设计器</Title>
+          <Title level={5} className="m-0">流程设计器</Title>
         </Space>
         <Space>
           <Button onClick={handleValidate} icon={<CheckCircleOutlined />}>校验</Button>
@@ -274,12 +274,12 @@ export default function WorkflowDesignerPage() {
         </Space>
       </div>
 
-      <div style={{ flex: 1, display: "flex", overflow: "hidden" }}>
-        <div style={{ padding: 12, overflowY: "auto", borderRight: "1px solid #e8e8e8", background: "#fafafa" }}>
+      <div className="flex-1 flex overflow-hidden">
+        <div className="p-3 overflow-y-auto bg-[#fafafa]" style={{ borderRight: "1px solid #e8e8e8" }}>
           <NodePalette onAddNode={handleAddNode} />
         </div>
 
-        <div style={{ flex: 1, position: "relative" }}>
+        <div className="flex-1 relative">
           <ReactFlow
             nodes={nodes}
             edges={edges}
@@ -303,7 +303,7 @@ export default function WorkflowDesignerPage() {
           </ReactFlow>
         </div>
 
-        <div style={{ padding: 12, overflowY: "auto", borderLeft: "1px solid #e8e8e8", background: "#fafafa" }}>
+        <div className="p-3 overflow-y-auto bg-[#fafafa]" style={{ borderLeft: "1px solid #e8e8e8" }}>
           <NodePropertyPanel
             node={selectedNode}
             allNodes={nodes}

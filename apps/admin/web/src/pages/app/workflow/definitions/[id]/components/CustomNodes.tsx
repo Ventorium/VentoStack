@@ -33,7 +33,7 @@ function StartEndNode({ data, selected }: NodeProps) {
       borderRadius: isStart ? 24 : 8,
       background: selected ? `${meta.color}10` : "#fff",
     }}>
-      <span style={{ marginRight: 4 }}>{meta.icon}</span>
+      <span className="mr-1">{meta.icon}</span>
       {d.label}
       {isStart && <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, background: meta.color }} />}
       {!isStart && <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />}
@@ -58,8 +58,8 @@ function ApproveNode({ data, selected }: NodeProps) {
       background: selected ? `${meta.color}10` : "#fff",
     }}>
       <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />
-      <div style={{ fontWeight: 600 }}><span style={{ marginRight: 4 }}>{meta.icon}</span>{d.label}</div>
-      <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{strategyLabel[strategy]} · {assigneeLabel}</div>
+      <div className="font-semibold"><span className="mr-1">{meta.icon}</span>{d.label}</div>
+      <div className="text-[11px] text-[#888] mt-0.5">{strategyLabel[strategy]} · {assigneeLabel}</div>
       <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, background: meta.color }} />
     </div>
   );
@@ -77,8 +77,8 @@ function CcNode({ data, selected }: NodeProps) {
       background: selected ? `${meta.color}10` : "#fff",
     }}>
       <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />
-      <div style={{ fontWeight: 600 }}><span style={{ marginRight: 4 }}>{meta.icon}</span>{d.label}</div>
-      <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>{assigneeLabel}</div>
+      <div className="font-semibold"><span className="mr-1">{meta.icon}</span>{d.label}</div>
+      <div className="text-[11px] text-[#888] mt-0.5">{assigneeLabel}</div>
       <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, background: meta.color }} />
     </div>
   );
@@ -96,8 +96,8 @@ function ConditionNode({ data, selected }: NodeProps) {
       borderRadius: 4,
     }}>
       <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />
-      <div style={{ fontWeight: 600 }}><span style={{ marginRight: 4 }}>{meta.icon}</span>{d.label}</div>
-      <div style={{ fontSize: 11, color: "#888", marginTop: 2 }}>
+      <div className="font-semibold"><span className="mr-1">{meta.icon}</span>{d.label}</div>
+      <div className="text-[11px] text-[#888] mt-0.5">
         {condCount > 0 ? `${condCount} 个条件` : "未配置条件"}
       </div>
       <Handle type="source" position={Position.Bottom} id="default" style={{ ...handleStyle, background: meta.color }} />

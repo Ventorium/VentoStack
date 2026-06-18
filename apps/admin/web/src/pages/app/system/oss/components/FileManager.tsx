@@ -23,7 +23,7 @@ import {
 import { Breadcrumb, Button, Dropdown, Empty, Input, Modal, Tooltip, message } from "antd";
 import { useCallback, useEffect, useRef, useState } from "react";
 import DragOverlay from "./DragOverlay";
-import "./index.css";
+// UnoCSS classes used directly — no separate CSS file needed
 
 const formatFileSize = (bytes: number): string => {
   if (bytes === 0) return "0 B";
@@ -34,22 +34,22 @@ const formatFileSize = (bytes: number): string => {
 };
 
 const getFileIcon = (file: OSSFile) => {
-  if (file.isDirectory) return <FolderOutlined className="file-icon folder" />;
+  if (file.isDirectory) return <FolderOutlined className="text-[48px] text-[#faad14]" />;
 
   const ext = (file.originalName || "").split(".").pop()?.toLowerCase();
   const mime = file.mimeType || "";
 
-  if (mime?.startsWith("image/")) return <FileImageOutlined className="file-icon image" />;
-  if (ext === "pdf") return <FilePdfOutlined className="file-icon pdf" />;
-  if (["doc", "docx"].includes(ext || "")) return <FileWordOutlined className="file-icon word" />;
+  if (mime?.startsWith("image/")) return <FileImageOutlined className="text-[48px] text-[#52c41a]" />;
+  if (ext === "pdf") return <FilePdfOutlined className="text-[48px] text-[#ff4d4f]" />;
+  if (["doc", "docx"].includes(ext || "")) return <FileWordOutlined className="text-[48px] text-[#1890ff]" />;
   if (["xls", "xlsx", "csv"].includes(ext || ""))
-    return <FileExcelOutlined className="file-icon excel" />;
+    return <FileExcelOutlined className="text-[48px] text-[#52c41a]" />;
   if (["txt", "md", "json", "xml", "yaml", "yml"].includes(ext || ""))
-    return <FileTextOutlined className="file-icon text" />;
+    return <FileTextOutlined className="text-[48px] text-[#8c8c8c]" />;
   if (["zip", "rar", "7z", "tar", "gz"].includes(ext || ""))
-    return <FileZipOutlined className="file-icon zip" />;
+    return <FileZipOutlined className="text-[48px] text-[#722ed1]" />;
 
-  return <FileUnknownOutlined className="file-icon unknown" />;
+  return <FileUnknownOutlined className="text-[48px] text-[#bfbfbf]" />;
 };
 
 interface FileManagerProps {
@@ -333,14 +333,14 @@ export default function FileManager({ onNavigate }: FileManagerProps) {
   return (
     <div
       ref={containerRef}
-      className={`file-manager ${isDragOver ? "drag-over" : ""}`}
+      className={`flex flex-col h-full min-h-[500px] relative ${isDragOver ? "border-2 border-dashed border-[#1890ff] bg-[rgba(24,144,255,0.05)]" : ""}`}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       {/* Toolbar */}
-      <div className="file-manager-toolbar">
-        <div className="toolbar-left">
+      <div className="flex justify-between items-center px-4 py-3 border-b border-[#f0f0f0] bg-white">
+        <div className="flex gap-2">
           <Button
             icon={<UploadOutlined />}
             type="primary"
@@ -352,25 +352,25 @@ export default function FileManager({ onNavigate }: FileManagerProps) {
             ref={fileInputRef}
             type="file"
             multiple
-            style={{ display: "none" }}
+            className="hidden"
             onChange={(e) => handleUpload(e.target.files)}
           />
           <Button icon={<FolderAddOutlined />} onClick={() => setNewFolderModal(true)}>
             新建目录
           </Button>
         </div>
-        <div className="toolbar-right">
+        <div className="flex gap-2">
           <Input.Search
             placeholder="搜索文件..."
             value={searchText}
             onChange={(e) => setSearchText(e.target.value)}
-            style={{ width: 200 }}
+            className="w-[200px]"
           />
         </div>
       </div>
 
       {/* Breadcrumb */}
-      <div className="file-manager-breadcrumb">
+      <div className="px-4 py-2 border-b border-[#f0f0f0] bg-white">
         <Breadcrumb
           items={[
             {
@@ -378,7 +378,7 @@ export default function FileManager({ onNavigate }: FileManagerProps) {
                 <a
                   onClick={() => {
                     setCurrentFolder(null);
-                    if (onNavigate) onNavigate(null as any);
+                    if (onNavigate) onNavigate(null!);
                   }}
                 >
                   <HomeOutlined /> 根目录
@@ -405,27 +405,27 @@ export default function FileManager({ onNavigate }: FileManagerProps) {
       </div>
 
       {/* File Grid */}
-      <div className="file-manager-content">
+      <div className="flex-1 overflow-y-auto p-4 bg-[#fafafa]">
         {filteredFiles.length === 0 ? (
           <Empty description={searchText ? "未找到匹配的文件" : "暂无文件，拖拽文件到此处上传"} />
         ) : (
-          <div className="file-grid">
+          <div className="grid grid-cols-[repeat(auto-fill,minmax(120px,1fr))] gap-3">
             {filteredFiles.map((file) => (
               <div
                 key={file.id}
-                className={`file-item ${
-                  selectedFiles.has(file.id) ? "selected" : ""
-                } ${file.isDirectory ? "directory" : ""}`}
+                className={`flex flex-col items-center px-2 py-3 rounded-lg cursor-pointer transition-all duration-200 relative bg-white border-2 border-transparent hover:bg-[#f0f7ff] hover:border-[#bae0ff] group ${
+                  selectedFiles.has(file.id) ? "bg-[#e6f7ff] border-[#1890ff]" : ""
+                } ${file.isDirectory ? "bg-[#fffbe6] hover:bg-[#fff7cc] hover:border-[#ffe58f]" : ""}`}
                 onClick={(e) => handleSelectFile(file.id, e.ctrlKey || e.metaKey)}
                 onDoubleClick={() => handlePreview(file)}
               >
-                <div className="file-icon-wrapper">{getFileIcon(file)}</div>
-                <div className="file-info">
+                <div className="text-[48px] mb-2 flex items-center justify-center w-16 h-16">{getFileIcon(file)}</div>
+                <div className="text-center w-full">
                   <Tooltip title={file.originalName}>
-                    <div className="file-name">{file.originalName}</div>
+                    <div className="text-xs text-[#262626] break-all overflow-hidden text-ellipsis line-clamp-2 leading-[1.4] max-h-[2.8em]">{file.originalName}</div>
                   </Tooltip>
                   {!file.isDirectory && (
-                    <div className="file-size">{formatFileSize(file.size)}</div>
+                    <div className="text-[11px] text-[#8c8c8c] mt-1">{formatFileSize(file.size)}</div>
                   )}
                 </div>
                 <Dropdown menu={{ items: getMenuItems(file) }} trigger={["click"]}>
@@ -433,7 +433,7 @@ export default function FileManager({ onNavigate }: FileManagerProps) {
                     type="text"
                     size="small"
                     icon={<MoreOutlined />}
-                    className="file-actions"
+                    className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => e.stopPropagation()}
                   />
                 </Dropdown>
@@ -479,7 +479,7 @@ export default function FileManager({ onNavigate }: FileManagerProps) {
           <img
             src={previewUrl}
             alt={previewFile?.originalName}
-            style={{ width: "100%", maxHeight: "80vh", objectFit: "contain" }}
+            className="w-full object-contain" style={{ maxHeight: "80vh" }}
           />
         )}
       </Modal>

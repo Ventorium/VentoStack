@@ -1,5 +1,5 @@
 import { client } from "@/api";
-import type { DeptItem, PaginatedData, RoleItem, UserItem } from "@/api/types";
+import type { DeptItem, PaginatedData, RoleItem, TagItem, UserItem } from "@/api/types";
 import ActionColumn from "@/components/ActionColumn";
 import DictSelect from "@/components/DictSelect";
 import { msg } from "@/components/GlobalMessage";
@@ -111,6 +111,9 @@ const UserPage = () => {
   // Role list state
   const [roleOptions, setRoleOptions] = useState<Array<{ label: string; value: string }>>([]);
 
+  // Tag list state
+  const [tagOptions, setTagOptions] = useState<Array<{ label: string; value: string }>>([]);
+
   // Fetch roles for selector
   useEffect(() => {
     const fetchRoles = async () => {
@@ -122,6 +125,19 @@ const UserPage = () => {
       }
     };
     fetchRoles();
+  }, []);
+
+  // Fetch tags for selector
+  useEffect(() => {
+    const fetchTags = async () => {
+      const { data } = (await client.get("/api/system/tags/all" as any)) as {
+        data?: TagItem[];
+      };
+      if (data) {
+        setTagOptions(data.map((t) => ({ label: t.name, value: t.id })));
+      }
+    };
+    fetchTags();
   }, []);
 
   // Fetch dept tree
@@ -188,8 +204,18 @@ const UserPage = () => {
     form.setFieldsValue({ status: 1, deptId: preselectedDeptId });
     setModalOpen(true);
   };
-  const openEdit = (r: UserItem) => {
+  const openEdit = async (r: UserItem) => {
     setEditingUser(r);
+    // 加载用户标签
+    let tagIds: string[] = [];
+    try {
+      const { data: userTags } = (await client.get(`/api/system/users/${r.id}/tags` as any)) as {
+        data?: Array<{ id: string }>;
+      };
+      if (userTags) tagIds = userTags.map((t) => t.id);
+    } catch {
+      // ignore
+    }
     form.setFieldsValue({
       username: r.username,
       nickname: r.nickname,
@@ -198,6 +224,7 @@ const UserPage = () => {
       status: r.status,
       deptId: r.deptId,
       roleIds: r.roles?.map((role) => role.id) ?? [],
+      tagIds,
     });
     setModalOpen(true);
   };
@@ -219,12 +246,18 @@ const UserPage = () => {
           },
         });
         if (!error) {
+          // 保存标签
+          if (values.tagIds) {
+            await client.put(`/api/system/users/${editingUser.id}/tags` as any, {
+              body: { tagIds: values.tagIds ?? [] },
+            });
+          }
           msg.success("更新成功");
           setModalOpen(false);
           refresh();
         }
       } else {
-        const { error } = await client.post("/api/system/users", {
+        const { error, data } = await client.post("/api/system/users", {
           body: {
             username: values.username,
             password: values.password,
@@ -237,6 +270,13 @@ const UserPage = () => {
           },
         });
         if (!error) {
+          // 新建用户后保存标签
+          const newUserId = (data as { id?: string })?.id;
+          if (newUserId && values.tagIds?.length) {
+            await client.put(`/api/system/users/${newUserId}/tags` as any, {
+              body: { tagIds: values.tagIds },
+            });
+          }
           msg.success("创建成功");
           setModalOpen(false);
           refresh();
@@ -384,6 +424,19 @@ const UserPage = () => {
         <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
       ),
     },
+    {
+      title: "标签",
+      key: "tags",
+      width: 200,
+      render: (_: unknown, r: UserItem) =>
+        r.tags?.length
+          ? r.tags.map((t) => (
+              <Tag key={t.id} color="blue">
+                {t.name}
+              </Tag>
+            ))
+          : "-",
+    },
     { title: "邮箱", dataIndex: "email", key: "email", width: 200 },
     { title: "手机号", dataIndex: "phone", key: "phone", width: 140 },
     {
@@ -426,12 +479,21 @@ const UserPage = () => {
         {/* Dept tree sidebar */}
         {deptEnabled && deptPanelVisible && (
           <Card
-            className="shrink-0"
-            style={{ width: 240 }}
+            className="shrink-0 w-[240px]"
+            
             styles={{ body: { padding: "12px 16px" } }}
           >
-            <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center mb-2">
               <span className="text-sm font-medium text-gray-600 dark:text-gray-400">部门筛选</span>
+              <Button
+                type="link"
+                size="small"
+                icon={<ApartmentOutlined />}
+                onClick={() => navigate("/app/system/depts")}
+                className="ml-4 mr-auto text-xs p-0"
+              >
+                管理部门
+              </Button>
               <Button
                 type="text"
                 size="small"
@@ -447,7 +509,7 @@ const UserPage = () => {
                       key: "__all__",
                       title: (
                         <span>
-                          <AppstoreOutlined style={{ marginRight: 4, color: "inherit" }} />
+                          <AppstoreOutlined className="mr-1 color-inherit"  />
                           所有部门
                         </span>
                       ),
@@ -456,7 +518,7 @@ const UserPage = () => {
                       key: "__none__",
                       title: (
                         <span>
-                          <StopOutlined style={{ marginRight: 4, color: "inherit" }} />
+                          <StopOutlined className="mr-1 color-inherit"  />
                           无部门
                         </span>
                       ),
@@ -468,23 +530,11 @@ const UserPage = () => {
                   defaultExpandAll
                   showLine={{ showLeafIcon: false }}
                   className="text-sm"
-                  style={{ fontSize: 13 }}
                 />
               ) : (
                 <div className="text-xs text-gray-400 dark:text-gray-500 py-4 text-center">暂无部门数据</div>
               )}
             </Spin>
-            <div className="mt-2 pt-2 border-t border-gray-100 dark:border-gray-700">
-              <Button
-                type="link"
-                size="small"
-                icon={<ApartmentOutlined />}
-                onClick={() => navigate("/app/system/depts")}
-                className="text-xs p-0"
-              >
-                管理部门
-              </Button>
-            </div>
           </Card>
         )}
 
@@ -505,7 +555,7 @@ const UserPage = () => {
                   typeCode="sys_status"
                   placeholder="状态"
                   allowClear
-                  style={{ width: 100 }}
+                  className="w-[100px]"
                 />
               </Form.Item>
               <Space>
@@ -566,7 +616,7 @@ const UserPage = () => {
                 showTotal: (t) => `共 ${t} 条`,
                 onChange: onPageChange,
               }}
-              scroll={{ x: 1200 }}
+              scroll={{ x: 1400 }}
               rowSelection={rowSelection}
             />
           </Card>
@@ -644,6 +694,11 @@ const UserPage = () => {
             <Col span={12}>
               <Form.Item name="roleIds" label="角色">
                 <Select mode="multiple" placeholder="选择角色" options={roleOptions} allowClear />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="tagIds" label="标签">
+                <Select mode="multiple" placeholder="选择标签" options={tagOptions} allowClear />
               </Form.Item>
             </Col>
           </Row>

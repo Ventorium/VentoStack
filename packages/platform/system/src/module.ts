@@ -43,10 +43,12 @@ import { createPostService } from "./services/post";
 import type { CreatePostParams, UpdatePostParams } from "./services/post";
 import { createRoleService } from "./services/role";
 import type { CreateRoleParams } from "./services/role";
+import { createTagService } from "./services/tag";
+import type { CreateTagParams, UpdateTagParams } from "./services/tag";
 import { createUserService } from "./services/user";
 import type { UpdateUserParams } from "./services/user";
 
-import { createAuthMiddleware, createPermMiddleware } from "./middlewares/auth-guard";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { type OperationLogEntry, createOperationLogMiddleware } from "./middlewares/operation-log";
 import { createAuthRoutes } from "./routes/auth";
 import { fail, success, paginated, pageOf, parseBody } from "@ventostack/core";
@@ -69,6 +71,7 @@ export interface SystemModule {
     permissionLoader: ReturnType<typeof createPermissionLoader>;
     menuTreeBuilder: ReturnType<typeof createMenuTreeBuilder>;
     passkey: ReturnType<typeof createPasskeyService>;
+    tag: ReturnType<typeof createTagService>;
   };
   router: Router;
   init(): Promise<void>;
@@ -162,6 +165,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     rpOrigins: deps.rpOrigins ?? ["http://localhost:5173"],
     auditStore: auditLog,
   });
+  const tagService = createTagService({ db });
 
   // Middlewares
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
@@ -669,6 +673,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         r.get(
           "/api/system/dict/types/:code/data",
           {
+            params: {
+              code: { type: "string" as const, description: "字典类型编码" },
+            },
             responses: {
               200: {
                 type: "array",
@@ -888,6 +895,90 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             return success({ success, skipped });
           },
           perm("system", "notice:delete"),
+        );
+      },
+    }),
+  );
+
+  // Tag CRUD routes
+  router.merge(
+    createCrudRoutes({
+      basePath: "/api/system/tags",
+      resource: "system:tag",
+      service: {
+        ...tagService,
+        list: (params) => tagService.list({ page: params.page as number, pageSize: params.pageSize as number, status: params.status as number | undefined }),
+        create: (body) => tagService.create(body as CreateTagParams),
+        update: (id, body) => tagService.update(id, body as UpdateTagParams),
+      },
+      authMiddleware,
+      perm,
+      operationLogMiddleware: opLogMiddleware,
+      schemas: {
+        item: {
+          id: { type: "uuid" as const, description: "标签 ID" },
+          name: { type: "string" as const, description: "标签名称" },
+          code: { type: "string" as const, description: "标签标识" },
+          sort: { type: "int" as const, description: "排序" },
+          status: { type: "int" as const, description: "状态" },
+          remark: { type: "string" as const, description: "备注" },
+          createdAt: { type: "date" as const, description: "创建时间" },
+        },
+        createBody: {
+          name: { type: "string" as const, required: true, description: "标签名称" },
+          code: { type: "string" as const, required: true, description: "标签标识" },
+          sort: { type: "int" as const, default: 0, description: "排序" },
+          remark: { type: "string" as const, description: "备注" },
+        },
+        updateBody: {
+          name: { type: "string" as const, description: "标签名称" },
+          code: { type: "string" as const, description: "标签标识" },
+          sort: { type: "int" as const, description: "排序" },
+          status: { type: "int" as const, description: "状态" },
+          remark: { type: "string" as const, description: "备注" },
+        },
+      },
+      extraRoutes: (r) => {
+        // 获取全部有效标签（供选择器用）
+        r.get(
+          "/api/system/tags/all",
+          {
+            responses: { 200: { type: "array" as const, description: "全部有效标签" } },
+            openapi: { summary: "获取全部有效标签", tags: ["tag"], operationId: "listAllTags" },
+          },
+          async () => {
+            const items = await tagService.listAll();
+            return success(items);
+          },
+          perm("system", "system:tag:list"),
+        );
+        // 获取标签下的用户 ID 列表
+        r.get(
+          "/api/system/tags/:id/users",
+          {
+            responses: { 200: { type: "array" as const, description: "用户 ID 列表" } },
+            openapi: { summary: "获取标签关联用户", tags: ["tag"], operationId: "getTagUsers" },
+          },
+          async (ctx) => {
+            const id = (ctx.params as Record<string, string>).id!;
+            const userIds = await tagService.getUserIdsByTag(id);
+            return success(userIds);
+          },
+          perm("system", "system:tag:query"),
+        );
+        // 根据标签 code 获取用户 ID 列表
+        r.get(
+          "/api/system/tags/by-code/:code/users",
+          {
+            responses: { 200: { type: "array" as const, description: "用户 ID 列表" } },
+            openapi: { summary: "根据标签标识获取关联用户", tags: ["tag"], operationId: "getTagUsersByCode" },
+          },
+          async (ctx) => {
+            const code = (ctx.params as Record<string, string>).code!;
+            const userIds = await tagService.getUserIdsByTagCode(code);
+            return success(userIds);
+          },
+          perm("system", "system:tag:query"),
         );
       },
     }),
@@ -1341,6 +1432,39 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     perm("system", "user:resetPwd"),
   );
 
+  // === User tag association ===
+  userRouter.get(
+    "/api/system/users/:id/tags",
+    {
+      responses: { 200: { type: "array" as const, description: "用户标签列表" } },
+      openapi: { summary: "获取用户标签", tags: ["user"], operationId: "getUserTags" },
+    },
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const tags = await tagService.getUserTags(id);
+      return success(tags);
+    },
+    perm("system", "user:query"),
+  );
+
+  userRouter.put(
+    "/api/system/users/:id/tags",
+    {
+      body: {
+        tagIds: { type: "array" as const, required: true, description: "标签 ID 列表" },
+      },
+      openapi: { summary: "分配用户标签", tags: ["user"], operationId: "assignUserTags" },
+    },
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const body = await parseBody(ctx.request);
+      const tagIds = (body.tagIds as string[]) ?? [];
+      await tagService.assignUserTags(id, tagIds);
+      return success(null);
+    },
+    perm("system", "user:update"),
+  );
+
   // === Operation logs (read-only) ===
   const opLogPerm = perm("system", "log:list");
   userRouter.get(
@@ -1565,6 +1689,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       permissionLoader,
       menuTreeBuilder,
       passkey: passkeyService,
+      tag: tagService,
     },
     router,
     async init() {

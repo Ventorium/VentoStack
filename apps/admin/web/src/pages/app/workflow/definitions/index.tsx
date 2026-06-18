@@ -83,7 +83,7 @@ const WorkflowDefinitionsPage = () => {
     { title: "状态", dataIndex: "status", key: "status", width: 80, render: (_: unknown, r: WorkflowDefinitionItem) => { const s = DefStatusMap[r.status] ?? { label: "未知", color: "default" }; return <Tag color={s.color}>{s.label}</Tag>; } },
     { title: "创建时间", dataIndex: "createdAt", key: "createdAt", width: 160, render: (_: unknown, r: WorkflowDefinitionItem) => fmtDate(r.createdAt) },
     {
-      title: "操作", key: "action", width: 280, fixed: "right" as const,
+      title: "操作", key: "action", width: 120, fixed: "right" as const,
       render: (_: unknown, r: WorkflowDefinitionItem) => (
         <ActionColumn items={[
           { label: "设计", onClick: () => navigate(`/app/workflow/definitions/${r.id}/designer`) },
@@ -98,11 +98,11 @@ const WorkflowDefinitionsPage = () => {
 
   return (
     <Card>
-      <Form form={searchForm} layout="inline" style={{ marginBottom: 16 }}>
+      <Form form={searchForm} layout="inline" className="mb-4">
         <Form.Item name="name"><Input placeholder="流程名称" allowClear /></Form.Item>
         <Form.Item><Space><Button type="primary" onClick={handleSearch}>搜索</Button><Button onClick={handleReset}>重置</Button></Space></Form.Item>
       </Form>
-      <Row style={{ marginBottom: 16 }}><Col><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建流程</Button></Col></Row>
+      <Row className="mb-4"><Col><Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>新建流程</Button></Col></Row>
       <Table rowKey="id" loading={loading} columns={columns} dataSource={data}
         pagination={{ current: page, pageSize, total, showSizeChanger: true, showTotal: (t) => `共 ${t} 条`, onChange: onPageChange }}
         scroll={{ x: 1100 }} />
