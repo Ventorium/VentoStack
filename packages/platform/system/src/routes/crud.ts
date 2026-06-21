@@ -99,7 +99,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         },
         responses: {
           200: {
-            list: { type: "array" as const, description: "列表数据" },
+            list: { type: "array" as const, items: { type: "object" as const, properties: schemas.item }, description: "列表数据" },
             total: { type: "int" as const, description: "总数" },
             page: { type: "int" as const, description: "当前页" },
             pageSize: { type: "int" as const, description: "每页数量" },

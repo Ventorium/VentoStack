@@ -1,3 +1,4 @@
+import { client } from "@/api";
 import { create } from "zustand";
 
 export interface PublicConfig {
@@ -31,18 +32,20 @@ export const usePublicConfig = create<PublicConfigState>((set) => ({
   loaded: false,
   fetch: async () => {
     try {
-      const resp = await fetch("/api/system/configs/public");
-      const data = await resp.json();
-      if (data?.data) {
+      const { data, error } = (await client.get("/api/system/configs/public")) as {
+        data?: Record<string, unknown>;
+        error?: unknown;
+      };
+      if (!error && data) {
         set({
           config: {
-            siteName: data.data.siteName ?? defaultConfig.siteName,
-            deptEnabled: data.data.deptEnabled ?? defaultConfig.deptEnabled,
-            mfaEnabled: data.data.mfaEnabled ?? defaultConfig.mfaEnabled,
-            mfaForce: data.data.mfaForce ?? defaultConfig.mfaForce,
-            passkeyEnabled: data.data.passkeyEnabled ?? defaultConfig.passkeyEnabled,
-            passwordMinLength: data.data.passwordMinLength ?? defaultConfig.passwordMinLength,
-            passwordComplexity: data.data.passwordComplexity ?? defaultConfig.passwordComplexity,
+            siteName: (data.siteName as string) ?? defaultConfig.siteName,
+            deptEnabled: (data.deptEnabled as boolean) ?? defaultConfig.deptEnabled,
+            mfaEnabled: (data.mfaEnabled as boolean) ?? defaultConfig.mfaEnabled,
+            mfaForce: (data.mfaForce as boolean) ?? defaultConfig.mfaForce,
+            passkeyEnabled: (data.passkeyEnabled as boolean) ?? defaultConfig.passkeyEnabled,
+            passwordMinLength: (data.passwordMinLength as number) ?? defaultConfig.passwordMinLength,
+            passwordComplexity: (data.passwordComplexity as "low" | "medium" | "high") ?? defaultConfig.passwordComplexity,
           },
           loaded: true,
         });

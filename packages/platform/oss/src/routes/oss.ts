@@ -20,7 +20,7 @@ const fileItemSchema = {
 };
 
 const paginatedFileSchema = {
-  list: { type: "array" as const, description: "文件列表" },
+  list: { type: "array" as const, items: { type: "object" as const, properties: fileItemSchema }, description: "文件列表" },
   total: { type: "int" as const, description: "总数" },
   page: { type: "int" as const, description: "当前页" },
   pageSize: { type: "int" as const, description: "每页数量" },

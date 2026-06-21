@@ -19,6 +19,7 @@ import { createRoleDeptTable } from "./migrations/007_create_role_dept_table";
 import { removeSysTheme } from "./migrations/008_remove_sys_theme";
 import { addDictIsSystem } from "./migrations/009_dict_is_system";
 import { addSortRemark } from "./migrations/010_add_sort_remark";
+import { createTagTables } from "./migrations/011_create_tag_tables";
 
 const logger = createTagLogger("migrations");
 
@@ -27,6 +28,9 @@ const logger = createTagLogger("migrations");
  */
 export async function runMigrations(executor: SqlExecutor): Promise<void> {
   const runner = createMigrationRunner(executor);
+
+  // 注意：迁移编号从 001 直接跳到 003（002 为早期废弃的迁移，已移除）。
+  // 迁移执行顺序由注册顺序决定，编号仅作为可读标识，不影响执行。
 
   runner.addMigration(createSysTables);
   runner.addMigration(addPasswordChangedAt);
@@ -37,6 +41,9 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(removeSysTheme);
   runner.addMigration(addDictIsSystem);
   runner.addMigration(addSortRemark);
+
+  // 标签管理
+  runner.addMigration(createTagTables);
 
   // 平台模块表结构由 platform packages 提供，注册顺序由 admin 应用控制。
   runner.addMigration(createI18nTables);

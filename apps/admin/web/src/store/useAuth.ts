@@ -25,6 +25,16 @@ export type PasswordExpiredInfo = { code: "password_expired"; tempToken: string 
 
 export type MfaRequiredInfo = { code: "mfa_required"; mfaToken: string };
 
+interface LoginResponseData {
+  accessToken: string;
+  refreshToken?: string;
+  mfaRequired?: boolean;
+  mfaToken?: string;
+  mfaSetupRequired?: boolean;
+  expiresIn: number;
+  sessionId: string;
+}
+
 export type LoginResult = UserProfile | PasswordExpiredInfo | MfaRequiredInfo | null;
 
 export type AuthState = {
@@ -86,13 +96,15 @@ export const useAuth = create<AuthState>((set, get) => ({
   async login(args) {
     const { error, data, response } = (await client.post("/api/auth/login", { body: args })) as {
       error?: unknown;
-      data?: any;
+      data?: LoginResponseData;
       response?: Response;
     };
     // 密码过期：从原始 403 响应中提取 tempToken
     if (response?.status === 403) {
       try {
-        const json: any = await response.clone().json();
+        const json = (await response.clone().json()) as {
+          data?: { code?: string; tempToken?: string };
+        };
         if (json?.data?.code === "password_expired" && json.data.tempToken) {
           return { code: "password_expired" as const, tempToken: json.data.tempToken };
         }

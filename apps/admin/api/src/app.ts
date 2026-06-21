@@ -200,6 +200,38 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
       maxAge: 86400,
     }),
   );
+  // 安全响应头
+  app.use(async (ctx, next) => {
+    const response = await next();
+    const headers = new Headers(response.headers);
+    headers.set("X-Content-Type-Options", "nosniff");
+    headers.set("X-Frame-Options", "DENY");
+    headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    // 非开发环境启用 HSTS
+    if (env.NODE_ENV === "production") {
+      headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
+    // CSP: 允许同源和行内脚本/样式（SPA 需要）
+    headers.set(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+        "style-src 'self' 'unsafe-inline'",
+        "img-src 'self' data: blob:",
+        "font-src 'self' data:",
+        "connect-src 'self'",
+        "frame-ancestors 'none'",
+        "base-uri 'self'",
+        "form-action 'self'",
+      ].join("; "),
+    );
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers,
+    });
+  });
   app.use(requestLogger());
 
   // 4b. 判断是否使用独立管理端口
@@ -350,6 +382,13 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     "/api/auth/login",
     "/api/auth/register",
     "/api/auth/refresh",
+    "/api/auth/forgot-password",
+    "/api/auth/reset-password-by-token",
+    "/api/auth/mfa/login",
+    "/api/auth/mfa/setup",
+    "/api/auth/mfa/verify",
+    "/api/auth/passkey/login-begin",
+    "/api/auth/passkey/login-finish",
   ]);
   const authRateLimitMiddleware: Middleware = (ctx, next) => {
     const pathname = new URL(ctx.request.url).pathname;

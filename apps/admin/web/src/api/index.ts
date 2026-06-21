@@ -14,7 +14,8 @@ import type { OpenAPIs } from "./schema";
 // Token refresh state — module-level to coordinate concurrent 401 retries
 // ---------------------------------------------------------------------------
 let isRefreshing = false;
-const refreshQueue: Array<() => void> = [];
+type QueueEntry = { resolve: () => void; reject: (reason?: unknown) => void };
+const refreshQueue: QueueEntry[] = [];
 
 async function refreshAccessToken(): Promise<boolean> {
   const refreshToken = getRefreshToken();
@@ -35,22 +36,30 @@ async function refreshAccessToken(): Promise<boolean> {
       if (data.refreshToken) setRefreshToken(data.refreshToken);
       // Flush queued requests with the new token
       const queue = refreshQueue.splice(0);
-      for (const resolve of queue) {
-        resolve();
+      for (const entry of queue) {
+        entry.resolve();
       }
       return true;
     }
-    // Refresh itself failed — clean up and redirect
-    clearToken();
-    globalNavigate("/auth/login", { replace: true });
+    // Refresh itself failed — reject all queued requests
+    abortPendingRequests("Token refresh failed");
     return false;
   } catch {
-    clearToken();
-    globalNavigate("/auth/login", { replace: true });
+    abortPendingRequests("Token refresh failed");
     return false;
   } finally {
     isRefreshing = false;
   }
+}
+
+/** Reject all pending refresh queue entries and redirect to login. */
+function abortPendingRequests(reason: string): void {
+  clearToken();
+  const queue = refreshQueue.splice(0);
+  for (const entry of queue) {
+    entry.reject(new Error(reason));
+  }
+  setTimeout(() => globalNavigate("/auth/login", { replace: true }), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -224,10 +233,15 @@ async function requestWithRefresh(
   if (result.error && result.response?.status === 401 && !isAuthPath(path) && getRefreshToken()) {
     if (isRefreshing) {
       // Another request is already refreshing — queue this one
-      await new Promise<void>((resolve) => {
-        refreshQueue.push(resolve);
-      });
-      return methodFn(path, stripAuthHeader(options));
+      try {
+        await new Promise<void>((resolve, reject) => {
+          refreshQueue.push({ resolve, reject });
+        });
+        return methodFn(path, stripAuthHeader(options));
+      } catch {
+        // Refresh was rejected (token expired, session invalid) — return original error
+        return result;
+      }
     }
 
     // Initiate refresh

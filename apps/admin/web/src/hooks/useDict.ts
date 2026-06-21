@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 export interface DictItem {
   id: string;
@@ -33,7 +33,7 @@ export function useDict(typeCode: string): {
 } {
   const [options, setOptions] = useState<DictItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const refreshRef = useRef(0);
+  const [version, setVersion] = useState(0);
 
   const load = useCallback(async () => {
     const cached = cache.get(typeCode);
@@ -53,13 +53,15 @@ export function useDict(typeCode: string): {
 
   useEffect(() => {
     load();
-  }, [load, refreshRef.current]);
+  }, [load, version]);
 
   return {
     options,
     loading,
     refresh: () => {
-      refreshRef.current++;
+      // 清除缓存并递增版本号，触发重新加载
+      cache.delete(typeCode);
+      setVersion((v) => v + 1);
     },
   };
 }

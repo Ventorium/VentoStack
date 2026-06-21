@@ -8,6 +8,7 @@
 ## API 调用
 
 - 使用 `client` from `@/api`（`createFetchClient<OpenAPIs>`）
+- **禁止使用 `fetch()` 直接调用 API**。所有后端请求必须通过 `client` 实例发起，确保统一经过 token 注入、响应解包和错误处理。
 - URL 路段用 `params: { id }`，不用模板字符串拼接
 - 查询参数用 `query`，请求体用 `body`
 - 响应已被拦截器拆包为 `{ code, message, data }`，直接拿到 `data`
