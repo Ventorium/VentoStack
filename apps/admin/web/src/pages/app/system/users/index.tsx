@@ -246,13 +246,15 @@ const UserPage = () => {
           },
         });
         if (!error) {
-          // 保存标签
-          if (values.tagIds) {
-            await client.put(`/api/system/users/${editingUser.id}/tags` as any, {
-              body: { tagIds: values.tagIds ?? [] },
-            });
+          // 保存标签（始终调用，支持清空）
+          const { error: tagError } = await client.put(`/api/system/users/${editingUser.id}/tags` as any, {
+            body: { tagIds: values.tagIds ?? [] },
+          });
+          if (tagError) {
+            msg.warning("用户信息已更新，但标签保存失败");
+          } else {
+            msg.success("更新成功");
           }
-          msg.success("更新成功");
           setModalOpen(false);
           refresh();
         }
@@ -273,9 +275,12 @@ const UserPage = () => {
           // 新建用户后保存标签
           const newUserId = (data as { id?: string })?.id;
           if (newUserId && values.tagIds?.length) {
-            await client.put(`/api/system/users/${newUserId}/tags` as any, {
+            const { error: tagError } = await client.put(`/api/system/users/${newUserId}/tags` as any, {
               body: { tagIds: values.tagIds },
             });
+            if (tagError) {
+              msg.warning("用户已创建，但标签保存失败");
+            }
           }
           msg.success("创建成功");
           setModalOpen(false);

@@ -145,47 +145,47 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
         const initiator = await resolveInitiatorDetail(db, ctx.initiator.id);
         if (!initiator.deptId) return [];
 
-        // 获取部门祖先链
-        const deptChain = await getDeptAncestorChain(db, initiator.deptId, deptTraversal ? (traversalLevels ?? 0) : 1);
+        // 获取部门祖先链：deptTraversal=false 时只查本部门
+        const deptChain = deptTraversal
+          ? await getDeptAncestorChain(db, initiator.deptId, traversalLevels ?? 0)
+          : [initiator.deptId];
 
-        // 对每个部门查找匹配标签的用户
+        // 批量查找所有部门下的有效用户（排除软删除）
+        const allUsers = await db.raw(
+          `SELECT id FROM sys_user WHERE dept_id = ANY($1) AND status = 1 AND deleted_at IS NULL`,
+          [deptChain],
+        );
+        if (allUsers.length === 0) return [];
+
+        const allUserIds = (allUsers as Array<{ id: string }>).map((u) => u.id);
+
+        // 批量获取这些用户的标签
+        const userTagRows = await db.raw(
+          `SELECT ut.user_id, t.code
+           FROM sys_user_tag ut
+           JOIN sys_tag t ON t.id = ut.tag_id
+           WHERE ut.user_id = ANY($1) AND t.status = 1 AND t.deleted_at IS NULL`,
+          [allUserIds],
+        );
+
+        // 按用户分组标签
+        const userTagMap = new Map<string, Set<string>>();
+        for (const row of userTagRows as Array<{ user_id: string; code: string }>) {
+          const set = userTagMap.get(row.user_id) ?? new Set();
+          set.add(row.code);
+          userTagMap.set(row.user_id, set);
+        }
+
+        // 按匹配模式过滤
         const matchedUserIds = new Set<string>();
-        for (const deptId of deptChain) {
-          // 获取该部门下所有有效用户
-          const users = await db.raw(
-            `SELECT id FROM sys_user WHERE dept_id = $1 AND status = 1`,
-            [deptId],
-          );
-          if (users.length === 0) continue;
-
-          // 批量获取这些用户的标签
-          const userIds = (users as Array<{ id: string }>).map((u) => u.id);
-          const userTagRows = await db.raw(
-            `SELECT ut.user_id, t.code
-             FROM sys_user_tag ut
-             JOIN sys_tag t ON t.id = ut.tag_id
-             WHERE ut.user_id = ANY($1) AND t.status = 1 AND t.deleted_at IS NULL`,
-            [userIds],
-          );
-
-          // 按用户分组标签
-          const userTagMap = new Map<string, Set<string>>();
-          for (const row of userTagRows as Array<{ user_id: string; code: string }>) {
-            const set = userTagMap.get(row.user_id) ?? new Set();
-            set.add(row.code);
-            userTagMap.set(row.user_id, set);
-          }
-
-          // 按匹配模式过滤
-          for (const userId of userIds) {
-            const userTags = userTagMap.get(userId);
-            if (!userTags) continue;
-            const matched =
-              tagMatchMode === "and"
-                ? tagCodes.every((code) => userTags.has(code))
-                : tagCodes.some((code) => userTags.has(code));
-            if (matched) matchedUserIds.add(userId);
-          }
+        for (const userId of allUserIds) {
+          const userTags = userTagMap.get(userId);
+          if (!userTags) continue;
+          const matched =
+            tagMatchMode === "and"
+              ? tagCodes.every((code) => userTags.has(code))
+              : tagCodes.some((code) => userTags.has(code));
+          if (matched) matchedUserIds.add(userId);
         }
 
         return [...matchedUserIds];
@@ -217,7 +217,7 @@ export async function resolveInitiatorDetail(
   userId: string,
 ): Promise<InitiatorDetail> {
   const user = await db.raw(
-    `SELECT id, nickname, dept_id FROM sys_user WHERE id = $1`,
+    `SELECT id, nickname, dept_id FROM sys_user WHERE id = $1 AND status = 1 AND deleted_at IS NULL`,
     [userId],
   );
   if (user.length === 0) return { id: userId };
@@ -231,7 +231,7 @@ export async function resolveInitiatorDetail(
 
   // 查找角色
   const roles = await db.raw(
-    `SELECT r.code FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id WHERE ur.user_id = $1`,
+    `SELECT r.code FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id WHERE ur.user_id = $1 AND r.deleted_at IS NULL`,
     [userId],
   );
   result.roles = roles.map((r: { code: string }) => r.code);
@@ -239,7 +239,7 @@ export async function resolveInitiatorDetail(
   // 查找直属上级（通过 dept 的 leader 字段）
   if (u.dept_id) {
     const dept = await db.raw(
-      `SELECT leader FROM sys_dept WHERE id = $1`,
+      `SELECT leader FROM sys_dept WHERE id = $1 AND deleted_at IS NULL`,
       [u.dept_id],
     );
     if (dept.length > 0 && dept[0].leader) {

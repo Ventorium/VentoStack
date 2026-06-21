@@ -950,7 +950,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const items = await tagService.listAll();
             return success(items);
           },
-          perm("system", "system:tag:list"),
+          perm("system", "tag:list"),
         );
         // 获取标签下的用户 ID 列表
         r.get(
@@ -964,7 +964,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const userIds = await tagService.getUserIdsByTag(id);
             return success(userIds);
           },
-          perm("system", "system:tag:query"),
+          perm("system", "tag:query"),
         );
         // 根据标签 code 获取用户 ID 列表
         r.get(
@@ -978,7 +978,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const userIds = await tagService.getUserIdsByTagCode(code);
             return success(userIds);
           },
-          perm("system", "system:tag:query"),
+          perm("system", "tag:query"),
         );
       },
     }),

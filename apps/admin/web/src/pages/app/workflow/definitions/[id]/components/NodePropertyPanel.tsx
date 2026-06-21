@@ -37,8 +37,8 @@ function useApiOptions() {
       setDepts(flatten((data as Array<{ id: string; name: string; children?: typeof data }>) ?? []));
     }).catch(() => {});
     client.get("/api/system/tags/all").then(({ data }) => {
-      const list = (data as Array<{ id: string; name: string }> | undefined) ?? [];
-      setTags(list.map((t) => ({ value: t.id, label: t.name })));
+      const list = (data as Array<{ id: string; name: string; code: string }> | undefined) ?? [];
+      setTags(list.map((t) => ({ value: t.code, label: t.name })));
     }).catch(() => {});
   }, []);
 
@@ -62,7 +62,10 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
       assigneeDeptId: d.config?.assignee?.deptId ?? undefined,
       assigneeLookupKey: d.config?.assignee?.lookupKey ?? "",
       assigneeFormField: d.config?.assignee?.formField ?? "",
-      assigneeTagId: d.config?.assignee?.tagId ?? undefined,
+      assigneeTagCodes: d.config?.assignee?.tagCodes ?? [],
+      assigneeTagMatchMode: d.config?.assignee?.tagMatchMode ?? "or",
+      assigneeDeptTraversal: d.config?.assignee?.deptTraversal ?? false,
+      assigneeTraversalLevels: d.config?.assignee?.traversalLevels ?? 0,
       rejectAction: d.config?.rejectAction ?? "terminate",
       counterSign: d.config?.counterSign ?? false,
       conditions: d.config?.conditions ?? [],
@@ -105,7 +108,10 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
         deptId: v.assigneeDeptId || undefined,
         lookupKey: v.assigneeLookupKey || undefined,
         formField: v.assigneeFormField || undefined,
-        tagId: v.assigneeTagId || undefined,
+        tagCodes: v.assigneeTagCodes?.length > 0 ? v.assigneeTagCodes : undefined,
+        tagMatchMode: v.assigneeTagMatchMode || undefined,
+        deptTraversal: v.assigneeDeptTraversal || undefined,
+        traversalLevels: v.assigneeDeptTraversal ? (v.assigneeTraversalLevels ?? 0) : undefined,
       };
     }
 
@@ -151,6 +157,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                   { value: "department", label: "按部门" },
                   { value: "lookup", label: "自动查找（上级/领导）" },
                   { value: "form_field", label: "表单字段指定" },
+                  { value: "dept_tag", label: "按部门标签" },
                 ]}
               />
             </Form.Item>
@@ -189,6 +196,32 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                   <Form.Item name="assigneeFormField" label="表单字段名" extra="流程启动时，该字段值作为审批人用户 ID">
                     <Input placeholder="如 approverId" />
                   </Form.Item>
+                );
+                if (mode === "dept_tag") return (
+                  <>
+                    <Form.Item name="assigneeTagCodes" label="标签" rules={[{ required: true, message: "请至少选择一个标签" }]}>
+                      <Select mode="multiple" placeholder="选择标签" options={tags} showSearch
+                        filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())} />
+                    </Form.Item>
+                    <Form.Item name="assigneeTagMatchMode" label="匹配模式" initialValue="or">
+                      <Select options={[
+                        { value: "or", label: "或（拥有任一标签即可）" },
+                        { value: "and", label: "且（必须拥有全部标签）" },
+                      ]} />
+                    </Form.Item>
+                    <Form.Item name="assigneeDeptTraversal" label="向上遍历父部门" valuePropName="checked" initialValue={false}>
+                      <Switch />
+                    </Form.Item>
+                    <Form.Item noStyle shouldUpdate={(prev, cur) => prev.assigneeDeptTraversal !== cur.assigneeDeptTraversal}>
+                      {({ getFieldValue }) =>
+                        getFieldValue("assigneeDeptTraversal") && (
+                          <Form.Item name="assigneeTraversalLevels" label="最大遍历层级" extra="0 表示不限层级">
+                            <InputNumber min={0} max={20} className="w-full" placeholder="0 = 不限" />
+                          </Form.Item>
+                        )
+                      }
+                    </Form.Item>
+                  </>
                 );
                 return null;
               }}

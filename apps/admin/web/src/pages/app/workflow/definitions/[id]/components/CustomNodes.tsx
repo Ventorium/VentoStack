@@ -50,7 +50,7 @@ function ApproveNode({ data, selected }: NodeProps) {
     percentage: `百分比(${d.config?.percentage ?? 50}%)`,
   };
   const assignee = d.config?.assignee;
-  const assigneeLabel = assignee?.mode === "fixed" ? `${assignee.userIds?.length ?? 0}人` : assignee?.mode === "role" ? "按角色" : assignee?.mode === "department" ? "按部门" : assignee?.mode === "tag" ? "按标签" : assignee?.mode === "dept_tag" ? "部门+标签" : assignee?.mode === "lookup" ? "自动查找" : "未配置";
+  const assigneeLabel = assignee?.mode === "fixed" ? `${assignee.userIds?.length ?? 0}人` : assignee?.mode === "role" ? "按角色" : assignee?.mode === "department" ? "按部门" : assignee?.mode === "dept_tag" ? `标签(${assignee.tagCodes?.join(",") ?? ""}${assignee.deptTraversal ? ",向上遍历" : ""})` : assignee?.mode === "lookup" ? "自动查找" : "未配置";
   return (
     <div style={{
       ...nodeBaseStyle, minWidth: 140,
@@ -69,7 +69,7 @@ function CcNode({ data, selected }: NodeProps) {
   const d = data as unknown as FlowNodeData;
   const meta = NODE_TYPE_META[d.nodeType];
   const assignee = d.config?.assignee;
-  const assigneeLabel = assignee?.mode === "fixed" ? `${assignee.userIds?.length ?? 0}人` : assignee?.mode === "role" ? "按角色" : "未配置";
+  const assigneeLabel = assignee?.mode === "fixed" ? `${assignee.userIds?.length ?? 0}人` : assignee?.mode === "role" ? "按角色" : assignee?.mode === "department" ? "按部门" : assignee?.mode === "dept_tag" ? "部门标签" : assignee?.mode === "lookup" ? "自动查找" : assignee?.mode === "form_field" ? "表单字段" : "未配置";
   return (
     <div style={{
       ...nodeBaseStyle,

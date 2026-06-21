@@ -12,7 +12,6 @@ import type { ConfigService } from "./config";
 import { createCacheKeyNamespace } from "./cache-key";
 import type { CacheKeyNamespace } from "./cache-key";
 import { validatePassword } from "./password-policy";
-import { TagModel, UserTagModel } from "../models/tag";
 
 /** 创建用户参数 */
 export interface CreateUserParams {
