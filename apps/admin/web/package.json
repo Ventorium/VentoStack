@@ -33,7 +33,7 @@
     "@ant-design/icons": "^6.1.1",
     "@ant-design/x": "^2.5.0",
     "@ant-design/x-markdown": "^2.5.0",
-    "@doremijs/o2t": "^0.1.11",
+    "@doremijs/o2t": "^0.2.0",
     "@simplewebauthn/browser": "^13.3.0",
     "ahooks": "^3.9.7",
     "antd": "^6.3.6",
