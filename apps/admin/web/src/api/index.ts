@@ -23,15 +23,10 @@ async function refreshAccessToken(): Promise<boolean> {
 
   isRefreshing = true;
   try {
-    const res = await fetch("/api/auth/refresh", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ refreshToken }),
+    const { error, data } = await rawClient.post("/api/auth/refresh", {
+      body: { refreshToken },
     });
-    const json = await res.json();
-    // Backend wraps responses in { code, message, data }
-    const data = json?.data ?? json;
-    if (res.ok && data?.accessToken) {
+    if (!error && data?.accessToken) {
       setAccessToken(data.accessToken);
       if (data.refreshToken) setRefreshToken(data.refreshToken);
       // Flush queued requests with the new token
