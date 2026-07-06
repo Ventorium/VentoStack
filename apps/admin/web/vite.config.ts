@@ -2,34 +2,21 @@ import { resolve } from "node:path";
 import react from "@vitejs/plugin-react-swc";
 import UnoCSS from "unocss/vite";
 import { defineConfig, loadEnv } from "vite";
-import type { Plugin } from "vite";
 import pages from "vite-plugin-pages";
 import svgr from "vite-plugin-svgr";
-
-const guiRoot = resolve(__dirname, "../../../packages/gui/src");
-
-/** Resolve bare imports from gui package source using the app's node_modules */
-function guiResolvePlugin(appNodeModules: string): Plugin {
-  return {
-    name: "gui-resolve",
-    enforce: "pre",
-    resolveId(source, importer) {
-      if (importer?.startsWith(guiRoot) && !source.startsWith(".") && !source.startsWith("/")) {
-        // Bare import from gui source — resolve from app's node_modules
-        return this.resolve(source, resolve(appNodeModules, "__placeholder__.js"), {
-          skipSelf: true,
-        });
-      }
-    },
-  };
-}
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), "");
 
+  // HMR WebSocket 配置：在反向代理/远程开发场景下，外部访问端口/协议可能与 Vite 监听端口不同。
+  // 例：外部 https://stack.erguotou.me:9323 -> 内部 Vite :9321，需要设置
+  // VITE_HMR_PROTOCOL=wss VITE_HMR_HOST=stack.erguotou.me VITE_HMR_CLIENT_PORT=9323
+  const hmrProtocol = env.VITE_HMR_PROTOCOL as "wss" | "ws" | undefined;
+  const hmrHost = env.VITE_HMR_HOST;
+  const hmrClientPort = env.VITE_HMR_CLIENT_PORT ? Number(env.VITE_HMR_CLIENT_PORT) : undefined;
+
   return {
     plugins: [
-      guiResolvePlugin(resolve(__dirname, "node_modules")),
       react(),
       UnoCSS({ configFile: resolve(__dirname, "uno.config.ts") }),
       svgr(),
@@ -48,9 +35,11 @@ export default defineConfig(({ mode }) => {
     server: {
       host: "0.0.0.0",
       port: 9321,
+      allowedHosts: ['stack.erguotou.me'],
       hmr: {
-        host: "0.0.0.0",
-        port: 9321,
+        protocol: hmrProtocol,
+        host: hmrHost,
+        clientPort: hmrClientPort,
       },
     },
   };

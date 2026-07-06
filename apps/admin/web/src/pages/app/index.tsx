@@ -14,6 +14,7 @@ import {
   Card,
   Checkbox,
   Col,
+  Drawer,
   Empty,
   Modal,
   Row,
@@ -86,6 +87,10 @@ const DashboardPage = () => {
   const [modalLoading, setModalLoading] = useState(false);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
 
+  // Detail drawer state
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detailNotice, setDetailNotice] = useState<NoticeItem | null>(null);
+
   // ─── Data fetching ───────────────────────────────
 
   useEffect(() => {
@@ -151,10 +156,20 @@ const DashboardPage = () => {
       await client.put("/api/system/notices/:id/read", { params: { id } });
       setRecentNotices((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
       setModalNotices((prev) => prev.map((n) => (n.id === id ? { ...n, isRead: true } : n)));
+      setDetailNotice((prev) => (prev && prev.id === id ? { ...prev, isRead: true } : prev));
       refreshStats();
     },
     [refreshStats],
   );
+
+  const openDetail = useCallback((notice: NoticeItem) => {
+    setDetailNotice(notice);
+    setDetailOpen(true);
+  }, []);
+
+  const closeDetail = useCallback(() => {
+    setDetailOpen(false);
+  }, []);
 
   const batchMarkRead = useCallback(async () => {
     if (selectedRowKeys.length === 0) return;
@@ -215,7 +230,13 @@ const DashboardPage = () => {
         render: (title: string, record) => (
           <Space>
             {!record.isRead && <Badge status="processing" className="mr-0" />}
-            <Text strong={!record.isRead}>{title}</Text>
+            <Text
+              strong={!record.isRead}
+              className="cursor-pointer hover:text-blue-500"
+              onClick={() => openDetail(record)}
+            >
+              {title}
+            </Text>
           </Space>
         ),
       },
@@ -384,8 +405,8 @@ const DashboardPage = () => {
                             <div className="flex items-center gap-2">
                               <Text
                                 strong={!notice.isRead}
-                                className="truncate text-sm max-w-[200px]"
-                                
+                                className="truncate text-sm max-w-[200px] cursor-pointer hover:text-blue-500"
+                                onClick={() => openDetail(notice)}
                               >
                                 {notice.title}
                               </Text>
@@ -495,6 +516,49 @@ const DashboardPage = () => {
           size="small"
         />
       </Modal>
+
+      {/* Notice Detail Drawer */}
+      <Drawer
+        title="通知公告详情"
+        placement="right"
+        width={520}
+        open={detailOpen}
+        onClose={closeDetail}
+        destroyOnHidden
+        footer={
+          detailNotice && !detailNotice.isRead ? (
+            <Button type="primary" onClick={() => markRead(detailNotice.id)}>
+              标记为已读
+            </Button>
+          ) : null
+        }
+      >
+        {detailNotice && (
+          <div className="space-y-4">
+            <h3 className="text-lg font-semibold">{detailNotice.title}</h3>
+            <div className="flex items-center gap-3">
+              <Tag color={NOTICE_TYPE_MAP[detailNotice.type]?.color ?? "blue"}>
+                {NOTICE_TYPE_MAP[detailNotice.type]?.label ?? "通知"}
+              </Tag>
+              {detailNotice.isRead ? (
+                <Tag>已读</Tag>
+              ) : (
+                <Tag color="orange">未读</Tag>
+              )}
+            </div>
+            {detailNotice.publishAt && (
+              <div className="text-sm text-gray-500">
+                发布时间：{new Date(detailNotice.publishAt).toLocaleString("zh-CN")}
+              </div>
+            )}
+            <div className="border-t border-gray-100 dark:border-gray-800 pt-4">
+              <div className="text-sm leading-relaxed whitespace-pre-wrap">
+                {detailNotice.content || "暂无内容"}
+              </div>
+            </div>
+          </div>
+        )}
+      </Drawer>
     </div>
   );
 };
