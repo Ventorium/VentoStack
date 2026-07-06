@@ -1478,7 +1478,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       },
       responses: {
         200: {
-          list: { type: "array" as const, description: "操作日志列表" },
+          list: { type: "array" as const, items: { type: "object" as const }, description: "操作日志列表" },
           total: { type: "int" as const, description: "总数" },
           page: { type: "int" as const, description: "当前页" },
           pageSize: { type: "int" as const, description: "每页数量" },
@@ -1533,7 +1533,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       },
       responses: {
         200: {
-          list: { type: "array" as const, description: "登录日志列表" },
+          list: { type: "array" as const, items: { type: "object" as const }, description: "登录日志列表" },
           total: { type: "int" as const, description: "总数" },
           page: { type: "int" as const, description: "当前页" },
           pageSize: { type: "int" as const, description: "每页数量" },

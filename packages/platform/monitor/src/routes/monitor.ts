@@ -106,7 +106,7 @@ export function createMonitorRoutes(
       },
       responses: {
         200: {
-          list: { type: "array" as const, description: "在线用户列表" },
+          list: { type: "array" as const, items: { type: "object" as const }, description: "在线用户列表" },
           total: { type: "int" as const, description: "总数" },
         },
       },

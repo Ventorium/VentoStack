@@ -1,5 +1,6 @@
 import GlobalHistory from "@/components/GlobalHistory";
 import GlobalMessage from "@/components/GlobalMessage";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/store/useAuth";
@@ -14,7 +15,9 @@ import { useRoutes } from "react-router";
 import { BrowserRouter, useLocation, useNavigate } from "react-router-dom";
 import routes from "~react-pages";
 
-console.log("routes", routes);
+if (import.meta.env.DEV) {
+  console.log("routes", routes);
+}
 
 /** 从菜单树中递归查找路径匹配的叶子菜单标题 */
 function findLeafMenuTitle(routes: FrontendRoute[], pathname: string): string | null {
@@ -119,7 +122,11 @@ function App() {
           },
         }}
       >
-        <AntApp>{ready ? <_App /> : <Spin size="large" fullscreen />}</AntApp>
+        <AntApp>
+          <ErrorBoundary>
+            {ready ? <_App /> : <Spin size="large" fullscreen />}
+          </ErrorBoundary>
+        </AntApp>
       </ConfigProvider>
     </BrowserRouter>
   );
