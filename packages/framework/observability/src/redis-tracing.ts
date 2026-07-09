@@ -6,8 +6,21 @@
  * 覆盖 session store、token revocation store 等直接使用 Redis client 的场景。
  */
 
-import type { RedisClientInstance } from "@ventostack/cache";
 import type { SpanContext, Tracer } from "./tracing";
+
+export interface TraceableRedisClient {
+  get(key: string): Promise<string | null>;
+  set(key: string, value: string): Promise<unknown>;
+  expire(key: string, seconds: number): Promise<unknown>;
+  del(key: string): Promise<unknown>;
+  exists(key: string): Promise<unknown>;
+  keys(pattern: string): Promise<string[]>;
+  send(command: string, args: string[]): Promise<unknown>;
+  incr(key: string): Promise<number>;
+  pexpire(key: string, ms: number): Promise<unknown>;
+  pttl(key: string): Promise<number>;
+  close(): void | Promise<void>;
+}
 
 export interface RedisTracingOptions {
   /** 获取当前请求的 SpanContext */
@@ -22,10 +35,10 @@ export interface RedisTracingOptions {
  * @returns 包装后的 Redis 客户端（保持原始接口）
  */
 export function wrapRedisClientWithTracing(
-  client: RedisClientInstance,
+  client: TraceableRedisClient,
   tracer: Tracer,
   options: RedisTracingOptions,
-): RedisClientInstance {
+): TraceableRedisClient {
   const trace = <T>(command: string, key: string, fn: () => Promise<T>): Promise<T> => {
     const parentContext = options.getSpanContext();
     if (!parentContext) return fn();

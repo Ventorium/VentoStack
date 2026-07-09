@@ -22,28 +22,56 @@ const SUPER_ADMIN_ROLE = "admin";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
+function parseCookieHeader(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  const cookies: Record<string, string> = {};
+  for (const part of cookieHeader.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (!rawName || rawValue.length === 0) continue;
+    try {
+      cookies[rawName] = decodeURIComponent(rawValue.join("="));
+    } catch {
+      // 畸形 Cookie（如非法的 % 编码），跳过
+      continue;
+    }
+  }
+  return cookies;
+}
+
+function extractToken(request: Request): string | null {
+  const authHeader = request.headers.get("Authorization");
+  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+
+  const cookies = parseCookieHeader(request.headers.get("Cookie"));
+  if (cookies.vs_access_token) return cookies.vs_access_token;
+
+  // 不通过 URL 查询参数提取 token，避免 Token 泄露到日志、浏览器历史、Referer 头
+  return null;
+}
+
 /**
  * 创建认证中间件
- * 从 Authorization 头提取 Bearer Token，验证 JWT 并将用户信息注入 ctx.user
+ * 按 Header > HttpOnly Cookie > QueryString 的优先级提取 Token。
  */
 export function createAuthMiddleware(jwt: JWTManager, secret: string): Middleware {
   return async (ctx, next) => {
-    const authHeader = ctx.request.headers.get("Authorization");
-    if (!authHeader?.startsWith("Bearer ")) {
+    const token = extractToken(ctx.request);
+    if (!token) {
       return new Response(JSON.stringify({ code: 401, message: "缺少认证令牌" }), {
         status: 401,
         headers: JSON_HEADERS,
       });
     }
-    const token = authHeader.slice(7);
     try {
       const payload = await jwt.verify(token, secret);
-      ctx.user = {
+      const user: AuthUser = {
         id: payload.sub ?? "",
         roles: ((payload as Record<string, unknown>).roles as string[]) ?? [],
         username: ((payload as Record<string, unknown>).username as string) ?? "",
-        tenantId: (payload as Record<string, unknown>).tenantId as string | undefined,
-      } satisfies AuthUser;
+      };
+      const tenantId = (payload as Record<string, unknown>).tenantId;
+      if (typeof tenantId === "string") user.tenantId = tenantId;
+      ctx.user = user;
       return next();
     } catch {
       return new Response(JSON.stringify({ code: 401, message: "无效的认证令牌" }), {

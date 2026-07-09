@@ -56,6 +56,7 @@ COPY --from=build-api --chown=bun:bun /app/apps/admin/api/public public/
 ENV NODE_ENV=production
 ENV PORT=9320
 ENV HOST=0.0.0.0
+ENV ADMIN_PORT=0
 
 # 健康检查
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \

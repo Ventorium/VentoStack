@@ -3,7 +3,6 @@ import { msg } from "@/components/GlobalMessage";
 import {
   clearToken,
   getAccessToken,
-  getRefreshToken,
   setAccessToken,
   setRefreshToken,
 } from "@/store/token";
@@ -18,14 +17,11 @@ type QueueEntry = { resolve: () => void; reject: (reason?: unknown) => void };
 const refreshQueue: QueueEntry[] = [];
 
 async function refreshAccessToken(): Promise<boolean> {
-  const refreshToken = getRefreshToken();
-  if (!refreshToken) return false;
-
   isRefreshing = true;
   try {
     const { error, data } = await rawClient.post("/api/auth/refresh", {
-      body: { refreshToken },
-    });
+      body: {},
+    } as never);
     if (!error && data?.accessToken) {
       setAccessToken(data.accessToken);
       if (data.refreshToken) setRefreshToken(data.refreshToken);
@@ -63,6 +59,7 @@ function abortPendingRequests(reason: string): void {
 const rawClient = createFetchClient<OpenAPIs>({
   requestTimeoutMs: 10000,
   requestInterceptor(request) {
+    request.init.credentials = "include";
     const token = getAccessToken();
     if (!["/api/login", "/api/auth/refresh"].includes(request.url) && token) {
       request.init.headers.Authorization = `Bearer ${token}`;
@@ -113,8 +110,6 @@ const rawClient = createFetchClient<OpenAPIs>({
 
     // 401 — token 过期或登录失败
     if (response.status === 401) {
-      // 有 refresh token 时，静默等待 requestWithRefresh 处理刷新
-      if (getRefreshToken()) return;
       // 无任何 token（如登录接口），尝试显示服务端返回的错误消息
       if (!getAccessToken()) {
         try {
@@ -224,8 +219,8 @@ async function requestWithRefresh(
   const methodFn = rawClient[method] as (p: string, o?: unknown) => Promise<ClientResult>;
   const result = await methodFn(path, options);
 
-  // Only attempt refresh for 401 on non-auth paths when a refresh token exists
-  if (result.error && result.response?.status === 401 && !isAuthPath(path) && getRefreshToken()) {
+  // Only attempt refresh for 401 on non-auth paths. Browser refresh tokens live in HttpOnly cookies.
+  if (result.error && result.response?.status === 401 && !isAuthPath(path)) {
     if (isRefreshing) {
       // Another request is already refreshing — queue this one
       try {

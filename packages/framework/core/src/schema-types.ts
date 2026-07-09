@@ -87,6 +87,34 @@ export interface RouteOpenAPIConfig {
   security?: Array<Record<string, string[]>>;
 }
 
+const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
+const DEFAULT_MAX_JSON_DEPTH = 10;
+const DEFAULT_MAX_FORM_FIELDS = 200;
+const DEFAULT_MAX_FORM_FILES = 20;
+
+function checkBodySize(request: Request, maxSize = DEFAULT_MAX_BODY_SIZE): string | null {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength && Number.parseInt(contentLength, 10) > maxSize) {
+    return `Body exceeds max size of ${maxSize} bytes`;
+  }
+  return null;
+}
+
+async function readLimitedText(request: Request, maxSize = DEFAULT_MAX_BODY_SIZE): Promise<string | { error: string }> {
+  const sizeError = checkBodySize(request, maxSize);
+  if (sizeError) return { error: sizeError };
+  const text = await request.clone().text();
+  if (text.length > maxSize) return { error: `Body exceeds max size of ${maxSize} bytes` };
+  return text;
+}
+
+function checkDepth(value: unknown, maxDepth = DEFAULT_MAX_JSON_DEPTH, current = 0): boolean {
+  if (current > maxDepth) return false;
+  if (typeof value !== "object" || value === null) return true;
+  if (Array.isArray(value)) return value.every((item) => checkDepth(item, maxDepth, current + 1));
+  return Object.values(value).every((item) => checkDepth(item, maxDepth, current + 1));
+}
+
 /** 路由 Schema 配置 */
 export interface RouteSchemaConfig {
   /** 查询参数 Schema */
@@ -623,13 +651,18 @@ export async function coerceAndValidateJSONBody(
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
   let body: unknown;
   try {
-    body = await request.clone().json();
+    const text = await readLimitedText(request);
+    if (typeof text !== "string") return { data: {}, errors: [text.error] };
+    body = JSON.parse(text);
   } catch {
     return { data: {}, errors: ["Invalid JSON body"] };
   }
 
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     return { data: {}, errors: ["Body must be a non-null object"] };
+  }
+  if (!checkDepth(body)) {
+    return { data: {}, errors: [`JSON exceeds max depth of ${DEFAULT_MAX_JSON_DEPTH}`] };
   }
 
   return coerceAndValidate(body as Record<string, unknown>, schema, strict);
@@ -647,7 +680,8 @@ export async function coerceAndValidateFormBody(
   schema: Record<string, SchemaField>,
   strict = true,
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
-  const text = await request.clone().text();
+  const text = await readLimitedText(request);
+  if (typeof text !== "string") return { data: {}, errors: [text.error] };
   const params = new URLSearchParams(text);
   const raw: Record<string, unknown> = {};
   for (const [k, v] of params) {
@@ -670,13 +704,33 @@ export async function coerceAndValidateFormDataBody(
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
   let formData: globalThis.FormData;
   try {
+    const sizeError = checkBodySize(request);
+    if (sizeError) return { data: {}, errors: [sizeError] };
     formData = (await request.clone().formData()) as globalThis.FormData;
   } catch {
     return { data: {}, errors: ["Failed to parse form data"] };
   }
 
   const raw: Record<string, unknown> = {};
+  let fieldCount = 0;
+  let fileCount = 0;
   for (const [k, v] of formData.entries()) {
+    fieldCount += 1;
+    if (fieldCount > DEFAULT_MAX_FORM_FIELDS) {
+      return { data: {}, errors: [`Form data exceeds max field count of ${DEFAULT_MAX_FORM_FIELDS}`] };
+    }
+    const isFile =
+      typeof v === "object" &&
+      v !== null &&
+      "name" in v &&
+      "size" in v &&
+      "type" in v;
+    if (isFile) {
+      fileCount += 1;
+      if (fileCount > DEFAULT_MAX_FORM_FILES) {
+        return { data: {}, errors: [`Form data exceeds max file count of ${DEFAULT_MAX_FORM_FILES}`] };
+      }
+    }
     const existing = raw[k];
     if (existing === undefined) {
       raw[k] = v;

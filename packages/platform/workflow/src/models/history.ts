@@ -14,6 +14,7 @@ export const WorkflowHistoryModel = defineModel(
     operator_id: column.varchar({ length: 36 }),
     action: column.varchar({ length: 32 }),
     comment: column.text({ nullable: true }),
+    tenant_id: column.varchar({ length: 36, nullable: true }),
     form_snapshot: column.json({ nullable: true }),
     metadata: column.json({ nullable: true }),
   },

@@ -19,15 +19,13 @@ services:
     container_name: ventostack-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-vento}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-ventostack}
-      POSTGRES_DB: ${DB_NAME:-ventostack}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+      POSTGRES_USER: ${DB_USER:?required}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?required}
+      POSTGRES_DB: ${DB_NAME:?required}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-vento} -d ${DB_NAME:-ventostack}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:?required} -d ${DB_NAME:?required}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -40,13 +38,11 @@ services:
     image: redis:7-alpine
     container_name: ventostack-redis
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass ${REDIS_PASSWORD:?required}
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a ${REDIS_PASSWORD:?required} ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -70,10 +66,11 @@ services:
       NODE_ENV: production
       PORT: 9320
       HOST: 0.0.0.0
-      DATABASE_URL: postgres://${DB_USER:-vento}:${DB_PASSWORD:-ventostack}@postgres:5432/${DB_NAME:-ventostack}
-      JWT_SECRET: ${JWT_SECRET:-change-me-in-production}
+      ADMIN_PORT: 0
+      DATABASE_URL: postgres://${DB_USER:?required}:${DB_PASSWORD:?required}@postgres:5432/${DB_NAME:?required}
+      JWT_SECRET: ${JWT_SECRET:?required}
       CACHE_DRIVER: redis
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD:?required}@redis:6379
       ALLOWED_ORIGINS: ${ALLOWED_ORIGINS:-http://localhost:9320}
       LOG_LEVEL: ${LOG_LEVEL:-info}
       STORAGE_DRIVER: local
@@ -82,6 +79,15 @@ services:
       - "${APP_PORT:-9320}:9320"
     volumes:
       - upload_data:/app/uploads
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 512m
+    cpus: "0.50"
     networks:
       - ventostack
 

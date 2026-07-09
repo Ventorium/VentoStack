@@ -87,5 +87,15 @@ export function createRedisAdapter(options: RedisAdapterOptions): CacheAdapter {
     return result.filter((k) => k.startsWith(keyPrefix)).map((k) => k.slice(keyPrefix.length));
   }
 
-  return { get, set, del, has, flush, keys };
+  async function increment(key: string, ttl?: number): Promise<number> {
+    const p = prefixed(key);
+    const result = await client.send("INCR", [p]);
+    const next = Number(result);
+    if (next === 1 && ttl != null && ttl > 0) {
+      await client.expire(p, ttl);
+    }
+    return next;
+  }
+
+  return { get, set, del, has, flush, keys, increment };
 }

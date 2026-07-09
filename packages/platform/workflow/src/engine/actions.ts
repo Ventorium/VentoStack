@@ -20,6 +20,11 @@ import {
 } from "./graph";
 import type { AssigneeResolver, ApproveNodeConfig } from "./assignee";
 import { isNodeCompleted, type ApprovalStrategy } from "./strategy";
+import {
+  workflowInstanceCompleted,
+  workflowInstanceRejected,
+  workflowTaskCreated,
+} from "../events";
 
 import { InstanceStatus as IS, TaskStatus as TS } from "../services/constants";
 
@@ -37,6 +42,7 @@ export async function insertHistory(
   operatorId: string,
   action: string,
   comment: string | null,
+  tenantId?: string,
 ): Promise<void> {
   await dbOrTx.query(WorkflowHistoryModel).insert({
     id: crypto.randomUUID(),
@@ -46,6 +52,7 @@ export async function insertHistory(
     operator_id: operatorId,
     action,
     comment,
+    tenant_id: tenantId ?? null,
   });
 }
 
@@ -54,6 +61,7 @@ export async function completeInstance(
   instanceId: string,
   operatorId: string,
   eventBus?: EventBus,
+  tenantId?: string,
 ): Promise<void> {
   // 幂等性保护：只有 RUNNING 状态才执行完结
   const current = await dbOrTx.query(WorkflowInstanceModel).where("id", "=", instanceId)
@@ -64,8 +72,8 @@ export async function completeInstance(
     .query(WorkflowInstanceModel)
     .where("id", "=", instanceId)
     .update({ status: IS.COMPLETED, ended_at: new Date() });
-  await insertHistory(dbOrTx, instanceId, null, null, operatorId, "instance_completed", "流程完结");
-  eventBus?.emit("workflow.instance.completed", { instanceId });
+  await insertHistory(dbOrTx, instanceId, null, null, operatorId, "instance_completed", "流程完结", tenantId);
+  eventBus?.emit(workflowInstanceCompleted, { instanceId });
 }
 
 export async function createTasksForNode(
@@ -74,6 +82,7 @@ export async function createTasksForNode(
   instanceId: string,
   node: GraphNode,
   ctx: EngineContext,
+  tenantId?: string,
 ): Promise<void> {
   const config = node.config as unknown as ApproveNodeConfig | null;
   const strategy: ApprovalStrategy = config?.strategy ?? "sequential";
@@ -87,15 +96,17 @@ export async function createTasksForNode(
     await dbOrTx.query(WorkflowTaskModel).insert({
       id: crypto.randomUUID(), instance_id: instanceId, node_id: node.id,
       assignee_id: assignees[0]!, status: TS.PENDING,
+      tenant_id: tenantId ?? null,
     });
-    deps.eventBus?.emit("workflow.task.created", { instanceId, assigneeId: assignees[0]!, nodeId: node.id });
+    deps.eventBus?.emit(workflowTaskCreated, { instanceId, assigneeId: assignees[0]!, nodeId: node.id });
   } else {
     for (const assigneeId of assignees) {
       await dbOrTx.query(WorkflowTaskModel).insert({
         id: crypto.randomUUID(), instance_id: instanceId, node_id: node.id,
         assignee_id: assigneeId, status: TS.PENDING,
+        tenant_id: tenantId ?? null,
       });
-      deps.eventBus?.emit("workflow.task.created", { instanceId, assigneeId, nodeId: node.id });
+      deps.eventBus?.emit(workflowTaskCreated, { instanceId, assigneeId, nodeId: node.id });
     }
   }
 }
@@ -107,42 +118,43 @@ export async function advanceFromNode(
   graph: WorkflowGraph,
   currentNodeId: string,
   ctx: EngineContext,
+  tenantId?: string,
 ): Promise<void> {
-  await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_entered", null);
+  await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_entered", null, tenantId);
   const currentNode = graph.nodes.get(currentNodeId);
   if (!currentNode) return;
 
   // 直接进入 end 节点时（如 processNodeCompletion 推进到结束），完成实例
   if (currentNode.type === "end") {
-    await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null);
-    await completeInstance(dbOrTx, instanceId, ctx.operatorId, deps.eventBus);
+    await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null, tenantId);
+    await completeInstance(dbOrTx, instanceId, ctx.operatorId, deps.eventBus, tenantId);
     return;
   }
 
   const nextNodes = getNextNodes(graph, currentNodeId, ctx);
-  if (nextNodes.length === 0 && currentNode.type !== "end") {
+  if (nextNodes.length === 0) {
     throw new Error(`节点「${currentNode.name}」无后续节点`);
   }
 
   for (const nextNode of nextNodes) {
     switch (nextNode.type) {
       case "start":
-        await advanceFromNode(deps, dbOrTx, instanceId, graph, nextNode.id, ctx);
+        await advanceFromNode(deps, dbOrTx, instanceId, graph, nextNode.id, ctx, tenantId);
         break;
       case "end":
-        await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null);
-        await completeInstance(dbOrTx, instanceId, ctx.operatorId, deps.eventBus);
+        await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null, tenantId);
+        await completeInstance(dbOrTx, instanceId, ctx.operatorId, deps.eventBus, tenantId);
         break;
       case "approve":
-        await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null);
-        await createTasksForNode(deps, dbOrTx, instanceId, nextNode, ctx);
+        await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null, tenantId);
+        await createTasksForNode(deps, dbOrTx, instanceId, nextNode, ctx, tenantId);
         break;
       case "cc":
-        await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null);
-        await advanceFromNode(deps, dbOrTx, instanceId, graph, nextNode.id, ctx);
+        await insertHistory(dbOrTx, instanceId, currentNodeId, null, ctx.operatorId, "node_completed", null, tenantId);
+        await advanceFromNode(deps, dbOrTx, instanceId, graph, nextNode.id, ctx, tenantId);
         break;
       case "condition":
-        await advanceFromNode(deps, dbOrTx, instanceId, graph, nextNode.id, ctx);
+        await advanceFromNode(deps, dbOrTx, instanceId, graph, nextNode.id, ctx, tenantId);
         break;
     }
   }
@@ -155,6 +167,7 @@ export async function processNodeCompletion(
   graph: WorkflowGraph,
   nodeId: string,
   ctx: EngineContext,
+  tenantId?: string,
 ): Promise<void> {
   const node = graph.nodes.get(nodeId)!;
   const config = node.config as unknown as ApproveNodeConfig | null;
@@ -178,23 +191,24 @@ export async function processNodeCompletion(
         await tx.query(WorkflowTaskModel).insert({
           id: crypto.randomUUID(), instance_id: instanceId, node_id: nodeId,
           assignee_id: nextAssignee, status: TS.PENDING,
+          tenant_id: tenantId ?? null,
         });
-        deps.eventBus?.emit("workflow.task.created", { instanceId, assigneeId: nextAssignee, nodeId });
+        deps.eventBus?.emit(workflowTaskCreated, { instanceId, assigneeId: nextAssignee, nodeId });
       }
     }
     return;
   }
 
-  await insertHistory(tx, instanceId, nodeId, null, ctx.operatorId, "node_completed", null);
+  await insertHistory(tx, instanceId, nodeId, null, ctx.operatorId, "node_completed", null, tenantId);
   const hasRejected = allTasks.some(
     (t: { status: number }) => t.status === TS.REJECTED,
   );
 
   if (hasRejected) {
-    await handleNodeReject(deps, tx, instanceId, graph, nodeId, ctx);
+    await handleNodeReject(deps, tx, instanceId, graph, nodeId, ctx, tenantId);
   } else {
     for (const nextNode of getNextNodes(graph, nodeId, ctx)) {
-      await advanceFromNode(deps, tx, instanceId, graph, nextNode.id, ctx);
+      await advanceFromNode(deps, tx, instanceId, graph, nextNode.id, ctx, tenantId);
     }
   }
 }
@@ -206,6 +220,7 @@ export async function handleNodeReject(
   graph: WorkflowGraph,
   nodeId: string,
   ctx: EngineContext,
+  tenantId?: string,
 ): Promise<void> {
   const node = graph.nodes.get(nodeId)!;
   const config = node.config as unknown as ApproveNodeConfig | null;
@@ -216,8 +231,8 @@ export async function handleNodeReject(
       await tx.query(WorkflowInstanceModel).where("id", "=", instanceId).update({
         status: IS.REJECTED, ended_at: new Date(),
       });
-      await insertHistory(tx, instanceId, nodeId, null, ctx.operatorId, "instance_rejected", null);
-      deps.eventBus?.emit("workflow.instance.rejected", { instanceId });
+      await insertHistory(tx, instanceId, nodeId, null, ctx.operatorId, "instance_rejected", null, tenantId);
+      deps.eventBus?.emit(workflowInstanceRejected, { instanceId });
       break;
     case "return_to_previous": {
       const prevNodeId = findPreviousApproveNode(graph, nodeId);
@@ -226,17 +241,17 @@ export async function handleNodeReject(
         await tx.query(WorkflowInstanceModel).where("id", "=", instanceId).update({
           status: IS.REJECTED, ended_at: new Date(),
         });
-        await insertHistory(tx, instanceId, nodeId, null, ctx.operatorId, "instance_rejected", "回退失败，自动终止");
-        deps.eventBus?.emit("workflow.instance.rejected", { instanceId });
+        await insertHistory(tx, instanceId, nodeId, null, ctx.operatorId, "instance_rejected", "回退失败，自动终止", tenantId);
+        deps.eventBus?.emit(workflowInstanceRejected, { instanceId });
         break;
       }
       await voidTasksByNode(tx, instanceId, nodeId, [TS.PENDING]);
-      await advanceFromNode(deps, tx, instanceId, graph, prevNodeId, ctx);
+      await advanceFromNode(deps, tx, instanceId, graph, prevNodeId, ctx, tenantId);
       break;
     }
     case "return_to_start":
       await voidTasksByNode(tx, instanceId, nodeId, [TS.PENDING]);
-      await advanceFromNode(deps, tx, instanceId, graph, graph.startNodeId, ctx);
+      await advanceFromNode(deps, tx, instanceId, graph, graph.startNodeId, ctx, tenantId);
       break;
   }
 }

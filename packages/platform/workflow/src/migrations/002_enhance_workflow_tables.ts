@@ -103,6 +103,7 @@ export const enhanceWorkflowTables: Migration = {
         operator_id     VARCHAR(36) NOT NULL,
         action          VARCHAR(32) NOT NULL,
         comment         TEXT,
+        tenant_id       VARCHAR(36) DEFAULT 'default',
         form_snapshot   JSON,
         metadata        JSON,
         created_at      TIMESTAMP DEFAULT NOW()
@@ -137,6 +138,9 @@ export const enhanceWorkflowTables: Migration = {
     );
     await executor(
       `CREATE INDEX IF NOT EXISTS idx_sys_wf_hist_operator ON sys_workflow_history(operator_id)`,
+    );
+    await executor(
+      `CREATE INDEX IF NOT EXISTS idx_sys_wf_hist_tenant_inst ON sys_workflow_history(tenant_id, instance_id)`,
     );
   },
   down: async (executor) => {

@@ -92,5 +92,12 @@ export function createMemoryAdapter(): CacheAdapter {
     return result;
   }
 
-  return { get, set, del, has, flush, keys };
+  async function increment(key: string, ttl?: number): Promise<number> {
+    const current = Number.parseInt((await get(key)) ?? "0", 10);
+    const next = Number.isFinite(current) ? current + 1 : 1;
+    await set(key, String(next), ttl);
+    return next;
+  }
+
+  return { get, set, del, has, flush, keys, increment };
 }

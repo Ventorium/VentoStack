@@ -50,6 +50,17 @@ describe("sql-query tool", () => {
       expect(calledSql).toContain("LIMIT 50");
     });
 
+    test("强制注入 tenant_id 作用域", async () => {
+      const db = createMockDb([]);
+      const tool = createSQLQueryTool({ db: db as any, tenantId: "t1" });
+      await tool.handler({ sql: "SELECT * FROM users" });
+      const rawMock = db.raw as ReturnType<typeof mock>;
+      const calledSql = rawMock.mock.calls[0][0] as string;
+      const params = rawMock.mock.calls[0][1] as string[];
+      expect(calledSql).toContain("WHERE tenant_id = $1");
+      expect(params).toEqual(["t1"]);
+    });
+
     test("已有 LIMIT 不重复添加", async () => {
       const db = createMockDb([]);
       const tool = createSQLQueryTool({ db: db as any, tenantId: "t1" });

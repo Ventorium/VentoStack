@@ -7,7 +7,7 @@ import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
 import { createMockJWTManager, createMockRBAC } from "./helpers";
 
 function createContext(overrides: Record<string, any> = {}) {
-  const request = new Request("http://localhost/api/test", {
+  const request = new Request(overrides.url ?? "http://localhost/api/test", {
     method: "GET",
     headers: overrides.headers ?? {},
   });
@@ -52,6 +52,52 @@ describe("createAuthMiddleware", () => {
     const response = await middleware(ctx as any, next);
     expect(nextCalled).toBe(true);
     expect(ctx.user).toEqual({ id: "u1", roles: ["admin"], username: "admin" });
+  });
+
+  test("cookie token passes through when Authorization header is missing", async () => {
+    const jwt = createMockJWTManager();
+    jwt.verify.mockResolvedValue({ sub: "u1", roles: ["admin"], username: "admin" } as any);
+    const middleware = createAuthMiddleware(jwt, "secret");
+
+    const ctx = createContext({
+      headers: { Cookie: "vs_access_token=cookie-token" },
+    });
+
+    let nextCalled = false;
+    const next = async () => {
+      nextCalled = true;
+      return new Response("ok");
+    };
+
+    await middleware(ctx as any, next);
+    expect(nextCalled).toBe(true);
+    expect(jwt.verify).toHaveBeenCalledWith("cookie-token", "secret");
+  });
+
+  test("missing all token sources returns 401", async () => {
+    const jwt = createMockJWTManager();
+    const middleware = createAuthMiddleware(jwt, "secret");
+
+    const ctx = createContext({ url: "http://localhost/api/test?token=query-token" });
+    const next = async () => new Response("ok");
+
+    const resp = await middleware(ctx as any, next) as Response;
+    expect(resp.status).toBe(401);
+  });
+
+  test("Authorization header takes precedence over cookie and query token", async () => {
+    const jwt = createMockJWTManager();
+    jwt.verify.mockResolvedValue({ sub: "u1", roles: ["admin"], username: "admin" } as any);
+    const middleware = createAuthMiddleware(jwt, "secret");
+
+    const ctx = createContext({
+      url: "http://localhost/api/test?token=query-token",
+      headers: { Authorization: "Bearer header-token", Cookie: "vs_access_token=cookie-token" },
+    });
+    const next = async () => new Response("ok");
+
+    await middleware(ctx as any, next);
+    expect(jwt.verify).toHaveBeenCalledWith("header-token", "secret");
   });
 
   test("missing Authorization header returns 401", async () => {

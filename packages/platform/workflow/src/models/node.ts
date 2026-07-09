@@ -13,6 +13,8 @@ export const WorkflowNodeModel = defineModel(
     type: column.varchar({ length: 32 }),
     assignee_type: column.varchar({ length: 32, nullable: true }),
     assignee_id: column.varchar({ length: 36, nullable: true }),
+    position_x: column.int({ default: 0 }),
+    position_y: column.int({ default: 0 }),
     sort: column.int({ default: 0 }),
     config: column.json({ nullable: true }),
   },

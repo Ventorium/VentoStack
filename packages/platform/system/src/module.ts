@@ -193,6 +193,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const opLogMiddleware = createOperationLogMiddleware(auditLog, {
     saveToDb: saveOperationLog,
     excludePathPrefixes: ["/api/system/operation-logs", "/api/system/login-logs"],
+    trustedProxies: deps.trustedProxies ?? [],
   });
 
   // Routes
@@ -253,7 +254,14 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   router.merge(createAuthRoutes(authService, authMiddleware, perm, deps.trustedProxies ?? []));
   router.merge(
-    createPasskeyRoutes(passkeyService, authService, authMiddleware, cache, configService),
+    createPasskeyRoutes(
+      passkeyService,
+      authService,
+      authMiddleware,
+      cache,
+      configService,
+      deps.trustedProxies ?? [],
+    ),
   );
   router.merge(createUserRoutes(userService, authMiddleware, perm, opLogMiddleware));
 

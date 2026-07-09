@@ -17,13 +17,43 @@ const MAX_IP_REQUESTS_PER_MINUTE = 20;
 /** IP 限流窗口（秒） */
 const IP_RATE_WINDOW = 60;
 
-/** 从请求中提取客户端 IP（优先代理头，回退到 Bun 注入的 x-real-ip） */
-function getClientIP(request: Request): string {
+/** 从请求中提取客户端 IP。仅可信代理可传递代理头。 */
+function getClientIP(request: Request, trustedProxies: string[] = []): string {
+  const directIP =
+    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ?? "unknown";
+  if (trustedProxies.length === 0 || !trustedProxies.includes(directIP)) {
+    return directIP;
+  }
   const forwarded = request.headers.get("x-forwarded-for");
   if (forwarded) return forwarded.split(",")[0]!.trim();
   const realIP = request.headers.get("x-real-ip");
   if (realIP) return realIP.trim();
-  return "unknown";
+  return directIP;
+}
+
+interface TokenCookiePair {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  refreshExpiresIn?: number;
+}
+
+function cookieSecureAttribute(request: Request): string {
+  return new URL(request.url).protocol === "https:" ? "; Secure" : "";
+}
+
+function appendCookie(response: Response, request: Request, name: string, value: string, maxAge: number): Response {
+  response.headers.append(
+    "Set-Cookie",
+    `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${cookieSecureAttribute(request)}`,
+  );
+  return response;
+}
+
+function withTokenCookies(response: Response, request: Request, pair: TokenCookiePair): Response {
+  if (pair.accessToken) appendCookie(response, request, "vs_access_token", pair.accessToken, pair.expiresIn ?? 900);
+  if (pair.refreshToken) appendCookie(response, request, "vs_refresh_token", pair.refreshToken, pair.refreshExpiresIn ?? 604800);
+  return response;
 }
 
 const passkeyItemSchema = {
@@ -38,6 +68,7 @@ export function createPasskeyRoutes(
   authMiddleware: Middleware,
   cache: Cache,
   configService: ConfigService,
+  trustedProxies: string[] = [],
 ): Router {
   const router = createRouter();
 
@@ -69,13 +100,12 @@ export function createPasskeyRoutes(
         }
 
         // IP 速率限制
-        const ip = getClientIP(ctx.request);
+        const ip = getClientIP(ctx.request, trustedProxies);
         const ipKey = `passkey_ip:${ip}`;
-        const ipCount = await cache.get<number>(ipKey);
-        if (ipCount !== null && ipCount >= MAX_IP_REQUESTS_PER_MINUTE) {
+        const ipCount = await cache.increment(ipKey, IP_RATE_WINDOW);
+        if (ipCount > MAX_IP_REQUESTS_PER_MINUTE) {
           return fail("请求过于频繁，请稍后再试", 429);
         }
-        await cache.set(ipKey, (ipCount ?? 0) + 1, { ttl: IP_RATE_WINDOW });
 
         const body = await parseBody(ctx.request);
         const result = await passkeyService.beginAuthentication(body.username as string);
@@ -122,7 +152,7 @@ export function createPasskeyRoutes(
           body.assertion as any,
         );
 
-        const ip = getClientIP(ctx.request);
+        const ip = getClientIP(ctx.request, trustedProxies);
 
         const loginResult = await authService.completePasskeyLogin({
           userId,
@@ -132,7 +162,7 @@ export function createPasskeyRoutes(
           ...(body.deviceType ? { deviceType: body.deviceType as string } : {}),
         });
 
-        return success(loginResult);
+        return withTokenCookies(success(loginResult), ctx.request, loginResult);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "通行密钥验证失败";
         return fail(msg, 401, 401);

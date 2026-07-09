@@ -310,13 +310,6 @@ function extractClientIP(request: Request, trustedProxies: string[]): string {
     return null;
   };
 
-  // 直接连接 IP 不可用或是 loopback 时，尝试从 header 读取
-  // （开发环境 Vite proxy、生产环境反向代理都会产生 loopback 连接）
-  if (directIP === "unknown" || directIP.startsWith("127.")) {
-    const headerIP = fromHeaders();
-    if (headerIP) return headerIP;
-  }
-
   // 没有可信代理配置，返回直接连接 IP
   if (trustedProxies.length === 0) {
     return directIP;

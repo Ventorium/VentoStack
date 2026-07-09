@@ -19,6 +19,7 @@ import { buildGraph, buildGraphFromSnapshot } from "../engine/graph";
 import type { EngineContext, GraphNodeData, GraphEdgeData } from "../engine/graph";
 import type { AssigneeResolver } from "../engine/assignee";
 import { workflowErrors } from "../engine/errors";
+import { workflowInstanceWithdrawn } from "../events";
 import {
   insertHistory,
   advanceFromNode,
@@ -26,6 +27,7 @@ import {
 } from "../engine/actions";
 
 import { InstanceStatus, TaskStatus } from "./constants";
+import type { PageParams, PaginatedResult } from "./types";
 export { InstanceStatus, TaskStatus };
 
 export interface WorkflowInstance {
@@ -40,7 +42,7 @@ export interface WorkflowInstance {
 export interface WorkflowHistory {
   id: string; instanceId: string; nodeId: string | null;
   taskId: string | null; operatorId: string; action: string;
-  comment: string | null; createdAt: string;
+  comment: string | null; tenantId: string | null; createdAt: string;
 }
 
 export interface StartInstanceParams {
@@ -58,23 +60,27 @@ export interface InstanceDetail {
 
 export interface InstanceService {
   start(params: StartInstanceParams): Promise<{ instanceId: string }>;
-  getDetail(instanceId: string): Promise<InstanceDetail | null>;
-  listMy(userId: string, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>>;
-  withdraw(instanceId: string, userId: string, comment?: string): Promise<void>;
-  cancel(instanceId: string, userId: string, comment?: string): Promise<void>;
-  resubmit(instanceId: string, userId: string, formData: Record<string, unknown>): Promise<{ instanceId: string }>;
-  getHistory(instanceId: string): Promise<WorkflowHistory[]>;
-  listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>>;
+  getDetail(instanceId: string, tenantId?: string): Promise<InstanceDetail | null>;
+  listMy(userId: string, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>>;
+  withdraw(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void>;
+  cancel(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void>;
+  resubmit(instanceId: string, userId: string, formData: Record<string, unknown>, tenantId?: string): Promise<{ instanceId: string }>;
+  getHistory(instanceId: string, tenantId?: string): Promise<WorkflowHistory[]>;
+  listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>>;
 }
 
 export interface InstanceServiceDeps { db: Database; eventBus?: EventBus; assigneeResolver: AssigneeResolver }
 
 export function createInstanceService(deps: InstanceServiceDeps): InstanceService {
   const { db, eventBus, assigneeResolver } = deps;
-  const flowDeps: FlowActionDeps = { db, eventBus, assigneeResolver };
+  const flowDeps: FlowActionDeps = { db, assigneeResolver };
+  if (eventBus) flowDeps.eventBus = eventBus;
 
   async function start(params: StartInstanceParams): Promise<{ instanceId: string }> {
-    const def = await db.query(WorkflowDefModel).where("id", "=", params.definitionId)
+    const tenantId = params.tenantId ?? "default";
+    const def = await db.query(WorkflowDefModel)
+      .where("id", "=", params.definitionId)
+      .where("tenant_id", "=", tenantId)
       .select("id", "version", "status").get();
     if (!def) throw workflowErrors.defNotFound();
     if (def.status !== 1) throw workflowErrors.defNotActive();
@@ -99,27 +105,32 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     );
 
     const instanceId = crypto.randomUUID();
-    await db.query(WorkflowInstanceModel).insert({
-      id: instanceId, definition_id: params.definitionId, definition_ver: def.version,
-      business_type: params.businessType ?? null, business_id: params.businessId ?? null,
-      initiator_id: params.initiatorId, title: params.title ?? null,
-      status: InstanceStatus.RUNNING, form_data: params.formData, variables: params.variables ?? null,
-      graph_snapshot: JSON.stringify({ nodes, edges }),
-      resubmit_of: params.resubmitOf ?? null, tenant_id: params.tenantId ?? "default",
-      started_at: new Date(),
-    });
 
     const ctx: EngineContext = {
       instanceId, formData: params.formData, variables: params.variables ?? {},
       initiator: { id: params.initiatorId }, operatorId: params.initiatorId,
     };
 
-    await advanceFromNode(flowDeps, db, instanceId, graph, graph.startNodeId, ctx);
+    await db.transaction(async (tx) => {
+      await tx.query(WorkflowInstanceModel).insert({
+        id: instanceId, definition_id: params.definitionId, definition_ver: def.version,
+        business_type: params.businessType ?? null, business_id: params.businessId ?? null,
+        initiator_id: params.initiatorId, title: params.title ?? null,
+        status: InstanceStatus.RUNNING, form_data: params.formData, variables: params.variables ?? null,
+        graph_snapshot: JSON.stringify({ nodes, edges }),
+        resubmit_of: params.resubmitOf ?? null, tenant_id: tenantId,
+        started_at: new Date(),
+      });
+
+      await advanceFromNode(flowDeps, tx, instanceId, graph, graph.startNodeId, ctx, tenantId);
+    });
     return { instanceId };
   }
 
-  async function getDetail(instanceId: string): Promise<InstanceDetail | null> {
-    const inst = await db.query(WorkflowInstanceModel).where("id", "=", instanceId)
+  async function getDetail(instanceId: string, tenantId?: string): Promise<InstanceDetail | null> {
+    let instQuery = db.query(WorkflowInstanceModel).where("id", "=", instanceId);
+    if (tenantId) instQuery = instQuery.where("tenant_id", "=", tenantId);
+    const inst = await instQuery
       .select("id", "definition_id", "definition_ver", "business_type", "business_id",
         "initiator_id", "title", "status", "form_data", "variables", "graph_snapshot",
         "resubmit_of", "tenant_id", "started_at", "ended_at", "created_at").get();
@@ -130,14 +141,15 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     const tasks = await db.query(WorkflowTaskModel).where("instance_id", "=", instanceId)
       .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "transfer_to", "acted_at", "created_at")
       .orderBy("created_at", "asc").list();
-    const history = await getHistory(instanceId);
+    const history = await getHistory(instanceId, tenantId);
 
     return { instance: mapInstance(inst), graph, tasks, history };
   }
 
-  async function listMy(userId: string, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>> {
-    const { page = 1, pageSize = 10 } = params ?? {};
-    const q = db.query(WorkflowInstanceModel).where("initiator_id", "=", userId);
+  async function listMy(userId: string, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>> {
+    const { page = 1, pageSize = 10, tenantId } = params ?? {};
+    let q = db.query(WorkflowInstanceModel).where("initiator_id", "=", userId);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
     const total = await q.count();
     const rows = await q.select("id", "definition_id", "definition_ver", "business_type", "business_id",
       "initiator_id", "title", "status", "form_data", "variables", "resubmit_of", "tenant_id",
@@ -146,9 +158,11 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     return { items: rows.map(mapInstance), total, page, pageSize };
   }
 
-  async function withdraw(instanceId: string, userId: string, comment?: string): Promise<void> {
+  async function withdraw(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void> {
     await db.transaction(async (tx) => {
-      const inst = await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
+      let instQuery = tx.query(WorkflowInstanceModel).where("id", "=", instanceId);
+      if (tenantId) instQuery = instQuery.where("tenant_id", "=", tenantId);
+      const inst = await instQuery
         .select("id", "initiator_id", "status").get();
       if (!inst) throw workflowErrors.instanceNotFound();
       if (inst.initiator_id !== userId) throw workflowErrors.notInitiator();
@@ -163,14 +177,16 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
         [TaskStatus.VOIDED, instanceId, TaskStatus.PENDING]);
       await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .update({ status: InstanceStatus.WITHDRAWN, ended_at: new Date() });
-      await insertHistory(tx, instanceId, null, null, userId, "withdraw", comment ?? "发起人撤回");
+      await insertHistory(tx, instanceId, null, null, userId, "withdraw", comment ?? "发起人撤回", tenantId);
     });
-    eventBus?.emit("workflow.instance.withdrawn", { instanceId, withdrawnBy: userId });
+    eventBus?.emit(workflowInstanceWithdrawn, { instanceId, withdrawnBy: userId });
   }
 
-  async function cancel(instanceId: string, userId: string, comment?: string): Promise<void> {
+  async function cancel(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void> {
     await db.transaction(async (tx) => {
-      const inst = await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
+      let instQuery = tx.query(WorkflowInstanceModel).where("id", "=", instanceId);
+      if (tenantId) instQuery = instQuery.where("tenant_id", "=", tenantId);
+      const inst = await instQuery
         .select("id", "status").get();
       if (!inst) throw workflowErrors.instanceNotFound();
       if (inst.status !== InstanceStatus.RUNNING) throw workflowErrors.notRunning();
@@ -179,36 +195,45 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
         [TaskStatus.VOIDED, instanceId, TaskStatus.PENDING]);
       await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .update({ status: InstanceStatus.CANCELLED, ended_at: new Date() });
-      await insertHistory(tx, instanceId, null, null, userId, "cancel", comment ?? "管理员终止");
+      await insertHistory(tx, instanceId, null, null, userId, "cancel", comment ?? "管理员终止", tenantId);
     });
   }
 
-  async function resubmit(instanceId: string, userId: string, formData: Record<string, unknown>): Promise<{ instanceId: string }> {
-    const original = await db.query(WorkflowInstanceModel).where("id", "=", instanceId)
-      .select("id", "definition_id", "business_type", "business_id", "title", "status", "initiator_id").get();
+  async function resubmit(instanceId: string, userId: string, formData: Record<string, unknown>, tenantId?: string): Promise<{ instanceId: string }> {
+    let q = db.query(WorkflowInstanceModel).where("id", "=", instanceId);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    const original = await q
+      .select("id", "definition_id", "business_type", "business_id", "title", "status", "initiator_id", "tenant_id").get();
     if (!original) throw workflowErrors.instanceNotFound();
     if (original.initiator_id !== userId) throw workflowErrors.notInitiator();
     if (original.status !== InstanceStatus.REJECTED && original.status !== InstanceStatus.WITHDRAWN) {
       throw workflowErrors.cannotResubmit();
     }
-    return start({
+    const startParams: StartInstanceParams = {
       definitionId: original.definition_id, initiatorId: userId,
-      businessType: original.business_type ?? undefined, businessId: original.business_id ?? undefined,
-      title: original.title ?? undefined, formData, resubmitOf: instanceId,
-    });
+      formData, resubmitOf: instanceId,
+      tenantId: (original.tenant_id as string | null) ?? tenantId ?? "default",
+    };
+    if (original.business_type) startParams.businessType = original.business_type as string;
+    if (original.business_id) startParams.businessId = original.business_id as string;
+    if (original.title) startParams.title = original.title as string;
+    return start(startParams);
   }
 
-  async function getHistory(instanceId: string): Promise<WorkflowHistory[]> {
-    const rows = await db.query(WorkflowHistoryModel).where("instance_id", "=", instanceId)
-      .select("id", "instance_id", "node_id", "task_id", "operator_id", "action", "comment", "created_at")
+  async function getHistory(instanceId: string, tenantId?: string): Promise<WorkflowHistory[]> {
+    let q = db.query(WorkflowHistoryModel).where("instance_id", "=", instanceId);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    const rows = await q
+      .select("id", "instance_id", "node_id", "task_id", "operator_id", "action", "comment", "tenant_id", "created_at")
       .orderBy("created_at", "asc").list();
     return rows.map(mapHistory);
   }
 
-  async function listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>> {
-    const { page = 1, pageSize = 10 } = params ?? {};
+  async function listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>> {
+    const { page = 1, pageSize = 10, tenantId } = params ?? {};
     let q = db.query(WorkflowInstanceModel).where("business_type", "=", businessType);
     if (businessId) q = q.where("business_id", "=", businessId);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
     const total = await q.count();
     const rows = await q
       .select("id", "definition_id", "definition_ver", "business_type", "business_id", "initiator_id", "title", "status", "form_data", "variables", "resubmit_of", "tenant_id", "started_at", "ended_at", "created_at")
@@ -243,6 +268,7 @@ function mapHistory(row: Record<string, unknown>): WorkflowHistory {
     nodeId: (row.node_id as string) ?? null, taskId: (row.task_id as string) ?? null,
     operatorId: row.operator_id as string, action: row.action as string,
     comment: (row.comment as string) ?? null,
+    tenantId: (row.tenant_id as string) ?? null,
     createdAt: (row.created_at as Date).toISOString(),
   };
 }

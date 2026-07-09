@@ -5,8 +5,30 @@
  * 记录操作类型、key、命中/未命中和耗时。
  */
 
-import type { Cache, CacheOptions, TaggedCache } from "@ventostack/cache";
 import type { SpanContext, Tracer } from "./tracing";
+
+export interface CacheOptions {
+  ttl?: number;
+  tags?: string[];
+}
+
+export interface TaggedCache {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, opts?: Omit<CacheOptions, "tags">): Promise<void>;
+  flush(): Promise<void>;
+}
+
+export interface TraceableCache {
+  get<T = unknown>(key: string): Promise<T | null>;
+  set(key: string, value: unknown, opts?: CacheOptions): Promise<void>;
+  del(key: string): Promise<void>;
+  has(key: string): Promise<boolean>;
+  flush(): Promise<void>;
+  tags(tags: string[]): TaggedCache;
+  remember<T>(key: string, ttl: number, factory: () => Promise<T>): Promise<T>;
+  singleflight<T>(key: string, factory: () => Promise<T>): Promise<T>;
+  increment?(key: string, ttl?: number): Promise<number>;
+}
 
 export interface CacheTracingOptions {
   /** 获取当前请求的 SpanContext */
@@ -21,10 +43,10 @@ export interface CacheTracingOptions {
  * @returns 包装后的 Cache 实例
  */
 export function wrapCacheWithTracing(
-  cache: Cache,
+  cache: TraceableCache,
   tracer: Tracer,
   options: CacheTracingOptions,
-): Cache {
+): TraceableCache {
   const run = <T>(name: string, key: string, fn: () => Promise<T>): Promise<T> => {
     const parentContext = options.getSpanContext();
     if (!parentContext) return fn();
@@ -82,6 +104,12 @@ export function wrapCacheWithTracing(
     },
     singleflight<T>(key: string, factory: () => Promise<T>): Promise<T> {
       return run("singleflight", key, () => cache.singleflight(key, factory));
+    },
+    increment(key: string, ttl?: number): Promise<number> {
+      if (!cache.increment) {
+        throw new Error("Cache increment is not supported by this cache instance");
+      }
+      return run("increment", key, () => cache.increment!(key, ttl));
     },
   };
 }

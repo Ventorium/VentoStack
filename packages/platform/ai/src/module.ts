@@ -303,7 +303,14 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm, { storagePath: `${storagePath}/skills`, workspacePath: `${storagePath}/skills/.workspace` });
 
   // MCP Server 服务
-  const mcpServerService = createMcpServerService({ db: db as import("@ventostack/database").Database }) as unknown as McpServerService;
+  const allowedMcpCommands = (process.env.AI_MCP_STDIO_COMMANDS ?? "")
+    .split(",")
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd.length > 0);
+  const mcpServerService = createMcpServerService({
+    db: db as import("@ventostack/database").Database,
+    allowedStdioCommands: allowedMcpCommands,
+  }) as unknown as McpServerService;
   const mcpRouter = createMcpServerRoutes(mcpServerService, authMiddleware, perm);
 
   // 工具注册表路由

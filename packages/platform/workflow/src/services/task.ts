@@ -11,6 +11,7 @@ import { WorkflowTaskModel, WorkflowInstanceModel, WorkflowHistoryModel } from "
 import { buildGraphFromSnapshot, type EngineContext, type WorkflowGraph } from "../engine/graph";
 import type { AssigneeResolver, ApproveNodeConfig } from "../engine/assignee";
 import { workflowErrors } from "../engine/errors";
+import { workflowTaskUrge } from "../events";
 import { TaskStatus } from "./constants";
 import type { PaginatedResult, PageParams, WorkflowTask } from "./types";
 import {
@@ -21,41 +22,51 @@ import {
 } from "../engine/actions";
 
 export interface TaskService {
-  approve(taskId: string, userId: string, comment?: string): Promise<void>;
-  reject(taskId: string, userId: string, comment?: string): Promise<void>;
-  transfer(taskId: string, userId: string, targetUserId: string, comment?: string): Promise<void>;
-  addSign(taskId: string, userId: string, targetUserIds: string[], comment?: string): Promise<void>;
-  urge(taskId: string, userId: string): Promise<void>;
+  approve(taskId: string, userId: string, comment?: string, tenantId?: string): Promise<void>;
+  reject(taskId: string, userId: string, comment?: string, tenantId?: string): Promise<void>;
+  transfer(taskId: string, userId: string, targetUserId: string, comment?: string, tenantId?: string): Promise<void>;
+  addSign(taskId: string, userId: string, targetUserIds: string[], comment?: string, tenantId?: string): Promise<void>;
+  urge(taskId: string, userId: string, tenantId?: string): Promise<void>;
   listMy(userId: string, params?: TaskListParams): Promise<PaginatedResult<WorkflowTask>>;
-  listMyDone(userId: string, params?: PageParams): Promise<PaginatedResult<WorkflowTask>>;
+  listMyDone(userId: string, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowTask>>;
 }
 
-export interface TaskListParams extends PageParams { status?: number }
+export interface TaskListParams extends PageParams { status?: number; tenantId?: string }
 export interface TaskServiceDeps { db: Database; eventBus?: EventBus; assigneeResolver: AssigneeResolver }
 
 export function createTaskService(deps: TaskServiceDeps): TaskService {
   const { db, eventBus, assigneeResolver } = deps;
-  const flowDeps: FlowActionDeps = { db, eventBus, assigneeResolver };
+  const flowDeps: FlowActionDeps = { db, assigneeResolver };
+  if (eventBus) flowDeps.eventBus = eventBus;
 
-  async function approve(taskId: string, userId: string, comment?: string): Promise<void> {
+  async function approve(taskId: string, userId: string, comment?: string, tenantId?: string): Promise<void> {
     await db.transaction(async (tx) => {
       const updated = await tx.raw(
-        `UPDATE sys_workflow_task SET status = 1, action = 'approve', comment = $3, acted_at = NOW()
-         WHERE id = $1 AND status = 0 AND assignee_id = $2`,
-        [taskId, userId, comment ?? null],
-      );
-      if (updated.rowCount === 0) {
-        const task = await tx.raw(`SELECT status, assignee_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
+        tenantId
+          ? `UPDATE sys_workflow_task SET status = 1, action = 'approve', comment = $3, acted_at = NOW()
+             WHERE id = $1 AND status = 0 AND assignee_id = $2 AND tenant_id = $4`
+          : `UPDATE sys_workflow_task SET status = 1, action = 'approve', comment = $3, acted_at = NOW()
+             WHERE id = $1 AND status = 0 AND assignee_id = $2`,
+        tenantId ? [taskId, userId, comment ?? null, tenantId] : [taskId, userId, comment ?? null],
+      ) as Array<Record<string, unknown>> & { rowCount?: number };
+      if ((updated.rowCount ?? updated.length) === 0) {
+        const task = await findTaskStatusForTenant(tx, taskId, tenantId);
         if (task.length === 0) throw workflowErrors.taskNotFound();
-        if (task[0].assignee_id !== userId) throw workflowErrors.notAssignee();
+        const taskRow = task[0]!;
+        if (taskRow.assignee_id !== userId) throw workflowErrors.notAssignee();
         throw workflowErrors.taskAlreadyActed();
       }
-      const task = await tx.raw(`SELECT instance_id, node_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
-      const { instance_id: instanceId, node_id: nodeId } = task[0];
-      await insertHistory(tx, instanceId, nodeId, taskId, userId, "approve", comment ?? null);
+      const task = await findTaskFlowForTenant(tx, taskId, tenantId);
+      const taskRow = task[0];
+      if (!taskRow) throw workflowErrors.taskNotFound();
+      const instanceId = taskRow.instance_id as string;
+      const nodeId = taskRow.node_id as string;
+      const taskTenantId = (taskRow.tenant_id as string | null) ?? tenantId;
+      await insertHistory(tx, instanceId as string, nodeId as string, taskId, userId, "approve", comment ?? null, taskTenantId);
 
       const instance = await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .select("graph_snapshot", "form_data", "variables", "initiator_id").get();
+      if (!instance) throw workflowErrors.instanceNotFound();
       const graph = buildGraphFromSnapshot(instance.graph_snapshot as string);
       const ctx: EngineContext = {
         instanceId,
@@ -64,29 +75,38 @@ export function createTaskService(deps: TaskServiceDeps): TaskService {
         initiator: { id: instance.initiator_id as string },
         operatorId: userId,
       };
-      await processNodeCompletion(flowDeps, tx, instanceId, graph, nodeId, ctx);
+      await processNodeCompletion(flowDeps, tx, instanceId, graph, nodeId, ctx, taskTenantId);
     });
   }
 
-  async function reject(taskId: string, userId: string, comment?: string): Promise<void> {
+  async function reject(taskId: string, userId: string, comment?: string, tenantId?: string): Promise<void> {
     await db.transaction(async (tx) => {
       const updated = await tx.raw(
-        `UPDATE sys_workflow_task SET status = 2, action = 'reject', comment = $3, acted_at = NOW()
-         WHERE id = $1 AND status = 0 AND assignee_id = $2`,
-        [taskId, userId, comment ?? null],
-      );
-      if (updated.rowCount === 0) {
-        const task = await tx.raw(`SELECT status, assignee_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
+        tenantId
+          ? `UPDATE sys_workflow_task SET status = 2, action = 'reject', comment = $3, acted_at = NOW()
+             WHERE id = $1 AND status = 0 AND assignee_id = $2 AND tenant_id = $4`
+          : `UPDATE sys_workflow_task SET status = 2, action = 'reject', comment = $3, acted_at = NOW()
+             WHERE id = $1 AND status = 0 AND assignee_id = $2`,
+        tenantId ? [taskId, userId, comment ?? null, tenantId] : [taskId, userId, comment ?? null],
+      ) as Array<Record<string, unknown>> & { rowCount?: number };
+      if ((updated.rowCount ?? updated.length) === 0) {
+        const task = await findTaskStatusForTenant(tx, taskId, tenantId);
         if (task.length === 0) throw workflowErrors.taskNotFound();
-        if (task[0].assignee_id !== userId) throw workflowErrors.notAssignee();
+        const taskRow = task[0]!;
+        if (taskRow.assignee_id !== userId) throw workflowErrors.notAssignee();
         throw workflowErrors.taskAlreadyActed();
       }
-      const task = await tx.raw(`SELECT instance_id, node_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
-      const { instance_id: instanceId, node_id: nodeId } = task[0];
-      await insertHistory(tx, instanceId, nodeId, taskId, userId, "reject", comment ?? null);
+      const task = await findTaskFlowForTenant(tx, taskId, tenantId);
+      const taskRow = task[0];
+      if (!taskRow) throw workflowErrors.taskNotFound();
+      const instanceId = taskRow.instance_id as string;
+      const nodeId = taskRow.node_id as string;
+      const taskTenantId = (taskRow.tenant_id as string | null) ?? tenantId;
+      await insertHistory(tx, instanceId as string, nodeId as string, taskId, userId, "reject", comment ?? null, taskTenantId);
 
       const instance = await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .select("graph_snapshot", "form_data", "variables", "initiator_id").get();
+      if (!instance) throw workflowErrors.instanceNotFound();
       const graph = buildGraphFromSnapshot(instance.graph_snapshot as string);
       const ctx: EngineContext = {
         instanceId,
@@ -95,77 +115,93 @@ export function createTaskService(deps: TaskServiceDeps): TaskService {
         initiator: { id: instance.initiator_id as string },
         operatorId: userId,
       };
-      await processNodeCompletion(flowDeps, tx, instanceId, graph, nodeId, ctx);
+      await processNodeCompletion(flowDeps, tx, instanceId, graph, nodeId, ctx, taskTenantId);
     });
   }
 
-  async function transfer(taskId: string, userId: string, targetUserId: string, comment?: string): Promise<void> {
+  async function transfer(taskId: string, userId: string, targetUserId: string, comment?: string, tenantId?: string): Promise<void> {
     if (userId === targetUserId) throw workflowErrors.invalidAssignee();
     await db.transaction(async (tx) => {
       const updated = await tx.raw(
         `UPDATE sys_workflow_task SET status = 3, action = 'transfer', transfer_to = $3, comment = $4, acted_at = NOW()
-         WHERE id = $1 AND status = 0 AND assignee_id = $2`,
-        [taskId, userId, targetUserId, comment ?? null],
-      );
-      if (updated.rowCount === 0) {
-        const existing = await tx.raw(`SELECT status, assignee_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
+         WHERE id = $1 AND status = 0 AND assignee_id = $2${tenantId ? " AND tenant_id = $5" : ""}`,
+        tenantId ? [taskId, userId, targetUserId, comment ?? null, tenantId] : [taskId, userId, targetUserId, comment ?? null],
+      ) as Array<Record<string, unknown>> & { rowCount?: number };
+      if ((updated.rowCount ?? updated.length) === 0) {
+        const existing = await findTaskStatusForTenant(tx, taskId, tenantId);
         if (existing.length === 0) throw workflowErrors.taskNotFound();
-        if (existing[0].assignee_id !== userId) throw workflowErrors.notAssignee();
+        const existingRow = existing[0]!;
+        if (existingRow.assignee_id !== userId) throw workflowErrors.notAssignee();
         throw workflowErrors.taskAlreadyActed();
       }
 
-      const task = await tx.raw(`SELECT instance_id, node_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
-      const { instance_id: instanceId, node_id: nodeId } = task[0];
+      const task = await findTaskFlowForTenant(tx, taskId, tenantId);
+      const taskRow = task[0];
+      if (!taskRow) throw workflowErrors.taskNotFound();
+      const instanceId = taskRow.instance_id as string;
+      const nodeId = taskRow.node_id as string;
+      const taskTenantId = (taskRow.tenant_id as string | null) ?? tenantId;
 
       await tx.query(WorkflowTaskModel).insert({
         id: crypto.randomUUID(), instance_id: instanceId, node_id: nodeId,
-        assignee_id: targetUserId, status: TaskStatus.PENDING,
+        assignee_id: targetUserId, status: TaskStatus.PENDING, tenant_id: taskTenantId ?? null,
       });
-      await insertHistory(tx, instanceId, nodeId, taskId, userId, "transfer", `转办给 ${targetUserId}: ${comment ?? ""}`);
+      await insertHistory(tx, instanceId, nodeId, taskId, userId, "transfer", `转办给 ${targetUserId}: ${comment ?? ""}`, taskTenantId);
     });
   }
 
-  async function addSign(taskId: string, userId: string, targetUserIds: string[], comment?: string): Promise<void> {
+  async function addSign(taskId: string, userId: string, targetUserIds: string[], comment?: string, tenantId?: string): Promise<void> {
     if (targetUserIds.length > 20) throw workflowErrors.invalidAssignee();
     await db.transaction(async (tx) => {
-      const task = await tx.raw(`SELECT instance_id, node_id, status, assignee_id FROM sys_workflow_task WHERE id = $1`, [taskId]);
+      const task = await findTaskForAddSign(tx, taskId, tenantId);
       if (task.length === 0) throw workflowErrors.taskNotFound();
-      if (task[0].status !== 0) throw workflowErrors.taskAlreadyActed();
-      if (task[0].assignee_id !== userId) throw workflowErrors.notAssignee();
+      const taskRow = task[0]!;
+      if (taskRow.status !== 0) throw workflowErrors.taskAlreadyActed();
+      if (taskRow.assignee_id !== userId) throw workflowErrors.notAssignee();
 
-      const instance = await tx.query(WorkflowInstanceModel).where("id", "=", task[0].instance_id)
+      const instanceId = taskRow.instance_id as string;
+      const nodeId = taskRow.node_id as string;
+      const instance = await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .select("graph_snapshot").get();
+      if (!instance) throw workflowErrors.instanceNotFound();
       const graph = buildGraphFromSnapshot(instance.graph_snapshot as string);
-      const node = graph.nodes.get(task[0].node_id);
+      const node = graph.nodes.get(nodeId);
       const config = node?.config as unknown as ApproveNodeConfig | null;
       if (!config?.counterSign) throw workflowErrors.counterSignDisabled();
 
+      const taskTenantId = (taskRow.tenant_id as string | null) ?? tenantId;
       await tx.raw(`UPDATE sys_workflow_task SET status = 1, action = 'add_sign', comment = $2, acted_at = NOW() WHERE id = $1`,
         [taskId, comment ?? "加签"]);
       for (const targetId of targetUserIds) {
         await tx.query(WorkflowTaskModel).insert({
-          id: crypto.randomUUID(), instance_id: task[0].instance_id,
-          node_id: task[0].node_id, assignee_id: targetId, status: TaskStatus.PENDING,
+          id: crypto.randomUUID(), instance_id: instanceId,
+          node_id: nodeId, assignee_id: targetId, status: TaskStatus.PENDING,
+          tenant_id: taskTenantId ?? null,
         });
       }
-      await insertHistory(tx, task[0].instance_id, task[0].node_id, taskId, userId, "add_sign",
-        `加签给 ${targetUserIds.join(",")}: ${comment ?? ""}`);
+      await insertHistory(tx, instanceId, nodeId, taskId, userId, "add_sign",
+        `加签给 ${targetUserIds.join(",")}: ${comment ?? ""}`, taskTenantId);
     });
   }
 
-  async function urge(taskId: string, userId: string): Promise<void> {
-    const task = await db.raw(`SELECT instance_id, assignee_id FROM sys_workflow_task WHERE id = $1 AND status = 0`, [taskId]);
+  async function urge(taskId: string, userId: string, tenantId?: string): Promise<void> {
+    const task = await db.raw(
+      `SELECT instance_id, assignee_id FROM sys_workflow_task WHERE id = $1 AND status = 0${tenantId ? " AND tenant_id = $2" : ""}`,
+      tenantId ? [taskId, tenantId] : [taskId],
+    ) as Array<Record<string, unknown>>;
     if (task.length === 0) throw workflowErrors.taskNotFound();
-    eventBus?.emit("workflow.task.urge", {
-      taskId, instanceId: task[0].instance_id,
-      assigneeId: task[0].assignee_id, urgedBy: userId,
+    const taskRow = task[0]!;
+    eventBus?.emit(workflowTaskUrge, {
+      taskId, instanceId: taskRow.instance_id as string,
+      assigneeId: taskRow.assignee_id as string, urgedBy: userId,
     });
   }
 
   async function listMy(userId: string, params?: TaskListParams): Promise<PaginatedResult<WorkflowTask>> {
-    const { status, page = 1, pageSize = 10 } = params ?? {};
+    const { status, tenantId, page = 1, pageSize = 10 } = params ?? {};
     let q = db.query(WorkflowTaskModel).where("assignee_id", "=", userId);
     if (status !== undefined) q = q.where("status", "=", status);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
     const total = await q.count();
     const rows = await q
       .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "transfer_to", "acted_at", "created_at")
@@ -173,9 +209,10 @@ export function createTaskService(deps: TaskServiceDeps): TaskService {
     return { items: rows.map(mapTask), total, page, pageSize };
   }
 
-  async function listMyDone(userId: string, params?: PageParams): Promise<PaginatedResult<WorkflowTask>> {
-    const { page = 1, pageSize = 10 } = params ?? {};
-    const q = db.query(WorkflowTaskModel).where("assignee_id", "=", userId).where("status", "!=", TaskStatus.PENDING);
+  async function listMyDone(userId: string, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowTask>> {
+    const { page = 1, pageSize = 10, tenantId } = params ?? {};
+    let q = db.query(WorkflowTaskModel).where("assignee_id", "=", userId).where("status", "!=", TaskStatus.PENDING);
+    if (tenantId) q = q.where("tenant_id", "=", tenantId);
     const total = await q.count();
     const rows = await q
       .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "transfer_to", "acted_at", "created_at")
@@ -184,6 +221,39 @@ export function createTaskService(deps: TaskServiceDeps): TaskService {
   }
 
   return { approve, reject, transfer, addSign, urge, listMy, listMyDone };
+}
+
+async function findTaskStatusForTenant(
+  db: Database,
+  taskId: string,
+  tenantId?: string,
+): Promise<Array<Record<string, unknown>>> {
+  return db.raw(
+    `SELECT status, assignee_id${tenantId ? ", tenant_id" : ""} FROM sys_workflow_task WHERE id = $1${tenantId ? " AND tenant_id = $2" : ""}`,
+    tenantId ? [taskId, tenantId] : [taskId],
+  ) as Promise<Array<Record<string, unknown>>>;
+}
+
+async function findTaskFlowForTenant(
+  db: Database,
+  taskId: string,
+  tenantId?: string,
+): Promise<Array<Record<string, unknown>>> {
+  return db.raw(
+    `SELECT instance_id, node_id${tenantId ? ", tenant_id" : ""} FROM sys_workflow_task WHERE id = $1${tenantId ? " AND tenant_id = $2" : ""}`,
+    tenantId ? [taskId, tenantId] : [taskId],
+  ) as Promise<Array<Record<string, unknown>>>;
+}
+
+async function findTaskForAddSign(
+  db: Database,
+  taskId: string,
+  tenantId?: string,
+): Promise<Array<Record<string, unknown>>> {
+  return db.raw(
+    `SELECT instance_id, node_id, status, assignee_id${tenantId ? ", tenant_id" : ""} FROM sys_workflow_task WHERE id = $1${tenantId ? " AND tenant_id = $2" : ""}`,
+    tenantId ? [taskId, tenantId] : [taskId],
+  ) as Promise<Array<Record<string, unknown>>>;
 }
 
 function mapTask(row: Record<string, unknown>): WorkflowTask {

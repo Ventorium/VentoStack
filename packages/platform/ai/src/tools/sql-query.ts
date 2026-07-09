@@ -18,6 +18,9 @@ const DANGEROUS_KEYWORDS = /\b(DROP|DELETE|UPDATE|INSERT|ALTER|TRUNCATE|CREATE|G
 /** CTE 中的写操作检测 */
 const CTE_WRITE_PATTERN = /\bWITH\b.*\b(INSERT|UPDATE|DELETE)\b/i;
 
+/** 多语句检测，避免 SELECT 后拼接额外语句 */
+const MULTI_STATEMENT_PATTERN = /;\s*\S/;
+
 export function createSQLQueryTool(deps: SQLQueryToolDeps) {
   const { db, tenantId } = deps;
   const maxRows = deps.maxRows ?? 100;
@@ -66,18 +69,35 @@ export function createSQLQueryTool(deps: SQLQueryToolDeps) {
         return { error: "CTE 中不允许写操作" };
       }
 
-      // 5. 强制 LIMIT 上限
+      if (MULTI_STATEMENT_PATTERN.test(cleanSql)) {
+        return { error: "不允许多语句 SQL" };
+      }
+
+      // 5. 安全防护：检查括号匹配，防止通过闭合包装子查询绕过租户过滤
+      // 攻击向量: `SELECT * FROM users) WHERE 1=1 --` 会闭合外层子查询
+      // 防御: 确保 user SQL 中的 ( 和 ) 数量一致，避免 ) 闭合我们的 (
+      const openParens = (cleanSql.match(/\(/g) || []).length;
+      const closeParens = (cleanSql.match(/\)/g) || []).length;
+      if (openParens !== closeParens) {
+        return { error: "SQL 中括号不匹配，可能存在注入风险" };
+      }
+
+      // 额外检查：禁止用户 SQL 以 ) 结尾（会被用作闭合我们的外层子查询）
+      if (/\)\s*$/.test(cleanSql)) {
+        return { error: "SQL 不能以右括号结尾" };
+      }
+
+      // 6. 强制 LIMIT 上限
       const requestedLimit = Math.min(
         (params.limit as number) ?? maxRows,
         maxRows,
       );
-      let finalSql = cleanSql;
-      if (!/\bLIMIT\b/i.test(finalSql)) {
-        finalSql = `${finalSql} LIMIT ${requestedLimit}`;
-      }
+      const normalizedSql = cleanSql.replace(/;\s*$/, "");
+      let finalSql = `SELECT * FROM (${normalizedSql}) AS ai_tenant_scope WHERE tenant_id = $1`;
+      if (!/\bLIMIT\b/i.test(normalizedSql)) finalSql = `${finalSql} LIMIT ${requestedLimit}`;
 
       try {
-        const rows = await db.raw(finalSql) as unknown[];
+        const rows = await db.raw(finalSql, [tenantId]) as unknown[];
         return { rows, rowCount: rows.length };
       } catch (err) {
         return { error: `查询失败: ${err instanceof Error ? err.message : "未知错误"}` };

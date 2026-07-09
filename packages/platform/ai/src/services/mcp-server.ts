@@ -9,6 +9,7 @@
  * - sse: 通过 HTTP SSE 通信（远程工具服务）
  */
 import type { Database } from "@ventostack/database";
+import { aiErrors } from "../errors";
 
 export interface McpServerItem {
   id: string;
@@ -73,7 +74,10 @@ export interface McpServerService {
 
 export interface McpServerServiceDeps {
   db: Database;
+  allowedStdioCommands?: string[];
 }
+
+const DEFAULT_STDIO_COMMANDS: string[] = [];
 
 function mapRow(r: Record<string, unknown>): McpServerItem {
   return {
@@ -99,8 +103,10 @@ function mapRow(r: Record<string, unknown>): McpServerItem {
 
 export function createMcpServerService(deps: McpServerServiceDeps): McpServerService {
   const { db } = deps;
+  const allowedStdioCommands = new Set(deps.allowedStdioCommands ?? DEFAULT_STDIO_COMMANDS);
 
   async function create(params: CreateMcpServerParams): Promise<McpServerItem> {
+    validateMcpConfig(params, allowedStdioCommands);
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_mcp_server (id, name, description, transport_type, command, args, env, url, headers, tenant_id)
@@ -150,6 +156,22 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
   }
 
   async function update(id: string, params: UpdateMcpServerParams, tenantId: string): Promise<McpServerItem> {
+    const current = await getById(id, tenantId);
+    if (!current) throw aiErrors.toolNotFound("mcp-server");
+    validateMcpConfig(
+      {
+        ...current,
+        ...params,
+        transportType: params.transportType ?? current.transportType,
+        command: params.command ?? current.command ?? undefined,
+        args: params.args ?? current.args ?? undefined,
+        env: params.env ?? current.env ?? undefined,
+        url: params.url ?? current.url ?? undefined,
+        headers: params.headers ?? current.headers ?? undefined,
+        tenantId,
+      },
+      allowedStdioCommands,
+    );
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -208,6 +230,8 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
 
   async function testStdioConnection(server: McpServerItem): Promise<{ success: boolean; tools?: McpToolInfo[]; error?: string }> {
     if (!server.command) return { success: false, error: "stdio 模式需要配置 command" };
+    const commandError = validateStdioCommand(server.command, allowedStdioCommands);
+    if (commandError) return { success: false, error: commandError };
 
     try {
       // 尝试启动进程并发送 initialize 请求
@@ -453,6 +477,7 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
 
   async function discoverToolsStdio(server: McpServerItem): Promise<McpToolInfo[]> {
     if (!server.command) return [];
+    if (validateStdioCommand(server.command, allowedStdioCommands)) return [];
     try {
       const args = server.args ?? [];
       const envVars: Record<string, string> = {};
@@ -528,4 +553,30 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
   }
 
   return { create, getById, list, update, delete: deleteById, setEnabled, testConnection, refreshTools };
+}
+
+function validateMcpConfig(
+  params: Pick<CreateMcpServerParams, "transportType" | "command" | "url">,
+  allowedStdioCommands: Set<string>,
+): void {
+  if (params.transportType === "stdio") {
+    const error = params.command
+      ? validateStdioCommand(params.command, allowedStdioCommands)
+      : "stdio 模式需要配置 command";
+    if (error) throw aiErrors.sandboxDenied();
+  }
+  if (params.transportType === "sse" && !params.url) {
+    throw aiErrors.sandboxDenied();
+  }
+}
+
+function validateStdioCommand(command: string, allowedStdioCommands: Set<string>): string | null {
+  const normalized = command.trim();
+  if (!normalized) return "stdio 模式需要配置 command";
+  if (/[\\\s;&|`$<>]/.test(normalized)) return "stdio command 只能是单个可执行文件名或绝对路径";
+  const basename = normalized.split("/").pop() ?? normalized;
+  if (!allowedStdioCommands.has(normalized) && !allowedStdioCommands.has(basename)) {
+    return "stdio command 未在允许列表中";
+  }
+  return null;
 }

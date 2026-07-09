@@ -2,7 +2,7 @@ import { client } from "@/api";
 import { globalNavigate } from "@/components/GlobalHistory";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { create } from "zustand";
-import { clearToken, getAccessToken, setAccessToken, setRefreshToken } from "./token";
+import { clearToken, setAccessToken, setRefreshToken } from "./token";
 
 interface UserProfile {
   id: string;
@@ -79,17 +79,14 @@ export const useAuth = create<AuthState>((set, get) => ({
   async init() {
     if (get().loading) return;
     set({ loading: true });
-    const accessToken = getAccessToken();
-    if (accessToken) {
-      const { data: user, error } = (await client.get("/api/system/user/profile")) as {
-        data?: UserProfile;
-        error?: unknown;
-      };
-      if (!error && user) {
-        set({ user });
-      } else {
-        clearToken();
-      }
+    const { data: user, error } = (await client.get("/api/system/user/profile")) as {
+      data?: UserProfile;
+      error?: unknown;
+    };
+    if (!error && user) {
+      set({ user });
+    } else {
+      clearToken();
     }
     set({ loading: false, ready: true });
   },

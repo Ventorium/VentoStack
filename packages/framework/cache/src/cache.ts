@@ -58,6 +58,12 @@ export interface CacheAdapter {
    * @returns 匹配的键列表
    */
   keys(pattern: string): Promise<string[]>;
+
+  /**
+   * 原子递增数字键，可选首次写入 TTL。
+   * 分布式限流等场景应优先使用该方法。
+   */
+  increment?(key: string, ttl?: number): Promise<number>;
 }
 
 /**
@@ -147,6 +153,11 @@ export interface Cache {
    * @returns 缓存值或工厂函数返回值
    */
   singleflight<T>(key: string, factory: () => Promise<T>): Promise<T>;
+
+  /**
+   * 原子递增数字键，可选首次写入 TTL。
+   */
+  increment(key: string, ttl?: number): Promise<number>;
 }
 
 const TAG_PREFIX = "tag:";
@@ -240,6 +251,14 @@ export function createCache(adapter: CacheAdapter): Cache {
     await adapter.flush();
   }
 
+  async function increment(key: string, ttl?: number): Promise<number> {
+    if (adapter.increment) return adapter.increment(key, ttl);
+    const current = Number.parseInt((await adapter.get(key)) ?? "0", 10);
+    const next = Number.isFinite(current) ? current + 1 : 1;
+    await adapter.set(key, String(next), ttl);
+    return next;
+  }
+
   function tags(tagNames: string[]): TaggedCache {
     return createTaggedCache(adapter, tagNames);
   }
@@ -263,5 +282,5 @@ export function createCache(adapter: CacheAdapter): Cache {
     return promise;
   }
 
-  return { get, set, del, has, flush, tags, remember, singleflight };
+  return { get, set, del, has, flush, tags, remember, singleflight, increment };
 }

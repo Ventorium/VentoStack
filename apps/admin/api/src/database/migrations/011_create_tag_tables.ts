@@ -44,9 +44,9 @@ export const createTagTables: Migration = {
 
     for (const tag of defaultTags) {
       await executor(
-        `INSERT INTO sys_tag (id, name, code, sort, status) 
-         SELECT $1, $2, $3, $4, 1
-         WHERE NOT EXISTS (SELECT 1 FROM sys_tag WHERE code = $3)`,
+        `INSERT INTO sys_tag (id, name, code, sort, status)
+         VALUES ($1, $2, $3, $4, 1)
+         ON CONFLICT (code) DO NOTHING`,
         [tag.id, tag.name, tag.code, tag.sort],
       );
     }

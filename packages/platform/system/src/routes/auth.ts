@@ -47,6 +47,64 @@ const tokenPairSchema = {
   tokenType: { type: "string" as const, description: "令牌类型" },
 };
 
+interface TokenCookiePair {
+  accessToken: string;
+  refreshToken?: string;
+  expiresIn?: number;
+  refreshExpiresIn?: number;
+}
+
+function parseCookieHeader(cookieHeader: string | null): Record<string, string> {
+  if (!cookieHeader) return {};
+  const cookies: Record<string, string> = {};
+  for (const part of cookieHeader.split(";")) {
+    const [rawName, ...rawValue] = part.trim().split("=");
+    if (!rawName || rawValue.length === 0) continue;
+    cookies[rawName] = decodeURIComponent(rawValue.join("="));
+  }
+  return cookies;
+}
+
+function getCookie(request: Request, name: string): string | undefined {
+  return parseCookieHeader(request.headers.get("Cookie"))[name];
+}
+
+function cookieSecureAttribute(request: Request): string {
+  return new URL(request.url).protocol === "https:" ? "; Secure" : "";
+}
+
+function appendCookie(response: Response, request: Request, name: string, value: string, maxAge: number): Response {
+  response.headers.append(
+    "Set-Cookie",
+    `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${cookieSecureAttribute(request)}`,
+  );
+  return response;
+}
+
+function appendClearedCookie(response: Response, request: Request, name: string): Response {
+  response.headers.append(
+    "Set-Cookie",
+    `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${cookieSecureAttribute(request)}`,
+  );
+  return response;
+}
+
+function withTokenCookies(response: Response, request: Request, pair: TokenCookiePair): Response {
+  if (pair.accessToken) {
+    appendCookie(response, request, "vs_access_token", pair.accessToken, pair.expiresIn ?? 900);
+  }
+  if (pair.refreshToken) {
+    appendCookie(response, request, "vs_refresh_token", pair.refreshToken, pair.refreshExpiresIn ?? 604800);
+  }
+  return response;
+}
+
+function clearTokenCookies(response: Response, request: Request): Response {
+  appendClearedCookie(response, request, "vs_access_token");
+  appendClearedCookie(response, request, "vs_refresh_token");
+  return response;
+}
+
 export function createAuthRoutes(
   authService: AuthService,
   authMiddleware: Middleware,
@@ -78,14 +136,15 @@ export function createAuthRoutes(
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const result = await authService.login({
+        const loginParams: Parameters<AuthService["login"]>[0] = {
           username: body.username as string,
           password: body.password as string,
           ip: extractClientIP(ctx.request, trustedProxies),
           userAgent: ctx.request.headers.get("user-agent") ?? "unknown",
-          deviceType: body.deviceType as string | undefined,
-        });
-        return success(result);
+        };
+        if (typeof body.deviceType === "string") loginParams.deviceType = body.deviceType;
+        const result = await authService.login(loginParams);
+        return withTokenCookies(success(result), ctx.request, result);
       } catch (e: unknown) {
         const err = e as Error & { code?: string; data?: { tempToken?: string } };
         if (err.code === "password_expired" && err.data?.tempToken) {
@@ -121,12 +180,13 @@ export function createAuthRoutes(
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const result = await authService.register({
+        const registerParams: Parameters<AuthService["register"]>[0] = {
           username: body.username as string,
           password: body.password as string,
-          email: body.email as string | undefined,
-          phone: body.phone as string | undefined,
-        });
+        };
+        if (typeof body.email === "string") registerParams.email = body.email;
+        if (typeof body.phone === "string") registerParams.phone = body.phone;
+        const result = await authService.register(registerParams);
         return success(result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "注册失败";
@@ -188,7 +248,7 @@ export function createAuthRoutes(
     "/api/auth/refresh",
     {
       body: {
-        refreshToken: { type: "string" as const, required: true, description: "刷新令牌" },
+        refreshToken: { type: "string" as const, description: "刷新令牌；浏览器端可省略并使用 HttpOnly Cookie" },
       },
       responses: { 200: tokenPairSchema },
       openapi: { summary: "刷新令牌", tags: ["auth"], operationId: "refreshToken" },
@@ -196,8 +256,10 @@ export function createAuthRoutes(
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const result = await authService.refreshToken(body.refreshToken as string);
-        return success(result);
+        const refreshToken = (body.refreshToken as string | undefined) ?? getCookie(ctx.request, "vs_refresh_token");
+        if (!refreshToken) return fail("缺少刷新令牌", 401, 401);
+        const result = await authService.refreshToken(refreshToken);
+        return withTokenCookies(success(result), ctx.request, result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "刷新令牌失败";
         return fail(msg, 401, 401);
@@ -219,14 +281,22 @@ export function createAuthRoutes(
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const result = await authService.completeMFALogin(
-          body.mfaToken as string,
-          body.code as string,
-          extractClientIP(ctx.request, trustedProxies),
-          ctx.request.headers.get("user-agent") ?? "unknown",
-          body.deviceType as string | undefined,
-        );
-        return success(result);
+        const deviceType = typeof body.deviceType === "string" ? body.deviceType : undefined;
+        const result = deviceType
+          ? await authService.completeMFALogin(
+              body.mfaToken as string,
+              body.code as string,
+              extractClientIP(ctx.request, trustedProxies),
+              ctx.request.headers.get("user-agent") ?? "unknown",
+              deviceType,
+            )
+          : await authService.completeMFALogin(
+              body.mfaToken as string,
+              body.code as string,
+              extractClientIP(ctx.request, trustedProxies),
+              ctx.request.headers.get("user-agent") ?? "unknown",
+            );
+        return withTokenCookies(success(result), ctx.request, result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "MFA 验证失败";
         return fail(msg, 401, 401);
@@ -262,7 +332,7 @@ export function createAuthRoutes(
           await authService.logout(user.id, "");
         }
       }
-      return success(null);
+      return clearTokenCookies(success(null), ctx.request);
     },
   );
 
