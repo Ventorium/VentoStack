@@ -49,14 +49,14 @@ jobs:
           fi
           bunx biome ci --changed --since="$base_ref"
 
+      - name: Build Packages
+        run: bun run build
+
       - name: Typecheck
         run: bun run typecheck
 
       - name: Test
         run: bun run test
-
-      - name: Build
-        run: bun run build
 
       - name: Build Admin Web
         run: bun run --cwd apps/admin/web build
