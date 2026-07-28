@@ -2,24 +2,24 @@
  * OpenAI Provider
  * 支持 chat 和 chatStream，处理 tool_calls 增量拼接
  */
-import { aiErrors } from "../../errors";
+import { aiErrors } from '../../errors';
 import type {
   ChatParams,
   ChatResult,
   LLMProvider,
   ModelInfo,
-  OpenAIProviderConfig,
   ProviderCapabilities,
   StreamChunk,
-  ToolCall,
-} from "../types";
+} from '../types';
 
 export interface OpenAIProviderConfig {
+  name?: string;
   apiKey: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
 }
 
-const DEFAULT_BASE_URL = "https://api.openai.com/v1";
+const DEFAULT_BASE_URL = 'https://api.openai.com/v1';
 
 const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   functionCalling: true,
@@ -28,13 +28,11 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   supportsStreaming: true,
 };
 
-export function createOpenAIProvider(
-  config: OpenAIProviderConfig,
-): LLMProvider {
+export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider {
   const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
 
   return {
-    name: "openai",
+    name: config.name ?? 'openai',
     capabilities: DEFAULT_CAPABILITIES,
 
     async chat(params: ChatParams): Promise<ChatResult> {
@@ -47,7 +45,7 @@ export function createOpenAIProvider(
       };
       if (params.tools?.length) {
         body.tools = params.tools.map((t) => ({
-          type: "function",
+          type: 'function',
           function: {
             name: t.name,
             description: t.description,
@@ -57,18 +55,19 @@ export function createOpenAIProvider(
       }
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
+          ...config.headers,
         },
         body: JSON.stringify(body),
         signal: params.signal,
       });
 
       if (!response.ok) {
-        const errBody = await response.text().catch(() => "");
-        throw aiErrors.llmTimeout("openai");
+        const _errBody = await response.text().catch(() => '');
+        throw aiErrors.llmTimeout('openai');
       }
 
       const data = (await response.json()) as {
@@ -89,27 +88,24 @@ export function createOpenAIProvider(
       const toolCalls = choice.message.tool_calls?.map((tc) => ({
         id: tc.id,
         name: tc.function.name,
-        arguments: JSON.parse(tc.function.arguments) as Record<
-          string,
-          unknown
-        >,
+        arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
       }));
 
       return {
-        content: choice.message.content ?? "",
+        content: choice.message.content ?? '',
         toolCalls: toolCalls?.length ? toolCalls : undefined,
         usage: {
           promptTokens: data.usage.prompt_tokens,
           completionTokens: data.usage.completion_tokens,
         },
         finishReason:
-          choice.finish_reason === "tool_calls"
-            ? "tool_calls"
-            : choice.finish_reason === "length"
-              ? "length"
-              : choice.finish_reason === "stop"
-                ? "stop"
-                : "error",
+          choice.finish_reason === 'tool_calls'
+            ? 'tool_calls'
+            : choice.finish_reason === 'length'
+              ? 'length'
+              : choice.finish_reason === 'stop'
+                ? 'stop'
+                : 'error',
       };
     },
 
@@ -124,7 +120,7 @@ export function createOpenAIProvider(
       };
       if (params.tools?.length) {
         body.tools = params.tools.map((t) => ({
-          type: "function",
+          type: 'function',
           function: {
             name: t.name,
             description: t.description,
@@ -134,10 +130,11 @@ export function createOpenAIProvider(
       }
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: `Bearer ${config.apiKey}`,
+          ...config.headers,
         },
         body: JSON.stringify(body),
         signal: params.signal,
@@ -145,9 +142,9 @@ export function createOpenAIProvider(
 
       if (!response.ok) {
         yield {
-          type: "error",
+          type: 'error',
           error: {
-            code: "OPENAI_API_ERROR",
+            code: 'OPENAI_API_ERROR',
             message: `API error ${response.status}`,
             recoverable: response.status >= 500 || response.status === 429,
           },
@@ -157,7 +154,7 @@ export function createOpenAIProvider(
 
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
-      let buffer = "";
+      let buffer = '';
       let currentToolCall: {
         id: string;
         name: string;
@@ -170,31 +167,28 @@ export function createOpenAIProvider(
           if (done) break;
 
           buffer += decoder.decode(value, { stream: true });
-          const lines = buffer.split("\n");
+          const lines = buffer.split('\n');
           buffer = lines.pop()!;
 
           for (const line of lines) {
             const trimmed = line.trim();
-            if (!trimmed || trimmed.startsWith(":")) continue;
-            if (!trimmed.startsWith("data: ")) continue;
+            if (!trimmed || trimmed.startsWith(':')) continue;
+            if (!trimmed.startsWith('data: ')) continue;
 
             const data = trimmed.slice(6);
-            if (data === "[DONE]") {
+            if (data === '[DONE]') {
               if (currentToolCall) {
                 yield {
-                  type: "tool_call_start",
+                  type: 'tool_call_start',
                   toolCall: {
                     id: currentToolCall.id,
                     name: currentToolCall.name,
-                    arguments: JSON.parse(currentToolCall.arguments) as Record<
-                      string,
-                      unknown
-                    >,
+                    arguments: JSON.parse(currentToolCall.arguments) as Record<string, unknown>,
                   },
                 };
                 currentToolCall = null;
               }
-              yield { type: "done" };
+              yield { type: 'done' };
               return;
             }
 
@@ -220,7 +214,7 @@ export function createOpenAIProvider(
             // 处理 usage
             if (parsed.usage) {
               yield {
-                type: "usage",
+                type: 'usage',
                 usage: {
                   promptTokens: parsed.usage.prompt_tokens,
                   completionTokens: parsed.usage.completion_tokens,
@@ -233,7 +227,7 @@ export function createOpenAIProvider(
 
             // 处理内容 delta
             if (choice.delta?.content) {
-              yield { type: "content", delta: choice.delta.content };
+              yield { type: 'content', delta: choice.delta.content };
             }
 
             // 处理 tool calls
@@ -242,20 +236,18 @@ export function createOpenAIProvider(
                 if (tc.id) {
                   if (currentToolCall) {
                     yield {
-                      type: "tool_call_start",
+                      type: 'tool_call_start',
                       toolCall: {
                         id: currentToolCall.id,
                         name: currentToolCall.name,
-                        arguments: JSON.parse(
-                          currentToolCall.arguments,
-                        ) as Record<string, unknown>,
+                        arguments: JSON.parse(currentToolCall.arguments) as Record<string, unknown>,
                       },
                     };
                   }
                   currentToolCall = {
                     id: tc.id,
-                    name: tc.function?.name ?? "",
-                    arguments: "",
+                    name: tc.function?.name ?? '',
+                    arguments: '',
                   };
                   if (tc.function?.name) {
                     currentToolCall.name = tc.function.name;
@@ -264,7 +256,7 @@ export function createOpenAIProvider(
                 if (tc.function?.arguments) {
                   currentToolCall!.arguments += tc.function.arguments;
                   yield {
-                    type: "tool_call_delta",
+                    type: 'tool_call_delta',
                     toolCallDelta: { arguments: tc.function.arguments },
                   };
                 }
@@ -272,19 +264,13 @@ export function createOpenAIProvider(
             }
 
             // 处理 finish_reason
-            if (
-              choice.finish_reason === "tool_calls" &&
-              currentToolCall
-            ) {
+            if (choice.finish_reason === 'tool_calls' && currentToolCall) {
               yield {
-                type: "tool_call_start",
+                type: 'tool_call_start',
                 toolCall: {
                   id: currentToolCall.id,
                   name: currentToolCall.name,
-                  arguments: JSON.parse(currentToolCall.arguments) as Record<
-                    string,
-                    unknown
-                  >,
+                  arguments: JSON.parse(currentToolCall.arguments) as Record<string, unknown>,
                 },
               };
               currentToolCall = null;
@@ -309,7 +295,7 @@ export function createOpenAIProvider(
         name: m.name ?? m.id,
         contextLength: 128000,
         supportsFunctionCalling: true,
-        supportsVision: m.id.includes("vision") || m.id.includes("gpt-4o"),
+        supportsVision: m.id.includes('vision') || m.id.includes('gpt-4o'),
       }));
     },
   };

@@ -16,62 +16,62 @@
  */
 
 // ---- Tool Registry ----
-export { createToolRegistry } from "./tool-registry";
+export { createToolRegistry } from './tool-registry';
 export type {
   ToolParameter,
   ToolDefinition,
   ToolExecutionResult,
   ToolRegistry,
-} from "./tool-registry";
+} from './tool-registry';
 
 // ---- Sandbox ----
-export { createSandbox } from "./sandbox";
-export type { SandboxPermissions, Sandbox } from "./sandbox";
+export { createSandbox } from './sandbox';
+export type { SandboxPermissions, Sandbox } from './sandbox';
 
 // ---- Approval ----
-export { createApprovalManager } from "./approval";
+export { createApprovalManager } from './approval';
 export type {
   ApprovalStatus,
   ApprovalRequest,
   ApprovalOptions,
   ApprovalManager,
-} from "./approval";
+} from './approval';
 
 // ---- Context Manager (legacy) ----
-export { createContextManager } from "./context";
+export { createContextManager } from './context';
 export type {
   ConversationMessage,
   ConversationContext,
   ContextManager,
-} from "./context";
+} from './context';
 
 // ---- RAG ----
-export { createKnowledgeBase, createAgentRegistry } from "./rag";
+export { createKnowledgeBase, createAgentRegistry } from './rag';
 export type {
   Document,
   ChunkOptions,
   SearchResult,
   KnowledgeBase,
-  AgentConfig,
+  AgentConfig as RAGAgentRegistryConfig,
   AgentRegistry,
-} from "./rag";
+} from './rag';
 
 // ---- Document Loader ----
-export { loadDocumentsFromDirectory, parseMarkdownFrontmatter } from "./document-loader";
-export type { DocumentLoaderOptions, LoadResult } from "./document-loader";
+export { loadDocumentsFromDirectory, parseMarkdownFrontmatter } from './document-loader';
+export type { DocumentLoaderOptions, LoadResult } from './document-loader';
 
 // ---- LLM Client (legacy) ----
-export { createLLMClient } from "./llm";
-export type { ChatMessage, LLMClientOptions, LLMClient } from "./llm";
+export { createLLMClient } from './llm';
+export type { ChatMessage, LLMClientOptions, LLMClient } from './llm';
 
 // ---- LLM Gateway ----
-export { createLLMGateway } from "./llm-gateway/gateway";
-export { createOpenAIProvider } from "./llm-gateway/providers/openai";
-export { createAnthropicProvider } from "./llm-gateway/providers/anthropic";
-export { createGoogleProvider } from "./llm-gateway/providers/google";
-export { createModelRegistry } from "./llm-gateway/model-registry";
-export { withRetry } from "./llm-gateway/retry";
-export { createRequestQueue } from "./llm-gateway/queue";
+export { createLLMGateway } from './llm-gateway/gateway';
+export { createOpenAIProvider } from './llm-gateway/providers/openai';
+export { createAnthropicProvider } from './llm-gateway/providers/anthropic';
+export { createGoogleProvider } from './llm-gateway/providers/google';
+export { createModelRegistry } from './llm-gateway/model-registry';
+export { withRetry } from './llm-gateway/retry';
+export { createRequestQueue } from './llm-gateway/queue';
 export type {
   LLMProvider,
   ProviderCapabilities,
@@ -84,29 +84,44 @@ export type {
   LLMGatewayConfig,
   LLMToolDefinition,
   ToolCall,
-} from "./llm-gateway/types";
-export type { ModelConfig, ModelRegistry } from "./llm-gateway/model-registry";
+} from './llm-gateway/types';
+export type { ModelConfig, ModelRegistry } from './llm-gateway/model-registry';
 
 // ---- RAG Agent ----
-export { createRAGAgent } from "./rag-agent";
+export { createRAGAgent } from './rag-agent';
 export type {
   RAGAgentConfig,
   RAGAgentDeps,
   RAGSource,
   RAGChatResult,
   RAGAgent,
-} from "./rag-agent";
+} from './rag-agent';
 
 // ---- Skills ----
-export { loadSkills, createSkillManager, formatSkillsForSystemPrompt, formatSkillInvocation } from "./skills";
-export type { Skill, SkillDiagnostic, SkillDiagnosticCode, SkillManager } from "./skills";
+export {
+  loadSkills,
+  createSkillManager,
+  formatSkillsForSystemPrompt,
+  formatSkillInvocation,
+} from './skills';
+export type { Skill, SkillDiagnostic, SkillDiagnosticCode, SkillManager } from './skills';
 
 // ---- Prompt Templates ----
-export { loadPromptTemplates, createPromptTemplateManager, formatPromptTemplateInvocation, parseCommandArgs, substituteArgs } from "./prompt-templates";
-export type { PromptTemplate, PromptTemplateDiagnostic, PromptTemplateManager } from "./prompt-templates";
+export {
+  loadPromptTemplates,
+  createPromptTemplateManager,
+  formatPromptTemplateInvocation,
+  parseCommandArgs,
+  substituteArgs,
+} from './prompt-templates';
+export type {
+  PromptTemplate,
+  PromptTemplateDiagnostic,
+  PromptTemplateManager,
+} from './prompt-templates';
 
 // ---- Session ----
-export { createSession, createJsonlSessionStorage, loadJsonlSessionStorage } from "./session";
+export { createSession, createJsonlSessionStorage, loadJsonlSessionStorage } from './session';
 export type {
   Session,
   SessionStorage,
@@ -117,21 +132,26 @@ export type {
   CompactionEntry,
   BranchSummaryEntry,
   LeafEntry,
-} from "./session";
+} from './session';
 
 // ---- Compaction ----
-export { prepareCompaction, compact, estimateTokenCount, DEFAULT_COMPACTION_SETTINGS } from "./compaction";
-export type { CompactionSettings, CompactionResult, CompactionPreparation } from "./compaction";
+export {
+  prepareCompaction,
+  compact,
+  estimateTokenCount,
+  DEFAULT_COMPACTION_SETTINGS,
+} from './compaction';
+export type { CompactionSettings, CompactionResult, CompactionPreparation } from './compaction';
 
 // ---- Agent Engine ----
-export { createAgentLoop } from "./agent-engine/agent-loop";
-export { createEventEmitter } from "./agent-engine/events";
-export { createAgentHarness } from "./agent-engine/harness";
-export { createMessageQueue } from "./agent-engine/message-queue";
+export { createAgentLoop } from './agent-engine/agent-loop';
+export { createEventEmitter } from './agent-engine/events';
+export { createAgentHarness } from './agent-engine/harness';
+export { createMessageQueue } from './agent-engine/message-queue';
 export type {
   AgentConfig,
   AgentLoopDeps,
-} from "./agent-engine/agent-loop";
+} from './agent-engine/agent-loop';
 export type {
   AgentEvent,
   AgentEventHandler,
@@ -152,7 +172,7 @@ export type {
   AbortEvent,
   SettledEvent,
   ErrorEvent,
-} from "./agent-engine/events";
+} from './agent-engine/events';
 export type {
   AgentHarness,
   AgentHarnessOptions,
@@ -161,8 +181,8 @@ export type {
   HarnessToolUpdateEvent,
   HarnessModelUpdateEvent,
   HarnessResourcesUpdateEvent,
-} from "./agent-engine/harness";
-export type { MessageQueue, QueueMode } from "./agent-engine/message-queue";
+} from './agent-engine/harness';
+export type { MessageQueue, QueueMode } from './agent-engine/message-queue';
 export type {
   AgentTool,
   AgentToolResult,
@@ -176,107 +196,130 @@ export type {
   AfterToolCallContext,
   AfterToolCallResult,
   ToolUpdateCallback,
-} from "./agent-engine/types";
+} from './agent-engine/types';
 
 // ---- AI Module (聚合) ----
-export { createAIModule } from "./module";
-export type { AIModule, AIModuleDeps, LLMProviderConfig } from "./module";
+export { createAIModule } from './module';
+export type { AIModule, AIModuleDeps, LLMProviderConfig } from './module';
 
 // ---- Agent Service ----
-export { createAgentService } from "./services/agent";
+export { createAgentService } from './services/agent';
 
 // ---- Provider Service ----
-export { createProviderService } from "./services/provider";
+export { createProviderService } from './services/provider';
 
 // ---- Migration ----
-export { createAiKnowledgeTables } from "./migrations/003_create_ai_knowledge_tables";
-export { createAiAgentTables } from "./migrations/004_create_ai_agent_tables";
-export { createAiProviderTables } from "./migrations/005_create_ai_provider_tables";
+export { createAiKnowledgeTables } from './migrations/003_create_ai_knowledge_tables';
+export { createAiAgentTables } from './migrations/004_create_ai_agent_tables';
+export { createAiProviderTables } from './migrations/005_create_ai_provider_tables';
 
 // ---- Tool Policy (renamed from Sandbox) ----
-export { createToolPolicy } from "./tool-policy";
-export type { ToolPolicy } from "./tool-policy";
+export { createToolPolicy } from './tool-policy';
+export type { ToolPolicy } from './tool-policy';
 
 // ---- Code Sandbox ----
-export { createProcessSandbox, createDockerSandbox, DEFAULT_SANDBOX_CONFIG } from "./code-sandbox";
-export type { CodeSandboxConfig, CodeExecution, CodeSandbox, DockerSandboxConfig } from "./code-sandbox";
+export { createProcessSandbox, createDockerSandbox, DEFAULT_SANDBOX_CONFIG } from './code-sandbox';
+export type {
+  CodeSandboxConfig,
+  CodeExecution,
+  CodeSandbox,
+  DockerSandboxConfig,
+} from './code-sandbox';
 
 // ---- Distributed Lock ----
-export { createDistributedLock } from "./agent-engine/distributed-lock";
-export type { DistributedLock } from "./agent-engine/distributed-lock";
+export { createDistributedLock } from './agent-engine/distributed-lock';
+export type { DistributedLock } from './agent-engine/distributed-lock';
 
 // ---- Token Budget ----
-export { createTokenBudgetChecker } from "./agent-engine/token-budget";
-export type { TokenBudgetConfig, TokenBudgetChecker } from "./agent-engine/token-budget";
+export { createTokenBudgetChecker } from './agent-engine/token-budget';
+export type { TokenBudgetConfig, TokenBudgetChecker } from './agent-engine/token-budget';
 
 // ---- Connection Limiter ----
-export { createConnectionLimiter } from "./stream-engine/connection-limiter";
-export type { ConnectionLimiter } from "./stream-engine/connection-limiter";
+export { createConnectionLimiter } from './stream-engine/connection-limiter';
+export type { ConnectionLimiter } from './stream-engine/connection-limiter';
 
 // ---- Heartbeat ----
-export { createHeartbeat } from "./stream-engine/heartbeat";
-export type { HeartbeatConfig, HeartbeatController } from "./stream-engine/heartbeat";
+export { createHeartbeat } from './stream-engine/heartbeat';
+export type { HeartbeatConfig, HeartbeatController } from './stream-engine/heartbeat';
 
 // ---- AI Cache ----
-export { createAICache } from "./cache/ai-cache";
-export type { AICache } from "./cache/ai-cache";
+export { createAICache } from './cache/ai-cache';
+export type { AICache } from './cache/ai-cache';
 
 // ---- Knowledge Base Tools ----
-export { createKBBrowseTool, createKBReadTool, createKBSearchTool, createKBFollowLinkTool } from "./tools";
-export { createCalculatorTool, createTerminalTool, createFileReadTool, createFileWriteTool, createSQLQueryTool } from "./tools";
+export {
+  createKBBrowseTool,
+  createKBReadTool,
+  createKBSearchTool,
+  createKBFollowLinkTool,
+} from './tools';
+export {
+  createCalculatorTool,
+  createTerminalTool,
+  createFileReadTool,
+  createFileWriteTool,
+  createSQLQueryTool,
+} from './tools';
 
 // ---- Knowledge Base Tenant Query ----
-export { createTenantQuery } from "./knowledge-base/tenant-query";
-export type { TenantQuery } from "./knowledge-base/tenant-query";
+export { createTenantQuery } from './knowledge-base/tenant-query';
+export type { TenantQuery } from './knowledge-base/tenant-query';
 
 // ---- Knowledge Base CRUD Service ----
-export { createKnowledgeBaseCrudService } from "./services/knowledge-base";
-export type { KnowledgeBaseItem, DocumentItem } from "./services/knowledge-base";
+export { createKnowledgeBaseCrudService } from './services/knowledge-base';
+export type { KnowledgeBaseItem, DocumentItem } from './services/knowledge-base';
 
 // ---- Conversation Service ----
-export { createConversationService } from "./services/conversation";
-export type { ConversationItem } from "./services/conversation";
+export { createConversationService } from './services/conversation';
+export type { ConversationItem } from './services/conversation';
 
 // ---- Approval Service ----
-export { createApprovalService } from "./services/approval";
-export type { ApprovalRequest as ApprovalRequestItem } from "./services/approval";
+export { createApprovalService } from './services/approval';
+export type { ApprovalRequest as ApprovalRequestItem } from './services/approval';
 
 // ---- Routes ----
-export { createConversationRoutes, createApprovalRoutes, createHealthRoutes } from "./routes";
-export type { ConversationCrudService, ApprovalCrudService, HealthCheckDeps } from "./routes";
+export { createConversationRoutes, createApprovalRoutes, createHealthRoutes } from './routes';
+export type { ConversationCrudService, ApprovalCrudService, HealthCheckDeps } from './routes';
 
 // ---- Document Model ----
-export { AiDocumentModel } from "./models/document";
+export { AiDocumentModel } from './models/document';
 
 // ---- Skill Store Service ----
-export { createSkillStoreService } from "./services/skill-store";
-export type { StoreSearchResult, StoreSkillDetail, StoreFileItem, StoreEvaluation, StoreRecommendation, SkillStoreService } from "./services/skill-store";
+export { createSkillStoreService } from './services/skill-store';
+export type {
+  StoreSearchResult,
+  StoreSkillDetail,
+  StoreFileItem,
+  StoreEvaluation,
+  StoreRecommendation,
+  SkillStoreService,
+} from './services/skill-store';
 
 // ---- Skill Service ----
-export { createSkillService } from "./services/skill";
-export type { SkillItem, InstallFromStoreParams, SkillServiceDeps } from "./services/skill";
+export { createSkillService } from './services/skill';
+export type { SkillItem, InstallFromStoreParams, SkillServiceDeps } from './services/skill';
 
 // ---- Model Config Service ----
-export { createModelConfigService } from "./services/model-config";
-export type { ModelPurposeConfig, ModelConfigService, ModelDetail } from "./services/model-config";
+export { createModelConfigService } from './services/model-config';
+export type { ModelPurposeConfig, ModelConfigService, ModelDetail } from './services/model-config';
 
 // ---- Scoped KB Service ----
-export { createScopedKBService } from "./services/kb-scope";
-export type { KBScope, ScopedKBItem, ScopedKBDeps } from "./services/kb-scope";
+export { createScopedKBService } from './services/kb-scope';
+export type { KBScope, ScopedKBItem, ScopedKBDeps } from './services/kb-scope';
 
 // ---- Skill Routes ----
-export { createSkillRoutes } from "./routes/skill";
+export { createSkillRoutes } from './routes/skill';
 
 // ---- Skill Models ----
-export { AiSkillModel, AiAgentSkillModel } from "./models/skill";
+export { AiSkillModel, AiAgentSkillModel } from './models/skill';
 
 // ---- Skill Migration ----
-export { createAiSkillTables } from "./migrations/006_create_ai_skill_tables";
+export { createAiSkillTables } from './migrations/006_create_ai_skill_tables';
 
 // ---- Model Capabilities Migration ----
-export { addReasoningOptions } from "./migrations/008_add_reasoning_options";
-export { addProviderModelsDevSlug } from "./migrations/009_add_provider_models_dev_slug";
-export { dropAgentType } from "./migrations/010_drop_agent_type";
+export { addReasoningOptions } from './migrations/008_add_reasoning_options';
+export { addProviderModelsDevSlug } from './migrations/009_add_provider_models_dev_slug';
+export { dropAgentType } from './migrations/010_drop_agent_type';
 
 // ---- MCP Migration ----
-export { createAiMcpTables } from "./migrations/011_create_ai_mcp_tables";
+export { createAiMcpTables } from './migrations/011_create_ai_mcp_tables';

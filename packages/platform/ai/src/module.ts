@@ -1,3 +1,4 @@
+import type { JWTManager, RBAC } from '@ventostack/auth';
 /**
  * AI 模块聚合 — 增强版
  *
@@ -10,78 +11,101 @@
  * - Agent Harness
  * - 生命周期事件
  */
-import { createRouter } from "@ventostack/core";
-import type { Router } from "@ventostack/core";
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { EventBus } from "@ventostack/events";
-import type { NotificationService } from "@ventostack/notification";
+import { createRouter } from '@ventostack/core';
+import type { Router } from '@ventostack/core';
+import type { EventBus } from '@ventostack/events';
+import type { NotificationService } from '@ventostack/notification';
 
+import type { ConfigEncryptor } from '@ventostack/core';
 // LLM Gateway
-import { createLLMGateway } from "./llm-gateway";
-import type { LLMProvider, LLMGateway } from "./llm-gateway/types";
-import { createOpenAIProvider } from "./llm-gateway/providers/openai";
-import { createAnthropicProvider } from "./llm-gateway/providers/anthropic";
-import { createGoogleProvider } from "./llm-gateway/providers/google";
-import { createModelRegistry } from "./llm-gateway/model-registry";
-import type { ModelRegistry, ModelConfig } from "./llm-gateway/model-registry";
+import { createLLMGateway } from './llm-gateway';
+import { createModelRegistry } from './llm-gateway/model-registry';
+import type { ModelConfig, ModelRegistry } from './llm-gateway/model-registry';
+import { createAnthropicProvider } from './llm-gateway/providers/anthropic';
+import { createGoogleProvider } from './llm-gateway/providers/google';
+import { createOpenAIProvider } from './llm-gateway/providers/openai';
+import type { LLMGateway, LLMProvider } from './llm-gateway/types';
 
 // Agent Engine
-import { createAgentLoop, type AgentLoop } from "./agent-engine/agent-loop";
-import { createAgentHarness, type AgentHarness, type AgentHarnessOptions } from "./agent-engine/harness";
-import { createEventEmitter, type AgentEventEmitter } from "./agent-engine/events";
-import type { AgentTool, BeforeToolCallContext, BeforeToolCallResult, AfterToolCallContext, AfterToolCallResult } from "./agent-engine/types";
+import { type AgentLoop, createAgentLoop } from './agent-engine/agent-loop';
+import { type AgentEventEmitter, createEventEmitter } from './agent-engine/events';
+import {
+  type AgentHarness,
+  type AgentHarnessOptions,
+  createAgentHarness,
+} from './agent-engine/harness';
+import type {
+  AfterToolCallContext,
+  AfterToolCallResult,
+  BeforeToolCallContext,
+  BeforeToolCallResult,
+} from './agent-engine/types';
 
 // Knowledge Base
-import { createKnowledgeBaseService } from "./knowledge-base/service";
-import type { KnowledgeBaseService } from "./knowledge-base/types";
+import { createKnowledgeBaseService } from './knowledge-base/service';
+import type { KnowledgeBaseService } from './knowledge-base/types';
 
 // Memory
-import { createMemoryService, type MemoryService } from "./memory/service";
+import { createMemoryService } from './memory/service';
+import type { MemoryService } from './memory/types';
 
 // Skills
-import { createSkillManager, type SkillManager } from "./skills";
-import type { Skill } from "./skills/types";
+import { type SkillManager, createSkillManager } from './skills';
 
 // Prompt Templates
-import { createPromptTemplateManager, type PromptTemplateManager } from "./prompt-templates";
-import type { PromptTemplate } from "./prompt-templates/types";
+import { type PromptTemplateManager, createPromptTemplateManager } from './prompt-templates';
 
+import type { CompactionSettings } from './compaction/compaction';
 // Session + Compaction
-import { createJsonlSessionStorage, createSession, type Session } from "./session";
-import type { CompactionSettings } from "./compaction/compaction";
+import { createSession } from './session';
 
+import { type AgentCrudService, createAgentRoutes } from './routes/agent';
+import { createAuditRoutes } from './routes/audit';
+import { type ConversationService, createChatRoutes } from './routes/chat';
 // Routes
-import { createKnowledgeBaseRoutes } from "./routes/knowledge-base";
-import { createAgentRoutes, type AgentCrudService } from "./routes/agent";
-import { createAgentService } from "./services/agent";
-import { createChatRoutes, type ConversationService } from "./routes/chat";
-import { createProviderRoutes } from "./routes/provider";
-import { createAuditRoutes } from "./routes/audit";
-import { createProviderService } from "./services/provider";
-import { createSkillStoreService } from "./services/skill-store";
-import { createSkillService } from "./services/skill";
-import { createModelConfigService } from "./services/model-config";
-import { createScopedKBService } from "./services/kb-scope";
-import { createSkillRoutes } from "./routes/skill";
-import { createMcpServerRoutes } from "./routes/mcp-server";
-import { createMcpServerService } from "./services/mcp-server";
-import type { McpServerService } from "./services/mcp-server";
-import { createToolRegistryRoutes } from "./routes/tool-registry";
-import { createToolRegistry } from "./tool-registry";
+import { createKnowledgeBaseRoutes } from './routes/knowledge-base';
+import { createMcpServerRoutes } from './routes/mcp-server';
+import { createProviderRoutes } from './routes/provider';
+import { createSkillRoutes } from './routes/skill';
+import { createToolRegistryRoutes } from './routes/tool-registry';
+import { createAgentService } from './services/agent';
+import { createScopedKBService } from './services/kb-scope';
+import { createMcpServerService } from './services/mcp-server';
+import type { McpServerService } from './services/mcp-server';
+import { createModelConfigService } from './services/model-config';
+import { createProviderService } from './services/provider';
+import { createSkillService } from './services/skill';
+import { createSkillStoreService } from './services/skill-store';
+import type { SkillStoreService } from './services/skill-store';
+import { createToolRegistry } from './tool-registry';
 import {
-  createCalculatorTool, createDatetimeTool, createWebFetchTool, createWebSearchTool,
-  createJsonFormatTool, createUuidTool, createBase64Tool, createHashTool,
-  createKBBrowseTool, createKBReadTool, createKBSearchTool, createKBFollowLinkTool,
-  createFsLsTool, createFsCatTool, createFsGrepTool, createFsFindTool, createFsHeadTool, createFsTailTool,
-  createFileReadTool, createFileWriteTool,
-} from "./tools";
-import type { SkillStoreService } from "./services/skill-store";
-import type { SkillService } from "./services/skill";
-import type { ModelConfigService } from "./services/model-config";
-import type { ScopedKBService } from "./services/kb-scope";
+  createBase64Tool,
+  createCalculatorTool,
+  createDatetimeTool,
+  createFileReadTool,
+  createFileWriteTool,
+  createFsCatTool,
+  createFsFindTool,
+  createFsGrepTool,
+  createFsHeadTool,
+  createFsLsTool,
+  createFsTailTool,
+  createHashTool,
+  createJsonFormatTool,
+  createKBBrowseTool,
+  createKBFollowLinkTool,
+  createKBReadTool,
+  createKBSearchTool,
+  createUuidTool,
+  createWebFetchTool,
+  createWebSearchTool,
+} from './tools';
+type SkillService = ReturnType<typeof createSkillService>;
+import type { ModelConfigService } from './services/model-config';
+type ScopedKBService = ReturnType<typeof createScopedKBService>;
 
 // Auth
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
 
 // ---- Types ----
 
@@ -110,7 +134,7 @@ export interface AIModule {
 /** LLM Provider 配置 */
 export interface LLMProviderConfig {
   /** Provider 名称 */
-  name: "openai" | "anthropic" | "google";
+  name: 'openai' | 'anthropic' | 'google';
   /** API Key */
   apiKey: string;
   /** 自定义 Base URL */
@@ -127,6 +151,8 @@ export interface AIModuleDeps {
   notification?: NotificationService;
   /** LLM provider 配置列表 */
   llmProviders: LLMProviderConfig[];
+  /** Provider API Key 加密器 */
+  credentialEncryptor: ConfigEncryptor;
   /** 默认模型 ID */
   defaultModel: string;
   /** 存储路径 */
@@ -151,19 +177,23 @@ export interface AIModuleDeps {
   /** 压缩设置 */
   compactionSettings?: CompactionSettings;
   /** 动态 system prompt */
-  systemPrompt?: AgentHarnessOptions["systemPrompt"];
+  systemPrompt?: AgentHarnessOptions['systemPrompt'];
 }
 
 // ---- Provider 创建 ----
 
 function createProvider(config: LLMProviderConfig): LLMProvider {
+  const providerConfig = {
+    apiKey: config.apiKey,
+    ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
+  };
   switch (config.name) {
-    case "openai":
-      return createOpenAIProvider({ apiKey: config.apiKey, baseUrl: config.baseUrl });
-    case "anthropic":
-      return createAnthropicProvider({ apiKey: config.apiKey, baseUrl: config.baseUrl });
-    case "google":
-      return createGoogleProvider({ apiKey: config.apiKey, baseUrl: config.baseUrl });
+    case 'openai':
+      return createOpenAIProvider(providerConfig);
+    case 'anthropic':
+      return createAnthropicProvider(providerConfig);
+    case 'google':
+      return createGoogleProvider(providerConfig);
     default:
       throw new Error(`Unknown provider: ${config.name}`);
   }
@@ -174,6 +204,24 @@ function createProvider(config: LLMProviderConfig): LLMProvider {
 export function createAIModule(deps: AIModuleDeps): AIModule {
   const { db, jwt, jwtSecret, rbac, eventBus, storagePath, cache } = deps;
 
+  const providerService = createProviderService({
+    db: db as import('@ventostack/database').Database,
+    credentialEncryptor: deps.credentialEncryptor,
+    ...(cache !== undefined
+      ? {
+          cache: {
+            get: (key: string) => (cache as import('@ventostack/cache').Cache).get<string>(key),
+            set: (key: string, value: string, ttl?: number) =>
+              (cache as import('@ventostack/cache').Cache).set(
+                key,
+                value,
+                ttl === undefined ? undefined : { ttl },
+              ),
+          },
+        }
+      : {}),
+  });
+
   // 创建 LLM providers
   const providers: LLMProvider[] = deps.llmProviders.map(createProvider);
 
@@ -181,6 +229,29 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const llmGateway = createLLMGateway({
     providers,
     defaultModel: deps.defaultModel,
+    async resolveProvider(modelRef, tenantId) {
+      let effectiveModel = modelRef;
+      if (effectiveModel === 'default') {
+        effectiveModel = (await providerService.getConfig('model_purpose_default_chat')) ?? '';
+      }
+      if (!effectiveModel) return null;
+      const runtime = await providerService.resolveRuntimeModel(
+        effectiveModel,
+        tenantId || 'default',
+      );
+      if (!runtime) return null;
+      const common = {
+        name: runtime.providerName,
+        apiKey: runtime.apiKey,
+        baseUrl: runtime.baseUrl,
+        headers: runtime.headers,
+      };
+      const provider =
+        runtime.apiFormat === 'anthropic'
+          ? createAnthropicProvider(common)
+          : createOpenAIProvider(common);
+      return { provider, model: runtime.modelId };
+    },
   });
 
   // 创建 Model Registry
@@ -205,9 +276,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   });
 
   // 创建 Skill Manager
-  const skillManager = deps.skillDirs
-    ? createSkillManager({ dirs: deps.skillDirs })
-    : undefined;
+  const skillManager = deps.skillDirs ? createSkillManager({ dirs: deps.skillDirs }) : undefined;
 
   // 创建 Prompt Template Manager
   const promptTemplateManager = deps.templatePaths
@@ -228,30 +297,32 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   toolRegistry.register(createHashTool());
 
   // 知识库工具
-  toolRegistry.register(createKBBrowseTool({ kbService: knowledgeBase, tenantId: "default" }));
-  toolRegistry.register(createKBReadTool({ kbService: knowledgeBase, tenantId: "default" }));
-  toolRegistry.register(createKBSearchTool({ kbService: knowledgeBase, tenantId: "default" }));
-  toolRegistry.register(createKBFollowLinkTool({ kbService: knowledgeBase, tenantId: "default" }));
+  toolRegistry.register(createKBBrowseTool({ kbService: knowledgeBase, tenantId: 'default' }));
+  toolRegistry.register(createKBReadTool({ kbService: knowledgeBase, tenantId: 'default' }));
+  toolRegistry.register(createKBSearchTool({ kbService: knowledgeBase, tenantId: 'default' }));
+  toolRegistry.register(createKBFollowLinkTool({ kbService: knowledgeBase, tenantId: 'default' }));
 
   // 文件系统工具
-  toolRegistry.register(createFsLsTool(knowledgeBase, ""));
-  toolRegistry.register(createFsCatTool(knowledgeBase, ""));
-  toolRegistry.register(createFsGrepTool(knowledgeBase, ""));
-  toolRegistry.register(createFsFindTool(knowledgeBase, ""));
-  toolRegistry.register(createFsHeadTool(knowledgeBase, ""));
-  toolRegistry.register(createFsTailTool(knowledgeBase, ""));
+  toolRegistry.register(createFsLsTool(knowledgeBase, ''));
+  toolRegistry.register(createFsCatTool(knowledgeBase, ''));
+  toolRegistry.register(createFsGrepTool(knowledgeBase, ''));
+  toolRegistry.register(createFsFindTool(knowledgeBase, ''));
+  toolRegistry.register(createFsHeadTool(knowledgeBase, ''));
+  toolRegistry.register(createFsTailTool(knowledgeBase, ''));
 
   // 文件读写工具
   toolRegistry.register(createFileReadTool({ allowedPaths: [storagePath] }));
   toolRegistry.register(createFileWriteTool({ allowedPaths: [storagePath] }));
 
   // Agent CRUD 服务（先创建，供 AgentLoop 使用）
-  const agentDbService = createAgentService({ db: db as import("@ventostack/database").Database });
+  const agentDbService = createAgentService({ db: db as import('@ventostack/database').Database });
   const agentCrudService: AgentCrudService = {
-    create: (params) => agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
+    create: (params) =>
+      agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
     getById: (id, tenantId) => agentDbService.getById(id, tenantId),
     list: (params) => agentDbService.list(params),
-    update: (id, params, tenantId) => agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId),
+    update: (id, params, tenantId) =>
+      agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId),
     delete: (id, tenantId) => agentDbService.delete(id, tenantId),
     publish: (id, tenantId) => agentDbService.publish(id, tenantId),
   };
@@ -274,41 +345,51 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     ? createPermMiddleware(rbac)
     : () => async (_ctx: unknown, next: () => Promise<Response>) => next();
 
-  // Provider 服务
-  const providerService = createProviderService({
-    db: db as import("@ventostack/database").Database,
-    cache: cache as import("@ventostack/cache").Cache | undefined,
-  });
-
   // 创建路由
   const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm, providerService);
   const providerRouter = createProviderRoutes(providerService, authMiddleware, perm);
-  const agentRouter = createAgentRoutes(agentCrudService, authMiddleware, perm, { storagePath: `${storagePath}/skills/.workspace` });
+  const agentRouter = createAgentRoutes(agentCrudService, authMiddleware, perm, {
+    storagePath: `${storagePath}/skills/.workspace`,
+  });
   const conversationService: ConversationService = {
-    async create(params) { return { id: crypto.randomUUID() }; },
-    async getById(id, userId) { return null; },
-    async list(params) { return []; },
-    async delete(id, userId) {},
+    async create(_params) {
+      return { id: crypto.randomUUID() };
+    },
+    async getById(_id, _userId) {
+      return null;
+    },
+    async list(_params) {
+      return [];
+    },
+    async delete(_id, _userId) {},
   };
 
   const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm);
 
   // Skill 服务
   const skillStoreService = createSkillStoreService();
-  const skillService = createSkillService({ db, eventBus, storeService: skillStoreService, storagePath: `${storagePath}/skills` });
+  const skillService = createSkillService({
+    db,
+    eventBus,
+    storeService: skillStoreService,
+    storagePath: `${storagePath}/skills`,
+  });
   const modelConfigService = createModelConfigService({ db });
   const scopedKBService = createScopedKBService({ db, eventBus });
 
   // Skill 路由
-  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm, { storagePath: `${storagePath}/skills`, workspacePath: `${storagePath}/skills/.workspace` });
+  const skillRouter = createSkillRoutes(skillService, skillStoreService, authMiddleware, perm, {
+    storagePath: `${storagePath}/skills`,
+    workspacePath: `${storagePath}/skills/.workspace`,
+  });
 
   // MCP Server 服务
-  const allowedMcpCommands = (process.env.AI_MCP_STDIO_COMMANDS ?? "")
-    .split(",")
+  const allowedMcpCommands = (process.env.AI_MCP_STDIO_COMMANDS ?? '')
+    .split(',')
     .map((cmd) => cmd.trim())
     .filter((cmd) => cmd.length > 0);
   const mcpServerService = createMcpServerService({
-    db: db as import("@ventostack/database").Database,
+    db: db as import('@ventostack/database').Database,
     allowedStdioCommands: allowedMcpCommands,
   }) as unknown as McpServerService;
   const mcpRouter = createMcpServerRoutes(mcpServerService, authMiddleware, perm);
@@ -343,21 +424,28 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     // 异步初始化 session storage
     const harnessOptions: AgentHarnessOptions = {
       gateway: llmGateway,
-      session: partialOptions.session ?? createSession(
-        // 注意：这里需要异步初始化，实际使用时应在 init() 中完成
-        {
-          getMetadata: () => Promise.resolve({ id: sessionId, createdAt: new Date().toISOString(), path: sessionPath }),
-          getLeafId: () => Promise.resolve(null),
-          setLeafId: () => Promise.resolve(),
-          createEntryId: () => Promise.resolve(crypto.randomUUID().slice(0, 8)),
-          appendEntry: () => Promise.resolve(),
-          getEntry: () => Promise.resolve(undefined),
-          getEntries: () => Promise.resolve([]),
-          getPathToRoot: () => Promise.resolve([]),
-          findEntries: () => Promise.resolve([]),
-          getLabel: () => Promise.resolve(undefined),
-        },
-      ),
+      session:
+        partialOptions.session ??
+        createSession(
+          // 注意：这里需要异步初始化，实际使用时应在 init() 中完成
+          {
+            getMetadata: () =>
+              Promise.resolve({
+                id: sessionId,
+                createdAt: new Date().toISOString(),
+                path: sessionPath,
+              }),
+            getLeafId: () => Promise.resolve(null),
+            setLeafId: () => Promise.resolve(),
+            createEntryId: () => Promise.resolve(crypto.randomUUID().slice(0, 8)),
+            appendEntry: () => Promise.resolve(),
+            getEntry: () => Promise.resolve(undefined),
+            getEntries: () => Promise.resolve([]),
+            getPathToRoot: () => Promise.resolve([]),
+            findEntries: () => Promise.resolve([]),
+            getLabel: () => Promise.resolve(undefined),
+          },
+        ),
       skillManager,
       promptTemplateManager,
       modelRegistry,
@@ -390,11 +478,13 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     router,
     createHarness,
     async init() {
+      await providerService.encryptStoredCredentials();
+
       // 初始化 skills
       if (skillManager) {
         const { diagnostics } = await skillManager.reload();
         if (diagnostics.length > 0) {
-          console.warn("[ai] Skill loading diagnostics:", diagnostics);
+          console.warn('[ai] Skill loading diagnostics:', diagnostics);
         }
       }
 
@@ -402,13 +492,13 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       if (promptTemplateManager) {
         const { diagnostics } = await promptTemplateManager.reload();
         if (diagnostics.length > 0) {
-          console.warn("[ai] Template loading diagnostics:", diagnostics);
+          console.warn('[ai] Template loading diagnostics:', diagnostics);
         }
       }
 
       // 注册事件监听
       if (eventBus) {
-        eventBus.on("ai.kb.updated", async (data: { kbId: string }) => {
+        eventBus.on('ai.kb.updated', async (_data: { kbId: string }) => {
           // 清除相关缓存
         });
       }

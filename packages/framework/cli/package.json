@@ -9,15 +9,15 @@
   "publishConfig": {
     "access": "public"
   },
-  "main": "src/index.ts",
-  "types": "src/index.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "bin": {
-    "ventostack": "src/index.ts"
+    "ventostack": "dist/index.js"
   },
   "exports": {
-    ".": "./src/index.ts",
-    "./*": "./src/*"
+    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
   },
+  "files": ["dist", "templates"],
   "dependencies": {
     "@ventostack/core": "workspace:*",
     "@ventostack/database": "workspace:*"

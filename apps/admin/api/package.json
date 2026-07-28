@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@ventostack/ai": "workspace:*",
     "@ventostack/auth": "workspace:*",
     "@ventostack/boot": "workspace:*",
     "@ventostack/cache": "workspace:*",

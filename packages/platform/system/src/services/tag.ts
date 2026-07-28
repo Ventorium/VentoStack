@@ -3,8 +3,8 @@
  * 提供人员标签的 CRUD 与用户绑定管理
  */
 
-import type { Database } from "@ventostack/database";
-import { TagModel, UserTagModel } from "../models/tag";
+import type { Database } from '@ventostack/database';
+import { TagModel, UserTagModel } from '../models/tag';
 
 /** 标签创建参数 */
 export interface CreateTagParams {
@@ -105,13 +105,13 @@ export function createTagService(deps: { db: Database }): TagService {
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(TagModel).where("id", "=", id).update(updates);
+    await db.query(TagModel).where('id', '=', id).update(updates);
   }
 
   async function deleteTag(id: string): Promise<void> {
-    await db.query(TagModel).where("id", "=", id).delete();
+    await db.query(TagModel).where('id', '=', id).delete();
     // 同时清理关联关系
-    await db.query(UserTagModel).where("tag_id", "=", id).delete();
+    await db.query(UserTagModel).where('tag_id', '=', id).delete();
   }
 
   async function list(params?: TagListParams): Promise<PaginatedResult<TagItem>> {
@@ -120,15 +120,15 @@ export function createTagService(deps: { db: Database }): TagService {
 
     let query = db.query(TagModel);
     if (params?.status !== undefined) {
-      query = query.where("status", "=", params.status);
+      query = query.where('status', '=', params.status);
     }
 
     const total = await query.count();
 
     const rows = await query
-      .select("id", "name", "code", "sort", "status", "remark", "created_at")
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+      .select('id', 'name', 'code', 'sort', 'status', 'remark', 'created_at')
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();
@@ -139,11 +139,11 @@ export function createTagService(deps: { db: Database }): TagService {
       code: row.code,
       sort: row.sort ?? 0,
       status: row.status ?? 1,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
 
     return {
@@ -158,10 +158,10 @@ export function createTagService(deps: { db: Database }): TagService {
   async function listAll(): Promise<TagItem[]> {
     const rows = await db
       .query(TagModel)
-      .where("status", "=", 1)
-      .select("id", "name", "code", "sort", "status", "remark", "created_at")
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+      .where('status', '=', 1)
+      .select('id', 'name', 'code', 'sort', 'status', 'remark', 'created_at')
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .list();
 
     return rows.map((row) => ({
@@ -170,17 +170,17 @@ export function createTagService(deps: { db: Database }): TagService {
       code: row.code,
       sort: row.sort ?? 0,
       status: row.status ?? 1,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
   }
 
   async function assignUserTags(userId: string, tagIds: string[]): Promise<void> {
     // 先删除旧关系
-    await db.query(UserTagModel).where("user_id", "=", userId).delete();
+    await db.query(UserTagModel).where('user_id', '=', userId).delete();
     // 批量插入新关系
     for (const tagId of tagIds) {
       await db.query(UserTagModel).insert({
@@ -191,11 +191,7 @@ export function createTagService(deps: { db: Database }): TagService {
   }
 
   async function getUserTagIds(userId: string): Promise<string[]> {
-    const rows = await db
-      .query(UserTagModel)
-      .where("user_id", "=", userId)
-      .select("tag_id")
-      .list();
+    const rows = await db.query(UserTagModel).where('user_id', '=', userId).select('tag_id').list();
     return rows.map((r) => r.tag_id);
   }
 
@@ -208,26 +204,22 @@ export function createTagService(deps: { db: Database }): TagService {
        ORDER BY t.sort DESC, t.created_at DESC`,
       [userId],
     );
-    return rows.map((row: Record<string, unknown>) => ({
+    return (rows as Record<string, unknown>[]).map((row) => ({
       id: row.id as string,
       name: row.name as string,
       code: row.code as string,
       sort: (row.sort as number) ?? 0,
       status: (row.status as number) ?? 1,
-      remark: (row.remark as string) ?? "",
+      remark: (row.remark as string) ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
   }
 
   async function getUserIdsByTag(tagId: string): Promise<string[]> {
-    const rows = await db
-      .query(UserTagModel)
-      .where("tag_id", "=", tagId)
-      .select("user_id")
-      .list();
+    const rows = await db.query(UserTagModel).where('tag_id', '=', tagId).select('user_id').list();
     return rows.map((r) => r.user_id);
   }
 
@@ -238,7 +230,7 @@ export function createTagService(deps: { db: Database }): TagService {
        WHERE t.code = $1 AND t.status = 1 AND t.deleted_at IS NULL`,
       [tagCode],
     );
-    return rows.map((r: { user_id: string }) => r.user_id);
+    return (rows as Array<{ user_id: string }>).map((r) => r.user_id);
   }
 
   return {

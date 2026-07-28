@@ -5,11 +5,12 @@
  * 从请求头提取父 SpanContext（如有），创建子 Span 并注入响应头。
  */
 
-import type { Context } from "@ventostack/core";
-import type { Middleware } from "@ventostack/core";
-import { createW3CTraceContextPropagator } from "./trace-context";
-import type { TraceContextPropagator } from "./trace-context";
-import type { SpanContext, Tracer } from "./tracing";
+import type { AsyncLocalStorage } from 'node:async_hooks';
+import type { Context } from '@ventostack/core';
+import type { Middleware } from '@ventostack/core';
+import { createW3CTraceContextPropagator } from './trace-context';
+import type { TraceContextPropagator } from './trace-context';
+import type { SpanContext, Tracer } from './tracing';
 
 export interface TracingMiddlewareOptions {
   /** 自定义传播器，默认使用 W3C TraceContext */
@@ -48,9 +49,9 @@ export function createTracingMiddleware(
     ctx.state.span = span;
 
     // 4. 设置请求属性
-    span.setAttribute("http.method", ctx.method);
-    span.setAttribute("http.url", ctx.url);
-    span.setAttribute("http.path", ctx.path);
+    span.setAttribute('http.method', ctx.method);
+    span.setAttribute('http.url', ctx.url);
+    span.setAttribute('http.path', ctx.path);
 
     // 5. 在 AsyncLocalStorage 上下文中执行下游中间件
     const run = <T>(fn: () => Promise<T>): Promise<T> => {
@@ -61,10 +62,10 @@ export function createTracingMiddleware(
       const response = await run(next);
 
       // 6. 设置响应属性
-      span.setAttribute("http.status_code", response.status);
+      span.setAttribute('http.status_code', response.status);
 
       if (response.status >= 500) {
-        span.setStatus("error");
+        span.setStatus('error');
       }
 
       // 7. 注入 trace context 到响应头
@@ -79,12 +80,12 @@ export function createTracingMiddleware(
         headers: newHeaders,
       });
     } catch (err) {
-      span.setStatus("error");
-      span.setAttribute("error", true);
+      span.setStatus('error');
+      span.setAttribute('error', true);
       if (err instanceof Error) {
-        span.addEvent("exception", {
-          "exception.type": err.name,
-          "exception.message": err.message,
+        span.addEvent('exception', {
+          'exception.type': err.name,
+          'exception.message': err.message,
         });
       }
 

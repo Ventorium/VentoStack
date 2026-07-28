@@ -6,6 +6,16 @@ AI 集成：LLM 接入、RAG、Tool Registry、权限沙箱。
 
 AI 能力层，依赖 core、auth、observability。提供 AI 工具注册、审批流集成和沙箱隔离执行。
 
+## 核心能力
+
+- 多 Provider、多 Model 注册和动态路由
+- OpenAI-compatible、Anthropic 和 Google Provider
+- 对话、Agent Loop、流式输出和上下文压缩
+- RAG、知识库、文档加载和租户隔离查询
+- Tool Registry、风险策略和人工审批
+- Skill、Prompt Template、Memory 和会话存储
+- 进程/Docker 沙箱、调用限流和 Token 预算
+
 ## 安全特性
 
 ### 沙箱安全默认

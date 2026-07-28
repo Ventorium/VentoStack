@@ -5,21 +5,21 @@
  * 有副作用：需要查询数据库。
  */
 
-import type { Database } from "@ventostack/database";
-import type { GraphNode, EngineContext } from "./graph";
-import { workflowErrors } from "./errors";
+import type { Database } from '@ventostack/database';
+import { workflowErrors } from './errors';
+import type { EngineContext, GraphNode } from './graph';
 
 /** 审批人配置 */
 export interface AssigneeConfig {
-  mode: "fixed" | "role" | "department" | "lookup" | "form_field" | "dept_tag";
+  mode: 'fixed' | 'role' | 'department' | 'lookup' | 'form_field' | 'dept_tag';
   userIds?: string[];
   roleId?: string;
   deptId?: string;
   lookupKey?:
-    | "initiator_superior"
-    | "initiator_dept_leader"
-    | "initiator_dept_hr"
-    | "last_approver_superior";
+    | 'initiator_superior'
+    | 'initiator_dept_leader'
+    | 'initiator_dept_hr'
+    | 'last_approver_superior';
   formField?: string;
   validation?: {
     mustHaveRole?: string;
@@ -28,7 +28,7 @@ export interface AssigneeConfig {
   /** dept_tag 模式: 标签标识列表 */
   tagCodes?: string[];
   /** dept_tag 模式: 匹配模式 — and=且(全部满足) or=或(任一满足) */
-  tagMatchMode?: "and" | "or";
+  tagMatchMode?: 'and' | 'or';
   /** dept_tag 模式: 是否沿部门层级向上遍历 */
   deptTraversal?: boolean;
   /** dept_tag 模式: 最大遍历层级，0 或 undefined 表示不限 */
@@ -37,17 +37,17 @@ export interface AssigneeConfig {
 
 /** 审批节点 config */
 export interface ApproveNodeConfig {
-  strategy?: "sequential" | "parallel_and" | "parallel_or" | "percentage";
+  strategy?: 'sequential' | 'parallel_and' | 'parallel_or' | 'percentage';
   percentage?: number;
   assignee?: AssigneeConfig;
   formPermission?: { visible: string[]; editable: string[]; required: string[] };
   actionButtons?: string[];
   counterSign?: boolean;
-  rejectAction?: "terminate" | "return_to_previous" | "return_to_start";
-  onEmptyAssignee?: "error" | "skip" | "escalate";
+  rejectAction?: 'terminate' | 'return_to_previous' | 'return_to_start';
+  onEmptyAssignee?: 'error' | 'skip' | 'escalate';
   timeout?: {
     hours: number;
-    action: "remind" | "auto_approve" | "auto_reject" | "escalate";
+    action: 'remind' | 'auto_approve' | 'auto_reject' | 'escalate';
   };
 }
 
@@ -62,46 +62,40 @@ export interface AssigneeResolver {
 export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver {
   const { db } = deps;
 
-  async function resolve(
-    node: GraphNode,
-    ctx: EngineContext,
-  ): Promise<string[]> {
+  async function resolve(node: GraphNode, ctx: EngineContext): Promise<string[]> {
     const config = node.config as unknown as ApproveNodeConfig | null;
     const assignee = config?.assignee;
     if (!assignee) return [];
 
     switch (assignee.mode) {
-      case "fixed":
+      case 'fixed':
         return assignee.userIds ?? [];
 
-      case "role": {
+      case 'role': {
         if (!assignee.roleId) return [];
-        const rows = await db
-          .raw(
-            `SELECT user_id FROM sys_user_role WHERE role_id = $1`,
-            [assignee.roleId],
-          );
-        return rows.map((r: { user_id: string }) => r.user_id);
+        const rows = await db.raw('SELECT user_id FROM sys_user_role WHERE role_id = $1', [
+          assignee.roleId,
+        ]);
+        return (rows as Array<{ user_id: string }>).map((r) => r.user_id);
       }
 
-      case "department": {
+      case 'department': {
         if (!assignee.deptId) return [];
-        const rows = await db
-          .raw(`SELECT id FROM sys_user WHERE dept_id = $1 AND status = 1`, [
-            assignee.deptId,
-          ]);
-        return rows.map((r: { id: string }) => r.id);
+        const rows = await db.raw('SELECT id FROM sys_user WHERE dept_id = $1 AND status = 1', [
+          assignee.deptId,
+        ]);
+        return (rows as Array<{ id: string }>).map((r) => r.id);
       }
 
-      case "lookup": {
+      case 'lookup': {
         // 需要解析发起人的上下级关系
         const initiator = await resolveInitiatorDetail(db, ctx.initiator.id);
         switch (assignee.lookupKey) {
-          case "initiator_superior":
+          case 'initiator_superior':
             return initiator.superiorId ? [initiator.superiorId] : [];
-          case "initiator_dept_leader":
+          case 'initiator_dept_leader':
             return initiator.deptLeaderId ? [initiator.deptLeaderId] : [];
-          case "initiator_dept_hr": {
+          case 'initiator_dept_hr': {
             // 查找发起人所在部门的 HR 角色用户
             if (!initiator.deptId) return [];
             const hrRows = await db.raw(
@@ -111,9 +105,9 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
                WHERE u.dept_id = $1 AND r.code = 'hr' AND u.status = 1`,
               [initiator.deptId],
             );
-            return hrRows.map((r: { user_id: string }) => r.user_id);
+            return (hrRows as Array<{ user_id: string }>).map((r) => r.user_id);
           }
-          case "last_approver_superior":
+          case 'last_approver_superior':
             // TODO: 需要从 history 找到上一审批人，Phase 2 实现
             return [];
           default:
@@ -121,24 +115,21 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
         }
       }
 
-      case "form_field": {
+      case 'form_field': {
         const fieldKey = assignee.formField;
         if (!fieldKey) return [];
         const userId = ctx.formData[fieldKey] as string | undefined;
         if (!userId) return [];
 
         // 基础校验：用户存在且状态正常
-        const user = await db.raw(
-          `SELECT id FROM sys_user WHERE id = $1 AND status = 1`,
-          [userId],
-        );
+        const user = await db.raw('SELECT id FROM sys_user WHERE id = $1 AND status = 1', [userId]);
         if (user.length === 0) throw workflowErrors.invalidAssignee();
 
         return [userId];
       }
 
-      case "dept_tag": {
-        const { tagCodes, tagMatchMode = "or", deptTraversal = false, traversalLevels } = assignee;
+      case 'dept_tag': {
+        const { tagCodes, tagMatchMode = 'or', deptTraversal = false, traversalLevels } = assignee;
         if (!tagCodes?.length) return [];
 
         // 获取发起人所在部门
@@ -152,7 +143,7 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
 
         // 批量查找所有部门下的有效用户（排除软删除）
         const allUsers = await db.raw(
-          `SELECT id FROM sys_user WHERE dept_id = ANY($1) AND status = 1 AND deleted_at IS NULL`,
+          'SELECT id FROM sys_user WHERE dept_id = ANY($1) AND status = 1 AND deleted_at IS NULL',
           [deptChain],
         );
         if (allUsers.length === 0) return [];
@@ -182,7 +173,7 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
           const userTags = userTagMap.get(userId);
           if (!userTags) continue;
           const matched =
-            tagMatchMode === "and"
+            tagMatchMode === 'and'
               ? tagCodes.every((code) => userTags.has(code))
               : tagCodes.some((code) => userTags.has(code));
           if (matched) matchedUserIds.add(userId);
@@ -217,7 +208,7 @@ export async function resolveInitiatorDetail(
   userId: string,
 ): Promise<InitiatorDetail> {
   const user = await db.raw(
-    `SELECT id, nickname, dept_id FROM sys_user WHERE id = $1 AND status = 1 AND deleted_at IS NULL`,
+    'SELECT id, nickname, dept_id FROM sys_user WHERE id = $1 AND status = 1 AND deleted_at IS NULL',
     [userId],
   );
   if (user.length === 0) return { id: userId };
@@ -231,20 +222,20 @@ export async function resolveInitiatorDetail(
 
   // 查找角色
   const roles = await db.raw(
-    `SELECT r.code FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id WHERE ur.user_id = $1 AND r.deleted_at IS NULL`,
+    'SELECT r.code FROM sys_role r JOIN sys_user_role ur ON ur.role_id = r.id WHERE ur.user_id = $1 AND r.deleted_at IS NULL',
     [userId],
   );
-  result.roles = roles.map((r: { code: string }) => r.code);
+  result.roles = (roles as Array<{ code: string }>).map((r) => r.code);
 
   // 查找直属上级（通过 dept 的 leader 字段）
   if (u.dept_id) {
-    const dept = await db.raw(
-      `SELECT leader FROM sys_dept WHERE id = $1 AND deleted_at IS NULL`,
-      [u.dept_id],
-    );
-    if (dept.length > 0 && dept[0].leader) {
-      result.superiorId = dept[0].leader;
-      result.deptLeaderId = dept[0].leader;
+    const dept = await db.raw('SELECT leader FROM sys_dept WHERE id = $1 AND deleted_at IS NULL', [
+      u.dept_id,
+    ]);
+    const [department] = dept as Array<{ leader?: string | null }>;
+    if (department?.leader) {
+      result.superiorId = department.leader;
+      result.deptLeaderId = department.leader;
     }
   }
 
@@ -269,7 +260,7 @@ async function getDeptAncestorChain(
 
   while (maxLevels === 0 || level < maxLevels) {
     const rows = await db.raw(
-      `SELECT parent_id FROM sys_dept WHERE id = $1 AND deleted_at IS NULL`,
+      'SELECT parent_id FROM sys_dept WHERE id = $1 AND deleted_at IS NULL',
       [currentId],
     );
     if (rows.length === 0) break;

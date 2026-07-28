@@ -14,31 +14,32 @@ import type {
   SessionManager,
   TOTPManager,
   TokenRefreshManager,
-} from "@ventostack/auth";
-import type { Cache } from "@ventostack/cache";
-import type { Router } from "@ventostack/core";
-import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
-import { createDatabase } from "@ventostack/database";
-import type { EventBus } from "@ventostack/events";
-import type { AuditStore, HealthCheck } from "@ventostack/observability";
+} from '@ventostack/auth';
+import type { Cache } from '@ventostack/cache';
+import type { Router } from '@ventostack/core';
+import { createConfigEncryptor } from '@ventostack/core';
+import type { Database, SqlExecutor, TableSchemaInfo } from '@ventostack/database';
+import { createDatabase } from '@ventostack/database';
+import type { EventBus } from '@ventostack/events';
+import type { AuditStore, HealthCheck } from '@ventostack/observability';
 
-import type { Scheduler } from "@ventostack/events";
-import { createI18nModule } from "@ventostack/i18n";
-import type { I18nModule } from "@ventostack/i18n";
-import { createMonitorModule } from "@ventostack/monitor";
-import type { MonitorModule } from "@ventostack/monitor";
-import { createNotificationModule } from "@ventostack/notification";
-import type { NotificationModule, NotifyChannel } from "@ventostack/notification";
-import { createOSSModule } from "@ventostack/oss";
-import type { OSSModule, StorageAdapter } from "@ventostack/oss";
-import { createSchedulerModule } from "@ventostack/scheduler";
-import type { JobHandlerMap, SchedulerModule } from "@ventostack/scheduler";
-import { createSystemModule } from "@ventostack/system";
-import type { SystemModule } from "@ventostack/system";
-import { createWorkflowModule } from "@ventostack/workflow";
-import type { WorkflowModule } from "@ventostack/workflow";
-import { createAIModule } from "@ventostack/ai";
-import type { AIModule, AIModuleDeps, LLMProviderConfig } from "@ventostack/ai";
+import { createAIModule } from '@ventostack/ai';
+import type { AIModule, LLMProviderConfig } from '@ventostack/ai';
+import type { Scheduler } from '@ventostack/events';
+import { createI18nModule } from '@ventostack/i18n';
+import type { I18nModule } from '@ventostack/i18n';
+import { createMonitorModule } from '@ventostack/monitor';
+import type { MonitorModule } from '@ventostack/monitor';
+import { createNotificationModule } from '@ventostack/notification';
+import type { NotificationModule, NotifyChannel } from '@ventostack/notification';
+import { createOSSModule } from '@ventostack/oss';
+import type { OSSModule, StorageAdapter } from '@ventostack/oss';
+import { createSchedulerModule } from '@ventostack/scheduler';
+import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
+import { createSystemModule } from '@ventostack/system';
+import type { SystemModule } from '@ventostack/system';
+import { createWorkflowModule } from '@ventostack/workflow';
+import type { WorkflowModule } from '@ventostack/workflow';
 
 /** 平台配置 */
 export interface PlatformConfig {
@@ -112,6 +113,8 @@ export interface PlatformConfig {
     llmProviders: LLMProviderConfig[];
     defaultModel: string;
     storagePath?: string;
+    /** 恰好 32 字节的 Provider 凭据加密密钥 */
+    credentialEncryptionKey: string;
   };
 
   /** 是否启用多租户隔离（默认 false，向后兼容） */
@@ -178,6 +181,10 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   const db = providedDb ?? createDatabase({ executor });
 
+  if (moduleFlags?.ai === true && !config.aiConfig) {
+    throw new Error('aiConfig is required when the AI module is enabled');
+  }
+
   const enabled = {
     system: moduleFlags?.system !== false,
     monitor: moduleFlags?.monitor !== false,
@@ -186,7 +193,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     workflow: moduleFlags?.workflow !== false,
     oss: moduleFlags?.oss !== false,
     scheduler: moduleFlags?.scheduler !== false,
-    ai: moduleFlags?.ai !== false,
+    ai: moduleFlags?.ai === true,
   };
 
   // Create modules
@@ -283,14 +290,17 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwtSecret,
         rbac,
         eventBus,
+        credentialEncryptor: createConfigEncryptor({
+          key: config.aiConfig!.credentialEncryptionKey,
+        }),
         llmProviders: config.aiConfig?.llmProviders ?? [],
-        defaultModel: config.aiConfig?.defaultModel ?? "gpt-4o-mini",
-        storagePath: config.aiConfig?.storagePath ?? "./data/knowledge-bases",
+        defaultModel: config.aiConfig?.defaultModel ?? 'gpt-4o-mini',
+        storagePath: config.aiConfig?.storagePath ?? './data/knowledge-bases',
       })
     : undefined;
 
   // Aggregate routers
-  const { createRouter } = await import("@ventostack/core");
+  const { createRouter } = await import('@ventostack/core');
   const router = createRouter();
 
   // Mount module routers

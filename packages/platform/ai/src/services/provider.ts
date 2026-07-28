@@ -2,11 +2,12 @@
  * AI 供应商与模型管理服务
  */
 
-import type { Database } from "@ventostack/database";
-import { fetchModelsFromDev, type FetchedModel, type ReasoningOption } from "./models-dev";
-import { getPresetById } from "./provider-presets";
+import type { ConfigEncryptor } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import { type ReasoningOption, fetchModelsFromDev } from './models-dev';
+import { getPresetById } from './provider-presets';
 
-export type { ReasoningOption } from "./models-dev";
+export type { ReasoningOption } from './models-dev';
 
 export interface CreateProviderParams {
   name: string;
@@ -39,7 +40,8 @@ export interface ProviderItem {
   displayName: string | null;
   apiFormat: string;
   baseUrl: string;
-  apiKey: string;
+  apiKey: '';
+  hasApiKey: boolean;
   headers: Record<string, string> | null;
   extra: Record<string, unknown> | null;
   presetId: string | null;
@@ -103,12 +105,39 @@ export interface SyncResult {
   total: number;
 }
 
-export function createProviderService(deps: { db: Database; cache?: { get(key: string): Promise<string | null>; set(key: string, value: string, ttl?: number): Promise<void> } }) {
-  const { db, cache } = deps;
+export interface RuntimeModelConfig {
+  providerName: string;
+  apiFormat: string;
+  baseUrl: string;
+  apiKey: string;
+  headers: Record<string, string>;
+  modelId: string;
+}
+
+export function createProviderService(deps: {
+  db: Database;
+  credentialEncryptor: ConfigEncryptor;
+  cache?: {
+    get(key: string): Promise<string | null>;
+    set(key: string, value: string, ttl?: number): Promise<void>;
+  };
+}) {
+  const { db, cache, credentialEncryptor } = deps;
+
+  async function encryptCredential(apiKey: string): Promise<string> {
+    return credentialEncryptor.isEncrypted(apiKey) ? apiKey : credentialEncryptor.encrypt(apiKey);
+  }
+
+  async function decryptCredential(apiKey: string): Promise<string> {
+    return credentialEncryptor.isEncrypted(apiKey) ? credentialEncryptor.decrypt(apiKey) : apiKey;
+  }
 
   // ============ Provider CRUD ============
 
-  async function createProvider(tenantId: string, params: CreateProviderParams): Promise<{ id: string }> {
+  async function createProvider(
+    tenantId: string,
+    params: CreateProviderParams,
+  ): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_provider (id, name, display_name, api_format, base_url, api_key, headers, extra, preset_id, models_dev_slug, sort, tenant_id)
@@ -119,7 +148,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
         params.displayName ?? params.name,
         params.apiFormat,
         params.baseUrl,
-        params.apiKey,
+        await encryptCredential(params.apiKey),
         params.headers ? JSON.stringify(params.headers) : null,
         params.extra ? JSON.stringify(params.extra) : null,
         params.presetId ?? null,
@@ -131,33 +160,64 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     return { id };
   }
 
-  async function updateProvider(id: string, tenantId: string, params: UpdateProviderParams): Promise<void> {
+  async function updateProvider(
+    id: string,
+    tenantId: string,
+    params: UpdateProviderParams,
+  ): Promise<void> {
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
-    if (params.displayName !== undefined) { sets.push(`display_name = $${idx++}`); values.push(params.displayName); }
-    if (params.apiFormat !== undefined) { sets.push(`api_format = $${idx++}`); values.push(params.apiFormat); }
-    if (params.baseUrl !== undefined) { sets.push(`base_url = $${idx++}`); values.push(params.baseUrl); }
-    if (params.apiKey !== undefined) { sets.push(`api_key = $${idx++}`); values.push(params.apiKey); }
-    if (params.headers !== undefined) { sets.push(`headers = $${idx++}`); values.push(JSON.stringify(params.headers)); }
-    if (params.extra !== undefined) { sets.push(`extra = $${idx++}`); values.push(JSON.stringify(params.extra)); }
-    if (params.modelsDevSlug !== undefined) { sets.push(`models_dev_slug = $${idx++}`); values.push(params.modelsDevSlug); }
-    if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
-    if (params.sort !== undefined) { sets.push(`sort = $${idx++}`); values.push(params.sort); }
+    if (params.displayName !== undefined) {
+      sets.push(`display_name = $${idx++}`);
+      values.push(params.displayName);
+    }
+    if (params.apiFormat !== undefined) {
+      sets.push(`api_format = $${idx++}`);
+      values.push(params.apiFormat);
+    }
+    if (params.baseUrl !== undefined) {
+      sets.push(`base_url = $${idx++}`);
+      values.push(params.baseUrl);
+    }
+    if (params.apiKey !== undefined && params.apiKey.trim() !== '') {
+      sets.push(`api_key = $${idx++}`);
+      values.push(await encryptCredential(params.apiKey));
+    }
+    if (params.headers !== undefined) {
+      sets.push(`headers = $${idx++}`);
+      values.push(JSON.stringify(params.headers));
+    }
+    if (params.extra !== undefined) {
+      sets.push(`extra = $${idx++}`);
+      values.push(JSON.stringify(params.extra));
+    }
+    if (params.modelsDevSlug !== undefined) {
+      sets.push(`models_dev_slug = $${idx++}`);
+      values.push(params.modelsDevSlug);
+    }
+    if (params.status !== undefined) {
+      sets.push(`status = $${idx++}`);
+      values.push(params.status);
+    }
+    if (params.sort !== undefined) {
+      sets.push(`sort = $${idx++}`);
+      values.push(params.sort);
+    }
 
     if (sets.length === 0) return;
-    sets.push(`updated_at = NOW()`);
+    sets.push('updated_at = NOW()');
     values.push(id, tenantId);
 
     await db.raw(
-      `UPDATE ai_provider SET ${sets.join(", ")} WHERE id = $${idx} AND tenant_id = $${idx + 1}`,
+      `UPDATE ai_provider SET ${sets.join(', ')} WHERE id = $${idx} AND tenant_id = $${idx + 1}`,
       values,
     );
   }
 
   async function deleteProvider(id: string, tenantId: string): Promise<void> {
-    await db.raw(`DELETE FROM ai_provider WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    await db.raw('DELETE FROM ai_provider WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   }
 
   async function getProviderById(id: string, tenantId: string): Promise<ProviderItem | null> {
@@ -187,7 +247,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
 
   async function listModels(providerId: string, tenantId: string): Promise<ModelItem[]> {
     const rows = await db.raw(
-      `SELECT * FROM ai_model WHERE provider_id = $1 AND tenant_id = $2 ORDER BY status DESC, sort ASC, created_at ASC`,
+      'SELECT * FROM ai_model WHERE provider_id = $1 AND tenant_id = $2 ORDER BY status DESC, sort ASC, created_at ASC',
       [providerId, tenantId],
     );
     return (rows as Array<Record<string, unknown>>).map(mapModel);
@@ -205,35 +265,86 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     return (rows as Array<Record<string, unknown>>).map(mapModel);
   }
 
-  async function updateModel(id: string, tenantId: string, params: UpdateModelParams): Promise<void> {
+  async function updateModel(
+    id: string,
+    tenantId: string,
+    params: UpdateModelParams,
+  ): Promise<void> {
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
 
-    if (params.displayName !== undefined) { sets.push(`display_name = $${idx++}`); values.push(params.displayName); }
-    if (params.contextLength !== undefined) { sets.push(`context_length = $${idx++}`); values.push(params.contextLength); }
-    if (params.maxOutputTokens !== undefined) { sets.push(`max_output_tokens = $${idx++}`); values.push(params.maxOutputTokens); }
-    if (params.supportsText !== undefined) { sets.push(`supports_text = $${idx++}`); values.push(params.supportsText); }
-    if (params.supportsImage !== undefined) { sets.push(`supports_image = $${idx++}`); values.push(params.supportsImage); }
-    if (params.supportsVideo !== undefined) { sets.push(`supports_video = $${idx++}`); values.push(params.supportsVideo); }
-    if (params.supportsAudio !== undefined) { sets.push(`supports_audio = $${idx++}`); values.push(params.supportsAudio); }
-    if (params.supportsFunctionCalling !== undefined) { sets.push(`supports_function_calling = $${idx++}`); values.push(params.supportsFunctionCalling); }
-    if (params.supportsStreaming !== undefined) { sets.push(`supports_streaming = $${idx++}`); values.push(params.supportsStreaming); }
-    if (params.supportsThinking !== undefined) { sets.push(`supports_thinking = $${idx++}`); values.push(params.supportsThinking); }
-    if (params.supportsStructuredOutput !== undefined) { sets.push(`supports_structured_output = $${idx++}`); values.push(params.supportsStructuredOutput); }
-    if (params.reasoningOptions !== undefined) { sets.push(`reasoning_options = $${idx++}`); values.push(params.reasoningOptions ? JSON.stringify(params.reasoningOptions) : null); }
-    if (params.pricingInput !== undefined) { sets.push(`pricing_input = $${idx++}`); values.push(params.pricingInput); }
-    if (params.pricingOutput !== undefined) { sets.push(`pricing_output = $${idx++}`); values.push(params.pricingOutput); }
-    if (params.modelsDevSlug !== undefined) { sets.push(`models_dev_slug = $${idx++}`); values.push(params.modelsDevSlug); }
-    if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
-    if (params.sort !== undefined) { sets.push(`sort = $${idx++}`); values.push(params.sort); }
+    if (params.displayName !== undefined) {
+      sets.push(`display_name = $${idx++}`);
+      values.push(params.displayName);
+    }
+    if (params.contextLength !== undefined) {
+      sets.push(`context_length = $${idx++}`);
+      values.push(params.contextLength);
+    }
+    if (params.maxOutputTokens !== undefined) {
+      sets.push(`max_output_tokens = $${idx++}`);
+      values.push(params.maxOutputTokens);
+    }
+    if (params.supportsText !== undefined) {
+      sets.push(`supports_text = $${idx++}`);
+      values.push(params.supportsText);
+    }
+    if (params.supportsImage !== undefined) {
+      sets.push(`supports_image = $${idx++}`);
+      values.push(params.supportsImage);
+    }
+    if (params.supportsVideo !== undefined) {
+      sets.push(`supports_video = $${idx++}`);
+      values.push(params.supportsVideo);
+    }
+    if (params.supportsAudio !== undefined) {
+      sets.push(`supports_audio = $${idx++}`);
+      values.push(params.supportsAudio);
+    }
+    if (params.supportsFunctionCalling !== undefined) {
+      sets.push(`supports_function_calling = $${idx++}`);
+      values.push(params.supportsFunctionCalling);
+    }
+    if (params.supportsStreaming !== undefined) {
+      sets.push(`supports_streaming = $${idx++}`);
+      values.push(params.supportsStreaming);
+    }
+    if (params.supportsThinking !== undefined) {
+      sets.push(`supports_thinking = $${idx++}`);
+      values.push(params.supportsThinking);
+    }
+    if (params.supportsStructuredOutput !== undefined) {
+      sets.push(`supports_structured_output = $${idx++}`);
+      values.push(params.supportsStructuredOutput);
+    }
+    if (params.reasoningOptions !== undefined) {
+      sets.push(`reasoning_options = $${idx++}`);
+      values.push(params.reasoningOptions ? JSON.stringify(params.reasoningOptions) : null);
+    }
+    if (params.pricingInput !== undefined) {
+      sets.push(`pricing_input = $${idx++}`);
+      values.push(params.pricingInput);
+    }
+    if (params.pricingOutput !== undefined) {
+      sets.push(`pricing_output = $${idx++}`);
+      values.push(params.pricingOutput);
+    }
+    if (params.status !== undefined) {
+      sets.push(`status = $${idx++}`);
+      values.push(params.status);
+    }
+    if (params.sort !== undefined) {
+      sets.push(`sort = $${idx++}`);
+      values.push(params.sort);
+    }
 
     if (sets.length === 0) return;
-    sets.push(`updated_at = NOW()`);
+    sets.push('updated_at = NOW()');
     values.push(id, tenantId);
 
     await db.raw(
-      `UPDATE ai_model SET ${sets.join(", ")} WHERE id = $${idx} AND tenant_id = $${idx + 1}`,
+      `UPDATE ai_model SET ${sets.join(', ')} WHERE id = $${idx} AND tenant_id = $${idx + 1}`,
       values,
     );
   }
@@ -243,18 +354,18 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
   async function syncModels(providerId: string, tenantId: string): Promise<SyncResult> {
     // Validate provider exists
     const provider = await getProviderById(providerId, tenantId);
-    if (!provider) throw new Error("Provider not found");
+    if (!provider) throw new Error('Provider not found');
 
     // Auto-resolve models.dev slug: preset first, then provider's own modelsDevSlug
     const preset = provider.presetId ? getPresetById(provider.presetId) : undefined;
     const providerSlug = preset?.modelsDevSlug ?? provider.modelsDevSlug;
-    if (!providerSlug) throw new Error("Provider has no models.dev slug configured for sync");
+    if (!providerSlug) throw new Error('Provider has no models.dev slug configured for sync');
 
     const fetched = await fetchModelsFromDev(providerSlug, cache);
 
     // 获取现有模型
     const existingRows = await db.raw(
-      `SELECT id, model_id FROM ai_model WHERE provider_id = $1 AND tenant_id = $2`,
+      'SELECT id, model_id FROM ai_model WHERE provider_id = $1 AND tenant_id = $2',
       [providerId, tenantId],
     );
     const existingMap = new Map<string, string>();
@@ -280,11 +391,19 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
              auto_fetched = TRUE, updated_at = NOW()
            WHERE id = $14`,
           [
-            model.displayName, model.contextLength, model.maxOutputTokens,
-            model.supportsText, model.supportsImage, model.supportsVideo, model.supportsAudio,
-            model.supportsFunctionCalling, model.supportsThinking, model.supportsStructuredOutput,
+            model.displayName,
+            model.contextLength,
+            model.maxOutputTokens,
+            model.supportsText,
+            model.supportsImage,
+            model.supportsVideo,
+            model.supportsAudio,
+            model.supportsFunctionCalling,
+            model.supportsThinking,
+            model.supportsStructuredOutput,
             model.reasoningOptions ? JSON.stringify(model.reasoningOptions) : null,
-            model.pricingInput, model.pricingOutput,
+            model.pricingInput,
+            model.pricingOutput,
             existingId,
           ],
         );
@@ -299,12 +418,22 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
              pricing_input, pricing_output, auto_fetched, tenant_id)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, TRUE, $17)`,
           [
-            crypto.randomUUID(), providerId, model.modelId, model.displayName,
-            model.contextLength, model.maxOutputTokens,
-            model.supportsText, model.supportsImage, model.supportsVideo, model.supportsAudio,
-            model.supportsFunctionCalling, model.supportsThinking, model.supportsStructuredOutput,
+            crypto.randomUUID(),
+            providerId,
+            model.modelId,
+            model.displayName,
+            model.contextLength,
+            model.maxOutputTokens,
+            model.supportsText,
+            model.supportsImage,
+            model.supportsVideo,
+            model.supportsAudio,
+            model.supportsFunctionCalling,
+            model.supportsThinking,
+            model.supportsStructuredOutput,
             model.reasoningOptions ? JSON.stringify(model.reasoningOptions) : null,
-            model.pricingInput, model.pricingOutput,
+            model.pricingInput,
+            model.pricingOutput,
             tenantId,
           ],
         );
@@ -316,12 +445,9 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     let removed = 0;
     for (const [modelId, dbId] of existingMap) {
       if (!fetchedIds.has(modelId)) {
-        const check = await db.raw(
-          `SELECT auto_fetched FROM ai_model WHERE id = $1`,
-          [dbId],
-        );
+        const check = await db.raw('SELECT auto_fetched FROM ai_model WHERE id = $1', [dbId]);
         if (check.length > 0 && (check[0] as { auto_fetched: boolean }).auto_fetched) {
-          await db.raw(`DELETE FROM ai_model WHERE id = $1`, [dbId]);
+          await db.raw('DELETE FROM ai_model WHERE id = $1', [dbId]);
           removed++;
         }
       }
@@ -333,10 +459,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
   // ============ Config (default model) ============
 
   async function getConfig(key: string): Promise<string | null> {
-    const rows = await db.raw(
-      `SELECT config_value FROM ai_config WHERE config_key = $1`,
-      [key],
-    );
+    const rows = await db.raw('SELECT config_value FROM ai_config WHERE config_key = $1', [key]);
     return rows.length > 0 ? (rows[0] as { config_value: string | null }).config_value : null;
   }
 
@@ -357,16 +480,25 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
       displayName: (r.display_name as string) ?? null,
       apiFormat: r.api_format as string,
       baseUrl: r.base_url as string,
-      apiKey: r.api_key as string,
-      headers: typeof r.headers === "string" ? JSON.parse(r.headers) : (r.headers as Record<string, string> | null),
-      extra: typeof r.extra === "string" ? JSON.parse(r.extra) : (r.extra as Record<string, unknown> | null),
+      apiKey: '',
+      hasApiKey: typeof r.api_key === 'string' && r.api_key.length > 0,
+      headers:
+        typeof r.headers === 'string'
+          ? JSON.parse(r.headers)
+          : (r.headers as Record<string, string> | null),
+      extra:
+        typeof r.extra === 'string'
+          ? JSON.parse(r.extra)
+          : (r.extra as Record<string, unknown> | null),
       presetId: (r.preset_id as string) ?? null,
       modelsDevSlug: (r.models_dev_slug as string) ?? null,
       status: (r.status as number) ?? 1,
       sort: (r.sort as number) ?? 0,
       modelCount: Number(r.model_count ?? 0),
-      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
-      updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at ?? ""),
+      createdAt:
+        r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ''),
+      updatedAt:
+        r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at ?? ''),
     };
   }
 
@@ -374,8 +506,12 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     let reasoningOptions: ReasoningOption[] | null = null;
     const raw = r.reasoning_options;
     if (raw) {
-      if (typeof raw === "string") {
-        try { reasoningOptions = JSON.parse(raw); } catch { /* ignore */ }
+      if (typeof raw === 'string') {
+        try {
+          reasoningOptions = JSON.parse(raw);
+        } catch {
+          /* ignore */
+        }
       } else if (Array.isArray(raw)) {
         reasoningOptions = raw as ReasoningOption[];
       }
@@ -384,7 +520,7 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     return {
       id: r.id as string,
       providerId: r.provider_id as string,
-      providerName: (r.provider_display_name as string) ?? (r.provider_name as string) ?? "",
+      providerName: (r.provider_display_name as string) ?? (r.provider_name as string) ?? '',
       modelId: r.model_id as string,
       displayName: (r.display_name as string) ?? null,
       contextLength: (r.context_length as number) ?? 128000,
@@ -403,35 +539,40 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
       autoFetched: (r.auto_fetched as boolean) ?? false,
       status: (r.status as number) ?? 1,
       sort: (r.sort as number) ?? 0,
-      createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
-      updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at ?? ""),
+      createdAt:
+        r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ''),
+      updatedAt:
+        r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at ?? ''),
     };
   }
 
   async function deleteModel(id: string, tenantId: string): Promise<void> {
-    await db.raw(`DELETE FROM ai_model WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    await db.raw('DELETE FROM ai_model WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
   }
 
-  async function createModel(tenantId: string, params: {
-    providerId: string;
-    modelId: string;
-    displayName?: string;
-    contextLength?: number;
-    maxOutputTokens?: number;
-    supportsText?: boolean;
-    supportsImage?: boolean;
-    supportsVideo?: boolean;
-    supportsAudio?: boolean;
-    supportsFunctionCalling?: boolean;
-    supportsStreaming?: boolean;
-    supportsThinking?: boolean;
-    supportsStructuredOutput?: boolean;
-    reasoningOptions?: ReasoningOption[] | null;
-    pricingInput?: number | null;
-    pricingOutput?: number | null;
-    status?: number;
-    sort?: number;
-  }): Promise<{ id: string }> {
+  async function createModel(
+    tenantId: string,
+    params: {
+      providerId: string;
+      modelId: string;
+      displayName?: string;
+      contextLength?: number;
+      maxOutputTokens?: number;
+      supportsText?: boolean;
+      supportsImage?: boolean;
+      supportsVideo?: boolean;
+      supportsAudio?: boolean;
+      supportsFunctionCalling?: boolean;
+      supportsStreaming?: boolean;
+      supportsThinking?: boolean;
+      supportsStructuredOutput?: boolean;
+      reasoningOptions?: ReasoningOption[] | null;
+      pricingInput?: number | null;
+      pricingOutput?: number | null;
+      status?: number;
+      sort?: number;
+    },
+  ): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_model (id, provider_id, model_id, display_name, context_length, max_output_tokens,
@@ -440,7 +581,9 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
          reasoning_options, pricing_input, pricing_output, status, sort, auto_fetched, tenant_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, FALSE, $20)`,
       [
-        id, params.providerId, params.modelId,
+        id,
+        params.providerId,
+        params.modelId,
         params.displayName ?? params.modelId,
         params.contextLength ?? 128000,
         params.maxOutputTokens ?? 4096,
@@ -465,8 +608,8 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
 
   async function deleteModels(ids: string[], tenantId: string): Promise<number> {
     if (ids.length === 0) return 0;
-    const placeholders = ids.map((_, i) => `$${i + 1}`).join(", ");
-    const result = await db.raw(
+    const placeholders = ids.map((_, i) => `$${i + 1}`).join(', ');
+    const _result = await db.raw(
       `DELETE FROM ai_model WHERE id IN (${placeholders}) AND tenant_id = $${ids.length + 1}`,
       [...ids, tenantId],
     );
@@ -474,21 +617,79 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
   }
 
   async function getModel(id: string, tenantId: string): Promise<ModelItem | null> {
-    const rows = await db.raw(
-      `SELECT * FROM ai_model WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId],
-    );
+    const rows = await db.raw('SELECT * FROM ai_model WHERE id = $1 AND tenant_id = $2', [
+      id,
+      tenantId,
+    ]);
     return rows.length > 0 ? mapModel(rows[0] as Record<string, unknown>) : null;
   }
 
-  async function getProviderApiKey(providerId: string, tenantId: string): Promise<{ baseUrl: string; apiKey: string; apiFormat: string } | null> {
+  async function getProviderApiKey(
+    providerId: string,
+    tenantId: string,
+  ): Promise<{ baseUrl: string; apiKey: string; apiFormat: string } | null> {
     const rows = await db.raw(
-      `SELECT base_url, api_key, api_format FROM ai_provider WHERE id = $1 AND tenant_id = $2`,
+      'SELECT base_url, api_key, api_format FROM ai_provider WHERE id = $1 AND tenant_id = $2',
       [providerId, tenantId],
     );
     if (rows.length === 0) return null;
     const r = rows[0] as { base_url: string; api_key: string; api_format: string };
-    return { baseUrl: r.base_url, apiKey: r.api_key, apiFormat: r.api_format };
+    return {
+      baseUrl: r.base_url,
+      apiKey: await decryptCredential(r.api_key),
+      apiFormat: r.api_format,
+    };
+  }
+
+  async function resolveRuntimeModel(
+    modelRef: string,
+    tenantId: string,
+  ): Promise<RuntimeModelConfig | null> {
+    const slashIndex = modelRef.indexOf('/');
+    const providerName = slashIndex > 0 ? modelRef.slice(0, slashIndex) : null;
+    const modelId = slashIndex > 0 ? modelRef.slice(slashIndex + 1) : modelRef;
+    const rows = (await db.raw(
+      `SELECT p.name AS provider_name, p.api_format, p.base_url, p.api_key, p.headers,
+              m.model_id
+       FROM ai_model m
+       JOIN ai_provider p ON p.id = m.provider_id AND p.tenant_id = m.tenant_id
+       WHERE m.tenant_id = $1 AND m.model_id = $2
+         AND m.status = 1 AND p.status = 1
+         AND ($3 IS NULL OR p.name = $3)
+       ORDER BY p.sort ASC, p.created_at ASC
+       LIMIT 2`,
+      [tenantId, modelId, providerName],
+    )) as Array<Record<string, unknown>>;
+    if (rows.length === 0) return null;
+    if (!providerName && rows.length > 1) {
+      throw new Error(`Model "${modelId}" exists in multiple providers; use provider/model`);
+    }
+    const row = rows[0]!;
+    const rawHeaders = row.headers;
+    return {
+      providerName: row.provider_name as string,
+      apiFormat: row.api_format as string,
+      baseUrl: row.base_url as string,
+      apiKey: await decryptCredential(row.api_key as string),
+      headers:
+        typeof rawHeaders === 'string'
+          ? (JSON.parse(rawHeaders) as Record<string, string>)
+          : ((rawHeaders as Record<string, string> | null) ?? {}),
+      modelId: row.model_id as string,
+    };
+  }
+
+  async function encryptStoredCredentials(): Promise<number> {
+    const rows = (await db.raw(
+      `SELECT id, api_key FROM ai_provider WHERE api_key NOT LIKE 'ENC:%'`,
+    )) as Array<{ id: string; api_key: string }>;
+    for (const row of rows) {
+      await db.raw('UPDATE ai_provider SET api_key = $1 WHERE id = $2', [
+        await encryptCredential(row.api_key),
+        row.id,
+      ]);
+    }
+    return rows.length;
   }
 
   return {
@@ -505,6 +706,8 @@ export function createProviderService(deps: { db: Database; cache?: { get(key: s
     deleteModels,
     getModel,
     getProviderApiKey,
+    resolveRuntimeModel,
+    encryptStoredCredentials,
     syncModels,
     getConfig,
     setConfig,

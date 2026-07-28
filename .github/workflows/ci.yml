@@ -40,7 +40,17 @@ jobs:
           fi
 
       - name: Lint
-        run: bun run lint
+        shell: bash
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            base_ref="origin/${{ github.base_ref }}"
+          else
+            base_ref="${{ github.event.before }}"
+          fi
+          bunx biome ci --changed --since="$base_ref"
+
+      - name: Build Packages
+        run: bun run build
 
       - name: Typecheck
         run: bun run typecheck
@@ -48,5 +58,5 @@ jobs:
       - name: Test
         run: bun run test
 
-      - name: Build
-        run: bun run build
+      - name: Build Admin Web
+        run: bun run --cwd apps/admin/web build

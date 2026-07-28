@@ -6,6 +6,15 @@ HTTP 路由、Context、中间件、错误处理、生命周期管理。
 
 Core 是 VentoStack 的核心框架层，不依赖任何上层能力包。提供路由编译、中间件链、请求上下文、Schema 校验和生命周期钩子。
 
+## 核心能力
+
+- Bun.serve 应用生命周期与类型安全 Router
+- Context、中间件、插件、模块和 Hook 组合
+- 请求与响应 Schema 校验、参数绑定和统一错误处理
+- CORS、CSRF、SSRF、XSS、HMAC、上传和 IP 过滤等安全中间件
+- WebSocket、RPC、gRPC、Worker Pool 和实例协调
+- 配置加载、加密、热更新和功能开关
+
 ## 安全特性
 
 ### Schema 校验 strict 模式

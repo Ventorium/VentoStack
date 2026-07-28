@@ -18,7 +18,7 @@
  */
 
 // 模块工厂
-export { createFile2MdModule, type File2MdModuleDeps } from "./module";
+export { createFile2MdModule, type File2MdModuleDeps } from './module';
 
 // 核心类型
 export type {
@@ -40,10 +40,10 @@ export type {
   CleanerConfig,
   CleanerContext,
   CleanerRule,
-} from "./types";
+} from './types';
 
 // OCR 服务
-export { createRemoteOCRService, type RemoteOCRConfig } from "./ocr/remote";
+export { createRemoteOCRService, type RemoteOCRConfig } from './ocr/remote';
 
 // 解析器（单独导出供自定义组合）
 export {
@@ -62,7 +62,7 @@ export {
   createEpubParser,
   createUnsupportedParser,
   registerAllParsers,
-} from "./parsers";
+} from './parsers';
 
 // 清洗引擎
 export {
@@ -77,13 +77,14 @@ export {
   boilerplateRule,
   duplicatesRule,
   linkCleanupRule,
-} from "./cleaner";
+} from './cleaner';
 
 // 注册表
-export { createParserRegistry, type ParserRegistry } from "./registry";
+export { createParserRegistry, type ParserRegistry } from './registry';
 
 // 转换器
-export { createConverter, type Converter } from "./converter";
+export { createConverter, type Converter } from './converter';
 
 // MIME 工具
-export { lookupMimeType } from "./mime";
+export { lookupMimeType } from './mime';
+export { readZipEntries } from './parsers/zip-reader';

@@ -4,10 +4,10 @@
  * 支持全量加载、按角色重新加载
  */
 
-import type { RBAC } from "@ventostack/auth";
-import type { RowFilter } from "@ventostack/auth";
-import type { Database } from "@ventostack/database";
-import { MenuModel, RoleMenuModel, RoleModel } from "../models";
+import type { RBAC } from '@ventostack/auth';
+import type { RowFilter } from '@ventostack/auth';
+import type { Database } from '@ventostack/database';
+import { MenuModel, RoleMenuModel, RoleModel } from '../models';
 
 /** 权限字符串解析结果 */
 interface ParsedPermission {
@@ -34,13 +34,13 @@ export interface PermissionLoader {
 function parsePermission(permission: string): ParsedPermission | null {
   if (!permission) return null;
 
-  const parts = permission.split(":");
+  const parts = permission.split(':');
   if (parts.length < 2) return null;
 
   // "module:entity:action" -> resource = "module:entity", action = "action"
   // "entity:action" -> resource = "entity", action = "action"
   const action = parts[parts.length - 1]!;
-  const resource = parts.slice(0, -1).join(":");
+  const resource = parts.slice(0, -1).join(':');
 
   return { resource, action };
 }
@@ -66,8 +66,8 @@ export function createPermissionLoader(deps: {
     // 查询角色关联的菜单 ID
     const roleMenus = await db
       .query(RoleMenuModel)
-      .where("role_id", "=", roleId)
-      .select("menu_id")
+      .where('role_id', '=', roleId)
+      .select('menu_id')
       .list();
 
     if (roleMenus.length === 0) {
@@ -80,10 +80,10 @@ export function createPermissionLoader(deps: {
     // 查询菜单权限
     const menus = await db
       .query(MenuModel)
-      .where("id", "IN", menuIds)
-      .where("status", "=", 1)
-      .where("permission", "IS NOT NULL")
-      .select("permission")
+      .where('id', 'IN', menuIds)
+      .where('status', '=', 1)
+      .where('permission', 'IS NOT NULL')
+      .select('permission')
       .list();
 
     const permissions = menus
@@ -114,9 +114,9 @@ export function createPermissionLoader(deps: {
     // 查询有自定义数据范围的角色
     const roles = await db
       .query(RoleModel)
-      .where("status", "=", 1)
-      .where("data_scope", "IS NOT NULL")
-      .select("code", "data_scope")
+      .where('status', '=', 1)
+      .where('data_scope', 'IS NOT NULL')
+      .select('code', 'data_scope')
       .list();
 
     for (const role of roles) {
@@ -129,46 +129,39 @@ export function createPermissionLoader(deps: {
           // 本部门及子部门：需要 dept_id IN (本部门 + 递归子部门列表)
           // TODO: 需要在行过滤器中支持动态 IN 查询，当前添加基本规则骨架
           rowFilter.addRule({
-            resource: "*",
-            field: "dept_id",
-            operator: "in",
-            valueFrom: "user",
-            value: "deptIds", // 需要在运行时解析为本部门及子部门 ID 列表
+            resource: '*',
+            field: 'dept_id',
+            operator: 'in',
+            valueFrom: 'user',
+            value: 'deptIds', // 需要在运行时解析为本部门及子部门 ID 列表
           });
           break;
 
         case 3:
           // 本部门：dept_id = 用户部门 ID
           rowFilter.addRule({
-            resource: "*",
-            field: "dept_id",
-            operator: "eq",
-            valueFrom: "user",
-            value: "deptId",
+            resource: '*',
+            field: 'dept_id',
+            operator: 'eq',
+            valueFrom: 'user',
+            value: 'deptId',
           });
           break;
 
         case 4:
           // 仅本人：按创建者过滤
           rowFilter.addRule({
-            resource: "*",
-            field: "created_by",
-            operator: "eq",
-            valueFrom: "user",
-            value: "userId",
+            resource: '*',
+            field: 'created_by',
+            operator: 'eq',
+            valueFrom: 'user',
+            value: 'userId',
           });
           break;
 
         case 5:
-          // 自定义部门：需要从角色-部门关联表(sys_role_dept)查询允许的部门列表
-          // TODO: 需要在行过滤器中支持关联表查询，当前添加基本规则骨架
-          rowFilter.addRule({
-            resource: "*",
-            field: "dept_id",
-            operator: "in",
-            valueFrom: "custom", // 标记为自定义来源，需要运行时查询 sys_role_dept
-            value: `role_depts:${role.code}`, // 按角色编码查找关联部门
-          });
+          // 自定义部门需要先查询 sys_role_dept；当前行过滤器不支持异步值解析，
+          // 因此不注册一个会被误当成字面量的无效规则。
           break;
       }
     }
@@ -177,7 +170,7 @@ export function createPermissionLoader(deps: {
   return {
     async loadAll() {
       // 1. 查询所有启用角色
-      const roles = await db.query(RoleModel).where("status", "=", 1).select("id", "code").list();
+      const roles = await db.query(RoleModel).where('status', '=', 1).select('id', 'code').list();
 
       // 2. 为每个角色加载权限
       for (const role of roles) {
@@ -192,9 +185,9 @@ export function createPermissionLoader(deps: {
       // 查询角色
       const role = await db
         .query(RoleModel)
-        .where("code", "=", roleCode)
-        .where("status", "=", 1)
-        .select("id")
+        .where('code', '=', roleCode)
+        .where('status', '=', 1)
+        .select('id')
         .get();
 
       if (!role) {
