@@ -5,7 +5,7 @@
  * 记录操作类型、key、命中/未命中和耗时。
  */
 
-import type { SpanContext, Tracer } from "./tracing";
+import type { SpanContext, Tracer } from './tracing';
 
 export interface CacheOptions {
   ttl?: number;
@@ -14,7 +14,7 @@ export interface CacheOptions {
 
 export interface TaggedCache {
   get<T = unknown>(key: string): Promise<T | null>;
-  set(key: string, value: unknown, opts?: Omit<CacheOptions, "tags">): Promise<void>;
+  set(key: string, value: unknown, opts?: Omit<CacheOptions, 'tags'>): Promise<void>;
   flush(): Promise<void>;
 }
 
@@ -27,7 +27,7 @@ export interface TraceableCache {
   tags(tags: string[]): TaggedCache;
   remember<T>(key: string, ttl: number, factory: () => Promise<T>): Promise<T>;
   singleflight<T>(key: string, factory: () => Promise<T>): Promise<T>;
-  increment?(key: string, ttl?: number): Promise<number>;
+  increment(key: string, ttl?: number): Promise<number>;
 }
 
 export interface CacheTracingOptions {
@@ -52,18 +52,18 @@ export function wrapCacheWithTracing(
     if (!parentContext) return fn();
 
     const span = tracer.startSpan(`cache.${name}`, parentContext);
-    span.setAttribute("cache.key", key);
+    span.setAttribute('cache.key', key);
     return fn()
       .then((result) => {
-        if (name === "get") {
-          span.setAttribute("cache.hit", result !== null && result !== undefined);
+        if (name === 'get') {
+          span.setAttribute('cache.hit', result !== null && result !== undefined);
         }
         span.end();
         return result;
       })
       .catch((err) => {
-        span.setStatus("error");
-        if (err instanceof Error) span.setAttribute("cache.error", err.message);
+        span.setStatus('error');
+        if (err instanceof Error) span.setAttribute('cache.error', err.message);
         span.end();
         throw err;
       });
@@ -71,45 +71,45 @@ export function wrapCacheWithTracing(
 
   return {
     get<T = unknown>(key: string): Promise<T | null> {
-      return run("get", key, () => cache.get<T>(key));
+      return run('get', key, () => cache.get<T>(key));
     },
     set(key: string, value: unknown, opts?: CacheOptions): Promise<void> {
-      return run("set", key, () => cache.set(key, value, opts));
+      return run('set', key, () => cache.set(key, value, opts));
     },
     del(key: string): Promise<void> {
-      return run("del", key, () => cache.del(key));
+      return run('del', key, () => cache.del(key));
     },
     has(key: string): Promise<boolean> {
-      return run("has", key, () => cache.has(key));
+      return run('has', key, () => cache.has(key));
     },
     flush(): Promise<void> {
-      return run("flush", "*", () => cache.flush());
+      return run('flush', '*', () => cache.flush());
     },
     tags(tags: string[]): TaggedCache {
       const tagged = cache.tags(tags);
       return {
         get<T = unknown>(key: string): Promise<T | null> {
-          return run("tagged.get", key, () => tagged.get<T>(key));
+          return run('tagged.get', key, () => tagged.get<T>(key));
         },
-        set(key: string, value: unknown, opts?: Omit<CacheOptions, "tags">): Promise<void> {
-          return run("tagged.set", key, () => tagged.set(key, value, opts));
+        set(key: string, value: unknown, opts?: Omit<CacheOptions, 'tags'>): Promise<void> {
+          return run('tagged.set', key, () => tagged.set(key, value, opts));
         },
         flush(): Promise<void> {
-          return run("tagged.flush", tags.join(","), () => tagged.flush());
+          return run('tagged.flush', tags.join(','), () => tagged.flush());
         },
       };
     },
     remember<T>(key: string, ttl: number, factory: () => Promise<T>): Promise<T> {
-      return run("remember", key, () => cache.remember(key, ttl, factory));
+      return run('remember', key, () => cache.remember(key, ttl, factory));
     },
     singleflight<T>(key: string, factory: () => Promise<T>): Promise<T> {
-      return run("singleflight", key, () => cache.singleflight(key, factory));
+      return run('singleflight', key, () => cache.singleflight(key, factory));
     },
     increment(key: string, ttl?: number): Promise<number> {
       if (!cache.increment) {
-        throw new Error("Cache increment is not supported by this cache instance");
+        throw new Error('Cache increment is not supported by this cache instance');
       }
-      return run("increment", key, () => cache.increment!(key, ttl));
+      return run('increment', key, () => cache.increment!(key, ttl));
     },
   };
 }

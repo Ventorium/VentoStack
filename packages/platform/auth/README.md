@@ -6,6 +6,16 @@ JWT、Session、API Key、RBAC/ABAC、TOTP、OAuth、Token 刷新与吊销、行
 
 认证授权能力层，依赖 core、database、cache。安全原则：默认 deny、算法白名单、密钥最小长度、恒定时间比较、Access/Refresh 分离。
 
+## 核心能力
+
+- JWT 签发、验证、刷新和吊销
+- 内存/Redis Session 与多设备会话管理
+- 密码哈希和 API Key 管理
+- RBAC、ABAC、策略引擎和行级数据过滤
+- TOTP 多因素认证
+- OAuth 客户端流程
+- 可直接挂载到 Router 的认证和权限中间件
+
 ## 安全特性
 
 ### JWT 算法白名单

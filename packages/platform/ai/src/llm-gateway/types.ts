@@ -18,7 +18,7 @@ export interface ProviderCapabilities {
 }
 
 export interface ChatMessage {
-  role: "system" | "user" | "assistant" | "tool";
+  role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
   tool_calls?: ToolCall[];
   tool_call_id?: string;
@@ -28,7 +28,7 @@ export interface LLMToolDefinition {
   name: string;
   description: string;
   parameters: {
-    type: "object";
+    type: 'object';
     properties: Record<string, unknown>;
     required?: string[];
   };
@@ -42,6 +42,8 @@ export interface ToolCall {
 
 export interface ChatParams {
   model: string;
+  /** 租户标识，供动态 Provider 解析使用 */
+  tenantId?: string;
   messages: ChatMessage[];
   tools?: LLMToolDefinition[];
   temperature?: number;
@@ -53,17 +55,11 @@ export interface ChatResult {
   content: string;
   toolCalls?: ToolCall[];
   usage: TokenUsage;
-  finishReason: "stop" | "tool_calls" | "length" | "error";
+  finishReason: 'stop' | 'tool_calls' | 'length' | 'error';
 }
 
 export interface StreamChunk {
-  type:
-    | "content"
-    | "tool_call_start"
-    | "tool_call_delta"
-    | "usage"
-    | "error"
-    | "done";
+  type: 'content' | 'tool_call_start' | 'tool_call_delta' | 'usage' | 'error' | 'done';
   delta?: string;
   toolCall?: ToolCall;
   toolCallDelta?: { id?: string; name?: string; arguments?: string };
@@ -88,6 +84,11 @@ export interface LLMGatewayConfig {
   providers: LLMProvider[];
   defaultModel: string;
   defaultProvider?: string;
+  /** 可选的动态模型解析器，用于从数据库加载 Provider 与模型配置 */
+  resolveProvider?: (
+    model: string,
+    tenantId?: string,
+  ) => Promise<{ provider: LLMProvider; model: string } | null>;
   maxConcurrent?: number;
   maxQueued?: number;
   queueTimeoutMs?: number;

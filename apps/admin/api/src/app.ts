@@ -5,8 +5,8 @@
  * 替代手动逐个创建和注册模块的模式。
  */
 
-import { AsyncLocalStorage } from "node:async_hooks";
-import { createPlatform } from "@ventostack/boot";
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { createPlatform } from '@ventostack/boot';
 import {
   cors,
   createApp,
@@ -17,10 +17,11 @@ import {
   rateLimit,
   requestId,
   requestLogger,
-} from "@ventostack/core";
-import type { Middleware, VentoStackApp } from "@ventostack/core";
-import { createDatabase, listTables, readTableSchema } from "@ventostack/database";
-import { createEventBus, createScheduler } from "@ventostack/events";
+} from '@ventostack/core';
+import type { Middleware, VentoStackApp } from '@ventostack/core';
+import { createDatabase, listTables, readTableSchema } from '@ventostack/database';
+import { createEventBus, createScheduler } from '@ventostack/events';
+import { createInAppChannel } from '@ventostack/notification';
 import {
   createAuditLog,
   createDefaultHealthCheck,
@@ -30,17 +31,16 @@ import {
   wrapCacheWithTracing,
   wrapExecutorWithTracing,
   wrapRedisClientWithTracing,
-} from "@ventostack/observability";
-import type { SpanContext } from "@ventostack/observability";
-import { setupOpenAPI } from "@ventostack/openapi";
-import { createInAppChannel } from "@ventostack/notification";
+} from '@ventostack/observability';
+import type { SpanContext } from '@ventostack/observability';
+import { setupOpenAPI } from '@ventostack/openapi';
 
-import { assembleAuthEngines } from "./auth";
-import { createCacheInstance } from "./cache";
-import { env } from "./config";
-import { createDatabaseConnection, runMigrations, runSeeds } from "./database";
-import { serverLogger } from "./logger";
-import { createStorageAdapter } from "./storage";
+import { assembleAuthEngines } from './auth';
+import { createCacheInstance } from './cache';
+import { env } from './config';
+import { createDatabaseConnection, runMigrations, runSeeds } from './database';
+import { serverLogger } from './logger';
+import { createStorageAdapter } from './storage';
 
 export interface AppContext {
   /** VentoStack 应用实例（业务端口） */
@@ -48,7 +48,7 @@ export interface AppContext {
   /** 管理端口应用实例（ADMIN_PORT=0 时为 null） */
   adminApp: VentoStackApp | null;
   /** Vite 桥接实例（仅开发模式有值） */
-  viteBridge: import("@ventostack/vite-bridge").ViteBridge | null;
+  viteBridge: import('@ventostack/vite-bridge').ViteBridge | null;
 }
 
 /**
@@ -57,7 +57,9 @@ export interface AppContext {
  *
  * @param opts.existingBridge - 可选，复用已有的 Vite Bridge（用于后端单独重启时）
  */
-export async function buildApp(opts?: { existingBridge?: import("@ventostack/vite-bridge").ViteBridge }): Promise<AppContext> {
+export async function buildApp(opts?: {
+  existingBridge?: import('@ventostack/vite-bridge').ViteBridge;
+}): Promise<AppContext> {
   // =============================================
   // 1. 基础设施层
   // =============================================
@@ -73,7 +75,7 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     getSpanContext: () => traceStore.getStore(),
   });
   const tracedDb = createDatabase({ executor: tracingExecutor });
-  serverLogger.info("数据库已连接");
+  serverLogger.info('数据库已连接');
 
   // 1c. 运行迁移（使用单连接 executor，不经过 tracing）
   await runMigrations(rawConn.migrationExecutor);
@@ -111,7 +113,7 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
   // =============================================
   // 2. 认证引擎层
   // =============================================
-  const auth = assembleAuthEngines(tracedRedisClient);
+  const auth = assembleAuthEngines(cacheInstance.redisClient);
 
   // =============================================
   // 3. 平台模块聚合（使用 createPlatform）
@@ -149,8 +151,19 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
       workflow: true,
       oss: true,
       scheduler: true,
+      ai: env.AI_ENABLED,
     },
-    notifyChannels: new Map([["in_app", createInAppChannel()]]),
+    ...(env.AI_ENABLED
+      ? {
+          aiConfig: {
+            llmProviders: [],
+            defaultModel: env.AI_DEFAULT_MODEL,
+            storagePath: env.AI_STORAGE_PATH,
+            credentialEncryptionKey: env.AI_CREDENTIAL_ENCRYPTION_KEY!,
+          },
+        }
+      : {}),
+    notifyChannels: new Map([['in_app', createInAppChannel()]]),
     // 多租户隔离开关
     tenantEnabled: env.TENANT_ENABLED,
     // jobHandlers: { ... }, // 注册定时任务处理器
@@ -158,23 +171,24 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
 
   // 初始化所有模块（加载权限、启动定时任务等）
   await platform.init();
-  serverLogger.info("平台模块已初始化完成");
+  serverLogger.info('平台模块已初始化完成');
 
   // =============================================
   // 4. 应用装配
   // =============================================
 
   // 4a-0. 开发模式：创建 Vite 桥接（单进程前后端合一）
-  let viteBridge: import("@ventostack/vite-bridge").ViteBridge | null = opts?.existingBridge ?? null;
-  let fetchFallback: import("@ventostack/core").AppConfig["fetchFallback"] | undefined;
+  let viteBridge: import('@ventostack/vite-bridge').ViteBridge | null =
+    opts?.existingBridge ?? null;
+  let fetchFallback: import('@ventostack/core').AppConfig['fetchFallback'] | undefined;
 
-  if (env.NODE_ENV !== "production" && !viteBridge) {
+  if (env.NODE_ENV !== 'production' && !viteBridge) {
     try {
-      const { createViteBridge } = await import("@ventostack/vite-bridge");
-      const { resolve } = await import("node:path");
+      const { createViteBridge } = await import('@ventostack/vite-bridge');
+      const { resolve } = await import('node:path');
       viteBridge = await createViteBridge({
-        webDir: resolve(import.meta.dir, "../../web"),
-        skipPrefixes: ["/api/", "/health", "/metrics", "/openapi", "/docs", "/uploads/"],
+        webDir: resolve(import.meta.dir, '../../web'),
+        skipPrefixes: ['/api/', '/health', '/metrics', '/openapi', '/docs', '/uploads/'],
         logger: serverLogger,
       });
       fetchFallback = viteBridge.fetchFallback;
@@ -187,7 +201,11 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     fetchFallback = viteBridge.fetchFallback;
   }
 
-  const app = createApp({ port: env.PORT, hostname: env.HOST, fetchFallback });
+  const app = createApp({
+    port: env.PORT,
+    hostname: env.HOST,
+    ...(fetchFallback !== undefined ? { fetchFallback } : {}),
+  });
   let adminAppRef: VentoStackApp | null = null;
 
   // 4a. 全局中间件（顺序敏感）
@@ -201,19 +219,19 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     }),
   );
   // 安全响应头
-  app.use(async (ctx, next) => {
+  app.use(async (_ctx, next) => {
     const response = await next();
     const headers = new Headers(response.headers);
-    headers.set("X-Content-Type-Options", "nosniff");
-    headers.set("X-Frame-Options", "DENY");
-    headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
+    headers.set('X-Content-Type-Options', 'nosniff');
+    headers.set('X-Frame-Options', 'DENY');
+    headers.set('Referrer-Policy', 'strict-origin-when-cross-origin');
     // 非开发环境启用 HSTS
-    if (env.NODE_ENV === "production") {
-      headers.set("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    if (env.NODE_ENV === 'production') {
+      headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
     // CSP: 允许同源和行内脚本/样式（SPA 需要）
     headers.set(
-      "Content-Security-Policy",
+      'Content-Security-Policy',
       [
         "default-src 'self'",
         "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
@@ -224,7 +242,7 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
         "frame-ancestors 'none'",
         "base-uri 'self'",
         "form-action 'self'",
-      ].join("; "),
+      ].join('; '),
     );
     return new Response(response.body, {
       status: response.status,
@@ -239,16 +257,16 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
 
   // 健康检查路由（用于注册到主应用或管理应用）
   const healthRouter = createRouter();
-  healthRouter.get("/health", (ctx) => ctx.json(healthCheck.live()));
-  healthRouter.get("/health/live", (ctx) => ctx.json(healthCheck.live()));
-  healthRouter.get("/health/ready", async (ctx) => {
+  healthRouter.get('/health', (ctx) => ctx.json(healthCheck.live()));
+  healthRouter.get('/health/live', (ctx) => ctx.json(healthCheck.live()));
+  healthRouter.get('/health/ready', async (ctx) => {
     const status = await healthCheck.ready();
-    return ctx.json(status, status.status === "ok" ? 200 : 503);
+    return ctx.json(status, status.status === 'ok' ? 200 : 503);
   });
 
   // 指标路由
   const metricsRouter = createRouter();
-  metricsRouter.get("/metrics", (ctx) => {
+  metricsRouter.get('/metrics', (ctx) => {
     return ctx.text(metrics.render());
   });
 
@@ -263,23 +281,23 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
 
     // 健康检查
     adminApp.use(healthRouter);
-    adminApp.addUrl("健康检查", "/health");
-    adminApp.addUrl("存活探针", "/health/live");
-    adminApp.addUrl("就绪探针", "/health/ready");
+    adminApp.addUrl('健康检查', '/health');
+    adminApp.addUrl('存活探针', '/health/live');
+    adminApp.addUrl('就绪探针', '/health/ready');
 
     // 指标端点
     adminApp.use(metricsRouter);
-    adminApp.addUrl("Prometheus 指标", "/metrics");
+    adminApp.addUrl('Prometheus 指标', '/metrics');
 
     // OpenAPI 文档（非生产环境 或 显式开启时注册）
-    if (env.NODE_ENV !== "production") {
+    if (env.NODE_ENV !== 'production') {
       setupOpenAPI(adminApp, {
-        info: { title: "VentoStack API", version: "0.1.0" },
+        info: { title: 'VentoStack API', version: '0.1.0' },
         servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
-        jsonPath: "/openapi.json",
-        docsPath: "/docs",
+        jsonPath: '/openapi.json',
+        docsPath: '/docs',
         securitySchemes: {
-          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
         },
       });
     }
@@ -294,25 +312,25 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     app.use(metricsRouter);
 
     // OpenAPI 文档（非生产环境注册）
-    if (env.NODE_ENV !== "production") {
+    if (env.NODE_ENV !== 'production') {
       setupOpenAPI(app, {
-        info: { title: "VentoStack API", version: "0.1.0" },
+        info: { title: 'VentoStack API', version: '0.1.0' },
         servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
-        jsonPath: "/openapi.json",
-        docsPath: "/docs",
+        jsonPath: '/openapi.json',
+        docsPath: '/docs',
         securitySchemes: {
-          bearerAuth: { type: "http", scheme: "bearer", bearerFormat: "JWT" },
+          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
         },
       });
     }
   }
 
   // 4d. 静态文件服务（仅本地存储模式）
-  if (env.STORAGE_DRIVER === "local") {
+  if (env.STORAGE_DRIVER === 'local') {
     app.use(
       createStaticMiddleware({
         root: env.STORAGE_LOCAL_PATH,
-        prefix: "/uploads",
+        prefix: '/uploads',
       }),
     );
   }
@@ -320,30 +338,30 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
   // 4d-2. SPA 前端静态文件服务（生产模式：前端 dist 已复制到 public/）
   // 注意：生产模式通过 fetchFallback 在路由未匹配时提供静态文件，
   // 这里注册一个中间件作为补充（处理匹配到路由但需要 SPA fallback 的场景）
-  if (env.NODE_ENV === "production" && !fetchFallback) {
-    const { resolve } = await import("node:path");
-    const publicDir = resolve(import.meta.dir, "../public");
+  if (env.NODE_ENV === 'production' && !fetchFallback) {
+    const { resolve } = await import('node:path');
+    const publicDir = resolve(import.meta.dir, '../public');
     const notFoundResponse = new Response(
-      JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }),
-      { status: 404, headers: { "Content-Type": "application/json" } },
+      JSON.stringify({ error: 'NOT_FOUND', message: '资源不存在' }),
+      { status: 404, headers: { 'Content-Type': 'application/json' } },
     );
     fetchFallback = (request: Request): Response => {
       const url = new URL(request.url);
       const pathname = url.pathname;
       if (
-        pathname.startsWith("/api/") ||
-        pathname.startsWith("/health") ||
-        pathname.startsWith("/metrics") ||
-        pathname.startsWith("/openapi") ||
-        pathname.startsWith("/docs") ||
-        pathname.startsWith("/uploads/")
+        pathname.startsWith('/api/') ||
+        pathname.startsWith('/health') ||
+        pathname.startsWith('/metrics') ||
+        pathname.startsWith('/openapi') ||
+        pathname.startsWith('/docs') ||
+        pathname.startsWith('/uploads/')
       ) {
         return notFoundResponse;
       }
-      const filePath = resolve(publicDir, pathname.slice(1) || "index.html");
+      const filePath = resolve(publicDir, pathname.slice(1) || 'index.html');
       const file = Bun.file(filePath);
-      if (pathname === "/" || pathname === "") {
-        return new Response(Bun.file(resolve(publicDir, "index.html")));
+      if (pathname === '/' || pathname === '') {
+        return new Response(Bun.file(resolve(publicDir, 'index.html')));
       }
       return new Response(file);
     };
@@ -353,21 +371,21 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     const spaMiddleware: Middleware = async (ctx, next) => {
       const pathname = new URL(ctx.request.url).pathname;
       if (
-        pathname.startsWith("/api/") ||
-        pathname.startsWith("/health") ||
-        pathname.startsWith("/metrics") ||
-        pathname.startsWith("/openapi") ||
-        pathname.startsWith("/docs") ||
-        pathname.startsWith("/uploads/")
+        pathname.startsWith('/api/') ||
+        pathname.startsWith('/health') ||
+        pathname.startsWith('/metrics') ||
+        pathname.startsWith('/openapi') ||
+        pathname.startsWith('/docs') ||
+        pathname.startsWith('/uploads/')
       ) {
         return next();
       }
-      const filePath = resolve(publicDir, pathname.slice(1) || "index.html");
+      const filePath = resolve(publicDir, pathname.slice(1) || 'index.html');
       const file = Bun.file(filePath);
       if (await file.exists()) {
         return new Response(file);
       }
-      return new Response(Bun.file(resolve(publicDir, "index.html")));
+      return new Response(Bun.file(resolve(publicDir, 'index.html')));
     };
     app.use(spaMiddleware);
   }
@@ -376,19 +394,19 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
   const authRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
     max: 20,
-    message: "登录尝试过于频繁，请稍后再试",
+    message: '登录尝试过于频繁，请稍后再试',
   });
   const authRateLimitPaths = new Set([
-    "/api/auth/login",
-    "/api/auth/register",
-    "/api/auth/refresh",
-    "/api/auth/forgot-password",
-    "/api/auth/reset-password-by-token",
-    "/api/auth/mfa/login",
-    "/api/auth/mfa/setup",
-    "/api/auth/mfa/verify",
-    "/api/auth/passkey/login-begin",
-    "/api/auth/passkey/login-finish",
+    '/api/auth/login',
+    '/api/auth/register',
+    '/api/auth/refresh',
+    '/api/auth/forgot-password',
+    '/api/auth/reset-password-by-token',
+    '/api/auth/mfa/login',
+    '/api/auth/mfa/setup',
+    '/api/auth/mfa/verify',
+    '/api/auth/passkey/login-begin',
+    '/api/auth/passkey/login-finish',
   ]);
   const authRateLimitMiddleware: Middleware = (ctx, next) => {
     const pathname = new URL(ctx.request.url).pathname;
@@ -399,11 +417,11 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
   // 4e-1. 多租户中间件（TENANT_ENABLED=true 时注册）
   if (env.TENANT_ENABLED) {
     const { middleware: tenantMiddleware } = createTenantMiddleware({
-      strategy: "header",
-      headerName: "x-tenant-id",
+      strategy: 'header',
+      headerName: 'x-tenant-id',
     });
     app.use(tenantMiddleware);
-    serverLogger.info("多租户隔离已启用（strategy: header, x-tenant-id）");
+    serverLogger.info('多租户隔离已启用（strategy: header, x-tenant-id）');
   }
 
   // 4e. 平台模块路由（createPlatform 自动聚合了所有模块路由）
@@ -416,7 +434,7 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     shutdownStarted = true;
 
     const forceExit = setTimeout(() => {
-      serverLogger.info("强制退出（超时）");
+      serverLogger.info('强制退出（超时）');
       process.exit(0);
     }, 10_000);
     forceExit.unref();
@@ -424,25 +442,25 @@ export async function buildApp(opts?: { existingBridge?: import("@ventostack/vit
     try {
       // 先关闭管理端口（不再接受新请求）
       if (adminAppRef) {
-        serverLogger.info("正在关闭管理端口...");
+        serverLogger.info('正在关闭管理端口...');
         await adminAppRef.close();
-        serverLogger.info("管理端口已关闭");
+        serverLogger.info('管理端口已关闭');
       }
 
       // 关闭 Vite bridge（开发模式）
       if (viteBridge) {
-        serverLogger.info("正在关闭 Vite dev server...");
+        serverLogger.info('正在关闭 Vite dev server...');
         await viteBridge.close();
-        serverLogger.info("Vite dev server 已关闭");
+        serverLogger.info('Vite dev server 已关闭');
       }
 
-      serverLogger.info("正在关闭缓存...");
+      serverLogger.info('正在关闭缓存...');
       await cacheInstance.close();
-      serverLogger.info("缓存已关闭");
+      serverLogger.info('缓存已关闭');
 
-      serverLogger.info("正在关闭数据库...");
+      serverLogger.info('正在关闭数据库...');
       await rawConn.close();
-      serverLogger.info("数据库已关闭");
+      serverLogger.info('数据库已关闭');
     } catch (err) {
       serverLogger.error(`关停异常: ${err instanceof Error ? err.message : String(err)}`);
     } finally {

@@ -2,9 +2,9 @@
  * LLM Gateway 工厂
  * 多 provider 支持、并发队列、重试、降级
  */
-import { aiErrors } from "../errors";
-import { createRequestQueue } from "./queue";
-import { withRetry } from "./retry";
+import { aiErrors } from '../errors';
+import { createRequestQueue } from './queue';
+import { withRetry } from './retry';
 import type {
   ChatParams,
   ChatResult,
@@ -12,7 +12,7 @@ import type {
   LLMGatewayConfig,
   LLMProvider,
   StreamChunk,
-} from "./types";
+} from './types';
 
 export function createLLMGateway(config: LLMGatewayConfig): LLMGateway {
   const providers = new Map<string, LLMProvider>();
@@ -21,21 +21,36 @@ export function createLLMGateway(config: LLMGatewayConfig): LLMGateway {
   }
 
   const queue = createRequestQueue({
-    maxConcurrent: config.maxConcurrent,
-    maxQueued: config.maxQueued,
-    queueTimeoutMs: config.queueTimeoutMs,
+    ...(config.maxConcurrent !== undefined ? { maxConcurrent: config.maxConcurrent } : {}),
+    ...(config.maxQueued !== undefined ? { maxQueued: config.maxQueued } : {}),
+    ...(config.queueTimeoutMs !== undefined ? { queueTimeoutMs: config.queueTimeoutMs } : {}),
   });
 
-  function getProviderForModel(model: string): LLMProvider {
+  function getStaticProviderForModel(model: string): { provider: LLMProvider; model: string } {
     // 如果 model 包含 provider 前缀（如 "openai/gpt-4o"），解析出来
-    const slashIdx = model.indexOf("/");
+    const slashIdx = model.indexOf('/');
     if (slashIdx > 0) {
       const providerName = model.slice(0, slashIdx);
       const p = providers.get(providerName);
-      if (p) return p;
+      if (p) return { provider: p, model: model.slice(slashIdx + 1) };
     }
     // 否则使用默认 provider
-    return getDefaultProvider();
+    return { provider: getDefaultProvider(), model };
+  }
+
+  async function resolveRequest(
+    params: ChatParams,
+  ): Promise<{ provider: LLMProvider; params: ChatParams }> {
+    const requestedModel =
+      !params.model || params.model === 'default' ? config.defaultModel : params.model;
+    const dynamic = config.resolveProvider
+      ? await config.resolveProvider(requestedModel, params.tenantId)
+      : null;
+    const resolved = dynamic ?? getStaticProviderForModel(requestedModel);
+    return {
+      provider: resolved.provider,
+      params: { ...params, model: resolved.model },
+    };
   }
 
   function getDefaultProvider(): LLMProvider {
@@ -47,20 +62,20 @@ export function createLLMGateway(config: LLMGatewayConfig): LLMGateway {
 
   return {
     async chat(params: ChatParams): Promise<ChatResult> {
-      const provider = getProviderForModel(params.model);
+      const resolved = await resolveRequest(params);
       await queue.acquire();
       try {
-        return await withRetry(() => provider.chat(params));
+        return await withRetry(() => resolved.provider.chat(resolved.params));
       } finally {
         queue.release();
       }
     },
 
     async *chatStream(params: ChatParams): AsyncIterable<StreamChunk> {
-      const provider = getProviderForModel(params.model);
+      const resolved = await resolveRequest(params);
       await queue.acquire();
       try {
-        yield* provider.chatStream(params);
+        yield* resolved.provider.chatStream(resolved.params);
       } finally {
         queue.release();
       }

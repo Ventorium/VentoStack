@@ -2,8 +2,8 @@
  * @ventostack/notify - 通知服务
  */
 
-import type { Database } from "@ventostack/database";
-import { NotifyMessageModel, NotifyTemplateModel } from "../models";
+import type { Database } from '@ventostack/database';
+import { NotifyMessageModel, NotifyTemplateModel } from '../models';
 
 /** 通知通道接口 */
 export interface NotifyChannel {
@@ -123,17 +123,17 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
   ): Promise<{ title: string; content: string } | null> {
     const tpl = await db
       .query(NotifyTemplateModel)
-      .where("id", "=", templateId)
-      .select("title", "content")
+      .where('id', '=', templateId)
+      .select('title', 'content')
       .get();
     if (!tpl) return null;
 
-    let title = tpl.title ?? "";
+    let title = tpl.title ?? '';
     let content = tpl.content;
 
     if (variables) {
       for (const [key, value] of Object.entries(variables)) {
-        const placeholder = new RegExp(`\\{\\{${key}\\}\\}`, "g");
+        const placeholder = new RegExp(`\\{\\{${key}\\}\\}`, 'g');
         title = title.replace(placeholder, String(value));
         content = content.replace(placeholder, String(value));
       }
@@ -165,7 +165,7 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       if (channel) {
         const result = await channel.send({
           to: params.receiverId,
-          title: title ?? "",
+          title: title ?? '',
           content,
         });
         status = result.success ? MessageStatus.SENT : MessageStatus.FAILED;
@@ -194,28 +194,28 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       const { receiverId, channel, status, page = 1, pageSize = 10 } = params;
 
       let query = db.query(NotifyMessageModel);
-      if (receiverId) query = query.where("receiver_id", "=", receiverId);
-      if (channel) query = query.where("channel", "=", channel);
-      if (status !== undefined) query = query.where("status", "=", status);
+      if (receiverId) query = query.where('receiver_id', '=', receiverId);
+      if (channel) query = query.where('channel', '=', channel);
+      if (status !== undefined) query = query.where('status', '=', status);
 
       const total = await query.count();
 
       const rows = await query
         .select(
-          "id",
-          "template_id",
-          "channel",
-          "receiver_id",
-          "title",
-          "content",
-          "variables",
-          "status",
-          "retry_count",
-          "send_at",
-          "error",
-          "created_at",
+          'id',
+          'template_id',
+          'channel',
+          'receiver_id',
+          'title',
+          'content',
+          'variables',
+          'status',
+          'retry_count',
+          'send_at',
+          'error',
+          'created_at',
         )
-        .orderBy("created_at", "desc")
+        .orderBy('created_at', 'desc')
         .limit(pageSize)
         .offset((page - 1) * pageSize)
         .list();
@@ -279,23 +279,23 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
     async retry(messageId) {
       const msg = await db
         .query(NotifyMessageModel)
-        .where("id", "=", messageId)
-        .select("id", "channel", "receiver_id", "title", "content")
+        .where('id', '=', messageId)
+        .select('id', 'channel', 'receiver_id', 'title', 'content')
         .get();
-      if (!msg) throw new Error("消息不存在");
+      if (!msg) throw new Error('消息不存在');
 
       const channel = channels.get(msg.channel);
       if (!channel) {
-        await db.query(NotifyMessageModel).where("id", "=", messageId).update({
+        await db.query(NotifyMessageModel).where('id', '=', messageId).update({
           status: MessageStatus.FAILED,
-          error: "Channel not found",
+          error: 'Channel not found',
         });
         return;
       }
 
       const result = await channel.send({
         to: msg.receiver_id,
-        title: msg.title ?? "",
+        title: msg.title ?? '',
         content: msg.content,
       });
 
@@ -304,7 +304,7 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
 
       await db
         .query(NotifyMessageModel)
-        .where("id", "=", messageId)
+        .where('id', '=', messageId)
         .update({
           status,
           send_at: sendAt,
@@ -334,25 +334,25 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
       if (params.status !== undefined) updates.status = params.status;
 
       if (Object.keys(updates).length === 0) return;
-      await db.query(NotifyTemplateModel).where("id", "=", id).update(updates);
+      await db.query(NotifyTemplateModel).where('id', '=', id).update(updates);
     },
 
     async deleteTemplate(id) {
-      await db.query(NotifyTemplateModel).where("id", "=", id).hardDelete();
+      await db.query(NotifyTemplateModel).where('id', '=', id).hardDelete();
     },
 
     async listTemplates(params) {
       const { channel, page = 1, pageSize = 10 } = params ?? {};
 
       let query = db.query(NotifyTemplateModel);
-      if (channel) query = query.where("channel", "=", channel);
+      if (channel) query = query.where('channel', '=', channel);
 
       const total = await query.count();
 
       const rows = await query
-        .select("id", "name", "code", "channel", "title", "content", "sort", "status")
-        .orderBy("sort", "desc")
-        .orderBy("created_at", "desc")
+        .select('id', 'name', 'code', 'channel', 'title', 'content', 'sort', 'status', 'remark')
+        .orderBy('sort', 'desc')
+        .orderBy('created_at', 'desc')
         .limit(pageSize)
         .offset((page - 1) * pageSize)
         .list();
@@ -366,7 +366,7 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
         content: row.content,
         sort: row.sort ?? 0,
         status: row.status,
-        remark: row.remark ?? "",
+        remark: row.remark ?? '',
       }));
 
       return {

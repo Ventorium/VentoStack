@@ -6,6 +6,15 @@
 
 可观测能力层，依赖 core。提供结构化日志、Prometheus 指标、OpenTelemetry 链路追踪、审计日志存储和错误上报。
 
+## 核心能力
+
+- 结构化日志、文件日志和异步写入
+- 指标采集、Prometheus 输出和 Grafana Dashboard
+- Trace、Span、W3C/B3 上下文传播和导出器
+- HTTP、数据库、缓存和 Redis 链路包装
+- 健康检查和依赖状态聚合
+- 审计日志、脱敏和错误报告
+
 ## 安全特性
 
 ### 日志脱敏

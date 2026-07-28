@@ -24,14 +24,9 @@
     "release": "changeset publish",
     "test": "bun test",
     "test:coverage": "bun test --coverage",
-    "typecheck": "bunx tsc --noEmit",
-    "lint": "bunx biome check --write ."
+    "typecheck": "bun run --cwd apps/admin/api typecheck",
+    "lint": "bunx biome check ."
   },
-  "workspaces": [
-    "packages/framework/*",
-    "packages/platform/*",
-    "apps/*",
-    "apps/admin/*"
-  ],
+  "workspaces": ["packages/framework/*", "packages/platform/*", "apps/*", "apps/admin/*"],
   "dependencies": {}
 }

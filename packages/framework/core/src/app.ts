@@ -1,11 +1,12 @@
 // @ventostack/core - 应用入口
 
-import { COLORS, RESET, ansi } from "./color";
-import { VentoStackError } from "./errors";
-import { type Lifecycle, createLifecycle } from "./lifecycle";
-import type { Middleware } from "./middleware";
-import type { Plugin } from "./plugin";
-import { type CompiledRoutes, type Router, createRouter } from "./router";
+import type { Server } from 'bun';
+import { COLORS, RESET, ansi } from './color';
+import { VentoStackError } from './errors';
+import { type Lifecycle, createLifecycle } from './lifecycle';
+import type { Middleware } from './middleware';
+import type { Plugin } from './plugin';
+import { type CompiledRoutes, type Router, createRouter } from './router';
 
 /**
  * 判断给定对象是否为 Router 实例
@@ -14,12 +15,12 @@ import { type CompiledRoutes, type Router, createRouter } from "./router";
  */
 function isRouter(item: unknown): item is Router {
   return (
-    typeof item === "object" &&
+    typeof item === 'object' &&
     item !== null &&
-    "compile" in item &&
-    "routes" in item &&
-    typeof (item as Router).compile === "function" &&
-    typeof (item as Router).routes === "function"
+    'compile' in item &&
+    'routes' in item &&
+    typeof (item as Router).compile === 'function' &&
+    typeof (item as Router).routes === 'function'
   );
 }
 
@@ -37,7 +38,10 @@ export interface AppConfig {
    * 返回 null 或 undefined 时降级到框架默认 404。
    * 可用于接入 Vite dev server、SPA fallback 等场景。
    */
-  fetchFallback?: (request: Request, server: Server) => Response | Promise<Response | null> | null;
+  fetchFallback?: (
+    request: Request,
+    server: Server<undefined>,
+  ) => Response | Promise<Response | null> | null;
 }
 
 /** 应用可访问地址条目 */
@@ -94,7 +98,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
   let isClosing = false;
   let sigTermHandler: (() => void) | null = null;
   let sigIntHandler: (() => void) | null = null;
-  let shutdownPromise: Promise<void> | null = null;
+  let _shutdownPromise: Promise<void> | null = null;
 
   /**
    * 默认错误处理函数
@@ -105,18 +109,18 @@ export function createApp(config?: AppConfig): VentoStackApp {
     if (error instanceof VentoStackError) {
       return new Response(JSON.stringify({ error: error.errorCode, message: error.message }), {
         status: error.code,
-        headers: { "Content-Type": "application/json" },
+        headers: { 'Content-Type': 'application/json' },
       });
     }
     // 生产环境不暴露内部错误细节
     return new Response(
       JSON.stringify({
-        error: "INTERNAL_ERROR",
-        message: "服务器内部错误",
+        error: 'INTERNAL_ERROR',
+        message: '服务器内部错误',
       }),
       {
         status: 500,
-        headers: { "Content-Type": "application/json" },
+        headers: { 'Content-Type': 'application/json' },
       },
     );
   }
@@ -149,7 +153,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
    */
   function addServerHeader(response: Response): Response {
     const headers = new Headers(response.headers);
-    headers.set("Server", "VentoStack");
+    headers.set('Server', 'VentoStack');
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -166,28 +170,35 @@ export function createApp(config?: AppConfig): VentoStackApp {
     handler: (req: Request) => Response | Promise<Response>,
   ): (req: Request) => Promise<Response> {
     return async (req: Request): Promise<Response> => {
+      let request = req;
       if (isClosing) {
-        return addServerHeader(new Response("Service Unavailable", { status: 503 }));
+        return addServerHeader(new Response('Service Unavailable', { status: 503 }));
       }
       activeRequests++;
       try {
         // 注入真实客户端 IP（Bun Server 级别，无需反向代理即可获取）
-        if (server && !req.headers.has("x-forwarded-for") && !req.headers.has("x-real-ip")) {
+        if (
+          server &&
+          !request.headers.has('x-forwarded-for') &&
+          !request.headers.has('x-real-ip')
+        ) {
           try {
-            const addr = server.requestIP(req);
+            const addr = server.requestIP(request);
             if (addr) {
-              const headers = new Headers(req.headers);
-              headers.set("x-real-ip", addr.address);
-              const newReq = new Request(req, { headers });
+              const headers = new Headers(request.headers);
+              headers.set('x-real-ip', addr.address);
+              const newReq = new Request(request, { headers }) as Request & {
+                params?: Record<string, string>;
+              };
               // Preserve Bun native route params
-              (newReq as any).params = (req as any).params;
-              req = newReq;
+              newReq.params = (request as Request & { params?: Record<string, string> }).params;
+              request = newReq;
             }
           } catch {
             // requestIP 在非服务器请求（如测试）下可能失败
           }
         }
-        const response = await handler(req);
+        const response = await handler(request);
         return addServerHeader(response);
       } catch (error) {
         return addServerHeader(defaultErrorHandler(error));
@@ -198,12 +209,12 @@ export function createApp(config?: AppConfig): VentoStackApp {
   }
 
   function beginSignalShutdown(exitCode: number): void {
-    shutdownPromise ??= app.close().then(
+    _shutdownPromise ??= app.close().then(
       () => {
         process.exit(exitCode);
       },
       (error) => {
-        console.error("Failed to shut down gracefully:", error);
+        console.error('Failed to shut down gracefully:', error);
         process.exit(1);
       },
     );
@@ -217,11 +228,11 @@ export function createApp(config?: AppConfig): VentoStackApp {
     },
 
     use(item: Plugin | Middleware | Router): VentoStackApp {
-      if (typeof item === "function") {
+      if (typeof item === 'function') {
         globalMiddleware.push(item);
       } else if (isRouter(item)) {
         app.router.merge(item);
-      } else if (typeof item === "object" && item !== null && "name" in item && "install" in item) {
+      } else if (typeof item === 'object' && item !== null && 'name' in item && 'install' in item) {
         plugins.push(item);
       }
       return app;
@@ -244,19 +255,19 @@ export function createApp(config?: AppConfig): VentoStackApp {
       const wrapped = wrapRoutes(compiled);
 
       const listenPort = port ?? config?.port ?? 3000;
-      const hostname = config?.hostname ?? "0.0.0.0";
+      const hostname = config?.hostname ?? '0.0.0.0';
 
       // 预定义 404 响应
       const notFoundResponse = new Response(
-        JSON.stringify({ error: "NOT_FOUND", message: "资源不存在" }),
-        { status: 404, headers: { "Content-Type": "application/json", Server: "VentoStack" } },
+        JSON.stringify({ error: 'NOT_FOUND', message: '资源不存在' }),
+        { status: 404, headers: { 'Content-Type': 'application/json', Server: 'VentoStack' } },
       );
 
       server = Bun.serve({
         port: listenPort,
         hostname,
         routes: wrapped,
-        fetch(req: Request, srv: Server) {
+        fetch(req: Request, srv: Server<undefined>) {
           if (!config?.fetchFallback) return notFoundResponse;
           try {
             const result = config.fetchFallback(req, srv);
@@ -275,7 +286,8 @@ export function createApp(config?: AppConfig): VentoStackApp {
 
       // 打印启动 Banner（仅当 banner !== false 时）
       if (config?.banner !== false) {
-        const displayHost = (hostname === "0.0.0.0" || hostname === "127.0.0.1") ? "localhost" : hostname;
+        const displayHost =
+          hostname === '0.0.0.0' || hostname === '127.0.0.1' ? 'localhost' : hostname;
         const baseUrl = `http://${displayHost}:${listenPort}`;
         const accent = ansi(COLORS.info);
         const tag = ansi(COLORS.tag);
@@ -294,12 +306,15 @@ ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   �
         }
         console.log();
       } else {
-        const displayHost = (hostname === "0.0.0.0" || hostname === "127.0.0.1") ? "localhost" : hostname;
+        const displayHost =
+          hostname === '0.0.0.0' || hostname === '127.0.0.1' ? 'localhost' : hostname;
         const accent = ansi(COLORS.info);
         // eslint-disable-next-line no-console
         console.log(`  ➜  监控端口:   ${accent}http://${displayHost}:${listenPort}${RESET}`);
         for (const url of urls) {
-          console.log(`       ➜  ${url.label}: ${accent}http://${displayHost}:${listenPort}${url.path}${RESET}`);
+          console.log(
+            `       ➜  ${url.label}: ${accent}http://${displayHost}:${listenPort}${url.path}${RESET}`,
+          );
         }
       }
 
@@ -310,8 +325,8 @@ ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   �
       sigIntHandler = () => {
         beginSignalShutdown(0);
       };
-      process.on("SIGTERM", sigTermHandler);
-      process.on("SIGINT", sigIntHandler);
+      process.on('SIGTERM', sigTermHandler);
+      process.on('SIGINT', sigIntHandler);
 
       await lifecycle.runAfterStart();
     },
@@ -331,14 +346,14 @@ ${tag}  ╚═══╝  ╚══════╝╚═╝  ╚═══╝   �
       server.stop(true);
       server = null;
       isClosing = false;
-      shutdownPromise = null;
+      _shutdownPromise = null;
 
       if (sigTermHandler) {
-        process.removeListener("SIGTERM", sigTermHandler);
+        process.removeListener('SIGTERM', sigTermHandler);
         sigTermHandler = null;
       }
       if (sigIntHandler) {
-        process.removeListener("SIGINT", sigIntHandler);
+        process.removeListener('SIGINT', sigIntHandler);
         sigIntHandler = null;
       }
     },

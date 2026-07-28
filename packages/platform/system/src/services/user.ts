@@ -3,15 +3,15 @@
  * 用户管理服务：创建、更新、删除、查询、密码重置、状态变更
  */
 
-import type { PasswordHasher } from "@ventostack/auth";
-import type { Cache } from "@ventostack/cache";
-import type { Database } from "@ventostack/database";
-import { DeptModel } from "../models/dept";
-import { UserModel } from "../models/user";
-import type { ConfigService } from "./config";
-import { createCacheKeyNamespace } from "./cache-key";
-import type { CacheKeyNamespace } from "./cache-key";
-import { validatePassword } from "./password-policy";
+import type { PasswordHasher } from '@ventostack/auth';
+import type { Cache } from '@ventostack/cache';
+import type { Database } from '@ventostack/database';
+import { DeptModel } from '../models/dept';
+import { UserModel } from '../models/user';
+import { createCacheKeyNamespace } from './cache-key';
+import type { CacheKeyNamespace } from './cache-key';
+import type { ConfigService } from './config';
+import { validatePassword } from './password-policy';
 
 /** 创建用户参数 */
 export interface CreateUserParams {
@@ -101,7 +101,7 @@ export interface UserService {
  * 递归收集指定部门及其所有子部门 ID
  */
 async function collectDescendantDeptIds(db: Database, parentId: string): Promise<string[]> {
-  const rows = await db.query(DeptModel).select("id", "parent_id").list();
+  const rows = await db.query(DeptModel).select('id', 'parent_id').list();
 
   const childrenMap = new Map<string, string[]>();
   for (const row of rows) {
@@ -149,14 +149,14 @@ export function createUserService(deps: {
       // 密码：若未提供则使用系统默认初始密码
       let actualPassword = password;
       if (!actualPassword) {
-        actualPassword = (await configService.getValue("sys_user_init_password")) || "123456";
+        actualPassword = (await configService.getValue('sys_user_init_password')) || '123456';
       }
 
       // 密码策略校验
-      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
       const complexity =
-        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
-        "low";
+        ((await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high') ||
+        'low';
       const validation = validatePassword(actualPassword, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -179,7 +179,7 @@ export function createUserService(deps: {
       });
 
       // 清除用户列表缓存
-      await cache.del(ns.listKey("user"));
+      await cache.del(ns.listKey('user'));
 
       return { id };
     },
@@ -197,44 +197,44 @@ export function createUserService(deps: {
 
       if (Object.keys(updates).length === 0) return;
 
-      await db.query(UserModel).where("id", "=", id).update(updates);
+      await db.query(UserModel).where('id', '=', id).update(updates);
 
       // 清除用户缓存
-      await cache.del(ns.detailKey("user", id));
-      await cache.del(ns.listKey("user"));
+      await cache.del(ns.detailKey('user', id));
+      await cache.del(ns.listKey('user'));
     },
 
     async delete(id) {
       // 软删除
-      await db.query(UserModel).where("id", "=", id).delete();
+      await db.query(UserModel).where('id', '=', id).delete();
 
       // 清除缓存
-      await cache.del(ns.detailKey("user", id));
-      await cache.del(ns.listKey("user"));
+      await cache.del(ns.detailKey('user', id));
+      await cache.del(ns.listKey('user'));
     },
 
     async getById(id) {
       // 尝试从缓存获取
-      const cached = await cache.get<UserDetail>(ns.detailKey("user", id));
+      const cached = await cache.get<UserDetail>(ns.detailKey('user', id));
       if (cached) return cached;
 
       const row = await db
         .query(UserModel)
-        .where("id", "=", id)
+        .where('id', '=', id)
         .select(
-          "id",
-          "username",
-          "email",
-          "phone",
-          "nickname",
-          "avatar",
-          "gender",
-          "status",
-          "dept_id",
-          "mfa_enabled",
-          "remark",
-          "created_at",
-          "updated_at",
+          'id',
+          'username',
+          'email',
+          'phone',
+          'nickname',
+          'avatar',
+          'gender',
+          'status',
+          'dept_id',
+          'mfa_enabled',
+          'remark',
+          'created_at',
+          'updated_at',
         )
         .get();
 
@@ -259,7 +259,7 @@ export function createUserService(deps: {
       };
 
       // 写入缓存
-      await cache.set(ns.detailKey("user", id), detail, { ttl: 300 });
+      await cache.set(ns.detailKey('user', id), detail, { ttl: 300 });
 
       return detail;
     },
@@ -270,23 +270,23 @@ export function createUserService(deps: {
       let query = db.query(UserModel);
 
       if (username) {
-        query = query.where("username", "LIKE", `%${username}%`);
+        query = query.where('username', 'LIKE', `%${username}%`);
       }
       if (status !== undefined) {
-        query = query.where("status", "=", status);
+        query = query.where('status', '=', status);
       }
-      if (deptId === "__none__") {
-        query = query.where("dept_id", "IS", null);
+      if (deptId === '__none__') {
+        query = query.where('dept_id', 'IS NULL');
       } else if (deptId) {
         const deptIds = await collectDescendantDeptIds(db, deptId);
-        query = query.where("dept_id", "IN", deptIds);
+        query = query.where('dept_id', 'IN', deptIds);
       }
 
       const total = await query.count();
 
       const rows = await query
-        .select("id", "username", "nickname", "email", "phone", "status", "dept_id", "created_at")
-        .orderBy("created_at", "desc")
+        .select('id', 'username', 'nickname', 'email', 'phone', 'status', 'dept_id', 'created_at')
+        .orderBy('created_at', 'desc')
         .limit(pageSize)
         .offset((page - 1) * pageSize)
         .list();
@@ -301,6 +301,7 @@ export function createUserService(deps: {
         deptId: row.dept_id ?? null,
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
+        tags: [] as Array<{ id: string; name: string; code: string }>,
       }));
 
       // 批量获取用户标签
@@ -314,7 +315,12 @@ export function createUserService(deps: {
           [userIds],
         );
         const tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
-        for (const tr of tagRows as Array<{ user_id: string; id: string; name: string; code: string }>) {
+        for (const tr of tagRows as Array<{
+          user_id: string;
+          id: string;
+          name: string;
+          code: string;
+        }>) {
           const arr = tagMap.get(tr.user_id) ?? [];
           arr.push({ id: tr.id, name: tr.name, code: tr.code });
           tagMap.set(tr.user_id, arr);
@@ -335,10 +341,10 @@ export function createUserService(deps: {
 
     async resetPassword(id, newPassword) {
       // 密码策略校验
-      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
       const complexity =
-        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
-        "low";
+        ((await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high') ||
+        'low';
       const validation = validatePassword(newPassword, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -346,21 +352,21 @@ export function createUserService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await db.query(UserModel).where("id", "=", id).update({
+      await db.query(UserModel).where('id', '=', id).update({
         password_hash: passwordHash,
         password_changed_at: new Date(),
       });
 
       // 清除用户缓存
-      await cache.del(ns.detailKey("user", id));
+      await cache.del(ns.detailKey('user', id));
     },
 
     async updateStatus(id, status) {
-      await db.query(UserModel).where("id", "=", id).update({ status });
+      await db.query(UserModel).where('id', '=', id).update({ status });
 
       // 清除缓存
-      await cache.del(ns.detailKey("user", id));
-      await cache.del(ns.listKey("user"));
+      await cache.del(ns.detailKey('user', id));
+      await cache.del(ns.listKey('user'));
     },
 
     async export(params) {
@@ -369,39 +375,39 @@ export function createUserService(deps: {
       let query = db.query(UserModel);
 
       if (username) {
-        query = query.where("username", "LIKE", `%${username}%`);
+        query = query.where('username', 'LIKE', `%${username}%`);
       }
       if (status !== undefined) {
-        query = query.where("status", "=", status);
+        query = query.where('status', '=', status);
       }
-      if (deptId === "__none__") {
-        query = query.where("dept_id", "IS", null);
+      if (deptId === '__none__') {
+        query = query.where('dept_id', 'IS NULL');
       } else if (deptId) {
-        query = query.where("dept_id", "=", deptId);
+        query = query.where('dept_id', '=', deptId);
       }
 
       const rows = await query
         .select(
-          "id",
-          "username",
-          "nickname",
-          "email",
-          "phone",
-          "status",
-          "dept_id",
-          "created_at",
-          "updated_at",
+          'id',
+          'username',
+          'nickname',
+          'email',
+          'phone',
+          'status',
+          'dept_id',
+          'created_at',
+          'updated_at',
         )
-        .orderBy("created_at", "desc")
+        .orderBy('created_at', 'desc')
         .list();
 
       // 生成 CSV
-      const header = "ID,用户名,昵称,邮箱,手机,状态,部门ID,创建时间,更新时间";
+      const header = 'ID,用户名,昵称,邮箱,手机,状态,部门ID,创建时间,更新时间';
       const csvRows = rows.map((row) => {
         const escapeCsv = (val: unknown) => {
-          if (val === null || val === undefined) return "";
+          if (val === null || val === undefined) return '';
           const str = String(val);
-          if (str.includes(",") || str.includes('"') || str.includes("\n")) {
+          if (str.includes(',') || str.includes('"') || str.includes('\n')) {
             return `"${str.replace(/"/g, '""')}"`;
           }
           return str;
@@ -416,10 +422,10 @@ export function createUserService(deps: {
           escapeCsv(row.dept_id),
           escapeCsv(row.created_at),
           escapeCsv(row.updated_at),
-        ].join(",");
+        ].join(',');
       });
 
-      return [header, ...csvRows].join("\n");
+      return [header, ...csvRows].join('\n');
     },
   };
 }

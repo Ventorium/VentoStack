@@ -41,6 +41,8 @@
       "@ventostack/auth/*": ["./packages/platform/auth/src/*"],
       "@ventostack/ai": ["./packages/platform/ai/src/index.ts"],
       "@ventostack/ai/*": ["./packages/platform/ai/src/*"],
+      "@ventostack/file2md": ["./packages/platform/file2md/src/index.ts"],
+      "@ventostack/file2md/*": ["./packages/platform/file2md/src/*"],
       "@ventostack/integration": ["./packages/platform/integration/src/index.ts"],
       "@ventostack/integration/*": ["./packages/platform/integration/src/*"],
       "@ventostack/system": ["./packages/platform/system/src/index.ts"],

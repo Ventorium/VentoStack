@@ -6,48 +6,78 @@
  * 构建失败时输出错误信息并在最后以非零状态码退出。
  */
 
-import { $ } from "bun";
+import { unlink } from 'node:fs/promises';
+import { dirname, resolve } from 'node:path';
+import { $, Glob } from 'bun';
 
-/** 需要构建的包名列表 */
-const PACKAGES = [
-  "core",
-  "database",
-  "cache",
-  "auth",
-  "events",
-  "observability",
-  "openapi",
-  "testing",
-  "ai",
-  "cli",
-];
+interface PackageManifest {
+  name?: string;
+}
 
 /** 仓库根目录绝对路径 */
-const ROOT = new URL("../../..", import.meta.url).pathname;
+const ROOT = resolve(import.meta.dir, '../../../..');
+const packageGlob = new Glob('packages/{framework,platform}/*/package.json');
+const packages: Array<{ name: string; dir: string }> = [];
 
-console.log("Building VentoStack packages...\n");
+for await (const manifestPath of packageGlob.scan({ cwd: ROOT })) {
+  const manifest = (await Bun.file(resolve(ROOT, manifestPath)).json()) as PackageManifest;
+  const packageDir = dirname(resolve(ROOT, manifestPath));
+  if (manifest.name && (await Bun.file(resolve(packageDir, 'src/index.ts')).exists())) {
+    packages.push({ name: manifest.name, dir: packageDir });
+  }
+}
+
+packages.sort((a, b) => a.name.localeCompare(b.name));
+
+console.log('Building VentoStack packages...\n');
 
 /** 构建失败的包数量 */
 let failed = 0;
 
-for (const pkg of PACKAGES) {
-  const pkgDir = `${ROOT}packages/${pkg}`;
-  process.stdout.write(`  Building @ventostack/${pkg}... `);
+for (const pkg of packages) {
+  process.stdout.write(`  Building ${pkg.name}... `);
 
-  const result = await $`bun build --target=bun --outdir=${pkgDir}/dist ${pkgDir}/src/index.ts`
-    .quiet()
-    .nothrow();
+  const bundleResult =
+    await $`bun build --target=bun --packages=external --outdir=${resolve(pkg.dir, 'dist')} ${resolve(pkg.dir, 'src/index.ts')}`
+      .quiet()
+      .nothrow();
 
-  if (result.exitCode === 0) {
-    console.log("done");
+  const publishConfigPath = resolve(pkg.dir, '.tsconfig.publish.tmp.json');
+  await Bun.write(
+    publishConfigPath,
+    JSON.stringify({
+      extends: (await Bun.file(resolve(pkg.dir, 'tsconfig.json')).exists())
+        ? './tsconfig.json'
+        : resolve(ROOT, 'tsconfig.json'),
+      compilerOptions: {
+        paths: {},
+        preserveSymlinks: true,
+        declaration: true,
+        emitDeclarationOnly: true,
+        noCheck: true,
+        rootDir: './src',
+        outDir: './dist',
+      },
+      include: ['src/**/*.ts'],
+      exclude: ['src/**/__tests__/**', 'src/**/*.test.ts'],
+    }),
+  );
+  const declarationResult = await $`bunx tsc -p ${publishConfigPath}`.quiet().nothrow();
+  await unlink(publishConfigPath);
+
+  if (bundleResult.exitCode === 0 && declarationResult.exitCode === 0) {
+    console.log('done');
   } else {
-    console.log("FAILED");
-    console.error(result.stderr.toString());
+    console.log('FAILED');
+    console.error(bundleResult.stderr.toString());
+    console.error(bundleResult.stdout.toString());
+    console.error(declarationResult.stderr.toString());
+    console.error(declarationResult.stdout.toString());
     failed++;
   }
 }
 
-console.log(`\nBuild complete. ${PACKAGES.length - failed}/${PACKAGES.length} packages succeeded.`);
+console.log(`\nBuild complete. ${packages.length - failed}/${packages.length} packages succeeded.`);
 
 if (failed > 0) {
   process.exit(1);

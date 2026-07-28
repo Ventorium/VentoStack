@@ -6,6 +6,15 @@
 
 系统管理业务模块，依赖 core、database、cache、auth、observability、events。提供 RBAC 权限、用户管理、系统配置等后台管理能力。
 
+## 核心能力
+
+- 用户、角色、菜单、部门和岗位管理
+- 字典、系统配置、公告和标签管理
+- 登录、Token、MFA、Passkey 和个人资料接口
+- RBAC 权限加载、数据范围和租户缓存命名空间
+- 登录日志、操作日志和在线用户管理
+- 标准 CRUD 路由工厂及 `createSystemModule()` 装配入口
+
 ## 安全特性
 
 ### 权限中间件模式
