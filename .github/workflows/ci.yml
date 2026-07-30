@@ -43,11 +43,19 @@ jobs:
         shell: bash
         run: |
           if [[ "${{ github.event_name }}" == "pull_request" ]]; then
-            base_ref="origin/${{ github.base_ref }}"
+            diff_range="origin/${{ github.base_ref }}...HEAD"
           else
-            base_ref="${{ github.event.before }}"
+            diff_range="${{ github.event.before }}..HEAD"
           fi
-          bunx biome ci --changed --since="$base_ref"
+          mapfile -t lint_files < <(
+            git diff --name-only --diff-filter=ACMR "$diff_range" -- \
+              '*.js' '*.jsx' '*.ts' '*.tsx' '*.json' '*.jsonc' '*.css'
+          )
+          if (( ${#lint_files[@]} > 0 )); then
+            bunx biome ci "${lint_files[@]}"
+          else
+            echo "No Biome-supported files changed; skipping lint."
+          fi
 
       - name: Build Packages
         run: bun run build
