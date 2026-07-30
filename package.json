@@ -22,6 +22,7 @@
     "build": "bun run packages/framework/cli/src/build.ts",
     "build:doc": "bun run --cwd apps/docs build",
     "changeset": "changeset",
+    "version-packages": "changeset version && biome check --write packages/framework/*/package.json packages/platform/*/package.json",
     "release": "changeset publish",
     "test": "bun test",
     "test:coverage": "bun test --coverage",

@@ -46,10 +46,16 @@ jobs:
         id: changesets
         uses: changesets/action@v1
         with:
-          version: bunx changeset version
+          version: bun run version-packages
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build packages
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: bun run build
 
       - name: Publish packages
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: bunx changeset publish
+        env:
+          NPM_CONFIG_PROVENANCE: true
