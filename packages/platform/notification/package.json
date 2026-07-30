@@ -2,6 +2,10 @@
   "name": "@ventostack/notification",
   "version": "0.1.1",
   "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ventorium/VentoStack.git"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
