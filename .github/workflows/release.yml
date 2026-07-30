@@ -50,6 +50,12 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Build packages
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: bun run build
+
       - name: Publish packages
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: bunx changeset publish
+        env:
+          NPM_CONFIG_PROVENANCE: true
