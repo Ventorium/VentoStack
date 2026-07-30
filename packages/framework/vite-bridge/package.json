@@ -1,13 +1,21 @@
 {
   "name": "@ventostack/vite-bridge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "type": "module",
-  "repository": { "type": "git", "url": "git+https://github.com/Ventorium/VentoStack.git" },
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ventorium/VentoStack.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "exports": {
-    ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" }
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
   "files": ["dist"],
   "dependencies": {
