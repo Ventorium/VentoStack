@@ -1,4 +1,3 @@
-import type { JWTManager, RBAC } from '@ventostack/auth';
 /**
  * AI 模块聚合 — 增强版
  *
@@ -12,9 +11,8 @@ import type { JWTManager, RBAC } from '@ventostack/auth';
  * - 生命周期事件
  */
 import { createRouter } from '@ventostack/core';
-import type { Router } from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
 import type { EventBus } from '@ventostack/events';
-import type { NotificationService } from '@ventostack/notification';
 
 import type { ConfigEncryptor } from '@ventostack/core';
 // LLM Gateway
@@ -106,9 +104,6 @@ type SkillService = ReturnType<typeof createSkillService>;
 import type { ModelConfigService } from './services/model-config';
 type ScopedKBService = ReturnType<typeof createScopedKBService>;
 
-// Auth
-import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
-
 // ---- Types ----
 
 export interface AIModule {
@@ -156,16 +151,32 @@ export interface LLMProviderFactoryConfig {
 
 export type LLMProviderFactory = (config: LLMProviderFactoryConfig) => LLMProvider;
 
+/**
+ * 通知服务最小结构（由调用方注入，避免 framework 依赖 platform/notification）。
+ * 与 @ventostack/notification 的 NotificationService 结构兼容。
+ */
+export interface NotificationServiceLike {
+  send(params: {
+    templateId?: string;
+    receiverId: string;
+    channel: string;
+    title?: string;
+    content: string;
+    variables?: Record<string, unknown>;
+  }): Promise<{ messageId: string }>;
+}
+
 export interface AIModuleDeps {
   db: unknown;
   cache?: unknown;
-  jwt: JWTManager;
-  jwtSecret: string;
-  rbac?: RBAC;
+  /** 已构建的认证中间件（由调用方注入，framework 不依赖 platform/auth） */
+  authMiddleware: Middleware;
+  /** 权限中间件工厂（由调用方注入） */
+  permMiddleware: (resource: string, action: string) => Middleware;
   /** 自定义协议 Adapter；键为 apiFormat。 */
   providerFactories?: Record<string, LLMProviderFactory>;
   eventBus: EventBus;
-  notification?: NotificationService;
+  notification?: NotificationServiceLike;
   /** LLM provider 配置列表 */
   llmProviders: LLMProviderConfig[];
   /** Provider API Key 加密器 */
@@ -247,7 +258,7 @@ export function createConfiguredProvider(
 // ---- Module Factory ----
 
 export function createAIModule(deps: AIModuleDeps): AIModule {
-  const { db, jwt, jwtSecret, rbac, eventBus, storagePath, cache } = deps;
+  const { db, authMiddleware, permMiddleware, eventBus, storagePath, cache } = deps;
 
   const providerService = createProviderService({
     db: db as import('@ventostack/database').Database,
@@ -434,11 +445,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     },
   });
 
-  // 创建中间件
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
-  const perm = rbac
-    ? createPermMiddleware(rbac)
-    : () => async (_ctx: unknown, next: () => Promise<Response>) => next();
+  // 创建中间件（由调用方注入，见 AIModuleDeps）
+  const perm = deps.permMiddleware;
 
   // 创建路由
   const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm, providerService);

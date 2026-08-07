@@ -14,56 +14,157 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-    "lib": ["ESNext"],
-    "types": ["bun-types"],
+    "lib": [
+      "ESNext"
+    ],
+    "types": [
+      "bun-types"
+    ],
     "paths": {
-      "@ventostack/core": ["./packages/framework/core/src/index.ts"],
-      "@ventostack/core/*": ["./packages/framework/core/src/*"],
-      "@ventostack/database": ["./packages/framework/database/src/index.ts"],
-      "@ventostack/database/*": ["./packages/framework/database/src/*"],
-      "@ventostack/cache": ["./packages/framework/cache/src/index.ts"],
-      "@ventostack/cache/*": ["./packages/framework/cache/src/*"],
-      "@ventostack/events": ["./packages/framework/events/src/index.ts"],
-      "@ventostack/events/*": ["./packages/framework/events/src/*"],
-      "@ventostack/observability": ["./packages/framework/observability/src/index.ts"],
-      "@ventostack/observability/*": ["./packages/framework/observability/src/*"],
-      "@ventostack/openapi": ["./packages/framework/openapi/src/index.ts"],
-      "@ventostack/openapi/*": ["./packages/framework/openapi/src/*"],
-      "@ventostack/testing": ["./packages/framework/testing/src/index.ts"],
-      "@ventostack/testing/*": ["./packages/framework/testing/src/*"],
-      "@ventostack/cli": ["./packages/framework/cli/src/index.ts"],
-      "@ventostack/cli/*": ["./packages/framework/cli/src/*"],
-      "@ventostack/webhook": ["./packages/framework/webhook/src/index.ts"],
-      "@ventostack/webhook/*": ["./packages/framework/webhook/src/*"],
-      "@ventostack/vite-bridge": ["./packages/framework/vite-bridge/src/index.ts"],
-      "@ventostack/vite-bridge/*": ["./packages/framework/vite-bridge/src/*"],
-      "@ventostack/auth": ["./packages/platform/auth/src/index.ts"],
-      "@ventostack/auth/*": ["./packages/platform/auth/src/*"],
-      "@ventostack/ai": ["./packages/platform/ai/src/index.ts"],
-      "@ventostack/ai/*": ["./packages/platform/ai/src/*"],
-      "@ventostack/file2md": ["./packages/platform/file2md/src/index.ts"],
-      "@ventostack/file2md/*": ["./packages/platform/file2md/src/*"],
-      "@ventostack/integration": ["./packages/platform/integration/src/index.ts"],
-      "@ventostack/integration/*": ["./packages/platform/integration/src/*"],
-      "@ventostack/system": ["./packages/platform/system/src/index.ts"],
-      "@ventostack/system/*": ["./packages/platform/system/src/*"],
-      "@ventostack/boot": ["./packages/platform/boot/src/index.ts"],
-      "@ventostack/boot/*": ["./packages/platform/boot/src/*"],
-      "@ventostack/gen": ["./packages/platform/gen/src/index.ts"],
-      "@ventostack/gen/*": ["./packages/platform/gen/src/*"],
-      "@ventostack/i18n": ["./packages/platform/i18n/src/index.ts"],
-      "@ventostack/i18n/*": ["./packages/platform/i18n/src/*"],
-      "@ventostack/monitor": ["./packages/platform/monitor/src/index.ts"],
-      "@ventostack/monitor/*": ["./packages/platform/monitor/src/*"],
-      "@ventostack/notification": ["./packages/platform/notification/src/index.ts"],
-      "@ventostack/notification/*": ["./packages/platform/notification/src/*"],
-      "@ventostack/oss": ["./packages/platform/oss/src/index.ts"],
-      "@ventostack/oss/*": ["./packages/platform/oss/src/*"],
-      "@ventostack/scheduler": ["./packages/platform/scheduler/src/index.ts"],
-      "@ventostack/scheduler/*": ["./packages/platform/scheduler/src/*"],
-      "@ventostack/workflow": ["./packages/platform/workflow/src/index.ts"],
-      "@ventostack/workflow/*": ["./packages/platform/workflow/src/*"]
+      "@ventostack/core": [
+        "./packages/framework/core/src/index.ts"
+      ],
+      "@ventostack/core/*": [
+        "./packages/framework/core/src/*"
+      ],
+      "@ventostack/database": [
+        "./packages/framework/database/src/index.ts"
+      ],
+      "@ventostack/database/*": [
+        "./packages/framework/database/src/*"
+      ],
+      "@ventostack/cache": [
+        "./packages/framework/cache/src/index.ts"
+      ],
+      "@ventostack/cache/*": [
+        "./packages/framework/cache/src/*"
+      ],
+      "@ventostack/events": [
+        "./packages/framework/events/src/index.ts"
+      ],
+      "@ventostack/events/*": [
+        "./packages/framework/events/src/*"
+      ],
+      "@ventostack/observability": [
+        "./packages/framework/observability/src/index.ts"
+      ],
+      "@ventostack/observability/*": [
+        "./packages/framework/observability/src/*"
+      ],
+      "@ventostack/openapi": [
+        "./packages/framework/openapi/src/index.ts"
+      ],
+      "@ventostack/openapi/*": [
+        "./packages/framework/openapi/src/*"
+      ],
+      "@ventostack/testing": [
+        "./packages/framework/testing/src/index.ts"
+      ],
+      "@ventostack/testing/*": [
+        "./packages/framework/testing/src/*"
+      ],
+      "@ventostack/cli": [
+        "./packages/framework/cli/src/index.ts"
+      ],
+      "@ventostack/cli/*": [
+        "./packages/framework/cli/src/*"
+      ],
+      "@ventostack/webhook": [
+        "./packages/framework/webhook/src/index.ts"
+      ],
+      "@ventostack/webhook/*": [
+        "./packages/framework/webhook/src/*"
+      ],
+      "@ventostack/vite-bridge": [
+        "./packages/framework/vite-bridge/src/index.ts"
+      ],
+      "@ventostack/vite-bridge/*": [
+        "./packages/framework/vite-bridge/src/*"
+      ],
+      "@ventostack/auth": [
+        "./packages/platform/auth/src/index.ts"
+      ],
+      "@ventostack/auth/*": [
+        "./packages/platform/auth/src/*"
+      ],
+      "@ventostack/ai": [
+        "./packages/framework/ai/src/index.ts"
+      ],
+      "@ventostack/ai/*": [
+        "./packages/framework/ai/src/*"
+      ],
+      "@ventostack/file2md": [
+        "./packages/framework/file2md/src/index.ts"
+      ],
+      "@ventostack/file2md/*": [
+        "./packages/framework/file2md/src/*"
+      ],
+      "@ventostack/integration": [
+        "./packages/platform/integration/src/index.ts"
+      ],
+      "@ventostack/integration/*": [
+        "./packages/platform/integration/src/*"
+      ],
+      "@ventostack/system": [
+        "./packages/platform/system/src/index.ts"
+      ],
+      "@ventostack/system/*": [
+        "./packages/platform/system/src/*"
+      ],
+      "@ventostack/boot": [
+        "./packages/platform/boot/src/index.ts"
+      ],
+      "@ventostack/boot/*": [
+        "./packages/platform/boot/src/*"
+      ],
+      "@ventostack/gen": [
+        "./packages/platform/gen/src/index.ts"
+      ],
+      "@ventostack/gen/*": [
+        "./packages/platform/gen/src/*"
+      ],
+      "@ventostack/i18n": [
+        "./packages/platform/i18n/src/index.ts"
+      ],
+      "@ventostack/i18n/*": [
+        "./packages/platform/i18n/src/*"
+      ],
+      "@ventostack/monitor": [
+        "./packages/platform/monitor/src/index.ts"
+      ],
+      "@ventostack/monitor/*": [
+        "./packages/platform/monitor/src/*"
+      ],
+      "@ventostack/notification": [
+        "./packages/platform/notification/src/index.ts"
+      ],
+      "@ventostack/notification/*": [
+        "./packages/platform/notification/src/*"
+      ],
+      "@ventostack/oss": [
+        "./packages/platform/oss/src/index.ts"
+      ],
+      "@ventostack/oss/*": [
+        "./packages/platform/oss/src/*"
+      ],
+      "@ventostack/scheduler": [
+        "./packages/platform/scheduler/src/index.ts"
+      ],
+      "@ventostack/scheduler/*": [
+        "./packages/platform/scheduler/src/*"
+      ],
+      "@ventostack/workflow": [
+        "./packages/platform/workflow/src/index.ts"
+      ],
+      "@ventostack/workflow/*": [
+        "./packages/platform/workflow/src/*"
+      ]
     }
   },
-  "exclude": ["node_modules", "dist", "**/*.test.ts", "apps/docs"]
+  "exclude": [
+    "node_modules",
+    "dist",
+    "**/*.test.ts",
+    "apps/docs"
+  ]
 }

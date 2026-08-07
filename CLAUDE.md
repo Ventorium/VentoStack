@@ -66,9 +66,14 @@ VentoStack 是基于 Bun 运行时构建的全栈框架，但当前研发重心�
 | events | 事件总线、任务调度、异步处理 | 依赖 core |
 | observability | 日志、指标、链路追踪、审计 | 依赖 core |
 | openapi | 文档与契约生成 | 依赖 core |
-| ai | Tool 调用、Worker 隔离、审批与审计 | 依赖 core、auth、observability |
+| ai | Agent Loop、LLM 网关、Tool/MCP 调用、Session/Memory、Skill、RAG | 依赖 core、database、cache、events、observability、file2md（第三方例外：ajv） |
+| file2md | 文件转 Markdown 解析器（docx/pdf/xlsx/pptx/epub 等） | 零 workspace 依赖（第三方例外：liteparse） |
 | cli | 脚手架、构建、迁移、生成命令 | 可依赖所有包 |
 | testing | 测试工具、Fixture、测试容器与隔离封装 | 依赖 core 与目标包 |
+
+> **auth 归属说明**：auth（JWT/RBAC/ABAC/TOTP/OAuth/Session 纯引擎，无路由/迁移/模型）虽仅依赖 framework 包，
+> 但按分层模型属于「能力层」（Auth/Cache/Events/Observability/Policy），且是平台安全策略的组成核心，
+> 故保留在 packages/platform/auth，由平台模块（system/boot 等）直接消费。
 
 ---
 
@@ -327,6 +332,7 @@ fullstack/
 │   ├── observability/
 │   ├── openapi/
 │   ├── ai/
+│   ├── file2md/
 │   ├── cli/
 │   └── testing/
 ├── apps/
@@ -410,7 +416,7 @@ To use a skill, reference it in your task description or ask the AI to follow th
 
 ```
 VentoStack/
-├── packages/framework/     ← 自研框架层（零第三方运行时依赖）
+├── packages/framework/     ← 自研框架层（零第三方运行时依赖；例外：ai 的 ajv、file2md 的 liteparse）
 │   ├── core/               ← 路由/中间件/Context/生命周期/配置/安全中间件 (101 files)
 │   ├── database/           ← 链式查询构建器/迁移/事务/连接池 (27 files)
 │   ├── cache/              ← Redis 封装/内存适配器 (16 files)
@@ -419,6 +425,8 @@ VentoStack/
 │   ├── openapi/            ← OpenAPI 3.1 文档生成 + 请求校验 (22 files)
 │   ├── testing/            ← 测试工具/Mock/测试应用封装 (15 files)
 │   ├── webhook/            ← Webhook 入站/出站/签名校验 (8 files)
+│   ├── ai/                 ← AI 引擎（Agent Loop/LLM 网关/Tool/MCP/Session/Memory/Skill/RAG）(55 files)
+│   ├── file2md/            ← 文件转 Markdown（docx/pdf/xlsx/pptx/epub/html 等）(20 files)
 │   └── cli/                ← 脚手架/代码生成/迁移命令 (12 files)
 │
 ├── packages/platform/      ← 业务平台层（依赖 framework）
@@ -432,7 +440,6 @@ VentoStack/
 │   ├── oss/                ← 对象存储（本地/S3）(18 files)
 │   ├── scheduler/          ← 定时任务管理 (13 files)
 │   ├── workflow/           ← 工作流（状态机/审批链）(16 files)
-│   ├── ai/                 ← AI 集成（LLM/RAG/Tool/Sandbox）(17 files)
 │   └── integration/        ← 第三方集成 (15 files)
 │
 ├── apps/

@@ -96,7 +96,10 @@ export { createToolPolicy as createSandbox, type ToolPolicy as Sandbox } from ".
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-> 不创建独立 `packages/framework/ai/`。接口定义在 platform/ai 的 types 中导出。
+> ~~不创建独立 `packages/framework/ai/`。接口定义在 platform/ai 的 types 中导出。~~
+>
+> **已变更（2025-06）**：ai 整体迁移至 `packages/framework/ai/`（基础框架能力：Agent Loop / LLM 网关 / Tool/MCP / Session/Memory / Skill / RAG）；
+> `module.ts` 的认证/权限中间件改为由平台组装层注入（framework 不依赖 platform/auth）；后续平台级 agent 能力在 platform 层扩展。
 
 ### 2.3 模块依赖（完整）
 

@@ -116,9 +116,25 @@
         "bun-types": "latest",
       },
     },
+    "packages/framework/ai": {
+      "name": "@ventostack/ai",
+      "version": "0.1.1",
+      "dependencies": {
+        "@ventostack/cache": "workspace:*",
+        "@ventostack/core": "workspace:*",
+        "@ventostack/database": "workspace:*",
+        "@ventostack/events": "workspace:*",
+        "@ventostack/file2md": "workspace:*",
+        "@ventostack/observability": "workspace:*",
+        "ajv": "^8.18.0",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/framework/cache": {
       "name": "@ventostack/cache",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -128,7 +144,7 @@
     },
     "packages/framework/cli": {
       "name": "@ventostack/cli",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "bin": {
         "ventostack": "src/index.ts",
       },
@@ -142,14 +158,14 @@
     },
     "packages/framework/core": {
       "name": "@ventostack/core",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "devDependencies": {
         "bun-types": "latest",
       },
     },
     "packages/framework/database": {
       "name": "@ventostack/database",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -159,7 +175,7 @@
     },
     "packages/framework/events": {
       "name": "@ventostack/events",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -167,9 +183,19 @@
         "bun-types": "latest",
       },
     },
+    "packages/framework/file2md": {
+      "name": "@ventostack/file2md",
+      "version": "0.1.1",
+      "dependencies": {
+        "@llamaindex/liteparse": "^2.0.8",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+    },
     "packages/framework/observability": {
       "name": "@ventostack/observability",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -179,7 +205,7 @@
     },
     "packages/framework/openapi": {
       "name": "@ventostack/openapi",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -189,7 +215,7 @@
     },
     "packages/framework/testing": {
       "name": "@ventostack/testing",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -199,7 +225,7 @@
     },
     "packages/framework/vite-bridge": {
       "name": "@ventostack/vite-bridge",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -210,7 +236,7 @@
     },
     "packages/framework/webhook": {
       "name": "@ventostack/webhook",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/core": "workspace:*",
       },
@@ -218,27 +244,9 @@
         "bun-types": "latest",
       },
     },
-    "packages/platform/ai": {
-      "name": "@ventostack/ai",
-      "version": "0.1.0",
-      "dependencies": {
-        "@llamaindex/liteparse": "^2.0.8",
-        "@ventostack/auth": "workspace:*",
-        "@ventostack/cache": "workspace:*",
-        "@ventostack/core": "workspace:*",
-        "@ventostack/database": "workspace:*",
-        "@ventostack/events": "workspace:*",
-        "@ventostack/file2md": "workspace:*",
-        "@ventostack/notification": "workspace:*",
-        "ajv": "^8.18.0",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-      },
-    },
     "packages/platform/auth": {
       "name": "@ventostack/auth",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/cache": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -250,7 +258,7 @@
     },
     "packages/platform/boot": {
       "name": "@ventostack/boot",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/ai": "workspace:*",
         "@ventostack/auth": "workspace:*",
@@ -270,19 +278,9 @@
         "@ventostack/workflow": "workspace:*",
       },
     },
-    "packages/platform/file2md": {
-      "name": "@ventostack/file2md",
-      "version": "0.1.0",
-      "dependencies": {
-        "@llamaindex/liteparse": "^2.0.8",
-      },
-      "devDependencies": {
-        "@types/bun": "latest",
-      },
-    },
     "packages/platform/gen": {
       "name": "@ventostack/gen",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -294,7 +292,7 @@
     },
     "packages/platform/i18n": {
       "name": "@ventostack/i18n",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -306,7 +304,7 @@
     },
     "packages/platform/integration": {
       "name": "@ventostack/integration",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/webhook": "workspace:*",
       },
@@ -316,7 +314,7 @@
     },
     "packages/platform/monitor": {
       "name": "@ventostack/monitor",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -329,7 +327,7 @@
     },
     "packages/platform/notification": {
       "name": "@ventostack/notification",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -342,7 +340,7 @@
     },
     "packages/platform/oss": {
       "name": "@ventostack/oss",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -354,7 +352,7 @@
     },
     "packages/platform/scheduler": {
       "name": "@ventostack/scheduler",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -367,7 +365,7 @@
     },
     "packages/platform/system": {
       "name": "@ventostack/system",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "dependencies": {
         "@simplewebauthn/server": "^13.3.0",
         "@ventostack/auth": "workspace:*",
@@ -383,7 +381,7 @@
     },
     "packages/platform/workflow": {
       "name": "@ventostack/workflow",
-      "version": "0.2.0",
+      "version": "0.2.1",
       "dependencies": {
         "@ventostack/auth": "workspace:*",
         "@ventostack/core": "workspace:*",
@@ -1375,7 +1373,7 @@
 
     "@ventostack/admin": ["@ventostack/admin@workspace:apps/admin/web"],
 
-    "@ventostack/ai": ["@ventostack/ai@workspace:packages/platform/ai"],
+    "@ventostack/ai": ["@ventostack/ai@workspace:packages/framework/ai"],
 
     "@ventostack/auth": ["@ventostack/auth@workspace:packages/platform/auth"],
 
@@ -1395,7 +1393,7 @@
 
     "@ventostack/events": ["@ventostack/events@workspace:packages/framework/events"],
 
-    "@ventostack/file2md": ["@ventostack/file2md@workspace:packages/platform/file2md"],
+    "@ventostack/file2md": ["@ventostack/file2md@workspace:packages/framework/file2md"],
 
     "@ventostack/gen": ["@ventostack/gen@workspace:packages/platform/gen"],
 

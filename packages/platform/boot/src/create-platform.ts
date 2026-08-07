@@ -4,16 +4,18 @@
  * 一键创建完整的 VentoStack 平台，聚合所有业务模块。
  */
 
-import type {
-  AuthSessionManager,
-  JWTManager,
-  MultiDeviceManager,
-  PasswordHasher,
-  RBAC,
-  RowFilter,
-  SessionManager,
-  TOTPManager,
-  TokenRefreshManager,
+import {
+  createAuthMiddleware,
+  createPermMiddleware,
+  type AuthSessionManager,
+  type JWTManager,
+  type MultiDeviceManager,
+  type PasswordHasher,
+  type RBAC,
+  type RowFilter,
+  type SessionManager,
+  type TOTPManager,
+  type TokenRefreshManager,
 } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import type { Router } from '@ventostack/core';
@@ -286,9 +288,11 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ? createAIModule({
         db,
         cache,
-        jwt,
-        jwtSecret,
-        rbac,
+        // framework/ai 不依赖 platform/auth：认证与权限中间件由平台组装层注入
+        authMiddleware: createAuthMiddleware(jwt, jwtSecret),
+        permMiddleware: rbac
+          ? createPermMiddleware(rbac)
+          : () => async (_ctx: unknown, next: () => Promise<Response>) => next(),
         eventBus,
         credentialEncryptor: createConfigEncryptor({
           key: config.aiConfig!.credentialEncryptionKey,

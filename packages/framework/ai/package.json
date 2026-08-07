@@ -14,21 +14,21 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "README.md"],
+  "files": [
+    "dist",
+    "README.md"
+  ],
   "publishConfig": {
     "access": "public"
   },
   "dependencies": {
-    "@ventostack/auth": "workspace:*",
     "@ventostack/cache": "workspace:*",
     "@ventostack/core": "workspace:*",
     "@ventostack/database": "workspace:*",
     "@ventostack/events": "workspace:*",
-    "@ventostack/notification": "workspace:*",
+    "@ventostack/file2md": "workspace:*",
     "@ventostack/observability": "workspace:*",
-    "ajv": "^8.18.0",
-    "@llamaindex/liteparse": "^2.0.8",
-    "@ventostack/file2md": "workspace:*"
+    "ajv": "^8.18.0"
   },
   "devDependencies": {
     "@types/bun": "latest"

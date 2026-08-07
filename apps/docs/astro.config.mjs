@@ -148,6 +148,10 @@ export default defineConfig({
           label: 'CLI 工具',
           autogenerate: { directory: 'framework/cli' }
         },
+        {
+          label: 'AI 模块',
+          autogenerate: { directory: 'framework/ai' }
+        },
 
         // ===== 平台层 =====
         {
@@ -189,10 +193,6 @@ export default defineConfig({
         {
           label: '消息中心',
           autogenerate: { directory: 'platform/notification' }
-        },
-        {
-          label: 'AI 模块',
-          autogenerate: { directory: 'platform/ai' }
         },
         {
           label: '第三方集成',
