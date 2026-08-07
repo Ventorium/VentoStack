@@ -1,31 +1,15 @@
 {
   "compilerOptions": {
-    "strict": true,
-    "noImplicitAny": true,
-    "strictNullChecks": true,
-    "noUncheckedIndexedAccess": true,
-    "exactOptionalPropertyTypes": true,
-    "target": "ESNext",
-    "module": "ESNext",
-    "moduleResolution": "bundler",
-    "skipLibCheck": true,
-    "esModuleInterop": true,
-    "resolveJsonModule": true,
-    "isolatedModules": true,
-    "verbatimModuleSyntax": true,
-    "lib": ["ESNext"],
-    "types": ["bun-types"],
     "outDir": "dist",
-    "rootDir": "src",
-    "paths": {
-      "@ventostack/core": ["../../../framework/core/src/index.ts"],
-      "@ventostack/database": ["../../../framework/database/src/index.ts"],
-      "@ventostack/cache": ["../../../framework/cache/src/index.ts"],
-      "@ventostack/auth": ["../../../platform/auth/src/index.ts"],
-      "@ventostack/events": ["../../../framework/events/src/index.ts"],
-      "@ventostack/observability": ["../../../framework/observability/src/index.ts"]
-    }
+    "rootDir": "src"
   },
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "node_modules", "**/*.test.ts"]
+  "include": [
+    "src/**/*.ts"
+  ],
+  "exclude": [
+    "dist",
+    "node_modules",
+    "**/*.test.ts"
+  ],
+  "extends": "../../../tsconfig.json"
 }
