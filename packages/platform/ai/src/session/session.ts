@@ -10,6 +10,7 @@ import type {
   MessageEntry,
   Session,
   SessionContext,
+  SessionForkOptions,
   SessionMetadata,
   SessionStorage,
   SessionTreeEntry,
@@ -180,7 +181,7 @@ export function createSession(storage: SessionStorage): Session {
       parentId: await storage.getLeafId(),
       timestamp: new Date().toISOString(),
       targetId,
-      label,
+      ...(label === undefined ? {} : { label }),
     });
   }
 
@@ -266,6 +267,40 @@ export function createSession(storage: SessionStorage): Session {
     });
   }
 
+  async function fork(
+    destination: { filePath: string; sessionId: string; parentSessionPath?: string },
+    options: SessionForkOptions = {},
+  ): Promise<Session> {
+    const scope = options.scope ?? "branch";
+    const position = options.position ?? (options.entryId === undefined ? "at" : "before");
+
+    let entries: SessionTreeEntry[];
+    if (scope === "tree") {
+      entries = await storage.getEntries();
+    } else {
+      const targetId = options.entryId ?? (await storage.getLeafId());
+      let target: SessionTreeEntry | undefined;
+      if (targetId !== null) target = await storage.getEntry(targetId);
+      if (options.entryId !== undefined) {
+        if (!target) throw new Error(`Entry ${options.entryId} not found`);
+        if (target.type !== "message") {
+          throw new Error(`Fork target is not a message entry: ${options.entryId}`);
+        }
+      }
+      const effectiveTargetId = position === "at" ? target?.id ?? null : target?.parentId ?? null;
+      entries = effectiveTargetId === null ? [] : await storage.getPathToRoot(effectiveTargetId);
+    }
+
+    const metadata = await storage.getMetadata();
+    const parentSessionPath = destination.parentSessionPath ?? metadata.path;
+    const newStorage = await storage.fork(destination.filePath, {
+      sessionId: destination.sessionId,
+      ...(parentSessionPath === undefined ? {} : { parentSessionPath }),
+      entries,
+    });
+    return createSession(newStorage);
+  }
+
   return {
     getMetadata,
     getLeafId,
@@ -284,5 +319,6 @@ export function createSession(storage: SessionStorage): Session {
     appendActiveToolsChange,
     appendCustomEntry,
     moveTo,
+    fork,
   };
 }

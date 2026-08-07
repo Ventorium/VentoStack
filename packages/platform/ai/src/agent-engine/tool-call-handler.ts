@@ -3,12 +3,95 @@
  */
 import type { ToolCall } from "../llm-gateway/types";
 import type { ToolRegistry } from "../tool-registry";
+import type { AgentTool } from "./types";
 
 export interface ParsedToolCall {
   name: string;
   params: Record<string, unknown>;
   id: string;
   error?: string;
+}
+
+function validateSchema(value: unknown, schema: Record<string, unknown>, path: string): string[] {
+  const errors: string[] = [];
+  const expected = schema.type;
+  const typeMatches =
+    expected === undefined ||
+    (expected === "object" && typeof value === "object" && value !== null && !Array.isArray(value)) ||
+    (expected === "array" && Array.isArray(value)) ||
+    (expected === "string" && typeof value === "string") ||
+    (expected === "number" && typeof value === "number" && Number.isFinite(value)) ||
+    (expected === "integer" && typeof value === "number" && Number.isInteger(value)) ||
+    (expected === "boolean" && typeof value === "boolean") ||
+    (expected === "null" && value === null);
+  if (!typeMatches) return [`${path} must be ${String(expected)}`];
+
+  if (Array.isArray(schema.enum) && !schema.enum.some((candidate) => Object.is(candidate, value))) {
+    errors.push(`${path} must be one of the allowed values`);
+  }
+  if (typeof value === "string") {
+    if (typeof schema.minLength === "number" && value.length < schema.minLength) {
+      errors.push(`${path} must contain at least ${schema.minLength} characters`);
+    }
+    if (typeof schema.maxLength === "number" && value.length > schema.maxLength) {
+      errors.push(`${path} must contain at most ${schema.maxLength} characters`);
+    }
+    if (typeof schema.pattern === "string" && !new RegExp(schema.pattern).test(value)) {
+      errors.push(`${path} must match the configured pattern`);
+    }
+  }
+  if (typeof value === "number") {
+    if (typeof schema.minimum === "number" && value < schema.minimum) {
+      errors.push(`${path} must be at least ${schema.minimum}`);
+    }
+    if (typeof schema.maximum === "number" && value > schema.maximum) {
+      errors.push(`${path} must be at most ${schema.maximum}`);
+    }
+  }
+  if (Array.isArray(value)) {
+    if (typeof schema.minItems === "number" && value.length < schema.minItems) {
+      errors.push(`${path} must contain at least ${schema.minItems} items`);
+    }
+    if (typeof schema.maxItems === "number" && value.length > schema.maxItems) {
+      errors.push(`${path} must contain at most ${schema.maxItems} items`);
+    }
+    if (typeof schema.items === "object" && schema.items !== null) {
+      value.forEach((item, index) => {
+        errors.push(...validateSchema(item, schema.items as Record<string, unknown>, `${path}[${index}]`));
+      });
+    }
+  }
+  if (typeof value === "object" && value !== null && !Array.isArray(value)) {
+    const record = value as Record<string, unknown>;
+    const properties =
+      typeof schema.properties === "object" && schema.properties !== null
+        ? schema.properties as Record<string, Record<string, unknown>>
+        : {};
+    const required = Array.isArray(schema.required)
+      ? schema.required.filter((name): name is string => typeof name === "string")
+      : [];
+    for (const name of required) {
+      if (!(name in record)) errors.push(`${path}.${name} is required`);
+    }
+    if (schema.additionalProperties === false) {
+      for (const name of Object.keys(record)) {
+        if (!(name in properties)) errors.push(`${path}.${name} is not allowed`);
+      }
+    }
+    for (const [name, propertySchema] of Object.entries(properties)) {
+      if (name in record) errors.push(...validateSchema(record[name], propertySchema, `${path}.${name}`));
+    }
+  }
+  return errors;
+}
+
+/** Validate a call against the schema carried by an AgentTool. */
+export function validateAgentToolArguments(
+  tool: AgentTool,
+  args: unknown,
+): { valid: boolean; errors: string[] } {
+  const errors = validateSchema(args, tool.parameters, "parameters");
+  return { valid: errors.length === 0, errors };
 }
 
 /**

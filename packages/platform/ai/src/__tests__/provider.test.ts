@@ -8,9 +8,9 @@ import { getPresetById, getPresets } from '../services/provider-presets';
 // ============ Presets ============
 
 describe('ProviderPresets', () => {
-  test('getPresets returns 14 presets', () => {
+  test('getPresets returns 21 presets', () => {
     const presets = getPresets();
-    expect(presets.length).toBe(14);
+    expect(presets.length).toBe(21);
   });
 
   test('each preset has required fields', () => {

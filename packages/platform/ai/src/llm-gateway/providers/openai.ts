@@ -26,7 +26,20 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   maxContextLength: 128000,
   supportsVision: true,
   supportsStreaming: true,
+  supportsReasoning: true,
+  supportsStructuredOutput: true,
 };
+
+function applyThinking(body: Record<string, unknown>, params: ChatParams): void {
+  if (params.thinkingLevel && params.thinkingLevel !== 'off') {
+    // OpenAI reasoning_effort 仅接受 low/medium/high；将 minimal 视为 low、xhigh 视为 high
+    const effort =
+      params.thinkingLevel === 'minimal' ? 'low'
+      : params.thinkingLevel === 'xhigh' ? 'high'
+      : params.thinkingLevel;
+    body.reasoning_effort = effort;
+  }
+}
 
 export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider {
   const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
@@ -53,16 +66,17 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
           },
         }));
       }
+      applyThinking(body, params);
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${params.apiKey ?? config.apiKey}`,
           ...config.headers,
         },
         body: JSON.stringify(body),
-        signal: params.signal,
+        ...(params.signal ? { signal: params.signal } : {}),
       });
 
       if (!response.ok) {
@@ -85,6 +99,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
       };
 
       const choice = data.choices[0];
+      if (!choice) throw new Error('OpenAI returned no choices');
       const toolCalls = choice.message.tool_calls?.map((tc) => ({
         id: tc.id,
         name: tc.function.name,
@@ -93,7 +108,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
 
       return {
         content: choice.message.content ?? '',
-        toolCalls: toolCalls?.length ? toolCalls : undefined,
+        ...(toolCalls?.length ? { toolCalls } : {}),
         usage: {
           promptTokens: data.usage.prompt_tokens,
           completionTokens: data.usage.completion_tokens,
@@ -128,16 +143,17 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
           },
         }));
       }
+      applyThinking(body, params);
 
       const response = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${config.apiKey}`,
+          Authorization: `Bearer ${params.apiKey ?? config.apiKey}`,
           ...config.headers,
         },
         body: JSON.stringify(body),
-        signal: params.signal,
+        ...(params.signal ? { signal: params.signal } : {}),
       });
 
       if (!response.ok) {
@@ -155,11 +171,21 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
       const reader = response.body!.getReader();
       const decoder = new TextDecoder();
       let buffer = '';
-      let currentToolCall: {
+      const currentToolCalls = new Map<number, {
         id: string;
         name: string;
         arguments: string;
-      } | null = null;
+      }>();
+
+      function toToolCall(call: { id: string; name: string; arguments: string }) {
+        let args: Record<string, unknown> = {};
+        try {
+          args = JSON.parse(call.arguments || '{}') as Record<string, unknown>;
+        } catch {
+          // Invalid arguments are surfaced to the AgentTool schema validator.
+        }
+        return { id: call.id, name: call.name, arguments: args };
+      }
 
       try {
         while (true) {
@@ -177,17 +203,13 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
 
             const data = trimmed.slice(6);
             if (data === '[DONE]') {
-              if (currentToolCall) {
+              for (const [, currentToolCall] of [...currentToolCalls].sort(([left], [right]) => left - right)) {
                 yield {
                   type: 'tool_call_start',
-                  toolCall: {
-                    id: currentToolCall.id,
-                    name: currentToolCall.name,
-                    arguments: JSON.parse(currentToolCall.arguments) as Record<string, unknown>,
-                  },
+                  toolCall: toToolCall(currentToolCall),
                 };
-                currentToolCall = null;
               }
+              currentToolCalls.clear();
               yield { type: 'done' };
               return;
             }
@@ -197,6 +219,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
                 delta?: {
                   content?: string;
                   tool_calls?: Array<{
+                    index?: number;
                     id?: string;
                     function?: { name?: string; arguments?: string };
                   }>;
@@ -233,47 +256,35 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
             // 处理 tool calls
             if (choice.delta?.tool_calls) {
               for (const tc of choice.delta.tool_calls) {
+                const index = tc.index ?? 0;
                 if (tc.id) {
-                  if (currentToolCall) {
-                    yield {
-                      type: 'tool_call_start',
-                      toolCall: {
-                        id: currentToolCall.id,
-                        name: currentToolCall.name,
-                        arguments: JSON.parse(currentToolCall.arguments) as Record<string, unknown>,
-                      },
-                    };
-                  }
-                  currentToolCall = {
+                  currentToolCalls.set(index, {
                     id: tc.id,
                     name: tc.function?.name ?? '',
                     arguments: '',
-                  };
-                  if (tc.function?.name) {
-                    currentToolCall.name = tc.function.name;
-                  }
+                  });
                 }
+                const currentToolCall = currentToolCalls.get(index);
+                if (tc.function?.name && currentToolCall) currentToolCall.name = tc.function.name;
                 if (tc.function?.arguments) {
-                  currentToolCall!.arguments += tc.function.arguments;
+                  if (currentToolCall) currentToolCall.arguments += tc.function.arguments;
                   yield {
                     type: 'tool_call_delta',
-                    toolCallDelta: { arguments: tc.function.arguments },
+                    toolCallDelta: {
+                      ...(currentToolCall ? { id: currentToolCall.id, name: currentToolCall.name } : {}),
+                      arguments: tc.function.arguments,
+                    },
                   };
                 }
               }
             }
 
             // 处理 finish_reason
-            if (choice.finish_reason === 'tool_calls' && currentToolCall) {
-              yield {
-                type: 'tool_call_start',
-                toolCall: {
-                  id: currentToolCall.id,
-                  name: currentToolCall.name,
-                  arguments: JSON.parse(currentToolCall.arguments) as Record<string, unknown>,
-                },
-              };
-              currentToolCall = null;
+            if (choice.finish_reason === 'tool_calls') {
+              for (const [, currentToolCall] of [...currentToolCalls].sort(([left], [right]) => left - right)) {
+                yield { type: 'tool_call_start', toolCall: toToolCall(currentToolCall) };
+              }
+              currentToolCalls.clear();
             }
           }
         }

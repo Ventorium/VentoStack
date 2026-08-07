@@ -4,6 +4,7 @@
 export type {
   ConversationMemory,
   LongTermMemory,
+  MemoryScope,
   MemoryService,
 } from "./types";
 export { createMemoryService } from "./service";

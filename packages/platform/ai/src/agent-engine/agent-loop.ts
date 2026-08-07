@@ -1,18 +1,23 @@
 import type { KnowledgeBaseService } from '../knowledge-base/types';
-import type { ChatMessage, LLMGateway, StreamChunk, ToolCall } from '../llm-gateway/types';
+import type { ChatMessage, LLMGateway, StreamChunk, ThinkingLevel, ToolCall } from '../llm-gateway/types';
+import type { Tracer, SpanHandle } from '@ventostack/observability';
 import type { MemoryService } from '../memory/types';
+import type { McpToolSource } from './mcp-tool-source';
+import type { Skill } from '../skills/types';
+import { formatSkillInvocation } from '../skills/system-prompt';
 import type { ToolRegistry } from '../tool-registry';
-import type { AgentEventEmitter, AgentEventMessage } from './events';
+import type { AgentEventEmitter, AgentEventMessage, AgentToolResultEventMessage } from './events';
 import { createEventEmitter } from './events';
 import { fitMessagesToBudget } from './prompt-builder';
 import { type PromptGuard, createPromptGuard } from './prompt-guard';
-import { parseToolCalls } from './tool-call-handler';
+import { validateAgentToolArguments } from './tool-call-handler';
 import type {
   AgentContext,
   AgentLoopConfig,
   AgentTool,
   AgentToolResult,
   ToolExecutionMode,
+  ToolCallAuthorizer,
 } from './types';
 
 // ---- 配置与依赖 ----
@@ -24,6 +29,8 @@ export interface AgentConfig {
   model: string;
   tools?: string[];
   knowledgeBaseIds?: string[];
+  skillIds?: string[];
+  mcpServerIds?: string[];
   maxIterations?: number;
   maxTokensPerTurn?: number;
   temperature?: number;
@@ -50,6 +57,37 @@ export interface AgentLoopDeps {
   afterToolCall?: AgentLoopConfig['afterToolCall'];
   /** 工具执行模式 */
   toolExecutionMode?: ToolExecutionMode;
+  getSteeringMessages?: AgentLoopConfig['getSteeringMessages'];
+  getFollowUpMessages?: AgentLoopConfig['getFollowUpMessages'];
+  shouldStopAfterTurn?: AgentLoopConfig['shouldStopAfterTurn'];
+  mcpToolSource?: McpToolSource;
+  resolveSkills?: (skillIds: string[], tenantId: string) => Promise<Skill[]>;
+  authorizeToolCall?: ToolCallAuthorizer;
+  /**
+   * 在每次 LLM 请求前对消息做上下文变换（对齐参考实现 transformContext）。
+   */
+  transformContext?: AgentLoopConfig['transformContext'];
+  /**
+   * 在 turn 结束后、决定下一轮 provider 请求前调用（对齐参考实现 prepareNextTurn）。
+   */
+  prepareNextTurn?: AgentLoopConfig['prepareNextTurn'];
+  /**
+   * 动态解析每次 LLM 请求的 API Key（对齐参考实现 getApiKey）。
+   * 以模型字符串的 provider 前缀（如 "openai"）为参数。
+   */
+  getApiKey?: AgentLoopConfig['getApiKey'];
+  /**
+   * 解析工具结果声明的动态新工具（对齐参考实现 addedToolNames）。
+   * 解析成功后工具会被注册到运行时工具集，供后续轮次使用。
+   */
+  dynamicToolResolver?: (toolName: string, tenantId: string) => Promise<AgentTool | undefined> | AgentTool | undefined;
+  /**
+   * 分布式追踪器（@ventostack/observability）。提供时会在 agent 运行 / 每轮 LLM 请求 / 每次工具执行
+   * 处埋 span，记录 model、token、耗时、错误等属性。
+   */
+  tracer?: Tracer;
+  /** 父 span 上下文，用于把 AI 运行串进上层请求链路 */
+  parentSpanContext?: { traceId: string; spanId: string };
 }
 
 export interface AgentRunParams {
@@ -64,6 +102,13 @@ export interface AgentRunParams {
   skillIds?: string[];
   mcpServerIds?: string[];
   knowledgeBaseIds?: string[];
+  /** Runtime overrides used by higher-level harnesses. */
+  systemPrompt?: string;
+  model?: string;
+  history?: ChatMessage[];
+  thinkingLevel?: ThinkingLevel;
+  temperature?: number;
+  maxTokens?: number;
 }
 
 export interface AgentLoop {
@@ -125,9 +170,9 @@ function wrapRegistryTools(registry: ToolRegistry, filterTools?: string[]): Agen
         terminate: false,
       };
     },
-    requiresApproval: toolDef.requiresApproval,
-    riskLevel: toolDef.riskLevel,
-    timeout: toolDef.timeout,
+    ...(toolDef.requiresApproval === undefined ? {} : { requiresApproval: toolDef.requiresApproval }),
+    ...(toolDef.riskLevel === undefined ? {} : { riskLevel: toolDef.riskLevel }),
+    ...(toolDef.timeout === undefined ? {} : { timeout: toolDef.timeout }),
   }));
 }
 
@@ -137,7 +182,7 @@ interface PreparedToolCall {
   kind: 'prepared';
   toolCall: { id: string; name: string; arguments: Record<string, unknown> };
   tool: AgentTool;
-  args: unknown;
+  args: Record<string, unknown>;
 }
 
 interface ImmediateResult {
@@ -149,11 +194,12 @@ interface ImmediateResult {
 type PrepareResult = PreparedToolCall | ImmediateResult;
 
 async function prepareToolCall(
-  _context: AgentContext,
+  context: AgentContext,
   assistantMessage: AgentEventMessage,
   toolCall: { id: string; name: string; arguments: Record<string, unknown> },
   agentTools: AgentTool[],
   beforeToolCall: AgentLoopConfig['beforeToolCall'],
+  authorizeToolCall: ToolCallAuthorizer | undefined,
   signal?: AbortSignal,
 ): Promise<PrepareResult> {
   const tool = agentTools.find((t) => t.name === toolCall.name);
@@ -172,14 +218,57 @@ async function prepareToolCall(
       args = tool.prepareArguments(args);
     }
 
+    const validation = validateAgentToolArguments(tool, args);
+    if (!validation.valid) {
+      return {
+        kind: 'immediate',
+        result: createErrorToolResult(`Invalid tool arguments: ${validation.errors.join('; ')}`),
+        isError: true,
+      };
+    }
+    if (typeof args !== 'object' || args === null || Array.isArray(args)) {
+      return {
+        kind: 'immediate',
+        result: createErrorToolResult('Tool arguments must be an object'),
+        isError: true,
+      };
+    }
+    const validatedArgs = args as Record<string, unknown>;
+
     // beforeToolCall 钩子
     if (beforeToolCall) {
-      const hookResult = await beforeToolCall({ assistantMessage, toolCall, args }, signal);
-      if (hookResult.skip) {
+      const hookResult = await beforeToolCall(
+        { assistantMessage, toolCall, args: validatedArgs, context },
+        signal,
+      );
+      if (hookResult?.block) {
         return {
           kind: 'immediate',
-          result: createErrorToolResult(hookResult.reason ?? 'Tool call skipped by hook'),
-          isError: false,
+          result: createErrorToolResult(hookResult.reason ?? 'Tool call blocked by hook'),
+          isError: true,
+        };
+      }
+    }
+
+    if (tool.requiresApproval) {
+      if (!authorizeToolCall) {
+        return {
+          kind: 'immediate',
+          result: createErrorToolResult(`Tool ${tool.name} requires approval`),
+          isError: true,
+        };
+      }
+      const authorization = await authorizeToolCall(
+        { assistantMessage, toolCall, args: validatedArgs, context, tool },
+        signal,
+      );
+      if (!authorization.approved) {
+        return {
+          kind: 'immediate',
+          result: createErrorToolResult(
+            authorization.reason ?? `Tool ${tool.name} was not approved`,
+          ),
+          isError: true,
         };
       }
     }
@@ -188,7 +277,7 @@ async function prepareToolCall(
       kind: 'prepared',
       toolCall,
       tool,
-      args,
+      args: validatedArgs,
     };
   } catch (err) {
     return {
@@ -205,6 +294,100 @@ interface FinalizedToolCall {
   toolCall: { id: string; name: string; arguments: Record<string, unknown> };
   result: AgentToolResult;
   durationMs: number;
+  isError: boolean;
+}
+
+function mergeToolResult(
+  result: AgentToolResult,
+  override: Awaited<ReturnType<NonNullable<AgentLoopConfig['afterToolCall']>>>,
+): { result: AgentToolResult; isErrorOverride?: boolean } {
+  if (!override) return { result };
+  return {
+    result: {
+      content: override.content ?? result.content,
+      details: override.details ?? result.details,
+      ...((override.terminate ?? result.terminate) === undefined
+        ? {}
+        : { terminate: override.terminate ?? result.terminate }),
+      ...((override.addedToolNames ?? result.addedToolNames) === undefined
+        ? {}
+        : { addedToolNames: override.addedToolNames ?? result.addedToolNames }),
+    },
+    ...(override.isError === undefined ? {} : { isErrorOverride: override.isError }),
+  };
+}
+
+function createToolSignal(signal: AbortSignal | undefined, timeout: number | undefined): AbortSignal | undefined {
+  const signals: AbortSignal[] = [];
+  if (signal) signals.push(signal);
+  if (timeout !== undefined) signals.push(AbortSignal.timeout(timeout));
+  if (signals.length === 0) return undefined;
+  return signals.length === 1 ? signals[0]! : AbortSignal.any(signals);
+}
+
+async function executePreparedToolCall(
+  context: AgentContext,
+  assistantMessage: AgentEventMessage,
+  prepared: PreparedToolCall,
+  afterToolCall: AgentLoopConfig['afterToolCall'],
+  emit: (event: Parameters<AgentEventEmitter['emit']>[0], signal?: AbortSignal) => Promise<void>,
+  signal?: AbortSignal,
+  tracer?: Tracer,
+  parentSpanContext?: { traceId: string; spanId: string },
+): Promise<FinalizedToolCall> {
+  const { toolCall, tool, args } = prepared;
+  const start = Date.now();
+  const toolSpan = tracer ? tracer.startSpan('ai.tool', parentSpanContext) : null;
+  toolSpan?.setAttribute('tool', toolCall.name);
+  await emit({ type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args }, signal);
+
+  let result: AgentToolResult;
+  let isError = false;
+  try {
+    result = await tool.execute(
+      toolCall.id,
+      args,
+      createToolSignal(signal, tool.timeout),
+      (partialResult) => {
+        void emit({
+          type: 'tool_execution_update',
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          args,
+          partialResult,
+        }, signal);
+      },
+    );
+
+    if (afterToolCall) {
+      const override = await afterToolCall(
+        { assistantMessage, toolCall, args, result, isError, context },
+        signal,
+      );
+      const merged = mergeToolResult(result, override);
+      result = merged.result;
+      if (merged.isErrorOverride !== undefined) isError = merged.isErrorOverride;
+    }
+  } catch (err) {
+    isError = true;
+    result = createErrorToolResult(
+      `Tool execution failed: ${err instanceof Error ? err.message : String(err)}`,
+    );
+  } finally {
+    toolSpan?.setAttribute('duration_ms', Date.now() - start);
+    toolSpan?.setAttribute('is_error', isError);
+    toolSpan?.setStatus(isError ? 'error' : 'ok');
+    toolSpan?.end();
+  }
+
+  await emit({
+    type: 'tool_execution_end',
+    toolCallId: toolCall.id,
+    toolName: toolCall.name,
+    result,
+    isError,
+  }, signal);
+  return { toolCall, result, durationMs: Date.now() - start, isError };
 }
 
 async function executeToolCallsSequential(
@@ -213,9 +396,12 @@ async function executeToolCallsSequential(
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>,
   agentTools: AgentTool[],
   beforeToolCall: AgentLoopConfig['beforeToolCall'],
+  authorizeToolCall: ToolCallAuthorizer | undefined,
   afterToolCall: AgentLoopConfig['afterToolCall'],
-  _emit: (event: AgentEventMessage, signal?: AbortSignal) => Promise<void>,
+  emit: (event: Parameters<AgentEventEmitter['emit']>[0], signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
+  tracer?: Tracer,
+  parentSpanContext?: { traceId: string; spanId: string },
 ): Promise<FinalizedToolCall[]> {
   const results: FinalizedToolCall[] = [];
   for (const tc of toolCalls) {
@@ -226,31 +412,16 @@ async function executeToolCallsSequential(
       tc,
       agentTools,
       beforeToolCall,
+      authorizeToolCall,
       signal,
     );
     if (prepared.kind === 'immediate') {
-      results.push({ toolCall: tc, result: prepared.result, durationMs: 0 });
+      await emit({ type: 'tool_execution_start', toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
+      await emit({ type: 'tool_execution_end', toolCallId: tc.id, toolName: tc.name, result: prepared.result, isError: prepared.isError }, signal);
+      results.push({ toolCall: tc, result: prepared.result, durationMs: 0, isError: prepared.isError });
       continue;
     }
-    const { tool, args } = prepared;
-    const start = Date.now();
-    try {
-      const result = await tool.execute(tc.id, args);
-      const durationMs = Date.now() - start;
-      results.push({ toolCall: tc, result, durationMs });
-      if (afterToolCall) {
-        await afterToolCall({ assistantMessage, toolCall: tc, result, durationMs }, signal);
-      }
-    } catch (err) {
-      const durationMs = Date.now() - start;
-      results.push({
-        toolCall: tc,
-        result: createErrorToolResult(
-          `Tool execution failed: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-        durationMs,
-      });
-    }
+    results.push(await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext));
   }
   return results;
 }
@@ -261,47 +432,40 @@ async function executeToolCallsParallel(
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>,
   agentTools: AgentTool[],
   beforeToolCall: AgentLoopConfig['beforeToolCall'],
+  authorizeToolCall: ToolCallAuthorizer | undefined,
   afterToolCall: AgentLoopConfig['afterToolCall'],
-  _emit: (event: AgentEventMessage, signal?: AbortSignal) => Promise<void>,
+  emit: (event: Parameters<AgentEventEmitter['emit']>[0], signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
+  tracer?: Tracer,
+  parentSpanContext?: { traceId: string; spanId: string },
 ): Promise<FinalizedToolCall[]> {
-  const results: FinalizedToolCall[] = [];
-  const promises = toolCalls.map(async (tc) => {
-    if (signal?.aborted) return;
+  const preparedCalls: Array<{ index: number; prepared: PrepareResult; toolCall: PreparedToolCall['toolCall'] }> = [];
+  for (const [index, tc] of toolCalls.entries()) {
+    if (signal?.aborted) break;
     const prepared = await prepareToolCall(
       context,
       assistantMessage,
       tc,
       agentTools,
       beforeToolCall,
+      authorizeToolCall,
       signal,
     );
+    preparedCalls.push({ index, prepared, toolCall: tc });
+  }
+
+  const results = await Promise.all(preparedCalls.map(async ({ index, prepared, toolCall }) => {
     if (prepared.kind === 'immediate') {
-      results.push({ toolCall: tc, result: prepared.result, durationMs: 0 });
-      return;
+      await emit({ type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments }, signal);
+      await emit({ type: 'tool_execution_end', toolCallId: toolCall.id, toolName: toolCall.name, result: prepared.result, isError: prepared.isError }, signal);
+      return { index, finalized: { toolCall, result: prepared.result, durationMs: 0, isError: prepared.isError } };
     }
-    const { tool, args } = prepared;
-    const start = Date.now();
-    try {
-      const result = await tool.execute(tc.id, args);
-      const durationMs = Date.now() - start;
-      results.push({ toolCall: tc, result, durationMs });
-      if (afterToolCall) {
-        await afterToolCall({ assistantMessage, toolCall: tc, result, durationMs }, signal);
-      }
-    } catch (err) {
-      const durationMs = Date.now() - start;
-      results.push({
-        toolCall: tc,
-        result: createErrorToolResult(
-          `Tool execution failed: ${err instanceof Error ? err.message : String(err)}`,
-        ),
-        durationMs,
-      });
-    }
-  });
-  await Promise.all(promises);
-  return results;
+    return {
+      index,
+      finalized: await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext),
+    };
+  }));
+  return results.sort((a, b) => a.index - b.index).map(({ finalized }) => finalized);
 }
 
 // ---- 主循环 ----
@@ -309,7 +473,7 @@ async function executeToolCallsParallel(
 export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
   const guard = deps.promptGuard ?? createPromptGuard();
   const emitter = deps.eventEmitter ?? createEventEmitter();
-  const toolExecMode = deps.toolExecutionMode ?? 'sequential';
+  const toolExecMode = deps.toolExecutionMode ?? 'parallel';
 
   return {
     async *runStream(params: AgentRunParams): AsyncIterable<StreamChunk> {
@@ -325,9 +489,17 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
       }
 
-      const systemPrompt = agentConfig?.systemPrompt ?? '你是一个智能助手。';
-      const model = agentConfig?.model ?? 'default';
+      let systemPrompt = params.systemPrompt ?? agentConfig?.systemPrompt ?? '你是一个智能助手。';
+      let model = params.model ?? agentConfig?.model ?? 'default';
       const maxIterations = agentConfig?.maxIterations ?? 10;
+
+      const skillIds = params.skillIds ?? agentConfig?.skillIds ?? [];
+      if (deps.resolveSkills && skillIds.length > 0) {
+        const skills = await deps.resolveSkills(skillIds, tenantId);
+        if (skills.length > 0) {
+          systemPrompt = `${systemPrompt}\n\n${skills.map((skill) => formatSkillInvocation(skill)).join("\n\n")}`;
+        }
+      }
 
       // 2. 根据 Agent 配置和过滤器获取工具
       let agentTools = deps.agentTools ?? [];
@@ -351,6 +523,16 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           effectiveTools.length > 0 ? effectiveTools : undefined,
         );
       }
+      const mcpServerIds = params.mcpServerIds ?? agentConfig?.mcpServerIds ?? [];
+      if (deps.mcpToolSource && mcpServerIds.length > 0) {
+        agentTools = [
+          ...agentTools,
+          ...(await deps.mcpToolSource.loadTools(mcpServerIds, tenantId)),
+        ];
+      }
+
+      // 运行时工具集：后续轮次可通过工具结果的 addedToolNames 动态扩充
+      const runtimeTools: AgentTool[] = [...agentTools];
 
       // 3. 输入安全检查
       const inputCheck = guard.checkInput(message);
@@ -378,10 +560,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       }
 
       // 4. 加载对话历史
-      let history: ChatMessage[] = [];
-      if (deps.memory && params.sessionId) {
+      let history: ChatMessage[] = params.history ? [...params.history] : [];
+      if (!params.history && deps.memory && params.sessionId) {
         try {
-          history = await deps.memory.getHistory(params.sessionId, 20);
+          history = (await deps.memory.getHistory(params.sessionId, { tenantId, userId }, 20)).flatMap((item) =>
+            item.role === 'system' || item.role === 'user' || item.role === 'assistant' || item.role === 'tool'
+              ? [{ role: item.role, content: item.content }]
+              : [],
+          );
         } catch {
           /* 失败则以空历史继续 */
         }
@@ -395,12 +581,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         deps.knowledgeBase
       ) {
         try {
-          const kbResults = await deps.knowledgeBase.search(message, {
-            knowledgeBaseIds: params.knowledgeBaseIds ?? agentConfig.knowledgeBaseIds,
-            limit: 3,
-          });
+          const knowledgeBaseIds = params.knowledgeBaseIds ?? agentConfig.knowledgeBaseIds;
+          const kbResults = (await Promise.all(
+            knowledgeBaseIds.map((knowledgeBaseId) =>
+              deps.knowledgeBase!.grep(knowledgeBaseId, message, undefined, tenantId, 3),
+            ),
+          )).flat().sort((a, b) => b.score - a.score).slice(0, 3);
           if (kbResults.length > 0) {
-            kbContext = `\n\n参考知识库内容：\n${kbResults.map((r) => `- ${r.content}`).join('\n')}`;
+            kbContext = `\n\n参考知识库内容：\n${kbResults.map((r) => `- ${r.excerpt}`).join('\n')}`;
           }
         } catch {
           /* 知识库搜索失败不影响对话 */
@@ -414,12 +602,20 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         { role: 'user', content: message },
       ];
 
-      const context: AgentContext = { systemPrompt, messages, tools: agentTools };
+      const context: AgentContext = {
+        agentId,
+        userId,
+        tenantId,
+        ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+        systemPrompt,
+        messages,
+        tools: runtimeTools,
+      };
 
-      // 7. 工具定义
-      const toolDefs =
-        agentTools.length > 0
-          ? agentTools.map((t) => ({
+      // 7. 工具定义（每轮从运行时工具集重算，支持动态工具引入）
+      const buildToolDefs = () =>
+        runtimeTools.length > 0
+          ? runtimeTools.map((t) => ({
               name: t.name,
               description: t.description,
               parameters: t.parameters as {
@@ -435,27 +631,116 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       let fullContent = '';
 
       await emitter.emit({ type: 'agent_start' }, signal);
-      await emitter.emit({ type: 'turn_start' }, signal);
+
+      // ---- Telemetry spans ----
+      const tracer = deps.tracer;
+      const runSpan: SpanHandle | null = tracer
+        ? tracer.startSpan('ai.run', deps.parentSpanContext)
+        : null;
+      runSpan?.setAttribute('agent_id', agentId);
+      runSpan?.setAttribute('tenant_id', tenantId);
+      runSpan?.setAttribute('model', model);
+      runSpan?.setAttribute('session_id', params.sessionId ?? '');
+
+      function spanError(span: SpanHandle | null, error: unknown): void {
+        if (!span) return;
+        span.setAttribute('error', error instanceof Error ? error.message : String(error));
+        span.setStatus('error');
+      }
+
+      try {
+      // prepareNextTurn：替换下一轮请求的 model / systemPrompt
+      let turnStartIndex = 0;
+      async function applyPrepareNextTurn(
+        assistantMsg: AgentEventMessage,
+        toolResults: AgentToolResultEventMessage[],
+      ): Promise<void> {
+        if (!deps.prepareNextTurn) return;
+        const newMessages = messages.slice(turnStartIndex) as AgentEventMessage[];
+        const update = await deps.prepareNextTurn(
+          { message: assistantMsg, toolResults, context, newMessages },
+          signal,
+        );
+        if (!update) return;
+        if (update.model !== undefined && update.model !== model) {
+          model = update.model;
+        }
+        if (update.systemPrompt !== undefined && update.systemPrompt !== systemPrompt) {
+          systemPrompt = update.systemPrompt;
+          context.systemPrompt = systemPrompt;
+          const systemIdx = messages.findIndex((m) => m.role === 'system');
+          if (systemIdx >= 0) messages[systemIdx] = { role: 'system', content: systemPrompt };
+        }
+      }
+
+      // 动态工具：将工具结果声明的 addedToolNames 解析并注册到运行时工具集
+      async function applyAddedTools(
+        addedToolNames: string[] | undefined,
+      ): Promise<AgentTool[]> {
+        if (!addedToolNames || addedToolNames.length === 0 || !deps.dynamicToolResolver) return [];
+        const previousToolNames = runtimeTools.map((t) => t.name);
+        const added: AgentTool[] = [];
+        for (const name of addedToolNames) {
+          if (runtimeTools.some((t) => t.name === name)) continue;
+          const tool = await deps.dynamicToolResolver(name, tenantId);
+          if (tool) {
+            runtimeTools.push(tool);
+            added.push(tool);
+          }
+        }
+        if (added.length > 0) {
+          await emitter.emit(
+            { type: 'tools_added', toolNames: added.map((t) => t.name), previousToolNames },
+            signal,
+          );
+        }
+        return added;
+      }
 
       while (iteration < maxIterations) {
         iteration++;
         if (signal?.aborted) break;
+        await emitter.emit({ type: 'turn_start' }, signal);
+        // 记录本轮起始消息数，用于 prepareNextTurn 的 newMessages
+        turnStartIndex = messages.length;
 
         await emitter.emit(
           { type: 'before_provider_request', model, messageCount: messages.length },
           signal,
         );
 
+        // 上下文变换钩子（对齐参考实现 transformContext；钩子抛错时回退原消息）
+        let turnMessages: ChatMessage[] = messages;
+        if (deps.transformContext) {
+          try {
+            const transformed = await deps.transformContext(messages, signal);
+            turnMessages = Array.isArray(transformed) ? transformed : messages;
+          } catch {
+            turnMessages = messages;
+          }
+        }
+
         // Token 预算裁剪
-        const trimmedMessages = fitMessagesToBudget(messages);
+        const trimmedMessages = fitMessagesToBudget(turnMessages, systemPrompt);
+
+        // 动态 API Key（对齐参考实现 getApiKey；无 provider 前缀时回退网关默认 provider）
+        const apiKeyProvider = model.includes('/') ? (model.split('/')[0] ?? model) : deps.llmGateway.getDefaultProvider().name;
+        const resolvedApiKey = deps.getApiKey ? await deps.getApiKey(apiKeyProvider) : undefined;
 
         // 调用 LLM
+        const effectiveTemperature = params.temperature ?? agentConfig?.temperature;
+        const effectiveMaxTokens = params.maxTokens ?? agentConfig?.maxTokensPerTurn;
+        const toolDefs = buildToolDefs();
         const stream = deps.llmGateway.chatStream({
           model,
           tenantId,
           messages: trimmedMessages,
-          tools: toolDefs,
-          signal,
+          ...(toolDefs === undefined ? {} : { tools: toolDefs }),
+          ...(signal === undefined ? {} : { signal }),
+          ...(params.thinkingLevel === undefined ? {} : { thinkingLevel: params.thinkingLevel }),
+          ...(effectiveTemperature === undefined ? {} : { temperature: effectiveTemperature }),
+          ...(effectiveMaxTokens === undefined ? {} : { maxTokens: effectiveMaxTokens }),
+          ...(resolvedApiKey === undefined ? {} : { apiKey: resolvedApiKey }),
         });
 
         let assistantContent = '';
@@ -490,7 +775,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         const assistantEventMsg: AgentEventMessage = {
           role: 'assistant',
           content: assistantContent,
-          toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+          ...(toolCalls.length > 0 ? { toolCalls } : {}),
           timestamp: Date.now(),
         };
 
@@ -505,57 +790,74 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         await emitter.emit({ type: 'message_start', message: assistantEventMsg }, signal);
         await emitter.emit({ type: 'message_end', message: assistantEventMsg }, signal);
 
-        // 如果没有工具调用，循环结束
-        if (toolCalls.length === 0) break;
+        // 如果没有工具调用，先处理 steering/follow-up，再决定是否结束
+        if (toolCalls.length === 0) {
+          await emitter.emit({ type: 'turn_end', message: assistantEventMsg, toolResults: [] }, signal);
+          runSpan?.addEvent('ai.turn', { iteration, model, tool_calls: 0, output_chars: assistantContent.length });
+          await applyPrepareNextTurn(assistantEventMsg, []);
+          if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
 
-        // 执行工具调用
-        const parsed = parseToolCalls(toolCalls, deps.toolRegistry!);
-
-        // 转换为 agent tool calls 格式
-        const validToolCalls = parsed
-          .filter((tc) => !tc.error)
-          .map((tc) => ({ id: tc.id, name: tc.name, arguments: tc.params }));
-
-        // 错误的工具调用直接作为错误结果
-        const errorResults = parsed.filter((tc) => tc.error);
-
-        for (const errTc of errorResults) {
-          messages.push({
-            role: 'tool',
-            tool_call_id: errTc.id,
-            content: JSON.stringify({ error: true, message: errTc.error }),
-          });
+          const queued = [
+            ...((await deps.getSteeringMessages?.()) ?? []),
+            ...((await deps.getFollowUpMessages?.()) ?? []),
+          ];
+          if (queued.length === 0) break;
+          for (const queuedMessage of queued) {
+            messages.push(queuedMessage);
+            const eventMessage: AgentEventMessage = {
+              role: queuedMessage.role,
+              content: queuedMessage.content,
+              timestamp: Date.now(),
+            };
+            await emitter.emit({ type: 'message_start', message: eventMessage }, signal);
+            await emitter.emit({ type: 'message_end', message: eventMessage }, signal);
+          }
+          continue;
         }
 
-        if (validToolCalls.length === 0) continue;
+        const validToolCalls = toolCalls.map((tc) => ({
+          id: tc.id,
+          name: tc.name,
+          arguments: tc.arguments,
+        }));
 
-        // 执行工具
+        // 执行工具（使用运行时工具集，动态引入的工具可被调用）
         let finalized: FinalizedToolCall[];
-        if (toolExecMode === 'parallel') {
+        const hasSequentialTool = validToolCalls.some((call) =>
+          runtimeTools.find((tool) => tool.name === call.name)?.executionMode === 'sequential',
+        );
+        if (toolExecMode === 'parallel' && !hasSequentialTool) {
           finalized = await executeToolCallsParallel(
             context,
             assistantEventMsg,
             validToolCalls,
-            agentTools,
+            runtimeTools,
             deps.beforeToolCall,
+            deps.authorizeToolCall,
             deps.afterToolCall,
             (ev, s) => emitter.emit(ev, s),
             signal,
+            deps.tracer,
+            runSpan?.context(),
           );
         } else {
           finalized = await executeToolCallsSequential(
             context,
             assistantEventMsg,
             validToolCalls,
-            agentTools,
+            runtimeTools,
             deps.beforeToolCall,
+            deps.authorizeToolCall,
             deps.afterToolCall,
             (ev, s) => emitter.emit(ev, s),
             signal,
+            deps.tracer,
+            runSpan?.context(),
           );
         }
 
         // 将工具结果添加到消息
+        const toolResultEvents: AgentToolResultEventMessage[] = [];
         for (const fin of finalized) {
           const resultStr = fin.result.content
             .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
@@ -584,17 +886,70 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             tool_call_id: fin.toolCall.id,
             content: truncated,
           });
+
+          const toolMessage: AgentEventMessage = {
+            role: 'tool',
+            content: truncated,
+            toolCallId: fin.toolCall.id,
+            timestamp: Date.now(),
+          };
+          await emitter.emit({ type: 'message_start', message: toolMessage }, signal);
+          await emitter.emit({ type: 'message_end', message: toolMessage }, signal);
+
+          // 动态工具引入（对齐参考实现 addedToolNames）
+          const added = await applyAddedTools(fin.result.addedToolNames);
+          toolResultEvents.push({
+            toolCallId: fin.toolCall.id,
+            toolName: fin.toolCall.name,
+            content: truncated,
+            isError: fin.isError,
+            timestamp: Date.now(),
+            ...(added.length > 0 ? { addedToolNames: added.map((t) => t.name) } : {}),
+          });
         }
+
+        await emitter.emit({
+          type: 'turn_end',
+          message: assistantEventMsg,
+          toolResults: toolResultEvents,
+        }, signal);
+        runSpan?.addEvent('ai.turn', {
+          iteration,
+          model,
+          tool_calls: validToolCalls.length,
+          tool_results: toolResultEvents.length,
+          output_chars: assistantContent.length,
+        });
+
+        // prepareNextTurn（对齐参考实现）：替换下一轮 model / systemPrompt
+        await applyPrepareNextTurn(assistantEventMsg, toolResultEvents);
 
         // 检查提前终止
         if (isEarlyTermination(finalized)) break;
+
+        const steeringMessages = (await deps.getSteeringMessages?.()) ?? [];
+        if (steeringMessages.length > 0) {
+          for (const steeringMessage of steeringMessages) {
+            messages.push(steeringMessage);
+            const eventMessage: AgentEventMessage = {
+              role: steeringMessage.role,
+              content: steeringMessage.content,
+              timestamp: Date.now(),
+            };
+            await emitter.emit({ type: 'message_start', message: eventMessage }, signal);
+            await emitter.emit({ type: 'message_end', message: eventMessage }, signal);
+          }
+        }
+
+        if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
       }
 
       // 9. 保存对话
       if (deps.memory && params.sessionId) {
         try {
-          await deps.memory.appendMessage(params.sessionId, { role: 'user', content: message });
-          await deps.memory.appendMessage(params.sessionId, {
+          const memoryScope = { tenantId, userId };
+          await deps.memory.appendMessage(params.sessionId, memoryScope, { role: 'user', content: message });
+          await deps.memory.appendMessage(params.sessionId, memoryScope, {
             role: 'assistant',
             content: fullContent,
           });
@@ -605,19 +960,21 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
       await emitter.emit(
         {
-          type: 'turn_end',
-          message: { role: 'assistant', content: fullContent, timestamp: Date.now() },
-          toolResults: [],
-        },
-        signal,
-      );
-      await emitter.emit(
-        {
           type: 'agent_end',
           messages: [{ role: 'assistant', content: fullContent, timestamp: Date.now() }],
         },
         signal,
       );
+
+      runSpan?.setAttribute('iterations', iteration);
+      runSpan?.setAttribute('output_chars', fullContent.length);
+      runSpan?.setStatus('ok');
+      } catch (error) {
+        spanError(runSpan, error);
+        throw error;
+      } finally {
+        runSpan?.end();
+      }
 
       yield { type: 'done' };
     },

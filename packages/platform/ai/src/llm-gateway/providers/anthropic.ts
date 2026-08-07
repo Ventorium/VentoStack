@@ -30,7 +30,14 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   maxContextLength: 200000,
   supportsVision: true,
   supportsStreaming: true,
+  supportsReasoning: true,
 };
+
+function applyThinking(body: Record<string, unknown>, params: ChatParams): void {
+  if (!params.thinkingLevel || params.thinkingLevel === 'off') return;
+  const budgets = { minimal: 1024, low: 2048, medium: 4096, high: 8192, xhigh: 16384 } as const;
+  body.thinking = { type: 'enabled', budget_tokens: budgets[params.thinkingLevel] };
+}
 
 /**
  * 将标准 ChatMessage 转换为 Anthropic Messages API 格式
@@ -106,10 +113,10 @@ function convertTools(tools: ChatParams['tools']): Array<Record<string, unknown>
 export function createAnthropicProvider(config: AnthropicProviderConfig): LLMProvider {
   const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
 
-  function buildHeaders(): Record<string, string> {
+  function buildHeaders(apiKey?: string): Record<string, string> {
     return {
       'Content-Type': 'application/json',
-      'x-api-key': config.apiKey,
+      'x-api-key': apiKey ?? config.apiKey,
       'anthropic-version': API_VERSION,
       ...config.headers,
     };
@@ -127,15 +134,16 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): LLMPro
         max_tokens: params.maxTokens ?? 4096,
       };
       if (system) body.system = system;
-      if (params.temperature !== undefined) body.temperature = params.temperature;
+      if (params.temperature !== undefined && (!params.thinkingLevel || params.thinkingLevel === 'off')) body.temperature = params.temperature;
+      applyThinking(body, params);
       const tools = convertTools(params.tools);
       if (tools) body.tools = tools;
 
       const response = await fetch(`${baseUrl}/v1/messages`, {
         method: 'POST',
-        headers: buildHeaders(),
+        headers: buildHeaders(params.apiKey),
         body: JSON.stringify(body),
-        signal: params.signal,
+        ...(params.signal ? { signal: params.signal } : {}),
       });
 
       if (!response.ok) {
@@ -175,7 +183,7 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): LLMPro
 
       return {
         content,
-        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
         usage: {
           promptTokens: data.usage.input_tokens,
           completionTokens: data.usage.output_tokens,
@@ -200,15 +208,16 @@ export function createAnthropicProvider(config: AnthropicProviderConfig): LLMPro
         stream: true,
       };
       if (system) body.system = system;
-      if (params.temperature !== undefined) body.temperature = params.temperature;
+      if (params.temperature !== undefined && (!params.thinkingLevel || params.thinkingLevel === 'off')) body.temperature = params.temperature;
+      applyThinking(body, params);
       const tools = convertTools(params.tools);
       if (tools) body.tools = tools;
 
       const response = await fetch(`${baseUrl}/v1/messages`, {
         method: 'POST',
-        headers: buildHeaders(),
+        headers: buildHeaders(params.apiKey),
         body: JSON.stringify(body),
-        signal: params.signal,
+        ...(params.signal ? { signal: params.signal } : {}),
       });
 
       if (!response.ok) {

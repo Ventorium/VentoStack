@@ -4,6 +4,7 @@
 import { createRouter, handleError, parseBody, success } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { AgentLoop } from '../agent-engine/agent-loop';
+import type { MemoryService } from '../memory/types';
 import { createSSEResponse } from '../stream-engine/sse';
 
 export interface ConversationService {
@@ -26,6 +27,7 @@ export function createChatRoutes(
   conversationService: ConversationService,
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
+  memoryService?: MemoryService,
 ): Router {
   const router = createRouter();
   router.use(authMiddleware);
@@ -67,6 +69,28 @@ export function createChatRoutes(
       const userId = (ctx.user as { id?: string })?.id ?? '';
       await conversationService.delete(id, userId);
       return success(null);
+    } catch (e) {
+      return handleError(e);
+    }
+  });
+
+  // 分叉会话：从历史消息开启新的独立对话分支
+  router.post('/api/ai/conversations/:id/fork', perm('ai:chat', 'use'), async (ctx) => {
+    try {
+      if (!memoryService) throw new Error('Memory service is not configured');
+      const id = (ctx.params as Record<string, string>).id!;
+      const userId = (ctx.user as { id?: string })?.id ?? '';
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+      const body = await parseBody(ctx.request);
+      const { sessionId } = await memoryService.forkSession(id, { tenantId, userId }, {
+        sessionId: crypto.randomUUID(),
+        options: {
+          ...(body.entryId === undefined ? {} : { entryId: body.entryId as string }),
+          ...(body.position === undefined ? {} : { position: body.position as "before" | "at" }),
+          ...(body.scope === undefined ? {} : { scope: body.scope as "tree" | "branch" }),
+        },
+      });
+      return success({ sessionId });
     } catch (e) {
       return handleError(e);
     }

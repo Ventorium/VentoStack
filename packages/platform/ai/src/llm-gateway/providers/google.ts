@@ -16,8 +16,10 @@ import type {
 } from "../types";
 
 export interface GoogleProviderConfig {
+  name?: string;
   apiKey: string;
   baseUrl?: string;
+  headers?: Record<string, string>;
 }
 
 const DEFAULT_BASE_URL = "https://generativelanguage.googleapis.com";
@@ -27,7 +29,20 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   maxContextLength: 1048576,
   supportsVision: true,
   supportsStreaming: true,
+  supportsReasoning: true,
+  supportsStructuredOutput: true,
 };
+
+function buildGenerationConfig(params: ChatParams): Record<string, unknown> | undefined {
+  const config: Record<string, unknown> = {};
+  if (params.temperature !== undefined) config.temperature = params.temperature;
+  if (params.maxTokens !== undefined) config.maxOutputTokens = params.maxTokens;
+  if (params.thinkingLevel && params.thinkingLevel !== "off") {
+    const budgets = { minimal: 512, low: 1024, medium: 4096, high: 8192, xhigh: 16384 } as const;
+    config.thinkingConfig = { thinkingBudget: budgets[params.thinkingLevel] };
+  }
+  return Object.keys(config).length > 0 ? config : undefined;
+}
 
 /**
  * 将标准消息转换为 Gemini 格式
@@ -84,7 +99,7 @@ function convertMessages(messages: ChatParams["messages"]): {
     });
   }
 
-  return { systemInstruction, contents };
+  return { ...(systemInstruction ? { systemInstruction } : {}), contents };
 }
 
 function convertTools(
@@ -106,18 +121,15 @@ export function createGoogleProvider(
   const baseUrl = config.baseUrl ?? DEFAULT_BASE_URL;
 
   return {
-    name: "google",
+    name: config.name ?? "google",
     capabilities: DEFAULT_CAPABILITIES,
 
     async chat(params: ChatParams): Promise<ChatResult> {
       const { systemInstruction, contents } = convertMessages(params.messages);
       const body: Record<string, unknown> = { contents };
       if (systemInstruction) body.systemInstruction = systemInstruction;
-      if (params.temperature !== undefined)
-        body.generationConfig = {
-          temperature: params.temperature,
-          ...(params.maxTokens ? { maxOutputTokens: params.maxTokens } : {}),
-        };
+      const generationConfig = buildGenerationConfig(params);
+      if (generationConfig) body.generationConfig = generationConfig;
       const tools = convertTools(params.tools);
       if (tools) body.tools = [tools];
 
@@ -126,12 +138,12 @@ export function createGoogleProvider(
         : params.model;
 
       const response = await fetch(
-        `${baseUrl}/v1beta/models/${modelPath}:generateContent?key=${config.apiKey}`,
+        `${baseUrl}/v1beta/models/${modelPath}:generateContent?key=${params.apiKey ?? config.apiKey}`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...config.headers },
           body: JSON.stringify(body),
-          signal: params.signal,
+          ...(params.signal ? { signal: params.signal } : {}),
         },
       );
 
@@ -181,7 +193,7 @@ export function createGoogleProvider(
 
       return {
         content,
-        toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
+        ...(toolCalls.length > 0 ? { toolCalls } : {}),
         usage: {
           promptTokens: data.usageMetadata?.promptTokenCount ?? 0,
           completionTokens: data.usageMetadata?.candidatesTokenCount ?? 0,
@@ -202,11 +214,8 @@ export function createGoogleProvider(
       const { systemInstruction, contents } = convertMessages(params.messages);
       const body: Record<string, unknown> = { contents };
       if (systemInstruction) body.systemInstruction = systemInstruction;
-      if (params.temperature !== undefined)
-        body.generationConfig = {
-          temperature: params.temperature,
-          ...(params.maxTokens ? { maxOutputTokens: params.maxTokens } : {}),
-        };
+      const generationConfig = buildGenerationConfig(params);
+      if (generationConfig) body.generationConfig = generationConfig;
       const tools = convertTools(params.tools);
       if (tools) body.tools = [tools];
 
@@ -215,12 +224,12 @@ export function createGoogleProvider(
         : params.model;
 
       const response = await fetch(
-        `${baseUrl}/v1beta/models/${modelPath}:streamGenerateContent?alt=sse&key=${config.apiKey}`,
+        `${baseUrl}/v1beta/models/${modelPath}:streamGenerateContent?alt=sse&key=${params.apiKey ?? config.apiKey}`,
         {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...config.headers },
           body: JSON.stringify(body),
-          signal: params.signal,
+          ...(params.signal ? { signal: params.signal } : {}),
         },
       );
 

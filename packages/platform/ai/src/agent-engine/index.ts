@@ -31,6 +31,8 @@ export type {
 } from "./events";
 
 export { createAgentHarness } from "./harness";
+export { createMcpToolSource } from "./mcp-tool-source";
+export type { McpToolSource } from "./mcp-tool-source";
 export type {
   AgentHarness,
   AgentHarnessOptions,
@@ -57,6 +59,7 @@ export type {
   AfterToolCallContext,
   AfterToolCallResult,
   ToolUpdateCallback,
+  ToolCallAuthorizer,
 } from "./types";
 
 export { createDistributedLock } from "./distributed-lock";

@@ -1,281 +1,221 @@
 /**
- * 记忆系统服务（Markdown 文件存储模式）
- * 对话历史和长期记忆都以 .md 文件保存
+ * Tenant-scoped memory backed by the same JSONL Session module used by AgentHarness.
+ * Conversation lookups are O(1) and never scan another tenant or user directory.
  */
-import { resolve, join, basename } from "node:path";
-import { readdir, readFile, writeFile, mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import type {
-  ConversationMemory,
-  LongTermMemory,
-  MemoryService,
-} from "./types";
+import { mkdir, readdir, readFile, stat, unlink, writeFile } from "node:fs/promises";
+import { join, resolve } from "node:path";
+import { createJsonlSessionStorage, loadJsonlSessionStorage } from "../session/jsonl-storage";
+import { createSession } from "../session/session";
+import type { ConversationMemory, LongTermMemory, MemoryScope, MemoryService } from "./types";
 
 export interface MemoryServiceDeps {
-  storagePath: string; // /data/memories
+  storagePath: string;
   db: unknown;
 }
 
+interface MemoryMetadata {
+  agentId: string;
+  userId: string;
+  tenantId: string;
+  status: "active" | "archived";
+}
+
+const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+
+function assertSafeId(value: string, field: string): void {
+  if (!SAFE_ID.test(value)) throw new Error(`Invalid ${field}`);
+}
+
+function encodeTitle(title: string): string {
+  const normalized = title.trim();
+  if (!normalized || normalized.length > 128) throw new Error("Invalid memory title");
+  return encodeURIComponent(normalized);
+}
+
 export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
-  const { storagePath } = deps;
+  const storageRoot = resolve(deps.storagePath);
 
-  function getUserPath(userId: string): string {
-    return resolve(storagePath, userId);
+  function userRoot(scope: MemoryScope): string {
+    assertSafeId(scope.tenantId, "tenantId");
+    assertSafeId(scope.userId, "userId");
+    return join(storageRoot, scope.tenantId, "users", scope.userId);
   }
 
-  function getConversationsPath(userId: string): string {
-    return resolve(getUserPath(userId), "conversations");
+  function conversationPath(sessionId: string, scope: MemoryScope): string {
+    assertSafeId(sessionId, "sessionId");
+    return join(userRoot(scope), "conversations", `${sessionId}.jsonl`);
   }
 
-  function getLongTermPath(userId: string): string {
-    return resolve(getUserPath(userId), "long-term");
+  function longTermPath(scope: MemoryScope, title: string): string {
+    return join(userRoot(scope), "long-term", `${encodeTitle(title)}.md`);
   }
 
-  async function ensureDir(dir: string): Promise<void> {
-    if (!existsSync(dir)) {
-      await mkdir(dir, { recursive: true });
+  async function readMetadata(
+    sessionId: string,
+    scope: MemoryScope,
+  ): Promise<{ metadata: MemoryMetadata; messageCount: number } | null> {
+    const filePath = conversationPath(sessionId, scope);
+    if (!existsSync(filePath)) return null;
+    const session = createSession(await loadJsonlSessionStorage(filePath));
+    const entries = await session.getEntries();
+    const metadataEntry = entries.find(
+      (entry) => entry.type === "custom" && entry.customType === "memory_metadata",
+    );
+    const metadata = metadataEntry?.type === "custom"
+      ? metadataEntry.data as MemoryMetadata | undefined
+      : undefined;
+    if (!metadata || metadata.tenantId !== scope.tenantId || metadata.userId !== scope.userId) {
+      throw new Error("Memory scope mismatch");
     }
+    return {
+      metadata,
+      messageCount: entries.filter((entry) => entry.type === "message").length,
+    };
+  }
+
+  async function getSession(sessionId: string, scope: MemoryScope): Promise<ConversationMemory | null> {
+    const stored = await readMetadata(sessionId, scope);
+    if (!stored) return null;
+    const filePath = conversationPath(sessionId, scope);
+    const info = await stat(filePath);
+    return {
+      sessionId,
+      tenantId: scope.tenantId,
+      agentId: stored.metadata.agentId,
+      userId: scope.userId,
+      filePath,
+      title: `对话 ${sessionId.slice(0, 8)}`,
+      status: stored.metadata.status,
+      messageCount: stored.messageCount,
+      createdAt: info.birthtime,
+      updatedAt: info.mtime,
+    };
   }
 
   return {
-    async createSession(params) {
+    async createSession(params): Promise<{ sessionId: string }> {
+      const scope = { tenantId: params.tenantId, userId: params.userId };
+      userRoot(scope);
+      assertSafeId(params.agentId, "agentId");
       const sessionId = crypto.randomUUID();
-      const convPath = getConversationsPath(params.userId);
-      await ensureDir(convPath);
-
-      const filePath = join(convPath, `${sessionId}.md`);
-      const content = `---
-session_id: ${sessionId}
-agent_id: ${params.agentId}
-created_at: ${new Date().toISOString()}
-updated_at: ${new Date().toISOString()}
-status: active
----
-
-# 对话
-
-`;
-
-      await writeFile(filePath, content, "utf-8");
-
+      const filePath = conversationPath(sessionId, scope);
+      await mkdir(join(userRoot(scope), "conversations"), { recursive: true });
+      const session = createSession(await createJsonlSessionStorage(filePath, {
+        sessionId,
+        cwd: userRoot(scope),
+      }));
+      await session.appendCustomEntry("memory_metadata", {
+        agentId: params.agentId,
+        userId: params.userId,
+        tenantId: params.tenantId,
+        status: "active",
+      } satisfies MemoryMetadata);
       return { sessionId };
     },
 
-    async appendMessage(sessionId, message) {
-      // 查找会话文件
-      const dirs = existsSync(storagePath)
-        ? await readdir(storagePath, { withFileTypes: true })
-        : [];
-
-      for (const dir of dirs) {
-        if (!dir.isDirectory()) continue;
-        const convPath = join(storagePath, dir.name, "conversations");
-        const filePath = join(convPath, `${sessionId}.md`);
-        if (!existsSync(filePath)) continue;
-
-        const content = await readFile(filePath, "utf-8");
-        const role =
-          message.role === "user"
-            ? "用户"
-            : message.role === "assistant"
-              ? "助手"
-              : "系统";
-
-        const newContent = content + `\n## ${role}\n\n${message.content}\n`;
-
-        // 更新 updated_at
-        const updated = newContent.replace(
-          /updated_at: .*/,
-          `updated_at: ${new Date().toISOString()}`,
-        );
-
-        await writeFile(filePath, updated, "utf-8");
-        return;
+    async appendMessage(sessionId, scope, message): Promise<void> {
+      const filePath = conversationPath(sessionId, scope);
+      if (!(await readMetadata(sessionId, scope))) return;
+      if (message.role !== "system" && message.role !== "user" && message.role !== "assistant" && message.role !== "tool") {
+        throw new Error("Invalid memory message role");
       }
+      const session = createSession(await loadJsonlSessionStorage(filePath));
+      await session.appendMessage({ role: message.role, content: message.content, timestamp: Date.now() });
     },
 
-    async getSession(sessionId) {
-      const dirs = existsSync(storagePath)
-        ? await readdir(storagePath, { withFileTypes: true })
-        : [];
+    getSession,
 
-      for (const dir of dirs) {
-        if (!dir.isDirectory()) continue;
-        const convPath = join(storagePath, dir.name, "conversations");
-        const filePath = join(convPath, `${sessionId}.md`);
-        if (!existsSync(filePath)) continue;
-
-        const content = await readFile(filePath, "utf-8");
-        const lines = content.split("\n");
-        const messageCount = lines.filter((l) => l.startsWith("## ")).length;
-
-        return {
-          sessionId,
-          agentId: "",
-          userId: dir.name,
-          filePath,
-          title: `对话 ${sessionId.slice(0, 8)}`,
-          status: "active",
-          messageCount,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        };
-      }
-
-      return null;
-    },
-
-    async listSessions(userId, agentId) {
-      const convPath = getConversationsPath(userId);
-      if (!existsSync(convPath)) return [];
-
-      const files = await readdir(convPath);
+    async listSessions(scope, agentId): Promise<ConversationMemory[]> {
+      const directory = join(userRoot(scope), "conversations");
+      if (!existsSync(directory)) return [];
       const sessions: ConversationMemory[] = [];
-
-      for (const file of files) {
-        if (!file.endsWith(".md")) continue;
-        const sessionId = file.replace(".md", "");
-        const filePath = join(convPath, file);
-        const content = await readFile(filePath, "utf-8");
-        const lines = content.split("\n");
-        const messageCount = lines.filter((l) => l.startsWith("## ")).length;
-
-        sessions.push({
-          sessionId,
-          agentId: agentId ?? "",
-          userId,
-          filePath,
-          title: `对话 ${sessionId.slice(0, 8)}`,
-          status: "active",
-          messageCount,
-          createdAt: new Date(),
-          updatedAt: new Date(),
-        });
+      for (const file of await readdir(directory)) {
+        if (!file.endsWith(".jsonl")) continue;
+        const item = await getSession(file.slice(0, -6), scope);
+        if (item && (!agentId || item.agentId === agentId)) sessions.push(item);
       }
-
-      return sessions;
+      return sessions.sort((left, right) => right.updatedAt.getTime() - left.updatedAt.getTime());
     },
 
-    async deleteSession(sessionId) {
-      const dirs = existsSync(storagePath)
-        ? await readdir(storagePath, { withFileTypes: true })
-        : [];
-
-      for (const dir of dirs) {
-        if (!dir.isDirectory()) continue;
-        const filePath = join(
-          storagePath,
-          dir.name,
-          "conversations",
-          `${sessionId}.md`,
-        );
-        if (existsSync(filePath)) {
-          const { unlink } = await import("node:fs/promises");
-          await unlink(filePath);
-          return;
-        }
-      }
+    async deleteSession(sessionId, scope): Promise<void> {
+      const filePath = conversationPath(sessionId, scope);
+      if (await readMetadata(sessionId, scope)) await unlink(filePath);
     },
 
-    async getHistory(sessionId, limit) {
-      const session = await this.getSession(sessionId);
-      if (!session) return [];
-
-      const content = await readFile(session.filePath, "utf-8");
-      const messages: Array<{ role: string; content: string }> = [];
-
-      // 解析 Markdown 中的消息
-      const sections = content.split(/^## /m);
-      for (const section of sections) {
-        const lines = section.split("\n");
-        const roleLine = lines[0]?.trim();
-        if (!roleLine) continue;
-
-        let role: string;
-        if (roleLine.startsWith("用户")) role = "user";
-        else if (roleLine.startsWith("助手")) role = "assistant";
-        else continue;
-
-        const msgContent = lines.slice(1).join("\n").trim();
-        if (msgContent) {
-          messages.push({ role, content: msgContent });
-        }
-      }
-
-      if (limit && messages.length > limit) {
-        return messages.slice(-limit);
-      }
-
-      return messages;
+    async forkSession(sessionId, scope, destination): Promise<{ sessionId: string }> {
+      const sourcePath = conversationPath(sessionId, scope);
+      const stored = await readMetadata(sessionId, scope);
+      if (!stored) throw new Error("Session not found");
+      assertSafeId(destination.sessionId, "sessionId");
+      const forkPath = conversationPath(destination.sessionId, scope);
+      const sourceSession = createSession(await loadJsonlSessionStorage(sourcePath));
+      await mkdir(join(userRoot(scope), "conversations"), { recursive: true });
+      const forkSession = await sourceSession.fork(
+        { filePath: forkPath, sessionId: destination.sessionId, parentSessionPath: sourcePath },
+        destination.options,
+      );
+      // 新会话继承源会话的 metadata（agentId / 租户归属），写入独立 memory_metadata
+      await forkSession.appendCustomEntry("memory_metadata", {
+        agentId: stored.metadata.agentId,
+        userId: scope.userId,
+        tenantId: scope.tenantId,
+        status: "active",
+      } satisfies MemoryMetadata);
+      return { sessionId: destination.sessionId };
     },
 
-    async createLongTermMemory(userId, title, content, tenantId) {
-      const ltPath = getLongTermPath(userId);
-      await ensureDir(ltPath);
-
-      const filePath = join(ltPath, `${title}.md`);
-      const mdContent = `---
-user_id: ${userId}
-created_at: ${new Date().toISOString()}
-updated_at: ${new Date().toISOString()}
----
-
-# ${title}
-
-${content}
-`;
-
-      await writeFile(filePath, mdContent, "utf-8");
+    async getHistory(sessionId, scope, limit): Promise<Array<{ role: string; content: string }>> {
+      const filePath = conversationPath(sessionId, scope);
+      if (!(await readMetadata(sessionId, scope))) return [];
+      const context = await createSession(await loadJsonlSessionStorage(filePath)).buildContext();
+      const messages = context.messages.map((message) => ({ role: message.role, content: message.content }));
+      return limit && messages.length > limit ? messages.slice(-limit) : messages;
     },
 
-    async updateLongTermMemory(userId, title, content, tenantId) {
-      await this.createLongTermMemory(userId, title, content, tenantId);
+    async createLongTermMemory(scope, title, content): Promise<void> {
+      const filePath = longTermPath(scope, title);
+      await mkdir(join(userRoot(scope), "long-term"), { recursive: true });
+      const now = new Date().toISOString();
+      await writeFile(filePath, `---\ntenant_id: ${scope.tenantId}\nuser_id: ${scope.userId}\ncreated_at: ${now}\nupdated_at: ${now}\n---\n\n# ${title.trim()}\n\n${content}\n`, "utf-8");
     },
 
-    async readLongTermMemory(userId, title) {
-      const ltPath = getLongTermPath(userId);
-      const filePath = join(ltPath, `${title}.md`);
+    async updateLongTermMemory(scope, title, content): Promise<void> {
+      await this.createLongTermMemory(scope, title, content);
+    },
+
+    async readLongTermMemory(scope, title): Promise<string | null> {
+      const filePath = longTermPath(scope, title);
       if (!existsSync(filePath)) return null;
-
       const content = await readFile(filePath, "utf-8");
-      // 去除 frontmatter
       const bodyMatch = content.match(/^---\n[\s\S]*?\n---\n([\s\S]*)$/);
-      return bodyMatch ? bodyMatch[1].trim() : content;
+      return bodyMatch?.[1]?.trim() ?? content;
     },
 
-    async listLongTermMemories(userId) {
-      const ltPath = getLongTermPath(userId);
-      if (!existsSync(ltPath)) return [];
-
-      const files = await readdir(ltPath);
+    async listLongTermMemories(scope): Promise<LongTermMemory[]> {
+      const directory = join(userRoot(scope), "long-term");
+      if (!existsSync(directory)) return [];
       const memories: LongTermMemory[] = [];
-
-      for (const file of files) {
+      for (const file of await readdir(directory)) {
         if (!file.endsWith(".md")) continue;
-        const title = file.replace(".md", "");
-        const filePath = join(ltPath, file);
-        const content = await readFile(filePath, "utf-8");
-
+        const filePath = join(directory, file);
+        const info = await stat(filePath);
         memories.push({
-          userId,
+          tenantId: scope.tenantId,
+          userId: scope.userId,
           filePath,
-          title,
-          content: content.slice(0, 200), // 预览
-          createdAt: new Date(),
-          updatedAt: new Date(),
+          title: decodeURIComponent(file.slice(0, -3)),
+          content: (await readFile(filePath, "utf-8")).slice(0, 200),
+          createdAt: info.birthtime,
+          updatedAt: info.mtime,
         });
       }
-
       return memories;
     },
 
-    async deleteLongTermMemory(userId, title) {
-      const ltPath = getLongTermPath(userId);
-      const filePath = join(ltPath, `${title}.md`);
-      if (existsSync(filePath)) {
-        const { unlink } = await import("node:fs/promises");
-        await unlink(filePath);
-      }
+    async deleteLongTermMemory(scope, title): Promise<void> {
+      const filePath = longTermPath(scope, title);
+      if (existsSync(filePath)) await unlink(filePath);
     },
   };
 }

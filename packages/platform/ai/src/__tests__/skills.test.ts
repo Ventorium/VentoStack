@@ -196,3 +196,90 @@ describe("SkillManager", () => {
     expect(manager.getSkill("a")!.description).toBe("v2");
   });
 });
+
+describe("loadSkills root .md + ignore files (对齐参考实现)", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "skill-loader-"));
+  });
+
+  test("loads direct root-level .md files as skills", async () => {
+    await writeFile(
+      join(tempDir, "root-skill.md"),
+      `---
+name: root-skill
+description: Root level skill
+---
+Root content`,
+      "utf-8",
+    );
+
+    const result = await loadSkills(tempDir);
+    expect(result.skills.map((s) => s.name)).toContain("root-skill");
+    expect(result.skills[0]!.filePath).toBe(join(tempDir, "root-skill.md"));
+  });
+
+  test("does not load .md files from nested directories (SKILL.md only)", async () => {
+    await mkdir(join(tempDir, "nested"), { recursive: true });
+    await writeFile(join(tempDir, "nested", "loose.md"), `---
+name: loose
+description: Should be ignored
+---
+x`, "utf-8");
+
+    const result = await loadSkills(tempDir);
+    expect(result.skills.map((s) => s.name)).not.toContain("loose");
+  });
+
+  test("honors .gitignore patterns at the skill root", async () => {
+    await writeFile(join(tempDir, ".gitignore"), "ignored-skill/\n", "utf-8");
+    await mkdir(join(tempDir, "ignored-skill"), { recursive: true });
+    await writeFile(join(tempDir, "ignored-skill", "SKILL.md"), `---
+name: ignored-skill
+description: Ignored skill
+---
+x`, "utf-8");
+    await mkdir(join(tempDir, "kept-skill"), { recursive: true });
+    await writeFile(join(tempDir, "kept-skill", "SKILL.md"), `---
+name: kept-skill
+description: Kept skill
+---
+x`, "utf-8");
+
+    const result = await loadSkills(tempDir);
+    expect(result.skills.map((s) => s.name)).toEqual(["kept-skill"]);
+  });
+
+  test("bare directory patterns (no trailing slash) ignore directories", async () => {
+    await writeFile(join(tempDir, ".gitignore"), "build\n", "utf-8");
+    await mkdir(join(tempDir, "build"), { recursive: true });
+    await writeFile(join(tempDir, "build", "SKILL.md"), `---
+name: build
+description: Ignored by bare pattern
+---
+x`, "utf-8");
+
+    const result = await loadSkills(tempDir);
+    expect(result.skills.map((s) => s.name)).not.toContain("build");
+  });
+
+  test("negation patterns re-include ignored files", async () => {
+    await writeFile(join(tempDir, ".gitignore"), "*.md\n!keep.md\n", "utf-8");
+    await writeFile(join(tempDir, "skip.md"), `---
+name: skip
+description: Should be ignored
+---
+x`, "utf-8");
+    await writeFile(join(tempDir, "keep.md"), `---
+name: keep
+description: Kept by negation
+---
+x`, "utf-8");
+
+    const result = await loadSkills(tempDir);
+    const names = result.skills.map((s) => s.name);
+    expect(names).not.toContain("skip");
+    expect(names).toContain("keep");
+  });
+});

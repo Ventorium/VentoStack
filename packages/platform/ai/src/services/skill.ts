@@ -234,6 +234,13 @@ export function createSkillService(deps: SkillServiceDeps) {
       // zip 下载失败不阻塞安装
     }
 
+    if (skillMdContent) {
+      await writeFile(join(skillDir, 'SKILL.md'), skillMdContent, 'utf-8');
+    }
+    if (readmeContent) {
+      await writeFile(join(skillDir, 'README.md'), readmeContent, 'utf-8');
+    }
+
     // 写入文件内容到本地
     for (const file of files) {
       if (file.path === 'SKILL.md' || file.path === 'README.md') continue; // 已获取

@@ -2,7 +2,7 @@
  * Session 模块
  */
 export { createSession } from "./session";
-export { createJsonlSessionStorage, loadJsonlSessionStorage } from "./jsonl-storage";
+export { createJsonlSessionStorage, createLazyJsonlSessionStorage, loadJsonlSessionStorage } from "./jsonl-storage";
 export type {
   Session,
   SessionStorage,
@@ -13,4 +13,5 @@ export type {
   CompactionEntry,
   BranchSummaryEntry,
   LeafEntry,
+  SessionForkOptions,
 } from "./types";

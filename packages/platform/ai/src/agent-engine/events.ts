@@ -83,6 +83,13 @@ export interface BeforeProviderRequestEvent {
   messageCount: number;
 }
 
+/** 工具结果引入了新工具，已注册到运行时工具集（对齐参考实现 addedToolNames） */
+export interface ToolsAddedEvent {
+  type: "tools_added";
+  toolNames: string[];
+  previousToolNames: string[];
+}
+
 export interface AbortEvent {
   type: "abort";
   clearedMessages: AgentEventMessage[];
@@ -109,6 +116,7 @@ export type AgentEvent =
   | ToolExecutionStartEvent
   | ToolExecutionUpdateEvent
   | ToolExecutionEndEvent
+  | ToolsAddedEvent
   | ContextEvent
   | BeforeProviderRequestEvent
   | AbortEvent
@@ -144,6 +152,8 @@ export interface AgentToolResultEventMessage {
   content: string;
   isError: boolean;
   timestamp: number;
+  /** 该工具结果引入的新工具名（对齐参考实现 addedToolNames） */
+  addedToolNames?: string[];
 }
 
 // ---- 事件发射器 ----
@@ -182,18 +192,25 @@ export function createEventEmitter(): AgentEventEmitter {
     };
   }
 
-  function onType(
-    type: string,
-    handler: AgentEventHandler,
+  function onType<T extends AgentEvent["type"]>(
+    type: T,
+    handler: (
+      event: Extract<AgentEvent, { type: T }>,
+      signal?: AbortSignal,
+    ) => Promise<void> | void,
   ): () => void {
+    const erasedHandler: AgentEventHandler = (event, signal) => {
+      if (event.type !== type) return;
+      return handler(event as Extract<AgentEvent, { type: T }>, signal);
+    };
     let handlers = typedHandlers.get(type);
     if (!handlers) {
       handlers = new Set();
       typedHandlers.set(type, handlers);
     }
-    handlers.add(handler);
+    handlers.add(erasedHandler);
     return () => {
-      handlers!.delete(handler);
+      handlers!.delete(erasedHandler);
     };
   }
 

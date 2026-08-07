@@ -57,7 +57,7 @@ export async function createJsonlSessionStorage(
     id: options.sessionId,
     timestamp: new Date().toISOString(),
     cwd: options.cwd,
-    parentSession: options.parentSessionPath,
+    ...(options.parentSessionPath === undefined ? {} : { parentSession: options.parentSessionPath }),
   };
 
   await ensureDir(dirname(filePath));
@@ -70,6 +70,35 @@ export async function loadJsonlSessionStorage(
   filePath: string,
 ): Promise<SessionStorage> {
   return createJsonlSessionStorageFromExisting(filePath);
+}
+
+/**
+ * Create a storage immediately while deferring filesystem initialization until
+ * the first operation. This keeps harness construction synchronous without
+ * falling back to a non-persistent placeholder implementation.
+ */
+export function createLazyJsonlSessionStorage(
+  filePath: string,
+  options: { cwd: string; sessionId: string; parentSessionPath?: string },
+): SessionStorage {
+  const storage = createJsonlSessionStorage(filePath, options);
+  return {
+    getMetadata: async () => (await storage).getMetadata(),
+    getLeafId: async () => (await storage).getLeafId(),
+    setLeafId: async (leafId) => (await storage).setLeafId(leafId),
+    createEntryId: async () => (await storage).createEntryId(),
+    appendEntry: async (entry) => (await storage).appendEntry(entry),
+    getEntry: async (id) => (await storage).getEntry(id),
+    getEntries: async () => (await storage).getEntries(),
+    getPathToRoot: async (leafId) => (await storage).getPathToRoot(leafId),
+    async findEntries<TType extends SessionTreeEntry["type"]>(
+      type: TType,
+    ): Promise<Array<Extract<SessionTreeEntry, { type: TType }>>> {
+      return (await storage).findEntries(type);
+    },
+    getLabel: async (id) => (await storage).getLabel(id),
+    fork: async (filePath, options) => (await storage).fork(filePath, options),
+  };
 }
 
 async function createJsonlSessionStorageFromExisting(
@@ -205,6 +234,24 @@ async function createJsonlSessionStorageFromExisting(
     return Promise.resolve(labelsById.get(id));
   }
 
+  async function fork(
+    filePath: string,
+    options: { sessionId: string; parentSessionPath?: string; entries: SessionTreeEntry[] },
+  ): Promise<SessionStorage> {
+    const header: SessionHeader = {
+      type: "session",
+      version: 3,
+      id: options.sessionId,
+      timestamp: new Date().toISOString(),
+      cwd: metadata.cwd ?? "",
+      ...(options.parentSessionPath === undefined ? {} : { parentSession: options.parentSessionPath }),
+    };
+    await ensureDir(dirname(filePath));
+    const lines = [JSON.stringify(header), ...options.entries.map((entry) => JSON.stringify(entry))];
+    await writeFile(filePath, `${lines.join("\n")}\n`, "utf-8");
+    return createJsonlSessionStorageFromExisting(filePath);
+  }
+
   return {
     getMetadata,
     getLeafId,
@@ -216,5 +263,6 @@ async function createJsonlSessionStorageFromExisting(
     getPathToRoot,
     findEntries,
     getLabel,
+    fork,
   };
 }

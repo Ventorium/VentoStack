@@ -126,6 +126,111 @@ describe("Session", () => {
   });
 });
 
+describe("Session.fork（对齐参考实现）", () => {
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(join(tmpdir(), "session-fork-"));
+  });
+
+  afterEach(async () => {
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function buildSession(messages: string[]): Promise<{ session: ReturnType<typeof createSession>; path: string; messageIds: string[] }> {
+    const path = join(tempDir, "source.jsonl");
+    const storage = await createJsonlSessionStorage(path, { cwd: "/test", sessionId: "source-1" });
+    const session = createSession(storage);
+    const messageIds: string[] = [];
+    for (const content of messages) {
+      messageIds.push(await session.appendMessage({ role: "user", content, timestamp: Date.now() }));
+    }
+    return { session, path, messageIds };
+  }
+
+  test("fork at current leaf creates an independent continuation session", async () => {
+    const { session, path } = await buildSession(["a", "b", "c"]);
+    const forkPath = join(tempDir, "fork.jsonl");
+    const forkSession = await session.fork({ filePath: forkPath, sessionId: "fork-1" });
+
+    const forkMetadata = await forkSession.getMetadata();
+    expect(forkMetadata.id).toBe("fork-1");
+    expect(forkMetadata.path).toBe(forkPath);
+
+    // 新会话包含完整分支历史，可独立继续
+    const forkContext = await forkSession.buildContext();
+    expect(forkContext.messages.map((m) => m.content)).toEqual(["a", "b", "c"]);
+    await forkSession.appendMessage({ role: "user", content: "d", timestamp: Date.now() });
+    const afterAppend = await forkSession.buildContext();
+    expect(afterAppend.messages.map((m) => m.content)).toEqual(["a", "b", "c", "d"]);
+
+    // 源会话不受影响
+    const sourceContext = await session.buildContext();
+    expect(sourceContext.messages.map((m) => m.content)).toEqual(["a", "b", "c"]);
+
+    // header 记录 parentSession
+    const headerLine = (await Bun.file(forkPath).text()).split("\n")[0]!;
+    expect(headerLine).toContain("parentSession");
+  });
+
+  test("fork before a message excludes that message and its successors", async () => {
+    const { session, messageIds } = await buildSession(["a", "b", "c"]);
+    const forkSession = await session.fork(
+      { filePath: join(tempDir, "fork2.jsonl"), sessionId: "fork-2" },
+      { entryId: messageIds[2]!, position: "before" },
+    );
+    const context = await forkSession.buildContext();
+    expect(context.messages.map((m) => m.content)).toEqual(["a", "b"]);
+  });
+
+  test("fork at a message includes it but not its successors", async () => {
+    const { session, messageIds } = await buildSession(["a", "b", "c"]);
+    const forkSession = await session.fork(
+      { filePath: join(tempDir, "fork3.jsonl"), sessionId: "fork-3" },
+      { entryId: messageIds[1]!, position: "at" },
+    );
+    const context = await forkSession.buildContext();
+    expect(context.messages.map((m) => m.content)).toEqual(["a", "b"]);
+  });
+
+  test("fork rejects non-message targets", async () => {
+    const { session } = await buildSession(["a"]);
+    const nameEntryId = await session.appendSessionName("my session");
+    expect(
+      session.fork(
+        { filePath: join(tempDir, "fork4.jsonl"), sessionId: "fork-4" },
+        { entryId: nameEntryId },
+      ),
+    ).rejects.toThrow(/not a message/);
+  });
+
+  test("fork scope=tree copies the full tree including labels", async () => {
+    const { session } = await buildSession(["a", "b"]);
+    const entries = await session.getEntries();
+    const first = entries.find((e) => e.type === "message")!;
+    await session.appendLabel(first.id, "important");
+
+    const forkSession = await session.fork(
+      { filePath: join(tempDir, "fork5.jsonl"), sessionId: "fork-5" },
+      { scope: "tree" },
+    );
+    expect(await forkSession.getLabel(first.id)).toBe("important");
+    const context = await forkSession.buildContext();
+    expect(context.messages.map((m) => m.content)).toEqual(["a", "b"]);
+  });
+
+  test("forked session reloads from disk", async () => {
+    const { session } = await buildSession(["x", "y"]);
+    const forkPath = join(tempDir, "fork6.jsonl");
+    const forkSession = await session.fork({ filePath: forkPath, sessionId: "fork-6" });
+    await forkSession.appendMessage({ role: "assistant", content: "reply", timestamp: Date.now() });
+
+    const reloaded = createSession(await loadJsonlSessionStorage(forkPath));
+    const context = await reloaded.buildContext();
+    expect(context.messages.map((m) => m.content)).toEqual(["x", "y", "reply"]);
+  });
+});
+
 describe("Compaction", () => {
   test("estimateTokenCount handles mixed content", () => {
     const tokens = estimateTokenCount("Hello 你好世界 test");
@@ -171,5 +276,32 @@ describe("Compaction", () => {
     expect(result).not.toBeNull();
     expect(result!.tokensBefore).toBeGreaterThan(0);
     expect(result!.firstKeptEntryId).toBeDefined();
+  });
+
+  test("prepareCompaction keeps the correct entry when non-message state entries are interleaved", () => {
+    const entries: SessionTreeEntry[] = [];
+    for (let index = 0; index < 20; index++) {
+      entries.push({
+        type: "message",
+        id: `message-${index}`,
+        parentId: entries.at(-1)?.id ?? null,
+        timestamp: new Date().toISOString(),
+        message: { role: index % 2 === 0 ? "user" : "assistant", content: "x".repeat(500), timestamp: Date.now() },
+      });
+      entries.push({
+        type: "label",
+        id: `label-${index}`,
+        parentId: entries.at(-1)?.id ?? null,
+        timestamp: new Date().toISOString(),
+        targetId: `message-${index}`,
+      });
+    }
+
+    const result = prepareCompaction(entries, { enabled: true, reserveTokens: 100, keepRecentTokens: 500 });
+
+    expect(result).not.toBeNull();
+    expect(result?.firstKeptEntryId.startsWith("message-")).toBe(true);
+    const keptIndex = entries.findIndex((entry) => entry.id === result?.firstKeptEntryId);
+    expect(result?.messagesToSummarize.length).toBe(entries.slice(0, keptIndex).filter((entry) => entry.type === "message").length);
   });
 });

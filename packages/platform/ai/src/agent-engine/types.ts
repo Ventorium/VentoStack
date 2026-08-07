@@ -4,7 +4,7 @@
  * 对齐参考实现的 AgentTool、AgentToolResult、ToolExecutionMode 等，
  * 同时保持 VentoStack 的函数式风格。
  */
-import type { AgentEventEmitter, AgentEventMessage } from "./events";
+import type { AgentEventEmitter, AgentEventMessage, AgentToolResultEventMessage } from "./events";
 
 // ---- 工具执行模式 ----
 
@@ -21,10 +21,35 @@ export interface AgentToolResult<T = unknown> {
   details: T;
   /** 提示 agent 在当前工具批次结束后停止 */
   terminate?: boolean;
+  /**
+   * 由本工具结果引入、从该 transcript 点开始可用的新工具名。
+   * 循环会通过 dynamicToolResolver 解析并注册，供后续轮次使用。
+   */
+  addedToolNames?: string[];
 }
 
 /** 工具执行过程中的部分结果回调 */
 export type ToolUpdateCallback<T = unknown> = (partialResult: AgentToolResult<T>) => void;
+
+/** prepareNextTurn 返回的运行时状态更新（对齐参考实现 AgentLoopTurnUpdate） */
+export interface AgentLoopTurnUpdate {
+  /** 下一轮 provider 请求使用的模型 ID */
+  model?: string;
+  /** 下一轮 provider 请求使用的 system prompt */
+  systemPrompt?: string;
+}
+
+/** prepareNextTurn 上下文（对齐参考实现 PrepareNextTurnContext） */
+export interface PrepareNextTurnContext {
+  /** 刚完成的 assistant 消息 */
+  message: AgentEventMessage;
+  /** 该 turn 执行的工具结果消息 */
+  toolResults: AgentToolResultEventMessage[];
+  /** 当前 agent 上下文 */
+  context: AgentContext;
+  /** 本轮运行新增的消息 */
+  newMessages: AgentEventMessage[];
+}
 
 // ---- 工具定义 ----
 
@@ -79,6 +104,12 @@ export interface BeforeToolCallResult {
   reason?: string;
 }
 
+/** External authorization seam for tools that require human approval. */
+export type ToolCallAuthorizer = (
+  context: BeforeToolCallContext & { tool: AgentTool },
+  signal?: AbortSignal,
+) => Promise<{ approved: boolean; reason?: string }>;
+
 /** afterToolCall 上下文 */
 export interface AfterToolCallContext {
   assistantMessage: AgentEventMessage;
@@ -95,12 +126,19 @@ export interface AfterToolCallResult {
   details?: unknown;
   isError?: boolean;
   terminate?: boolean;
+  /** 覆盖/保留工具结果引入的新工具名 */
+  addedToolNames?: string[];
 }
 
 // ---- Agent 上下文 ----
 
 /** Agent 运行上下文 */
 export interface AgentContext {
+  /** 当前 Agent、调用者与租户身份，供策略钩子和审批器做授权判断。 */
+  agentId: string;
+  userId: string;
+  tenantId: string;
+  sessionId?: string;
   /** 系统提示词 */
   systemPrompt: string;
   /** 对话消息 */
@@ -142,6 +180,27 @@ export interface AgentLoopConfig {
     context: AfterToolCallContext,
     signal?: AbortSignal,
   ) => Promise<AfterToolCallResult | undefined>;
+  /**
+   * 在每次 LLM 请求前对消息做上下文变换（对齐参考实现 transformContext）。
+   * 用于上下文窗口裁剪、外部上下文注入等。不得抛错；失败时返回原消息。
+   */
+  transformContext?: (
+    messages: ChatMessage[],
+    signal?: AbortSignal,
+  ) => Promise<ChatMessage[]> | ChatMessage[];
+  /**
+   * 在 turn 结束后、决定下一轮 provider 请求前调用（对齐参考实现 prepareNextTurn）。
+   * 返回的 model / systemPrompt 会替换下一轮请求的对应配置。
+   */
+  prepareNextTurn?: (
+    context: PrepareNextTurnContext,
+    signal?: AbortSignal,
+  ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+  /**
+   * 动态解析每次 LLM 请求的 API Key（对齐参考实现 getApiKey）。
+   * 用于短期 OAuth token 等会过期的凭证；返回 undefined 时使用 provider 默认 key。
+   */
+  getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
   /** 事件发射器 */
   eventEmitter?: AgentEventEmitter;
   /** 获取 steering 消息 */

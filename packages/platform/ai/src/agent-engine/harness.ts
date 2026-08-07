@@ -11,17 +11,30 @@
  * - Model/Provider 管理
  * - 完整事件订阅
  */
-import type { LLMGateway, ChatMessage } from "../llm-gateway/types";
+import type { LLMGateway, ChatMessage, ThinkingLevel } from "../llm-gateway/types";
 import type { Skill, SkillManager } from "../skills/types";
 import type { PromptTemplate, PromptTemplateManager } from "../prompt-templates/types";
 import type { Session } from "../session/types";
 import { createEventEmitter } from "./events";
 import type { AgentEventEmitter, AgentEvent, AgentEventMessage } from "./events";
-import type { AgentTool, ToolExecutionMode, BeforeToolCallContext, BeforeToolCallResult, AfterToolCallContext, AfterToolCallResult } from "./types";
+import type {
+  AgentTool,
+  ToolExecutionMode,
+  BeforeToolCallContext,
+  BeforeToolCallResult,
+  AfterToolCallContext,
+  AfterToolCallResult,
+  ToolCallAuthorizer,
+  AgentLoopTurnUpdate,
+  PrepareNextTurnContext,
+} from "./types";
 import type { CompactionSettings } from "../compaction/compaction";
 import { createMessageQueue } from "./message-queue";
 import type { MessageQueue, QueueMode } from "./message-queue";
 import type { ModelConfig, ModelRegistry } from "../llm-gateway/model-registry";
+import { createAgentLoop } from "./agent-loop";
+import { formatSkillsForSystemPrompt } from "../skills/system-prompt";
+import { estimateSessionContextTokens, shouldCompact } from "../compaction/compaction";
 
 // ---- Harness 事件 ----
 
@@ -94,6 +107,26 @@ export interface AgentHarnessOptions {
     context: AfterToolCallContext,
     signal?: AbortSignal,
   ) => Promise<AfterToolCallResult | undefined>;
+  /** Required to execute tools marked requiresApproval. */
+  authorizeToolCall?: ToolCallAuthorizer;
+  /** 上下文变换钩子（每次 LLM 请求前，对齐参考实现 transformContext） */
+  transformContext?: (
+    messages: ChatMessage[],
+    signal?: AbortSignal,
+  ) => Promise<ChatMessage[]> | ChatMessage[];
+  /** turn 结束后替换下一轮 model / systemPrompt（对齐参考实现 prepareNextTurn） */
+  prepareNextTurn?: (
+    context: PrepareNextTurnContext,
+    signal?: AbortSignal,
+  ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+  /** 动态 API Key 解析（对齐参考实现 getApiKey） */
+  getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+  /** 动态工具解析（对齐参考实现 addedToolNames） */
+  dynamicToolResolver?: (toolName: string, tenantId: string) => Promise<AgentTool | undefined> | AgentTool | undefined;
+  /** 分布式追踪器（@ventostack/observability）；提供时自动埋 ai.run / ai.turn / ai.tool span */
+  tracer?: import("@ventostack/observability").Tracer;
+  /** 父 span 上下文，用于把 AI 运行串进上层请求链路 */
+  parentSpanContext?: { traceId: string; spanId: string };
   /** 动态 system prompt */
   systemPrompt?:
     | string
@@ -111,6 +144,7 @@ export interface AgentHarnessOptions {
 export interface AgentHarness {
   // State
   getModelId(): string;
+  getThinkingLevel(): ThinkingLevel;
   getTools(): AgentTool[];
   getActiveTools(): AgentTool[];
   getActiveToolNames(): string[];
@@ -120,6 +154,7 @@ export interface AgentHarness {
 
   // Mutation
   setModel(modelId: string): Promise<void>;
+  setThinkingLevel(level: ThinkingLevel): Promise<void>;
   setTools(tools: AgentTool[], activeToolNames?: string[]): Promise<void>;
   setActiveTools(toolNames: string[]): Promise<void>;
   setToolExecutionMode(mode: ToolExecutionMode): void;
@@ -152,6 +187,10 @@ export interface AgentHarness {
 
 // ---- Implementation ----
 
+function isThinkingLevel(value: string): value is ThinkingLevel {
+  return value === "off" || value === "minimal" || value === "low" || value === "medium" || value === "high" || value === "xhigh";
+}
+
 export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
   const {
     gateway,
@@ -165,24 +204,27 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
 
   // State
   let currentModelId = options.modelId ?? "gpt-4o";
+  let thinkingLevel: ThinkingLevel = "off";
   let tools = new Map<string, AgentTool>();
   let activeToolNames: string[] = [];
   let streaming = false;
   let abortController: AbortController | null = null;
   let idlePromise: Promise<void> = Promise.resolve();
   let idleResolve: (() => void) | null = null;
-  let toolExecMode = options.toolExecutionMode ?? "sequential";
+  let toolExecMode = options.toolExecutionMode ?? "parallel";
+  let sessionStateRestored = false;
 
   // 消息队列
   const steerQueue: MessageQueue<ChatMessage> = createMessageQueue(options.steeringMode ?? "all");
   const followUpQueue: MessageQueue<ChatMessage> = createMessageQueue(options.followUpMode ?? "all");
 
   // 事件系统
-  const eventEmitter = externalEmitter ?? createEventEmitter();
+  const eventEmitter = createEventEmitter();
+  if (externalEmitter) {
+    eventEmitter.on((event, signal) => externalEmitter.emit(event, signal));
+  }
 
   // 事件订阅
-  const handlers = new Set<(event: HarnessEvent, signal?: AbortSignal) => Promise<void> | void>();
-
   function emit(event: HarnessEvent, signal?: AbortSignal): Promise<void> {
     return eventEmitter.emit(event as AgentEvent, signal);
   }
@@ -199,6 +241,10 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
 
   function getModelId(): string {
     return currentModelId;
+  }
+
+  function getThinkingLevel(): ThinkingLevel {
+    return thinkingLevel;
   }
 
   function getTools(): AgentTool[] {
@@ -232,7 +278,17 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
   async function setModel(modelId: string): Promise<void> {
     const previousModelId = currentModelId;
     currentModelId = modelId;
+    const slashIndex = modelId.indexOf("/");
+    await session.appendModelChange(
+      slashIndex > 0 ? modelId.slice(0, slashIndex) : gateway.getDefaultProvider().name,
+      slashIndex > 0 ? modelId.slice(slashIndex + 1) : modelId,
+    );
     await emit({ type: "model_update", modelId, previousModelId });
+  }
+
+  async function setThinkingLevel(level: ThinkingLevel): Promise<void> {
+    thinkingLevel = level;
+    await session.appendThinkingLevelChange(level);
   }
 
   async function setTools(
@@ -258,6 +314,7 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
   async function setActiveTools(names: string[]): Promise<void> {
     const previousActiveToolNames = [...activeToolNames];
     activeToolNames = [...names];
+    await session.appendActiveToolsChange(activeToolNames);
     await emit({
       type: "tools_update",
       toolNames: [...tools.keys()],
@@ -310,7 +367,9 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
         templates: getTemplates(),
       });
     }
-    return options.systemPrompt ?? "你是一个智能助手。";
+    const basePrompt = options.systemPrompt ?? "你是一个智能助手。";
+    const skillPrompt = formatSkillsForSystemPrompt(getSkills());
+    return skillPrompt ? `${basePrompt}\n\n${skillPrompt}` : basePrompt;
   }
 
   async function *prompt(
@@ -335,6 +394,27 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
     });
 
     try {
+      if (!sessionStateRestored) {
+        const saved = await session.buildContext();
+        if (options.modelId === undefined && saved.model) {
+          currentModelId = `${saved.model.provider}/${saved.model.modelId}`;
+        }
+        if (options.activeToolNames === undefined && saved.activeToolNames) {
+          activeToolNames = saved.activeToolNames.filter((name) => tools.has(name));
+        }
+        if (isThinkingLevel(saved.thinkingLevel)) thinkingLevel = saved.thinkingLevel;
+        sessionStateRestored = true;
+      }
+
+      if (compactionSettings?.enabled) {
+        const branch = await session.getBranch();
+        const modelContextWindow = modelRegistry?.get(currentModelId)?.contextLength
+          ?? gateway.getDefaultProvider().capabilities.maxContextLength;
+        if (shouldCompact(estimateSessionContextTokens(branch), modelContextWindow, compactionSettings)) {
+          await compact(ac.signal);
+        }
+      }
+
       const systemPrompt = await buildSystemPrompt();
 
       // 加载历史
@@ -357,60 +437,55 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
         timestamp: Date.now(),
       });
 
-      // 工具定义
-      const activeTools = getActiveTools();
-      const toolDefs = activeTools.length > 0
-        ? activeTools.map((t) => ({
-            name: t.name,
-            description: t.description,
-            parameters: t.parameters as { type: "object"; properties: Record<string, unknown>; required?: string[] },
-          }))
-        : undefined;
+      const runtime = createAgentLoop({
+        llmGateway: gateway,
+        agentTools: getActiveTools(),
+        eventEmitter,
+        ...(options.beforeToolCall ? { beforeToolCall: options.beforeToolCall } : {}),
+        ...(options.afterToolCall ? { afterToolCall: options.afterToolCall } : {}),
+        ...(options.authorizeToolCall ? { authorizeToolCall: options.authorizeToolCall } : {}),
+        ...(options.transformContext ? { transformContext: options.transformContext } : {}),
+        ...(options.prepareNextTurn ? { prepareNextTurn: options.prepareNextTurn } : {}),
+        ...(options.getApiKey ? { getApiKey: options.getApiKey } : {}),
+        ...(options.dynamicToolResolver ? { dynamicToolResolver: options.dynamicToolResolver } : {}),
+        ...(options.tracer ? { tracer: options.tracer } : {}),
+        ...(options.parentSpanContext ? { parentSpanContext: options.parentSpanContext } : {}),
+        toolExecutionMode: toolExecMode,
+        getSteeringMessages: async () => steerQueue.drain(),
+        getFollowUpMessages: async () => followUpQueue.drain(),
+      });
 
-      await emit({ type: "agent_start" }, ac.signal);
-      await emit({ type: "turn_start" }, ac.signal);
+      const unsubscribePersistence = eventEmitter.onType("message_end", async (event) => {
+        if (event.message.role !== "assistant" && event.message.role !== "tool") return;
+        await session.appendMessage({
+          role: event.message.role,
+          content: event.message.content,
+          timestamp: event.message.timestamp,
+          ...(event.message.toolCallId ? { toolCallId: event.message.toolCallId } : {}),
+          ...(event.message.toolCalls ? { toolCalls: event.message.toolCalls } : {}),
+          model: currentModelId,
+        });
+      });
 
-      // 简化实现：直接调用 LLM Gateway
-      const stream = gateway.chatStream({
+      const metadata = await session.getMetadata();
+      const stream = runtime.runStream({
+        agentId: metadata.id,
+        userId: "harness",
+        tenantId: "default",
+        sessionId: metadata.id,
+        message,
+        systemPrompt,
         model: currentModelId,
-        messages,
-        tools: toolDefs,
+        thinkingLevel,
+        history: messages.slice(1, -1),
         signal: ac.signal,
       });
 
-      let fullContent = "";
-      for await (const chunk of stream) {
-        if (chunk.type === "content" && chunk.delta) {
-          fullContent += chunk.delta;
-        }
-        yield chunk;
+      try {
+        for await (const chunk of stream) yield chunk;
+      } finally {
+        unsubscribePersistence();
       }
-
-      // 记录 assistant 消息
-      await session.appendMessage({
-        role: "assistant",
-        content: fullContent,
-        timestamp: Date.now(),
-        model: currentModelId,
-      });
-
-      await emit({
-        type: "message_end",
-        message: { role: "assistant", content: fullContent, timestamp: Date.now() },
-      }, ac.signal);
-
-      await emit({
-        type: "turn_end",
-        message: { role: "assistant", content: fullContent, timestamp: Date.now() },
-        toolResults: [],
-      }, ac.signal);
-
-      await emit({
-        type: "agent_end",
-        messages: [{ role: "assistant", content: fullContent, timestamp: Date.now() }],
-      }, ac.signal);
-
-      yield { type: "done" };
     } catch (error) {
       await emit({ type: "error", error: { code: "AGENT_ERROR", message: error instanceof Error ? error.message : String(error), recoverable: false } }, ac.signal);
       yield { type: "error", error: { code: "AGENT_ERROR", message: error instanceof Error ? error.message : String(error), recoverable: false } };
@@ -437,10 +512,7 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
   function on(
     handler: (event: HarnessEvent, signal?: AbortSignal) => Promise<void> | void,
   ): () => void {
-    handlers.add(handler);
-    return () => {
-      handlers.delete(handler);
-    };
+    return eventEmitter.on(handler as (event: AgentEvent, signal?: AbortSignal) => Promise<void> | void);
   }
 
   // ---- Session ----
@@ -455,7 +527,7 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
     if (!compactionSettings?.enabled) return false;
 
     const { prepareCompaction, compact: doCompact } = await import("../compaction/compaction");
-    const entries = await session.getEntries();
+    const entries = await session.getBranch();
     const preparation = prepareCompaction(entries, compactionSettings ?? { enabled: true, reserveTokens: 16384, keepRecentTokens: 20000 });
 
     if (!preparation) return false;
@@ -489,6 +561,7 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
 
   return {
     getModelId,
+    getThinkingLevel,
     getTools,
     getActiveTools,
     getActiveToolNames,
@@ -496,6 +569,7 @@ export function createAgentHarness(options: AgentHarnessOptions): AgentHarness {
     getTemplates,
     isStreaming,
     setModel,
+    setThinkingLevel,
     setTools,
     setActiveTools,
     setToolExecutionMode,

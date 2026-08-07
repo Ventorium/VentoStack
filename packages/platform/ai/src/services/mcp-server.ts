@@ -70,11 +70,29 @@ export interface McpServerService {
   setEnabled(id: string, tenantId: string, enabled: boolean): Promise<void>;
   testConnection(id: string, tenantId: string): Promise<{ success: boolean; tools?: McpToolInfo[]; error?: string }>;
   refreshTools(id: string, tenantId: string): Promise<McpToolInfo[]>;
+  callTool(
+    id: string,
+    tenantId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown>;
+  close(): Promise<void>;
 }
 
 export interface McpServerServiceDeps {
   db: Database;
   allowedStdioCommands?: string[];
+  allowedHttpHosts?: string[];
+  /** Internal Adapter seam used for alternate transports and deterministic tests. */
+  clientFactory?: (server: McpServerItem) => McpClient;
+  /** 连接池策略：上限与空闲回收 */
+  pool?: {
+    /** 同时存活的最大客户端数（默认 16）；超限时淘汰最久未用的客户端 */
+    maxClients?: number;
+    /** 空闲回收 TTL 毫秒（默认 5 分钟） */
+    idleTimeoutMs?: number;
+  };
 }
 
 const DEFAULT_STDIO_COMMANDS: string[] = [];
@@ -104,9 +122,102 @@ function mapRow(r: Record<string, unknown>): McpServerItem {
 export function createMcpServerService(deps: McpServerServiceDeps): McpServerService {
   const { db } = deps;
   const allowedStdioCommands = new Set(deps.allowedStdioCommands ?? DEFAULT_STDIO_COMMANDS);
+  const allowedHttpHosts = new Set(deps.allowedHttpHosts ?? []);
+  const maxClients = deps.pool?.maxClients ?? 16;
+  const idleTimeoutMs = deps.pool?.idleTimeoutMs ?? 5 * 60_000;
+  // 客户端池：key = tenantId:serverId → { client, lastUsed }
+  const clients = new Map<string, { client: McpClient; lastUsed: number }>();
+
+  function clientKey(id: string, tenantId: string): string {
+    return `${tenantId}:${id}`;
+  }
+
+  async function closeClient(id: string, tenantId: string): Promise<void> {
+    const key = clientKey(id, tenantId);
+    const entry = clients.get(key);
+    if (!entry) return;
+    clients.delete(key);
+    await entry.client.close().catch(() => undefined);
+  }
+
+  /** 淘汰最久未用的客户端，直至池大小不高于上限 */
+  async function evictToLimit(): Promise<void> {
+    while (clients.size > maxClients && clients.size > 0) {
+      let lruKey: string | null = null;
+      let lruTime = Number.POSITIVE_INFINITY;
+      for (const [key, entry] of clients) {
+        if (entry.lastUsed < lruTime) {
+          lruTime = entry.lastUsed;
+          lruKey = key;
+        }
+      }
+      if (lruKey === null) break;
+      const entry = clients.get(lruKey);
+      if (!entry) break;
+      clients.delete(lruKey);
+      await entry.client.close().catch(() => undefined);
+    }
+  }
+
+  // 空闲回收：定时关闭超过 idleTimeoutMs 未使用的客户端
+  const cleanupTimer = idleTimeoutMs > 0
+    ? setInterval(() => {
+        const now = Date.now();
+        for (const [key, entry] of [...clients]) {
+          if (now - entry.lastUsed > idleTimeoutMs) {
+            clients.delete(key);
+            void entry.client.close().catch(() => undefined);
+          }
+        }
+      }, Math.min(idleTimeoutMs, 60_000))
+    : null;
+  cleanupTimer?.unref?.();
+
+  async function persistToolsSnapshot(
+    id: string,
+    tenantId: string,
+    tools: McpToolInfo[],
+  ): Promise<void> {
+    await db.raw(
+      `UPDATE ai_mcp_server SET tools_snapshot = $1, tool_count = $2, status = 'connected', last_error = NULL, updated_at = NOW() WHERE id = $3 AND tenant_id = $4`,
+      [JSON.stringify(tools), tools.length, id, tenantId],
+    );
+  }
+
+  function createClient(server: McpServerItem): McpClient {
+    const client = deps.clientFactory?.(server) ?? (server.transportType === "stdio"
+      ? createMcpStdioClient(server)
+      : createMcpHttpClient(server));
+    client.onToolsChanged(() => {
+      void client.listTools()
+        .then((tools) => persistToolsSnapshot(server.id, server.tenantId, tools))
+        .catch(() => undefined);
+    });
+    return client;
+  }
+
+  function getOrCreateClient(server: McpServerItem): McpClient {
+    const key = clientKey(server.id, server.tenantId);
+    const existing = clients.get(key);
+    if (existing) {
+      existing.lastUsed = Date.now();
+      return existing.client;
+    }
+    const client = createClient(server);
+    clients.set(key, { client, lastUsed: Date.now() });
+    // 超过上限时淘汰最久未用的客户端，保持池大小有界
+    void evictToLimit();
+    return client;
+  }
+
+  /** 使用客户端时刷新 lastUsed，避免长调用被空闲回收误杀 */
+  function touchClient(server: McpServerItem): void {
+    const entry = clients.get(clientKey(server.id, server.tenantId));
+    if (entry) entry.lastUsed = Date.now();
+  }
 
   async function create(params: CreateMcpServerParams): Promise<McpServerItem> {
-    validateMcpConfig(params, allowedStdioCommands);
+    validateMcpConfig(params, allowedStdioCommands, allowedHttpHosts);
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_mcp_server (id, name, description, transport_type, command, args, env, url, headers, tenant_id)
@@ -160,17 +271,12 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     if (!current) throw aiErrors.toolNotFound("mcp-server");
     validateMcpConfig(
       {
-        ...current,
-        ...params,
         transportType: params.transportType ?? current.transportType,
-        command: params.command ?? current.command ?? undefined,
-        args: params.args ?? current.args ?? undefined,
-        env: params.env ?? current.env ?? undefined,
-        url: params.url ?? current.url ?? undefined,
-        headers: params.headers ?? current.headers ?? undefined,
-        tenantId,
+        command: params.command ?? current.command,
+        url: params.url ?? current.url,
       },
       allowedStdioCommands,
+      allowedHttpHosts,
     );
     const sets: string[] = [];
     const values: unknown[] = [];
@@ -188,6 +294,8 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
 
     if (sets.length === 0) return (await getById(id, tenantId))!;
 
+    await closeClient(id, tenantId);
+
     sets.push(`updated_at = NOW()`);
     values.push(id, tenantId);
     await db.raw(
@@ -198,10 +306,12 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
   }
 
   async function deleteById(id: string, tenantId: string): Promise<void> {
+    await closeClient(id, tenantId);
     await db.raw(`DELETE FROM ai_mcp_server WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
   }
 
   async function setEnabled(id: string, tenantId: string, enabled: boolean): Promise<void> {
+    if (!enabled) await closeClient(id, tenantId);
     await db.raw(
       `UPDATE ai_mcp_server SET enabled = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
       [enabled, id, tenantId],
@@ -548,16 +658,420 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
   async function refreshTools(id: string, tenantId: string): Promise<McpToolInfo[]> {
     const server = await getById(id, tenantId);
     if (!server) return [];
-    const result = await testConnection(id, tenantId);
-    return result.tools ?? [];
+    validateMcpConfig(server, allowedStdioCommands, allowedHttpHosts);
+    const client = getOrCreateClient(server);
+    touchClient(server);
+    const tools = await client.listTools();
+    await persistToolsSnapshot(id, tenantId, tools);
+    return tools;
   }
 
-  return { create, getById, list, update, delete: deleteById, setEnabled, testConnection, refreshTools };
+  async function callTool(
+    id: string,
+    tenantId: string,
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    const server = await getById(id, tenantId);
+    if (!server || !server.enabled) throw aiErrors.toolNotFound(toolName);
+    validateMcpConfig(server, allowedStdioCommands, allowedHttpHosts);
+    if (!server.toolsSnapshot?.some((tool) => tool.name === toolName)) {
+      throw aiErrors.toolNotFound(toolName);
+    }
+    const client = getOrCreateClient(server);
+    touchClient(server);
+    try {
+      return await client.callTool(toolName, args, signal);
+    } catch (error) {
+      await closeClient(id, tenantId);
+      throw error;
+    }
+  }
+
+  async function close(): Promise<void> {
+    if (cleanupTimer) clearInterval(cleanupTimer);
+    const active = [...clients.values()];
+    clients.clear();
+    await Promise.all(active.map((entry) => entry.client.close()));
+  }
+
+  return { create, getById, list, update, delete: deleteById, setEnabled, testConnection, refreshTools, callTool, close };
+}
+
+export async function callHttpMcpTool(
+  server: McpServerItem,
+  toolName: string,
+  args: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  const client = createMcpHttpClient(server);
+  try {
+    return await client.callTool(toolName, args, signal);
+  } finally {
+    await client.close();
+  }
+}
+
+export interface McpClient {
+  callTool(toolName: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<unknown>;
+  listTools(signal?: AbortSignal): Promise<McpToolInfo[]>;
+  onToolsChanged(handler: () => void): () => void;
+  close(): Promise<void>;
+}
+
+export type McpHttpClient = McpClient;
+
+export function createMcpHttpClient(server: McpServerItem): McpClient {
+  if (!server.url) throw new Error("MCP HTTP URL is required");
+  const url = server.url;
+  const baseHeaders: Record<string, string> = {
+    "Content-Type": "application/json",
+    Accept: "application/json, text/event-stream",
+    ...(server.headers ?? {}),
+  };
+  let initialized: Promise<{ headers: Record<string, string>; sessionId?: string }> | null = null;
+  let closed = false;
+  const toolsChangedHandlers = new Set<() => void>();
+
+  function handleNotification(notification: Record<string, unknown>): void {
+    if (notification.method !== "notifications/tools/list_changed") return;
+    for (const handler of toolsChangedHandlers) handler();
+  }
+
+  async function initialize(signal?: AbortSignal): Promise<{ headers: Record<string, string>; sessionId?: string }> {
+    if (closed) throw new Error("MCP client is closed");
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
+      : AbortSignal.timeout(60_000);
+    const initializeId = crypto.randomUUID();
+    const response = await postMcpRequest(
+      url,
+      baseHeaders,
+      {
+        jsonrpc: "2.0",
+        id: initializeId,
+        method: "initialize",
+        params: {
+          protocolVersion: "2024-11-05",
+          capabilities: {},
+          clientInfo: { name: "VentoStack", version: "1.0.0" },
+        },
+      },
+      initializeId,
+      requestSignal,
+      handleNotification,
+    );
+    unwrapMcpResponse(response.body);
+    const headers = response.sessionId
+      ? { ...baseHeaders, "Mcp-Session-Id": response.sessionId }
+      : baseHeaders;
+    await postMcpNotification(
+      url,
+      headers,
+      { jsonrpc: "2.0", method: "notifications/initialized" },
+      requestSignal,
+    );
+    return { headers, ...(response.sessionId ? { sessionId: response.sessionId } : {}) };
+  }
+
+  async function callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    initialized ??= initialize(signal);
+    const session = await initialized;
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
+      : AbortSignal.timeout(60_000);
+    const callId = crypto.randomUUID();
+    const response = await postMcpRequest(
+      url,
+      session.headers,
+      { jsonrpc: "2.0", id: callId, method: "tools/call", params: { name: toolName, arguments: args } },
+      callId,
+      requestSignal,
+      handleNotification,
+    );
+    return unwrapMcpResponse(response.body);
+  }
+
+  async function listTools(signal?: AbortSignal): Promise<McpToolInfo[]> {
+    initialized ??= initialize(signal);
+    const session = await initialized;
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
+      : AbortSignal.timeout(60_000);
+    const id = crypto.randomUUID();
+    const response = await postMcpRequest(
+      url,
+      session.headers,
+      { jsonrpc: "2.0", id, method: "tools/list", params: {} },
+      id,
+      requestSignal,
+      handleNotification,
+    );
+    return parseToolList(response.body);
+  }
+
+  function onToolsChanged(handler: () => void): () => void {
+    toolsChangedHandlers.add(handler);
+    return () => toolsChangedHandlers.delete(handler);
+  }
+
+  async function close(): Promise<void> {
+    if (closed) return;
+    closed = true;
+    if (!initialized) return;
+    try {
+      const session = await initialized;
+      if (!session.sessionId) return;
+      await fetch(url, {
+        method: "DELETE",
+        headers: session.headers,
+        signal: AbortSignal.timeout(10_000),
+      });
+    } catch {
+      // Closing is best-effort; the client is already unusable locally.
+    }
+  }
+
+  return { callTool, listTools, onToolsChanged, close };
+}
+
+interface McpHttpResponse {
+  body: Record<string, unknown>;
+  sessionId?: string;
+}
+
+async function postMcpRequest(
+  url: string,
+  headers: Record<string, string>,
+  payload: Record<string, unknown>,
+  requestId: string,
+  signal: AbortSignal,
+  onNotification?: (notification: Record<string, unknown>) => void,
+): Promise<McpHttpResponse> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!response.ok) throw new Error(`MCP request failed with HTTP ${response.status}`);
+  const raw = await response.text();
+  const body = parseMcpHttpBody(raw, response.headers.get("content-type") ?? "", requestId, onNotification);
+  const sessionId = response.headers.get("mcp-session-id") ?? undefined;
+  return { body, ...(sessionId ? { sessionId } : {}) };
+}
+
+async function postMcpNotification(
+  url: string,
+  headers: Record<string, string>,
+  payload: Record<string, unknown>,
+  signal: AbortSignal,
+): Promise<void> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers,
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!response.ok) throw new Error(`MCP notification failed with HTTP ${response.status}`);
+}
+
+export function parseMcpHttpBody(
+  raw: string,
+  contentType: string,
+  requestId: string,
+  onNotification?: (notification: Record<string, unknown>) => void,
+): Record<string, unknown> {
+  if (!contentType.includes("text/event-stream")) {
+    return JSON.parse(raw) as Record<string, unknown>;
+  }
+  const candidates = raw
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice(5).trim())
+    .filter(Boolean);
+  for (const candidate of candidates) {
+    const parsed = JSON.parse(candidate) as Record<string, unknown>;
+    if (typeof parsed.method === "string" && parsed.id === undefined) onNotification?.(parsed);
+    if (parsed.id === requestId) return parsed;
+  }
+  throw new Error(`MCP event stream contained no response for request ${requestId}`);
+}
+
+export function createMcpStdioClient(server: McpServerItem): McpClient {
+  if (!server.command) throw new Error("MCP stdio command is required");
+  const proc = Bun.spawn([server.command, ...(server.args ?? [])], {
+    stdin: "pipe",
+    stdout: "pipe",
+    stderr: "pipe",
+    env: { ...process.env, ...(server.env ?? {}) },
+  });
+  const encoder = new TextEncoder();
+  const pending = new Map<string, {
+    resolve(value: Record<string, unknown>): void;
+    reject(error: Error): void;
+  }>();
+  let closed = false;
+  let buffer = "";
+  const toolsChangedHandlers = new Set<() => void>();
+
+  function rejectPending(error: Error): void {
+    for (const request of pending.values()) request.reject(error);
+    pending.clear();
+  }
+
+  const readLoop = (async (): Promise<void> => {
+    const reader = proc.stdout.getReader();
+    const decoder = new TextDecoder();
+    while (!closed) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        let response: Record<string, unknown>;
+        try {
+          response = JSON.parse(line) as Record<string, unknown>;
+        } catch {
+          continue;
+        }
+        if (response.method === "notifications/tools/list_changed" && response.id === undefined) {
+          for (const handler of toolsChangedHandlers) handler();
+          continue;
+        }
+        const id = typeof response.id === "string" ? response.id : String(response.id ?? "");
+        const request = pending.get(id);
+        if (!request) continue;
+        pending.delete(id);
+        request.resolve(response);
+      }
+    }
+    if (!closed) rejectPending(new Error("MCP process closed"));
+  })().catch((error: unknown) => {
+    rejectPending(error instanceof Error ? error : new Error(String(error)));
+  });
+  void new Response(proc.stderr).text().catch(() => undefined);
+
+  async function write(payload: Record<string, unknown>): Promise<void> {
+    if (closed) throw new Error("MCP client is closed");
+    await proc.stdin.write(encoder.encode(`${JSON.stringify(payload)}\n`));
+  }
+
+  async function request(
+    method: string,
+    params: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> {
+    const id = crypto.randomUUID();
+    const requestSignal = signal
+      ? AbortSignal.any([signal, AbortSignal.timeout(60_000)])
+      : AbortSignal.timeout(60_000);
+    return await new Promise<Record<string, unknown>>((resolve, reject) => {
+      const abort = (): void => {
+        pending.delete(id);
+        reject(new Error("MCP request aborted or timed out"));
+      };
+      requestSignal.addEventListener("abort", abort, { once: true });
+      pending.set(id, {
+        resolve: (response) => {
+          requestSignal.removeEventListener("abort", abort);
+          resolve(response);
+        },
+        reject: (error) => {
+          requestSignal.removeEventListener("abort", abort);
+          reject(error);
+        },
+      });
+      void write({ jsonrpc: "2.0", id, method, params }).catch((error: unknown) => {
+        pending.delete(id);
+        requestSignal.removeEventListener("abort", abort);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      });
+    });
+  }
+
+  const initialized = (async (): Promise<void> => {
+    const response = await request("initialize", {
+      protocolVersion: "2024-11-05",
+      capabilities: {},
+      clientInfo: { name: "VentoStack", version: "1.0.0" },
+    });
+    unwrapMcpResponse(response);
+    await write({ jsonrpc: "2.0", method: "notifications/initialized" });
+  })();
+
+  async function callTool(
+    toolName: string,
+    args: Record<string, unknown>,
+    signal?: AbortSignal,
+  ): Promise<unknown> {
+    await initialized;
+    return unwrapMcpResponse(await request("tools/call", { name: toolName, arguments: args }, signal));
+  }
+
+  async function listTools(signal?: AbortSignal): Promise<McpToolInfo[]> {
+    await initialized;
+    return parseToolList(await request("tools/list", {}, signal));
+  }
+
+  function onToolsChanged(handler: () => void): () => void {
+    toolsChangedHandlers.add(handler);
+    return () => toolsChangedHandlers.delete(handler);
+  }
+
+  async function close(): Promise<void> {
+    if (closed) return;
+    closed = true;
+    rejectPending(new Error("MCP client is closed"));
+    proc.stdin.end();
+    proc.kill();
+    await proc.exited.catch(() => undefined);
+    await readLoop;
+  }
+
+  return { callTool, listTools, onToolsChanged, close };
+}
+
+function parseToolList(response: Record<string, unknown>): McpToolInfo[] {
+  const error = response.error as { code?: number; message?: string } | undefined;
+  if (error) throw new Error(`MCP ${error.code ?? "error"}: ${error.message ?? "tools/list failed"}`);
+  const result = response.result as { tools?: Array<Record<string, unknown>> } | undefined;
+  return (result?.tools ?? []).flatMap((tool) => {
+    if (typeof tool.name !== "string") return [];
+    return [{
+      name: tool.name,
+      description: typeof tool.description === "string" ? tool.description : "",
+      ...(typeof tool.inputSchema === "object" && tool.inputSchema !== null
+        ? { inputSchema: tool.inputSchema as Record<string, unknown> }
+        : {}),
+    }];
+  });
+}
+
+function unwrapMcpResponse(response: Record<string, unknown>): unknown {
+  const error = response.error as { code?: number; message?: string } | undefined;
+  if (error) throw new Error(`MCP ${error.code ?? "error"}: ${error.message ?? "tool call failed"}`);
+  const result = response.result as { content?: unknown; structuredContent?: unknown; isError?: boolean } | undefined;
+  if (!result) throw new Error("MCP server returned no result");
+  if (result.isError) throw new Error("MCP tool reported an execution error");
+  return result.structuredContent ?? result.content ?? result;
 }
 
 function validateMcpConfig(
-  params: Pick<CreateMcpServerParams, "transportType" | "command" | "url">,
+  params: {
+    transportType: "stdio" | "sse";
+    command?: string | null;
+    url?: string | null;
+  },
   allowedStdioCommands: Set<string>,
+  allowedHttpHosts: Set<string>,
 ): void {
   if (params.transportType === "stdio") {
     const error = params.command
@@ -565,8 +1079,20 @@ function validateMcpConfig(
       : "stdio 模式需要配置 command";
     if (error) throw aiErrors.sandboxDenied();
   }
-  if (params.transportType === "sse" && !params.url) {
-    throw aiErrors.sandboxDenied();
+  if (params.transportType === "sse") {
+    if (!params.url) throw aiErrors.sandboxDenied();
+    let url: URL;
+    try {
+      url = new URL(params.url);
+    } catch {
+      throw aiErrors.sandboxDenied();
+    }
+    if (
+      (url.protocol !== "https:" && url.protocol !== "http:") ||
+      !allowedHttpHosts.has(url.hostname)
+    ) {
+      throw aiErrors.sandboxDenied();
+    }
   }
 }
 

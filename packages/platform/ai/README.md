@@ -8,13 +8,44 @@ AI 能力层，依赖 core、auth、observability。提供 AI 工具注册、审
 
 ## 核心能力
 
-- 多 Provider、多 Model 注册和动态路由
-- OpenAI-compatible、Anthropic 和 Google Provider
+- 多 Provider、多 Model 注册和动态路由（21 个内置预设 + models.dev 动态模型拉取）
+- OpenAI-compatible、Anthropic、Google、OpenAI Responses Provider（支持每次请求动态解析 API Key）
+- Agent Loop：`beforeToolCall` / `afterToolCall` / `transformContext` / `prepareNextTurn` / `getApiKey` 钩子
+- 动态工具引入（工具结果声明 `addedToolNames`，运行时注册供后续轮次使用）
+- Session fork：从任意历史消息分叉出独立新会话（开启新的对话分支）
+- MCP Server（stdio / HTTP，动态工具发现、命令与主机白名单、连接池上限 + 空闲回收）
+- AI Telemetry：注入 `@ventostack/observability` 的 Tracer 后自动埋 `ai.run` / `ai.turn` / `ai.tool` span
 - 对话、Agent Loop、流式输出和上下文压缩
 - RAG、知识库、文档加载和租户隔离查询
 - Tool Registry、风险策略和人工审批
-- Skill、Prompt Template、Memory 和会话存储
+- Skill（SKILL.md 递归加载 + 根目录 .md + ignore 文件）、Prompt Template、Memory 和会话存储
 - 进程/Docker 沙箱、调用限流和 Token 预算
+
+## Agent Loop 钩子（对齐 pi-agent-core）
+
+```typescript
+createAgentLoop({
+  llmGateway,
+  // 每次 LLM 请求前变换上下文（上下文裁剪 / 外部上下文注入）
+  transformContext: async (messages, signal) => prune(messages),
+  // turn 结束后替换下一轮 model / systemPrompt（模型切换 / 降级）
+  prepareNextTurn: async ({ message, toolResults }) => ({ model: "fallback-model" }),
+  // 每次请求动态解析 API Key（短期 OAuth token 等）
+  getApiKey: async (provider) => await credentialStore.get(provider),
+  // 工具结果声明 addedToolNames 时解析并注册动态工具
+  dynamicToolResolver: async (name, tenantId) => registry.get(name),
+  // 分布式追踪：提供 Tracer 后自动埋 ai.run / ai.turn / ai.tool span
+  tracer,
+  parentSpanContext: { traceId, spanId },
+});
+
+// 会话分叉：从历史消息开启独立新对话
+const fork = await session.fork(
+  { filePath: "fork.jsonl", sessionId: "fork-1" },
+  { entryId: msgId, position: "before", scope: "branch" },
+);
+// HTTP: POST /api/ai/conversations/:id/fork  body: { entryId?, position?, scope? }  → { sessionId }
+```
 
 ## 安全特性
 

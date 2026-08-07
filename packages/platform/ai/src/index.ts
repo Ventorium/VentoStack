@@ -69,6 +69,7 @@ export { createLLMGateway } from './llm-gateway/gateway';
 export { createOpenAIProvider } from './llm-gateway/providers/openai';
 export { createAnthropicProvider } from './llm-gateway/providers/anthropic';
 export { createGoogleProvider } from './llm-gateway/providers/google';
+export { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-responses';
 export { createModelRegistry } from './llm-gateway/model-registry';
 export { withRetry } from './llm-gateway/retry';
 export { createRequestQueue } from './llm-gateway/queue';
@@ -84,6 +85,7 @@ export type {
   LLMGatewayConfig,
   LLMToolDefinition,
   ToolCall,
+  ThinkingLevel,
 } from './llm-gateway/types';
 export type { ModelConfig, ModelRegistry } from './llm-gateway/model-registry';
 
@@ -132,6 +134,7 @@ export type {
   CompactionEntry,
   BranchSummaryEntry,
   LeafEntry,
+  SessionForkOptions,
 } from './session';
 
 // ---- Compaction ----
@@ -147,6 +150,8 @@ export type { CompactionSettings, CompactionResult, CompactionPreparation } from
 export { createAgentLoop } from './agent-engine/agent-loop';
 export { createEventEmitter } from './agent-engine/events';
 export { createAgentHarness } from './agent-engine/harness';
+export { createMcpToolSource } from './agent-engine/mcp-tool-source';
+export type { McpToolSource } from './agent-engine/mcp-tool-source';
 export { createMessageQueue } from './agent-engine/message-queue';
 export type {
   AgentConfig,
@@ -172,6 +177,7 @@ export type {
   AbortEvent,
   SettledEvent,
   ErrorEvent,
+  ToolsAddedEvent,
 } from './agent-engine/events';
 export type {
   AgentHarness,
@@ -196,6 +202,9 @@ export type {
   AfterToolCallContext,
   AfterToolCallResult,
   ToolUpdateCallback,
+  ToolCallAuthorizer,
+  AgentLoopTurnUpdate,
+  PrepareNextTurnContext,
 } from './agent-engine/types';
 
 // ---- AI Module (聚合) ----

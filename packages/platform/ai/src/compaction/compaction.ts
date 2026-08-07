@@ -54,6 +54,25 @@ export function estimateTokenCount(text: string): number {
   return Math.ceil(chineseChars * 1.5 + otherChars / 4);
 }
 
+/** 与 pi-agent 一致：仅在上下文超过模型窗口减去摘要预留量后自动压缩。 */
+export function shouldCompact(
+  contextTokens: number,
+  contextWindow: number,
+  settings: CompactionSettings,
+): boolean {
+  if (!settings.enabled) return false;
+  return contextTokens > Math.max(0, contextWindow - settings.reserveTokens);
+}
+
+export function estimateSessionContextTokens(entries: SessionTreeEntry[]): number {
+  let tokens = 0;
+  for (const entry of entries) {
+    if (entry.type === "message") tokens += estimateMessageTokens(entry.message);
+    if (entry.type === "compaction") tokens += estimateTokenCount(entry.summary) + 4;
+  }
+  return tokens;
+}
+
 function estimateMessageTokens(msg: MessageEntry["message"]): number {
   return estimateTokenCount(msg.content) + 4; // role + formatting overhead
 }
@@ -87,16 +106,17 @@ function findCutPoint(
 ): CutPoint | null {
   // 计算总 token 数
   let totalTokens = 0;
-  const messageEntries: Array<{ entry: SessionTreeEntry; tokens: number }> = [];
+  const messageEntries: Array<{ entry: SessionTreeEntry; entryIndex: number; tokens: number }> = [];
 
-  for (const entry of entries) {
+  for (let entryIndex = 0; entryIndex < entries.length; entryIndex++) {
+    const entry = entries[entryIndex]!;
     if (entry.type === "message") {
       const tokens = estimateMessageTokens(entry.message);
-      messageEntries.push({ entry, tokens });
+      messageEntries.push({ entry, entryIndex, tokens });
       totalTokens += tokens;
     } else if (entry.type === "compaction") {
       const tokens = estimateTokenCount(entry.summary) + 4;
-      messageEntries.push({ entry, tokens });
+      messageEntries.push({ entry, entryIndex, tokens });
       totalTokens += tokens;
     }
   }
@@ -125,7 +145,7 @@ function findCutPoint(
   if (!firstKeptEntry) return null;
 
   return {
-    firstKeptEntryIndex: cutIndex,
+    firstKeptEntryIndex: firstKeptEntry.entryIndex,
     firstKeptEntryId: firstKeptEntry.entry.id,
     tokensBefore: totalTokens,
   };
@@ -168,17 +188,14 @@ async function generateSummary(
     { role: "user", content: promptText },
   ];
 
-  try {
-    const result = await gateway.chat({
-      model,
-      messages: summaryMessages,
-      maxTokens: Math.floor(reserveTokens / 2),
-      signal,
-    });
-    return result.content || "Summary generation returned empty content.";
-  } catch (err) {
-    return `Summary generation failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
+  const result = await gateway.chat({
+    model,
+    messages: summaryMessages,
+    maxTokens: Math.floor(reserveTokens / 2),
+    ...(signal ? { signal } : {}),
+  });
+  if (!result.content.trim()) throw new Error("Compaction summary was empty");
+  return result.content;
 }
 
 // ---- 主压缩函数 ----
@@ -187,6 +204,7 @@ export function prepareCompaction(
   entries: SessionTreeEntry[],
   settings: CompactionSettings,
 ): CompactionPreparation | null {
+  if (entries.length === 0 || entries.at(-1)?.type === "compaction") return null;
   const cutPoint = findCutPoint(entries, settings);
   if (!cutPoint) return null;
 
@@ -211,7 +229,7 @@ export function prepareCompaction(
     firstKeptEntryId: cutPoint.firstKeptEntryId,
     messagesToSummarize,
     tokensBefore: cutPoint.tokensBefore,
-    previousSummary,
+    ...(previousSummary === undefined ? {} : { previousSummary }),
     settings,
   };
 }

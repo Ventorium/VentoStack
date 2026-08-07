@@ -152,6 +152,16 @@ export interface SessionMetadata {
 
 // ---- Session Storage ----
 
+/** fork 选项（对齐参考实现 ForkOptions） */
+export interface SessionForkOptions {
+  /** "tree"：复制整棵会话树；"branch"（默认）：复制到指定消息的分支 */
+  scope?: "tree" | "branch";
+  /** 分支目标消息 ID；省略时取当前 leaf（最新消息） */
+  entryId?: string;
+  /** "at"：包含目标消息（默认，省略 entryId 时）；"before"：在目标消息之前分叉（默认，指定 entryId 时） */
+  position?: "before" | "at";
+}
+
 export interface SessionStorage {
   getMetadata(): Promise<SessionMetadata>;
   getLeafId(): Promise<string | null>;
@@ -165,6 +175,11 @@ export interface SessionStorage {
     type: TType,
   ): Promise<Array<Extract<SessionTreeEntry, { type: TType }>>>;
   getLabel(id: string): Promise<string | undefined>;
+  /** 用指定 entries 写入新会话文件并返回新 storage（fork 用） */
+  fork(
+    filePath: string,
+    options: { sessionId: string; parentSessionPath?: string; entries: SessionTreeEntry[] },
+  ): Promise<SessionStorage>;
 }
 
 // ---- Session Interface ----
@@ -187,4 +202,12 @@ export interface Session {
   appendActiveToolsChange(activeToolNames: string[]): Promise<string>;
   appendCustomEntry(customType: string, data?: unknown): Promise<string>;
   moveTo(entryId: string | null, summary?: { summary: string; details?: unknown }): Promise<string | undefined>;
+  /**
+   * 从当前会话分叉出一个独立的新会话（对齐参考实现 fork）。
+   * 新会话写入 destination.filePath，header 记录 parentSession 指向源会话。
+   */
+  fork(
+    destination: { filePath: string; sessionId: string; parentSessionPath?: string },
+    options?: SessionForkOptions,
+  ): Promise<Session>;
 }

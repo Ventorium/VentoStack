@@ -24,6 +24,7 @@ import type { ModelConfig, ModelRegistry } from './llm-gateway/model-registry';
 import { createAnthropicProvider } from './llm-gateway/providers/anthropic';
 import { createGoogleProvider } from './llm-gateway/providers/google';
 import { createOpenAIProvider } from './llm-gateway/providers/openai';
+import { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-responses';
 import type { LLMGateway, LLMProvider } from './llm-gateway/types';
 
 // Agent Engine
@@ -34,6 +35,7 @@ import {
   type AgentHarnessOptions,
   createAgentHarness,
 } from './agent-engine/harness';
+import { createMcpToolSource } from './agent-engine/mcp-tool-source';
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
@@ -57,7 +59,7 @@ import { type PromptTemplateManager, createPromptTemplateManager } from './promp
 
 import type { CompactionSettings } from './compaction/compaction';
 // Session + Compaction
-import { createSession } from './session';
+import { createLazyJsonlSessionStorage, createSession } from './session';
 
 import { type AgentCrudService, createAgentRoutes } from './routes/agent';
 import { createAuditRoutes } from './routes/audit';
@@ -134,12 +136,25 @@ export interface AIModule {
 /** LLM Provider 配置 */
 export interface LLMProviderConfig {
   /** Provider 名称 */
-  name: 'openai' | 'anthropic' | 'google';
+  name: string;
+  /** 线协议；Provider 名称与协议解耦，兼容聚合网关及私有 Provider。 */
+  apiFormat?: 'openai_chat' | 'openai_response' | 'anthropic' | 'google' | (string & {});
   /** API Key */
   apiKey: string;
   /** 自定义 Base URL */
   baseUrl?: string;
+  /** Provider 专用请求头。 */
+  headers?: Record<string, string>;
 }
+
+export interface LLMProviderFactoryConfig {
+  name: string;
+  apiKey: string;
+  baseUrl?: string;
+  headers?: Record<string, string>;
+}
+
+export type LLMProviderFactory = (config: LLMProviderFactoryConfig) => LLMProvider;
 
 export interface AIModuleDeps {
   db: unknown;
@@ -147,6 +162,8 @@ export interface AIModuleDeps {
   jwt: JWTManager;
   jwtSecret: string;
   rbac?: RBAC;
+  /** 自定义协议 Adapter；键为 apiFormat。 */
+  providerFactories?: Record<string, LLMProviderFactory>;
   eventBus: EventBus;
   notification?: NotificationService;
   /** LLM provider 配置列表 */
@@ -173,29 +190,57 @@ export interface AIModuleDeps {
       context: AfterToolCallContext,
       signal?: AbortSignal,
     ) => Promise<AfterToolCallResult | undefined>;
+    transformContext?: (
+      messages: import('./llm-gateway/types').ChatMessage[],
+      signal?: AbortSignal,
+    ) => Promise<import('./llm-gateway/types').ChatMessage[]> | import('./llm-gateway/types').ChatMessage[];
+    prepareNextTurn?: (
+      context: import('./agent-engine/types').PrepareNextTurnContext,
+      signal?: AbortSignal,
+    ) => Promise<import('./agent-engine/types').AgentLoopTurnUpdate | undefined> | import('./agent-engine/types').AgentLoopTurnUpdate | undefined;
+    getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
+    dynamicToolResolver?: (
+      toolName: string,
+      tenantId: string,
+    ) => Promise<import('./agent-engine/types').AgentTool | undefined> | import('./agent-engine/types').AgentTool | undefined;
   };
   /** 压缩设置 */
   compactionSettings?: CompactionSettings;
   /** 动态 system prompt */
   systemPrompt?: AgentHarnessOptions['systemPrompt'];
+  /** 分布式追踪器（@ventostack/observability）；提供时自动埋 AI span */
+  tracer?: import("@ventostack/observability").Tracer;
+  /** 父 span 上下文 */
+  parentSpanContext?: { traceId: string; spanId: string };
 }
 
 // ---- Provider 创建 ----
 
-function createProvider(config: LLMProviderConfig): LLMProvider {
+export function createConfiguredProvider(
+  config: LLMProviderConfig,
+  customFactories: Record<string, LLMProviderFactory> = {},
+): LLMProvider {
   const providerConfig = {
+    name: config.name,
     apiKey: config.apiKey,
     ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
+    ...(config.headers !== undefined ? { headers: config.headers } : {}),
   };
-  switch (config.name) {
-    case 'openai':
+  const apiFormat = config.apiFormat
+    ?? (config.name === 'anthropic' ? 'anthropic' : config.name === 'google' ? 'google' : 'openai_chat');
+  const customFactory = customFactories[apiFormat];
+  if (customFactory) return customFactory(providerConfig);
+  switch (apiFormat) {
+    case 'openai_chat':
       return createOpenAIProvider(providerConfig);
+    case 'openai_response':
+      return createOpenAIResponsesProvider(providerConfig);
     case 'anthropic':
       return createAnthropicProvider(providerConfig);
     case 'google':
       return createGoogleProvider(providerConfig);
     default:
-      throw new Error(`Unknown provider: ${config.name}`);
+      throw new Error(`Unsupported provider API format: ${apiFormat}`);
   }
 }
 
@@ -223,7 +268,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   });
 
   // 创建 LLM providers
-  const providers: LLMProvider[] = deps.llmProviders.map(createProvider);
+  const providers: LLMProvider[] = deps.llmProviders.map((config) =>
+    createConfiguredProvider(config, deps.providerFactories),
+  );
 
   // 创建 LLM Gateway
   const llmGateway = createLLMGateway({
@@ -246,10 +293,16 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         baseUrl: runtime.baseUrl,
         headers: runtime.headers,
       };
-      const provider =
-        runtime.apiFormat === 'anthropic'
-          ? createAnthropicProvider(common)
-          : createOpenAIProvider(common);
+      const provider = createConfiguredProvider(
+        {
+          name: runtime.providerName,
+          apiFormat: runtime.apiFormat,
+          apiKey: runtime.apiKey,
+          baseUrl: runtime.baseUrl,
+          headers: runtime.headers,
+        },
+        deps.providerFactories,
+      );
       return { provider, model: runtime.modelId };
     },
   });
@@ -277,6 +330,13 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
 
   // 创建 Skill Manager
   const skillManager = deps.skillDirs ? createSkillManager({ dirs: deps.skillDirs }) : undefined;
+  const skillStoreService = createSkillStoreService();
+  const skillService = createSkillService({
+    db,
+    eventBus,
+    storeService: skillStoreService,
+    storagePath: `${storagePath}/skills`,
+  });
 
   // 创建 Prompt Template Manager
   const promptTemplateManager = deps.templatePaths
@@ -327,6 +387,21 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     publish: (id, tenantId) => agentDbService.publish(id, tenantId),
   };
 
+  const allowedMcpCommands = (process.env.AI_MCP_STDIO_COMMANDS ?? '')
+    .split(',')
+    .map((cmd) => cmd.trim())
+    .filter((cmd) => cmd.length > 0);
+  const allowedMcpHosts = (process.env.AI_MCP_ALLOWED_HOSTS ?? '')
+    .split(',')
+    .map((host) => host.trim().toLowerCase())
+    .filter((host) => host.length > 0);
+  const mcpServerService = createMcpServerService({
+    db: db as import('@ventostack/database').Database,
+    allowedStdioCommands: allowedMcpCommands,
+    allowedHttpHosts: allowedMcpHosts,
+  });
+  const mcpToolSource = createMcpToolSource(mcpServerService);
+
   // 创建 Agent Loop
   const agentLoop = createAgentLoop({
     llmGateway,
@@ -337,6 +412,26 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     agentService: agentCrudService,
     beforeToolCall: deps.hooks?.beforeToolCall,
     afterToolCall: deps.hooks?.afterToolCall,
+    transformContext: deps.hooks?.transformContext,
+    prepareNextTurn: deps.hooks?.prepareNextTurn,
+    getApiKey: deps.hooks?.getApiKey,
+    dynamicToolResolver: deps.hooks?.dynamicToolResolver,
+    tracer: deps.tracer,
+    parentSpanContext: deps.parentSpanContext,
+    mcpToolSource,
+    async resolveSkills(skillIds, tenantId) {
+      const skills = await Promise.all(skillIds.map((id) => skillService.getById(id, tenantId)));
+      return skills.flatMap((skill) => {
+        if (!skill?.enabled || !skill.skillMdContent) return [];
+        const content = skill.skillMdContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim();
+        return [{
+          name: skill.slug,
+          description: skill.description ?? skill.name,
+          content,
+          filePath: `${storagePath}/skills/${skill.slug}/${skill.installedVersion ?? 'current'}/SKILL.md`,
+        }];
+      });
+    },
   });
 
   // 创建中间件
@@ -364,16 +459,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     async delete(_id, _userId) {},
   };
 
-  const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm);
+  const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm, memory);
 
   // Skill 服务
-  const skillStoreService = createSkillStoreService();
-  const skillService = createSkillService({
-    db,
-    eventBus,
-    storeService: skillStoreService,
-    storagePath: `${storagePath}/skills`,
-  });
   const modelConfigService = createModelConfigService({ db });
   const scopedKBService = createScopedKBService({ db, eventBus });
 
@@ -384,14 +472,6 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   });
 
   // MCP Server 服务
-  const allowedMcpCommands = (process.env.AI_MCP_STDIO_COMMANDS ?? '')
-    .split(',')
-    .map((cmd) => cmd.trim())
-    .filter((cmd) => cmd.length > 0);
-  const mcpServerService = createMcpServerService({
-    db: db as import('@ventostack/database').Database,
-    allowedStdioCommands: allowedMcpCommands,
-  }) as unknown as McpServerService;
   const mcpRouter = createMcpServerRoutes(mcpServerService, authMiddleware, perm);
 
   // 工具注册表路由
@@ -426,26 +506,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       gateway: llmGateway,
       session:
         partialOptions.session ??
-        createSession(
-          // 注意：这里需要异步初始化，实际使用时应在 init() 中完成
-          {
-            getMetadata: () =>
-              Promise.resolve({
-                id: sessionId,
-                createdAt: new Date().toISOString(),
-                path: sessionPath,
-              }),
-            getLeafId: () => Promise.resolve(null),
-            setLeafId: () => Promise.resolve(),
-            createEntryId: () => Promise.resolve(crypto.randomUUID().slice(0, 8)),
-            appendEntry: () => Promise.resolve(),
-            getEntry: () => Promise.resolve(undefined),
-            getEntries: () => Promise.resolve([]),
-            getPathToRoot: () => Promise.resolve([]),
-            findEntries: () => Promise.resolve([]),
-            getLabel: () => Promise.resolve(undefined),
-          },
-        ),
+        createSession(createLazyJsonlSessionStorage(sessionPath, {
+          cwd: storagePath,
+          sessionId,
+        })),
       skillManager,
       promptTemplateManager,
       modelRegistry,
@@ -453,6 +517,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       modelId: deps.defaultModel,
       compactionSettings: deps.compactionSettings,
       systemPrompt: deps.systemPrompt,
+      tracer: deps.tracer,
+      parentSpanContext: deps.parentSpanContext,
       ...partialOptions,
     };
 

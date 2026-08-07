@@ -193,13 +193,129 @@ async function loadSkillFromFile(
   };
 }
 
+/**
+ * 最小化 ignore 匹配器（零第三方依赖）
+ * 支持 .gitignore / .ignore / .fdignore 常用语法：
+ * - 注释（#）与空行
+ * - 取反（!）
+ * - 目录模式（结尾 /）
+ * - 通配符（* ? **）
+ * - 根锚定模式（开头 /，相对 skill 根目录）
+ */
+class IgnoreMatcher {
+  private readonly patterns: Array<{ pattern: string; negated: boolean }> = [];
+
+  add(rawLine: string): void {
+    let line = rawLine.trim();
+    if (!line || line.startsWith("#")) return;
+    if (line.startsWith("\\#")) line = line.slice(1);
+    let negated = false;
+    if (line.startsWith("!")) {
+      negated = true;
+      line = line.slice(1);
+    } else if (line.startsWith("\\!")) {
+      line = line.slice(1);
+    }
+    if (!line) return;
+    this.patterns.push({ pattern: line, negated });
+  }
+
+  /** 判断相对路径（目录需带尾 /）是否被忽略；取反模式可解除忽略 */
+  ignores(relativePath: string): boolean {
+    let ignored = false;
+    for (const { pattern, negated } of this.patterns) {
+      if (this.matches(pattern, relativePath)) ignored = !negated;
+    }
+    return ignored;
+  }
+
+  private matches(pattern: string, path: string): boolean {
+    let p = pattern;
+    const dirOnly = p.endsWith("/");
+    if (dirOnly) p = p.slice(0, -1);
+
+    // 统一去掉目标尾斜杠；目录是否匹配由模式结尾的 / 决定（裸模式同时匹配文件与目录）
+    const target = path.endsWith("/") ? path.slice(0, -1) : path;
+
+    // 根锚定：相对 root 匹配；否则任意层级匹配
+    if (p.startsWith("/")) {
+      return this.globMatch(p.slice(1), target);
+    }
+    if (this.globMatch(p, target)) return true;
+    // 非根锚定模式也尝试匹配各子路径（如 "build" 匹配 "a/b/build"）
+    const parts = target.split("/");
+    for (let i = 0; i < parts.length; i++) {
+      const sub = parts.slice(i).join("/");
+      if (this.globMatch(p, sub)) return true;
+    }
+    return false;
+  }
+
+  private globMatch(pattern: string, path: string): boolean {
+    return this.regexFromGlob(pattern).test(path);
+  }
+
+  private regexFromGlob(pattern: string): RegExp {
+    let source = "^";
+    let i = 0;
+    while (i < pattern.length) {
+      const c = pattern[i]!;
+      if (c === "*") {
+        if (pattern[i + 1] === "*") {
+          // ** 匹配任意层级
+          source += ".*";
+          i += 2;
+          // 吃掉后续单个 /
+          if (pattern[i] === "/") i += 1;
+        } else {
+          source += "[^/]*";
+          i += 1;
+        }
+      } else if (c === "?") {
+        source += "[^/]";
+        i += 1;
+      } else if (c === "\\" && i + 1 < pattern.length) {
+        source += pattern[i + 1]!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        i += 2;
+      } else {
+        source += c.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        i += 1;
+      }
+    }
+    source += "$";
+    return new RegExp(source);
+  }
+}
+
 async function loadSkillsFromDir(
   dir: string,
+  includeRootFiles: boolean,
+  ignoreMatcher: IgnoreMatcher,
+  rootDir: string,
 ): Promise<{ skills: Skill[]; diagnostics: SkillDiagnostic[] }> {
   const skills: Skill[] = [];
   const diagnostics: SkillDiagnostic[] = [];
 
   if (!(await isDirectory(dir))) return { skills, diagnostics };
+
+  // 读取本目录的 ignore 文件（.gitignore / .ignore / .fdignore）
+  for (const ignoreName of [".gitignore", ".ignore", ".fdignore"]) {
+    const ignorePath = join(dir, ignoreName);
+    if (await fileExists(ignorePath)) {
+      try {
+        const content = await readFile(ignorePath, "utf-8");
+        const relPrefix = relativePath(rootDir, dir);
+        for (const line of content.split(/\r?\n/)) {
+          if (!line.trim() || line.trim().startsWith("#")) continue;
+          // 将模式前缀到当前目录相对 root 的路径，使其在全局坐标系下生效
+          const prefixed = prefixPattern(line, relPrefix);
+          if (prefixed) ignoreMatcher.add(prefixed);
+        }
+      } catch {
+        /* 读取失败静默跳过 */
+      }
+    }
+  }
 
   let entries: string[];
   try {
@@ -219,6 +335,7 @@ async function loadSkillsFromDir(
     const fullPath = join(dir, entry);
 
     if (entry === "SKILL.md") {
+      if (ignoreMatcher.ignores(relativePath(rootDir, fullPath))) continue;
       const result = await loadSkillFromFile(fullPath);
       if (result.skill) skills.push(result.skill);
       diagnostics.push(...result.diagnostics);
@@ -227,21 +344,61 @@ async function loadSkillsFromDir(
 
     // 递归子目录
     if (await isDirectory(fullPath)) {
-      // 跳过隐藏目录
-      if (entry.startsWith(".")) continue;
-      const subResult = await loadSkillsFromDir(fullPath);
+      // 跳过隐藏目录与 node_modules
+      if (entry.startsWith(".") || entry === "node_modules") continue;
+      if (ignoreMatcher.ignores(`${relativePath(rootDir, fullPath)}/`)) continue;
+      const subResult = await loadSkillsFromDir(fullPath, false, ignoreMatcher, rootDir);
       skills.push(...subResult.skills);
       diagnostics.push(...subResult.diagnostics);
+      continue;
     }
+
+    // 仅根目录的直接 .md 文件作为 skill 加载（对齐参考实现）
+    if (!includeRootFiles || !entry.endsWith(".md")) continue;
+    if (ignoreMatcher.ignores(relativePath(rootDir, fullPath))) continue;
+    const result = await loadSkillFromFile(fullPath);
+    if (result.skill) skills.push(result.skill);
+    diagnostics.push(...result.diagnostics);
   }
 
   return { skills, diagnostics };
 }
 
+/** 将 ignore 模式限定到指定目录前缀（相对 root） */
+function prefixPattern(line: string, relPrefix: string): string | null {
+  let pattern = line.trim();
+  if (!pattern) return null;
+  if (pattern.startsWith("#") && !pattern.startsWith("\\#")) return null;
+  if (pattern.startsWith("\\#")) pattern = pattern.slice(1);
+
+  let negated = false;
+  if (pattern.startsWith("!")) {
+    negated = true;
+    pattern = pattern.slice(1);
+  } else if (pattern.startsWith("\\!")) {
+    pattern = pattern.slice(1);
+  }
+  if (!pattern) return null;
+  if (pattern.startsWith("/")) pattern = pattern.slice(1);
+  // 子目录 ignore 模式相对该目录生效
+  const prefixed = relPrefix ? `${relPrefix}/${pattern}` : pattern;
+  return negated ? `!${prefixed}` : prefixed;
+}
+
+/** 计算 path 相对 root 的路径（统一 / 分隔） */
+function relativePath(root: string, path: string): string {
+  const normRoot = root.replace(/\\/g, "/").replace(/\/+$/, "");
+  const normPath = path.replace(/\\/g, "/").replace(/\/+$/, "");
+  if (normPath === normRoot) return "";
+  if (normPath.startsWith(`${normRoot}/`)) return normPath.slice(normRoot.length + 1);
+  return normPath;
+}
+
 /**
  * 从一个或多个目录加载 skills
  *
- * 递归遍历目录，加载 SKILL.md 文件，解析 frontmatter。
+ * 递归遍历目录，加载 SKILL.md 文件，解析 frontmatter；
+ * 根目录的直接 .md 文件也会被加载；支持 .gitignore / .ignore / .fdignore。
  * 缺失的目录会被跳过。
  */
 export async function loadSkills(
@@ -256,7 +413,7 @@ export async function loadSkills(
       // 缺失目录不报错，静默跳过
       continue;
     }
-    const result = await loadSkillsFromDir(resolvedDir);
+    const result = await loadSkillsFromDir(resolvedDir, true, new IgnoreMatcher(), resolvedDir);
     allSkills.push(...result.skills);
     allDiagnostics.push(...result.diagnostics);
   }

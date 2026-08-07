@@ -15,7 +15,11 @@ export interface ProviderCapabilities {
   maxContextLength: number;
   supportsVision: boolean;
   supportsStreaming: boolean;
+  supportsReasoning?: boolean;
+  supportsStructuredOutput?: boolean;
 }
+
+export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
@@ -48,6 +52,9 @@ export interface ChatParams {
   tools?: LLMToolDefinition[];
   temperature?: number;
   maxTokens?: number;
+  thinkingLevel?: ThinkingLevel;
+  /** 动态 API Key（每次请求解析，覆盖 provider 默认 key；对齐参考实现 getApiKey） */
+  apiKey?: string;
   signal?: AbortSignal;
 }
 
