@@ -41,6 +41,12 @@ export interface SearchResult {
   score: number;
 }
 
+/** Markdown 标题大纲条目（用于 Agent 自主导航检索） */
+export interface MarkdownOutlineEntry {
+  level: number;
+  text: string;
+}
+
 export interface FileMapping {
   source: string | null;
   content: string;
@@ -75,6 +81,12 @@ export interface KnowledgeBaseService {
     tenantId: string,
   ): Promise<FileEntry[]>;
   cat(kbId: string, path: string, tenantId: string): Promise<FileContent | null>;
+  /** 提取 markdown 文件的标题大纲（# ~ ####），供 Agent 自主导航定位章节 */
+  outline(
+    kbId: string,
+    path: string,
+    tenantId: string,
+  ): Promise<MarkdownOutlineEntry[]>;
   grep(
     kbId: string,
     query: string,

@@ -5,6 +5,7 @@ import { createRouter, fail, handleError, parseBody, success } from "@ventostack
 import type { Middleware, Router } from "@ventostack/core";
 import { getPresets } from "../services/provider-presets";
 import type { createProviderService } from "../services/provider";
+import { routeDoc } from "./schema";
 
 type ProviderService = ReturnType<typeof createProviderService>;
 
@@ -25,17 +26,18 @@ export function createProviderRoutes(
 
   router.get(
     "/api/ai/providers",
-    perm("ai:provider", "list"),
+    routeDoc("获取供应商列表"),
     async (ctx) => {
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const providers = await providerService.listProviders(tenantId);
       return success(providers);
     },
+    perm("ai:provider", "list"),
   );
 
   router.get(
     "/api/ai/providers/:id",
-    perm("ai:provider", "query"),
+    routeDoc("获取供应商详情"),
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
@@ -43,11 +45,20 @@ export function createProviderRoutes(
       if (!provider) return fail("供应商不存在", 404, 404);
       return success(provider);
     },
+    perm("ai:provider", "query"),
   );
 
   router.post(
     "/api/ai/providers",
-    perm("ai:provider", "create"),
+    routeDoc("创建供应商", {
+      body: {
+        name: { type: "string", required: true, description: "供应商名称" },
+        displayName: { type: "string", description: "显示名称" },
+        apiFormat: { type: "string", description: "API 格式" },
+        baseUrl: { type: "string", description: "Base URL" },
+        apiKey: { type: "string", description: "API Key（加密存储）" },
+      },
+    }),
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
@@ -69,6 +80,7 @@ export function createProviderRoutes(
         return handleError(e);
       }
     },
+    perm("ai:provider", "create"),
   );
 
   router.put(
@@ -368,29 +380,35 @@ export function createProviderRoutes(
   // === 全局模型列表（给对话用）===
   router.get(
     "/api/ai/models",
-    perm("ai:provider", "list"),
+    routeDoc("获取全局模型列表"),
     async (ctx) => {
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
       const models = await providerService.listAllModels(tenantId);
       return success(models);
     },
+    perm("ai:provider", "list"),
   );
 
   // === AI 全局配置 ===
 
   router.get(
     "/api/ai/config/:key",
-    perm("ai:provider", "query"),
+    routeDoc("获取 AI 全局配置"),
     async (ctx) => {
       const key = (ctx.params as Record<string, string>).key!;
       const value = await providerService.getConfig(key);
       return success({ key, value });
     },
+    perm("ai:provider", "query"),
   );
 
   router.put(
     "/api/ai/config/:key",
-    perm("ai:provider", "update"),
+    routeDoc("设置 AI 全局配置", {
+      body: {
+        value: { type: "string", required: true, description: "配置值" },
+      },
+    }),
     async (ctx) => {
       try {
         const key = (ctx.params as Record<string, string>).key!;
@@ -401,6 +419,7 @@ export function createProviderRoutes(
         return handleError(e);
       }
     },
+    perm("ai:provider", "update"),
   );
 
   return router;

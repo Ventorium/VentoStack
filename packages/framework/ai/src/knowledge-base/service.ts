@@ -18,6 +18,7 @@ import { aiErrors } from "../errors";
 import type {
   FileEntry,
   FileContent,
+  MarkdownOutlineEntry,
   SearchResult,
   KnowledgeBase,
   KnowledgeBaseService,
@@ -296,6 +297,33 @@ export function createKnowledgeBaseService(
         frontmatter: parsed.frontmatter,
         links: parsed.links,
       };
+    },
+
+    async outline(kbId, path, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const filePath = safePath(contentDir, path);
+
+      if (!existsSync(filePath) || !filePath.endsWith(".md")) return [];
+
+      const content = await readFile(filePath, "utf-8").catch(() => "");
+      const entries: Array<{ level: number; text: string }> = [];
+
+      // 跳过 YAML frontmatter
+      const body = content.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, "");
+      const lines = body.split("\n");
+
+      for (const line of lines) {
+        const match = line.match(/^(#{1,4})\s+(.+)$/);
+        if (match) {
+          const level = match[1]!.length;
+          const text = match[2]!.trim();
+          if (text.length > 0 && entries.length < 50) {
+            entries.push({ level, text });
+          }
+        }
+      }
+
+      return entries;
     },
 
     async grep(kbId, query, path, tenantId, limit) {

@@ -10,6 +10,7 @@ import { Avatar, Button, Space, Tooltip, Typography, message as msg, theme } fro
 import { useCallback, useEffect, useRef } from 'react';
 import type { ChatMessage } from '../types';
 import AgentSteps from './AgentSteps';
+import { ResearchSources, ResearchStatus } from './ResearchStatus';
 
 const { Text, Paragraph } = Typography;
 
@@ -266,7 +267,15 @@ export default function ChatArea({
                 >
                   {!isUser && msg.steps && msg.steps.length > 0 && <AgentSteps steps={msg.steps} />}
 
+                  {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
+                    <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
+                  )}
+
                   <div>{renderContent(msg.content, token)}</div>
+
+                  {!isUser && msg.sources && msg.sources.length > 0 && (
+                    <ResearchSources sources={msg.sources} />
+                  )}
 
                   {msg.isStreaming && (
                     <Space size={4} className="mt-2">

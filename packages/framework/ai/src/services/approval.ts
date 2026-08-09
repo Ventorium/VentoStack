@@ -27,6 +27,41 @@ export interface ApprovalServiceDeps {
 /** 审批请求默认过期时间：5 分钟 */
 const EXPIRY_MS = 5 * 60 * 1000;
 
+/** 将查询结果行映射为 ApprovalRequest */
+function mapRow(r: Record<string, unknown>): ApprovalRequest {
+  return {
+    id: r.id as string,
+    toolName: r.toolName as string,
+    input: (r.input as Record<string, unknown>) ?? {},
+    requestedBy: r.requestedBy as string,
+    status: r.status as "pending" | "approved" | "rejected" | "expired",
+    approvedBy: (r.approvedBy as string) ?? null,
+    comment: (r.comment as string) ?? null,
+    expiresAt: r.expiresAt instanceof Date ? r.expiresAt.toISOString() : String(r.expiresAt ?? ""),
+    tenantId: r.tenantId as string,
+    createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
+    updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
+  };
+}
+
+/**
+ * 规范化 JSON 序列化：递归按键排序，保证对象键序不影响等价比较。
+ * 用于审批请求的 input 存储与放行比对，避免同一参数因键序不同被误判。
+ */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const obj = value as Record<string, unknown>;
+    return `{${Object.keys(obj)
+      .sort()
+      .map((k) => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`)
+      .join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
 export function createApprovalService(deps: ApprovalServiceDeps) {
   const { db, eventBus } = deps;
 
@@ -42,7 +77,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     await db.raw(
       `INSERT INTO ai_approval_request (id, tool_name, input, requested_by, status, expires_at, tenant_id)
        VALUES ($1, $2, $3, $4, 'pending', $5, $6)`,
-      [id, toolName, JSON.stringify(input), requestedBy, expiresAt, tenantId],
+      [id, toolName, canonicalJson(input), requestedBy, expiresAt, tenantId],
     );
 
     await eventBus?.emit("ai.approval.requested", { id, toolName, tenantId });
@@ -106,21 +141,32 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
        FROM ai_approval_request WHERE id = $1`,
       [id],
     );
-    if (rows.length === 0) return null;
-    const r = rows[0] as Record<string, unknown>;
-    return {
-      id: r.id as string,
-      toolName: r.toolName as string,
-      input: (r.input as Record<string, unknown>) ?? {},
-      requestedBy: r.requestedBy as string,
-      status: r.status as "pending" | "approved" | "rejected" | "expired",
-      approvedBy: (r.approvedBy as string) ?? null,
-      comment: (r.comment as string) ?? null,
-      expiresAt: r.expiresAt instanceof Date ? r.expiresAt.toISOString() : String(r.expiresAt ?? ""),
-      tenantId: r.tenantId as string,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
-      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
-    };
+    return rows.length === 0 ? null : mapRow(rows[0] as Record<string, unknown>);
+  }
+
+  /**
+   * 查找指定用户对指定工具「已批准、未过期且 input 完全一致」的最近审批请求。
+   * 用于授权链路：审批通过后，用户重试同工具、同参数调用时可直接放行；
+   * 参数不同（canonicalJson 不等）时必须新建审批，防止审批被不同载荷复用。
+   */
+  async function findRecentApproved(
+    toolName: string,
+    input: Record<string, unknown>,
+    userId: string,
+    tenantId: string,
+  ): Promise<ApprovalRequest | null> {
+    const rows = await db.raw(
+      `SELECT id, tool_name as "toolName", input, requested_by as "requestedBy",
+              status, approved_by as "approvedBy", comment, expires_at as "expiresAt",
+              tenant_id as "tenantId", created_at as "createdAt", updated_at as "updatedAt"
+       FROM ai_approval_request
+       WHERE tool_name = $1 AND requested_by = $2 AND tenant_id = $3
+         AND status = 'approved' AND expires_at > NOW()
+         AND input::text = $4
+       ORDER BY updated_at DESC LIMIT 1`,
+      [toolName, userId, tenantId, canonicalJson(input)],
+    );
+    return rows.length === 0 ? null : mapRow(rows[0] as Record<string, unknown>);
   }
 
   async function listPending(tenantId: string): Promise<ApprovalRequest[]> {
@@ -134,19 +180,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
       [tenantId],
     );
 
-    return (rows as Array<Record<string, unknown>>).map((r) => ({
-      id: r.id as string,
-      toolName: r.toolName as string,
-      input: (r.input as Record<string, unknown>) ?? {},
-      requestedBy: r.requestedBy as string,
-      status: r.status as "pending" | "approved" | "rejected" | "expired",
-      approvedBy: (r.approvedBy as string) ?? null,
-      comment: (r.comment as string) ?? null,
-      expiresAt: r.expiresAt instanceof Date ? r.expiresAt.toISOString() : String(r.expiresAt ?? ""),
-      tenantId: r.tenantId as string,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
-      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
-    }));
+    return (rows as Array<Record<string, unknown>>).map(mapRow);
   }
 
   async function cleanup(): Promise<number> {
@@ -158,5 +192,5 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     return Array.isArray(result) ? result.length : 0;
   }
 
-  return { request, approve, reject, getStatus, listPending, cleanup };
+  return { request, approve, reject, getStatus, findRecentApproved, listPending, cleanup };
 }

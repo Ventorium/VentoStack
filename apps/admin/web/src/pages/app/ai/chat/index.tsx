@@ -198,7 +198,7 @@ export default function AIChatPage() {
   // 获取工作区文件
   const fetchWorkspaceFiles = useCallback(async (agentId: string) => {
     try {
-      const { error, data } = (await client.get(`/api/ai/agents/${agentId}/workspace/files`)) as { error?: unknown; data?: Array<{ path: string; size: number; modifiedAt: string }> };
+      const { error, data } = (await client.get("/api/ai/agents/:id/workspace/files", { params: { id: agentId } })) as { error?: unknown; data?: Array<{ path: string; size: number; modifiedAt: string }> };
       if (!error && data) setWorkspaceFiles(data);
     } catch { setWorkspaceFiles([]); }
   }, []);
@@ -212,6 +212,43 @@ export default function AIChatPage() {
     }
   }, [selectedAgent, fetchWorkspaceFiles]);
 
+  // 加载会话列表（选中 agent 后，用户级会话隔离）
+  useEffect(() => {
+    if (!selectedAgent) {
+      setThreads([]);
+      return;
+    }
+    client.get("/api/ai/conversations", { query: { agentId: selectedAgent.id } }).then(({ data }) => {
+      const list = data as Array<{ id: string; title: string | null; updatedAt: string }> | undefined;
+      setThreads((list ?? []).map((c) => ({
+        id: c.id,
+        title: c.title ?? "新对话",
+        lastMessage: "",
+        updatedAt: c.updatedAt,
+      })));
+    }).catch(() => setThreads([]));
+  }, [selectedAgent]);
+
+  // 切换会话：绑定 sessionId 并回显历史消息
+  const handleSelectThread = useCallback(async (threadId: string) => {
+    setActiveThreadId(threadId);
+    setSessionId(threadId);
+    setMessages([]);
+    setTotalTokens({ input: 0, output: 0 });
+    try {
+      const { data } = (await client.get("/api/ai/conversations/:id/messages", { params: { id: threadId } })) as { data?: Array<{ role: string; content: string }> };
+      const history = (data ?? [])
+        .filter((m) => m.role === "user" || m.role === "assistant")
+        .map((m) => ({
+          id: crypto.randomUUID(),
+          role: m.role === "user" ? "user" as const : "assistant" as const,
+          content: m.content,
+          timestamp: "",
+        }));
+      setMessages(history);
+    } catch { /* 历史加载失败保持空 */ }
+  }, []);
+
   // 消息完成后刷新工作区文件
   useEffect(() => {
     if (selectedAgent && !loading) {
@@ -223,7 +260,7 @@ export default function AIChatPage() {
   const handlePreviewFile = useCallback(async (path: string) => {
     if (!selectedAgent) return;
     setPreviewFilePath(path);
-    const { error, data } = (await client.get(`/api/ai/agents/${selectedAgent.id}/workspace/file`, { query: { path } })) as { error?: unknown; data?: { content: string } };
+    const { error, data } = (await client.get("/api/ai/agents/:id/workspace/file", { params: { id: selectedAgent.id }, query: { path } })) as { error?: unknown; data?: { content: string } };
     if (!error && data) setPreviewFileContent(data.content);
   }, [selectedAgent]);
 
@@ -248,7 +285,7 @@ export default function AIChatPage() {
       // 读取所有工作区文件
       const files: Array<{ path: string; content: string }> = [];
       for (const f of workspaceFiles) {
-        const { error, data } = (await client.get(`/api/ai/agents/${selectedAgent.id}/workspace/file`, { query: { path: f.path } })) as { error?: unknown; data?: { content: string } };
+        const { error, data } = (await client.get("/api/ai/agents/:id/workspace/file", { params: { id: selectedAgent.id }, query: { path: f.path } })) as { error?: unknown; data?: { content: string } };
         if (!error && data) files.push({ path: f.path, content: data.content });
       }
 
@@ -352,6 +389,25 @@ export default function AIChatPage() {
               ),
             );
           },
+          onStage: (stage) => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id
+                  ? {
+                      ...msg,
+                      researchStages: [...(msg.researchStages ?? []), stage],
+                    }
+                  : msg,
+              ),
+            );
+          },
+          onSources: (sources) => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id ? { ...msg, sources } : msg,
+              ),
+            );
+          },
           onUsage: (usage) => {
             setTotalTokens(prev => ({
               input: prev.input + usage.promptTokens,
@@ -416,6 +472,7 @@ export default function AIChatPage() {
   const handleNewChat = useCallback(() => {
     setMessages([]);
     setSessionId(undefined);
+    setActiveThreadId(null);
     setTotalTokens({ input: 0, output: 0 });
   }, []);
 
@@ -540,7 +597,7 @@ export default function AIChatPage() {
         <ThreadList
           threads={threads}
           activeId={activeThreadId ?? undefined}
-          onSelect={setActiveThreadId}
+          onSelect={handleSelectThread}
           onNew={handleNewChat}
         />
 

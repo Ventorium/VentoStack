@@ -15,6 +15,7 @@ export { createKBBrowseTool } from "./kb-browse";
 export { createKBReadTool } from "./kb-read";
 export { createKBSearchTool } from "./kb-search";
 export { createKBFollowLinkTool } from "./kb-follow-link";
+export { createKBOutlineTool } from "./kb-outline";
 
 // 通用工具
 export { createCalculatorTool } from "./calculator";

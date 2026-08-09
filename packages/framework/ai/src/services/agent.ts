@@ -47,6 +47,14 @@ export interface AgentItem {
   description: string | null;
   model: string;
   systemPrompt: string;
+  tools: unknown;
+  knowledgeBaseIds: unknown;
+  skillIds: unknown;
+  mcpServerIds: unknown;
+  memoryConfig: Record<string, unknown> | null;
+  config: Record<string, unknown> | null;
+  maxIterations: number | null;
+  maxTokensPerTurn: number | null;
   status: string;
   isPublic: boolean;
   tenantId: string;
@@ -138,6 +146,8 @@ export function createAgentService(deps: { db: Database }) {
       `SELECT id, name, description, model, system_prompt as "systemPrompt",
               tools, knowledge_base_ids as "knowledgeBaseIds",
               skill_ids as "skillIds", mcp_server_ids as "mcpServerIds",
+              memory_config as "memoryConfig", config,
+              max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
@@ -156,6 +166,10 @@ export function createAgentService(deps: { db: Database }) {
       knowledgeBaseIds: parseJSON(r.knowledgeBaseIds) ?? null,
       skillIds: parseJSON(r.skillIds) ?? null,
       mcpServerIds: parseJSON(r.mcpServerIds) ?? null,
+      memoryConfig: (parseJSON(r.memoryConfig) as Record<string, unknown> | null) ?? null,
+      config: (parseJSON(r.config) as Record<string, unknown> | null) ?? null,
+      maxIterations: r.maxIterations == null ? null : Number(r.maxIterations),
+      maxTokensPerTurn: r.maxTokensPerTurn == null ? null : Number(r.maxTokensPerTurn),
       status: r.status as string,
       isPublic: r.isPublic as boolean,
       tenantId: r.tenantId as string,
@@ -186,6 +200,8 @@ export function createAgentService(deps: { db: Database }) {
       `SELECT id, name, description, model, system_prompt as "systemPrompt",
               tools, knowledge_base_ids as "knowledgeBaseIds",
               skill_ids as "skillIds", mcp_server_ids as "mcpServerIds",
+              memory_config as "memoryConfig", config,
+              max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent ${whereClause}
@@ -206,6 +222,10 @@ export function createAgentService(deps: { db: Database }) {
       knowledgeBaseIds: pj(r.knowledgeBaseIds) ?? null,
       skillIds: pj(r.skillIds) ?? null,
       mcpServerIds: pj(r.mcpServerIds) ?? null,
+      memoryConfig: (pj(r.memoryConfig) as Record<string, unknown> | null) ?? null,
+      config: (pj(r.config) as Record<string, unknown> | null) ?? null,
+      maxIterations: r.maxIterations == null ? null : Number(r.maxIterations),
+      maxTokensPerTurn: r.maxTokensPerTurn == null ? null : Number(r.maxTokensPerTurn),
       status: r.status as string,
       isPublic: r.isPublic as boolean,
       tenantId: r.tenantId as string,

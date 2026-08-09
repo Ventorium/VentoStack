@@ -219,7 +219,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     />
   );
 
-  useEffect(() => { onBreadcrumb?.(breadcrumb); }, [currentPath, kb?.name, pathParts]);
+  useEffect(() => { onBreadcrumb?.(breadcrumb); }, [breadcrumb, onBreadcrumb]);
 
   // ── 打开文件 ──
   const handleOpenFile = useCallback(async (filePath: string) => {
@@ -228,7 +228,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     setEditing(false);
     setHasSourceFile(false);
     try {
-      const { error, data } = (await client.get(`/api/ai/knowledge-bases/${kbId}/files/${filePath}`)) as {
+      const { error, data } = (await client.get(`/api/ai/knowledge-bases/${kbId}/files/${filePath}` as never)) as {
         error?: unknown; data?: { content: string; title: string; sourcePath?: string };
       };
       if (!error && data) {
@@ -246,7 +246,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     if (!previewFile) return;
     setSaving(true);
     try {
-      const { error } = (await client.put(`/api/ai/knowledge-bases/${kbId}/files/${previewFile}`, {
+      const { error } = (await client.put(`/api/ai/knowledge-bases/${kbId}/files/${previewFile}` as never, {
         body: { content: editContent },
       })) as { error?: unknown };
       if (!error) {
@@ -275,7 +275,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
   const handleCreateDir = useCallback(async () => {
     if (!newDirName.trim()) return;
     const dirPath = currentPath === "." ? newDirName : `${currentPath}/${newDirName}`;
-    const { error } = (await client.put(`/api/ai/knowledge-bases/${kbId}/files/${dirPath}`, {
+    const { error } = (await client.put(`/api/ai/knowledge-bases/${kbId}/files/${dirPath}` as never, {
       body: { content: "" },
     })) as { error?: unknown };
     if (!error) { msg.success("目录创建成功"); setNewDirModal(false); setNewDirName(""); fetchFiles(); }
@@ -286,7 +286,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     if (!newFileName.trim()) return;
     const fileName = newFileName.endsWith(".md") ? newFileName : `${newFileName}.md`;
     const filePath = currentPath === "." ? fileName : `${currentPath}/${fileName}`;
-    const { error } = (await client.put(`/api/ai/knowledge-bases/${kbId}/files/${filePath}`, {
+    const { error } = (await client.put(`/api/ai/knowledge-bases/${kbId}/files/${filePath}` as never, {
       body: { content: `# ${newFileName}\n\n` },
     })) as { error?: unknown };
     if (!error) { msg.success("文件创建成功"); setNewFileModal(false); setNewFileName(""); fetchFiles(); }
@@ -296,7 +296,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
   const handleDeleteFile = useCallback(async (filePath: string) => {
     // 先清除预览，避免删除后有残留请求
     if (previewFile === filePath) { setPreviewFile(null); setEditing(false); }
-    const { error } = (await client.delete(`/api/ai/knowledge-bases/${kbId}/files/${filePath}`)) as { error?: unknown };
+    const { error } = (await client.delete(`/api/ai/knowledge-bases/${kbId}/files/${filePath}` as never)) as { error?: unknown };
     if (!error) {
       msg.success("删除成功");
       fetchFiles();
@@ -315,7 +315,7 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
         const formData = new FormData();
         formData.append("file", file);
         if (currentPath !== ".") formData.append("dir", currentPath);
-        const { error } = (await client.post(`/api/ai/knowledge-bases/${kbId}/upload`, { body: formData })) as { error?: unknown };
+        const { error } = (await client.post("/api/ai/knowledge-bases/:id/upload", { params: { id: kbId }, body: formData })) as { error?: unknown };
         if (error) msg.error(`上传失败: ${file.name}`);
         else msg.success(`上传成功: ${file.name}`);
         converting.delete(file.name);

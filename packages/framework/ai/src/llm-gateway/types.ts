@@ -65,14 +65,32 @@ export interface ChatResult {
   finishReason: 'stop' | 'tool_calls' | 'length' | 'error';
 }
 
-export interface StreamChunk {
-  type: 'content' | 'tool_call_start' | 'tool_call_delta' | 'usage' | 'error' | 'done';
-  delta?: string;
-  toolCall?: ToolCall;
-  toolCallDelta?: { id?: string; name?: string; arguments?: string };
-  usage?: TokenUsage;
-  error?: { code: string; message: string; recoverable: boolean };
+/** 研究阶段（DeepResearch 模式）：规划 → 并行子任务 → 综合产出 */
+export type ResearchStage = 'planning' | 'researching' | 'synthesizing';
+
+export interface ResearchStageChunk {
+  type: 'stage';
+  stage: ResearchStage;
 }
+
+/** 引用来源清单（DeepResearch 产出轮结束前下发） */
+export interface ResearchSourcesChunk {
+  type: 'sources';
+  sources: Array<{ title: string; url: string }>;
+}
+
+export type StreamChunk =
+  | {
+      type: 'content' | 'tool_call_delta' | 'usage' | 'error' | 'done';
+      delta?: string;
+      toolCall?: ToolCall;
+      toolCallDelta?: { id?: string; name?: string; arguments?: string };
+      usage?: TokenUsage;
+      error?: { code: string; message: string; recoverable: boolean };
+    }
+  | { type: 'tool_call_start'; toolCall?: ToolCall }
+  | ResearchStageChunk
+  | ResearchSourcesChunk;
 
 export interface TokenUsage {
   promptTokens: number;

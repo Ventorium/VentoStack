@@ -289,19 +289,6 @@ export async function buildApp(opts?: {
     adminApp.use(metricsRouter);
     adminApp.addUrl('Prometheus 指标', '/metrics');
 
-    // OpenAPI 文档（非生产环境 或 显式开启时注册）
-    if (env.NODE_ENV !== 'production') {
-      setupOpenAPI(adminApp, {
-        info: { title: 'VentoStack API', version: '0.1.0' },
-        servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
-        jsonPath: '/openapi.json',
-        docsPath: '/docs',
-        securitySchemes: {
-          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-        },
-      });
-    }
-
     adminApp.use(errorHandler({ logger: serverLogger }));
     adminAppRef = adminApp;
   } else {
@@ -311,18 +298,20 @@ export async function buildApp(opts?: {
     app.use(healthRouter);
     app.use(metricsRouter);
 
-    // OpenAPI 文档（非生产环境注册）
-    if (env.NODE_ENV !== 'production') {
-      setupOpenAPI(app, {
-        info: { title: 'VentoStack API', version: '0.1.0' },
-        servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
-        jsonPath: '/openapi.json',
-        docsPath: '/docs',
-        securitySchemes: {
-          bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
-        },
-      });
-    }
+    // OpenAPI 文档由下方统一注册到主 app（包含全部平台路由）
+  }
+
+  // OpenAPI 文档（非生产环境注册；挂主 app 以包含全部平台路由，含 /api/ai）
+  if (env.NODE_ENV !== 'production') {
+    setupOpenAPI(app, {
+      info: { title: 'VentoStack API', version: '0.1.0' },
+      servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
+      jsonPath: '/openapi.json',
+      docsPath: '/docs',
+      securitySchemes: {
+        bearerAuth: { type: 'http', scheme: 'bearer', bearerFormat: 'JWT' },
+      },
+    });
   }
 
   // 4d. 静态文件服务（仅本地存储模式）

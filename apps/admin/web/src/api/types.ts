@@ -390,10 +390,33 @@ export interface AgentItem {
   knowledgeBaseIds: string[] | null;
   skillIds: string[] | null;
   mcpServerIds: string[] | null;
+  memoryConfig: {
+    enabled?: boolean;
+    longTerm?: boolean;
+    maxHistoryMessages?: number;
+  } | null;
+  config: Record<string, unknown> | null;
+  maxIterations: number | null;
+  maxTokensPerTurn: number | null;
   status: string;
   isPublic: boolean;
   tenantId: string;
   createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** AI 工具审批请求 */
+export interface ApprovalRequestItem {
+  id: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  requestedBy: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  approvedBy: string | null;
+  comment: string | null;
+  expiresAt: string;
+  tenantId: string;
   createdAt: string;
   updatedAt: string;
 }

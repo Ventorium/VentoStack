@@ -146,6 +146,8 @@ export function createAuthService(deps: {
   jwtSecret: string;
   eventBus: EventBus;
   configService: ConfigService;
+  /** 当前部署租户标识；未配置时回退 'default'（单租户默认命名空间） */
+  tenantId?: string;
 }): AuthService {
   const {
     db,
@@ -158,6 +160,7 @@ export function createAuthService(deps: {
     jwtSecret,
     eventBus,
     configService,
+    tenantId,
   } = deps;
 
   /** 解析 User-Agent 中的浏览器和 OS */
@@ -465,6 +468,8 @@ export function createAuthService(deps: {
         tokenPayload: {
           username: user.username,
           roles: roleCodes,
+          // 租户标识来自部署配置（tenantEnabled 时由系统模块注入），AI/多租户链路依赖 ctx.user.tenantId（memory 隔离、skill/KB 归属、审计）
+          tenantId: tenantId ?? 'default',
         },
       });
 
@@ -895,7 +900,7 @@ export function createAuthService(deps: {
           deviceType: deviceType ?? "web",
           deviceName: userAgent,
         },
-        tokenPayload: { username, roles: await getUserRoleCodes(db, userId) },
+        tokenPayload: { username, roles: await getUserRoleCodes(db, userId), tenantId: tenantId ?? 'default' },
       });
 
       await auditStore.append({
@@ -939,7 +944,7 @@ export function createAuthService(deps: {
           deviceType: deviceType ?? "web",
           deviceName: userAgent,
         },
-        tokenPayload: { username, roles: await getUserRoleCodes(db, userId) },
+        tokenPayload: { username, roles: await getUserRoleCodes(db, userId), tenantId: tenantId ?? 'default' },
       });
 
       await recordLoginLog({

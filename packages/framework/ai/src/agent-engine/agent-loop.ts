@@ -1,5 +1,5 @@
 import type { KnowledgeBaseService } from '../knowledge-base/types';
-import type { ChatMessage, LLMGateway, StreamChunk, ThinkingLevel, ToolCall } from '../llm-gateway/types';
+import type { ChatMessage, LLMGateway, LLMToolDefinition, ResearchStage, StreamChunk, ThinkingLevel, ToolCall } from '../llm-gateway/types';
 import type { Tracer, SpanHandle } from '@ventostack/observability';
 import type { MemoryService } from '../memory/types';
 import type { McpToolSource } from './mcp-tool-source';
@@ -22,6 +22,218 @@ import type {
 
 // ---- 配置与依赖 ----
 
+/** Agent 记忆配置（对应 ai_agent.memory_config 列） */
+export interface MemoryConfig {
+  /** 对话记忆开关：读写会话历史，默认开启 */
+  enabled?: boolean;
+  /** 长期记忆开关：读入用户级长记忆，默认关闭 */
+  longTerm?: boolean;
+  /** 单次加载的最大历史消息数（默认 20） */
+  maxHistoryMessages?: number;
+}
+
+/** 深度研究模式配置（对应 ai_agent.config.research） */
+export type ResearchDepth = 'quick' | 'normal' | 'deep';
+
+export interface ResearchConfig {
+  /** 探索强度：快速 / 常规 / 深度 */
+  depth?: ResearchDepth;
+  /** 主循环最大迭代轮数（覆盖深度预设，默认取 RESEARCH_DEPTH_MAP） */
+  maxIterations?: number;
+  /** 单轮生成 Token 上限（覆盖深度预设） */
+  maxTokensPerTurn?: number;
+  /** 每轮检索/搜索次数提示（注入 system prompt，覆盖深度预设） */
+  searchCount?: number;
+  /** 并行子任务数量上限（默认 6） */
+  maxSubtasks?: number;
+  /** 每个子任务的最大轮数（默认 4） */
+  maxSubtaskTurns?: number;
+}
+
+/** 各探索强度对应的计算预算与检索强度 */
+export const RESEARCH_DEPTH_MAP: Record<
+  ResearchDepth,
+  { maxIterations: number; maxTokensPerTurn: number; searchCount: number }
+> = {
+  quick: { maxIterations: 6, maxTokensPerTurn: 2048, searchCount: 3 },
+  normal: { maxIterations: 10, maxTokensPerTurn: 4096, searchCount: 5 },
+  deep: { maxIterations: 20, maxTokensPerTurn: 8192, searchCount: 8 },
+};
+
+const RESEARCH_DEPTH_LABEL: Record<ResearchDepth, string> = {
+  quick: '快速探索',
+  normal: '常规研究',
+  deep: '深度研究',
+};
+
+/** 子任务研究员允许使用的工具（web 检索 + 知识库自主检索） */
+const RESEARCH_SUBTASK_TOOLS = [
+  'web_search',
+  'web_fetch',
+  'kb-browse',
+  'kb-search',
+  'kb-read',
+  'kb-follow-link',
+  'kb-outline',
+];
+
+/** 研究方法论提示词：注入 system prompt，指导 LLM 按 规划→并行子任务→综合 执行 */
+export function buildResearchPrompt(depth: ResearchDepth, searchCount?: number): string {
+  return [
+    `## 深度研究模式（${RESEARCH_DEPTH_LABEL[depth]}）`,
+    '系统会为你的研究执行并行子任务。请严格遵循以下流程：',
+    '1. 规划：第一轮输出研究计划，仅输出一个 JSON 数组（不要输出任何其它内容），列出 3-6 个待研究的子问题，例如：',
+    '   ["子问题1", "子问题2", "子问题3"]',
+    `2. 系统将每个子问题分配给独立研究员并行检索（使用 web_search / web_fetch / 知识库工具${
+      searchCount ? `，每个子问题至少检索 ${searchCount} 轮关键词` : ''
+    }）`,
+    '3. 收到子任务结果后，综合交叉验证，识别矛盾信息与共识结论，标注可信度',
+    '4. 产出：输出结构化研究报告（摘要 / 正文 / 结论），并列出引用的来源清单（来源名称 + URL）',
+    '要求：优先使用官方文档、权威媒体与一手数据；对无法确认的信息明确标注"未能核实"。',
+  ].join('\n');
+}
+
+/** 从规划轮输出中解析子问题 JSON 数组（支持 ```json 围栏，容错非纯 JSON 输出） */
+export function parseSubtasks(content: string, maxSubtasks = 6): string[] {
+  if (!content) return [];
+  const fence = content.match(/```(?:json)?\s*(\[[\s\S]*?\])\s*```/);
+  const candidate = fence?.[1] ?? content.match(/\[[\s\S]*?\]/)?.[0];
+  if (!candidate) return [];
+  try {
+    const parsed = JSON.parse(candidate) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .filter((x): x is string => typeof x === 'string' && x.trim().length > 0)
+        .map((s) => s.trim())
+        .slice(0, maxSubtasks);
+    }
+  } catch {
+    /* 非 JSON，忽略 */
+  }
+  return [];
+}
+
+/** 并行子任务：独立研究员循环（子问题 → 检索 → 摘要 + 来源），最多 4 轮 */
+async function runResearchSubtask(
+  deps: AgentLoopDeps,
+  options: {
+    question: string;
+    model: string;
+    tenantId: string;
+    userId: string;
+    toolNames: string[];
+    signal?: AbortSignal;
+    /** 按请求注入的工具注册表（KB 工具已绑定请求租户）；缺省使用 deps.toolRegistry */
+    toolRegistry?: ToolRegistry;
+    /** 子任务最大轮数（默认 4） */
+    maxSubtaskTurns?: number;
+  },
+): Promise<{ question: string; summary: string; sources: string[] }> {
+  const { question, model, tenantId, userId, toolNames, signal, toolRegistry } = options;
+  const system = [
+    '你是子问题研究员，负责独立研究一个子问题。',
+    '步骤：先用 web_search 检索多个关键词，再用 web_fetch 阅读权威来源原文。',
+    '最后输出：结论摘要（3-5 句话）+ 引用的来源 URL 列表（每行一个 URL，前缀"- "）。',
+  ].join('\n');
+  const messages: ChatMessage[] = [
+    { role: 'system', content: system },
+    { role: 'user', content: question },
+  ];
+
+  const tools: LLMToolDefinition[] = toolRegistry
+    ? toolRegistry
+        .list()
+        .filter((t) => toolNames.includes(t.name))
+        .map((t) => ({
+          name: t.name,
+          description: t.description,
+          parameters: {
+            type: 'object' as const,
+            properties: Object.fromEntries(
+              t.parameters.map((p) => [p.name, { type: p.type, description: p.description, ...(p.schema ?? {}) }]),
+            ),
+            required: t.parameters.filter((p) => p.required).map((p) => p.name),
+          },
+        }))
+    : [];
+
+  let fullContent = '';
+  const sources: string[] = [];
+  const maxSubtaskTurns = options.maxSubtaskTurns ?? 4;
+
+  for (let i = 0; i < maxSubtaskTurns; i++) {
+    if (signal?.aborted) break;
+    const stream = deps.llmGateway.chatStream({
+      model,
+      tenantId,
+      messages,
+      ...(tools.length > 0 ? { tools } : {}),
+      ...(signal === undefined ? {} : { signal }),
+    });
+
+    let content = '';
+    const toolCalls: ToolCall[] = [];
+    for await (const chunk of stream) {
+      if (chunk.type === 'content') content += chunk.delta ?? '';
+      if (chunk.type === 'tool_call_start' && chunk.toolCall) toolCalls.push(chunk.toolCall);
+      if (chunk.type === 'error') return { question, summary: fullContent.trim(), sources };
+    }
+    fullContent += content;
+
+    if (toolCalls.length === 0 || !toolRegistry) break;
+
+    for (const tc of toolCalls) {
+      const result = await toolRegistry.execute(tc.name, tc.arguments as Record<string, unknown>);
+      const text =
+        typeof result.result === 'string'
+          ? result.result
+          : JSON.stringify(result.result ?? result.error ?? '');
+
+      // 子任务工具调用同样写入审计（与主循环一致）
+      if (deps.auditToolCall) {
+        try {
+          await deps.auditToolCall({
+            toolCallId: tc.id,
+            toolName: tc.name,
+            input: tc.arguments,
+            output: { content: text.slice(0, 4000), isError: !result.success },
+            status: result.success ? 'success' : 'error',
+            duration: result.duration,
+            userId,
+            tenantId,
+          });
+        } catch {
+          /* 审计失败不影响研究 */
+        }
+      }
+
+      messages.push({ role: 'tool', tool_call_id: tc.id, content: text.slice(0, 4000) });
+    }
+  }
+
+  // 提取来源 URL 去重
+  const urlPattern = /https?:\/\/[^\s)"'<>]+/g;
+  const matches = fullContent.match(urlPattern) ?? [];
+  for (const url of matches) {
+    if (!sources.includes(url)) sources.push(url);
+  }
+
+  return { question, summary: fullContent.trim(), sources };
+}
+
+/** 工具调用审计日志（写入 ai_tool_log 表） */
+export interface AgentToolAuditLog {
+  toolCallId: string;
+  toolName: string;
+  input: unknown;
+  output: unknown;
+  status: 'success' | 'error';
+  duration: number;
+  userId: string;
+  tenantId: string;
+  sessionId?: string;
+}
+
 export interface AgentConfig {
   id: string;
   name: string;
@@ -34,6 +246,9 @@ export interface AgentConfig {
   maxIterations?: number;
   maxTokensPerTurn?: number;
   temperature?: number;
+  memoryConfig?: MemoryConfig;
+  /** 深度研究模式配置（来自 ai_agent.config.research）；存在时启用多轮研究方法论 */
+  research?: ResearchConfig;
   tenantId: string;
 }
 
@@ -63,6 +278,11 @@ export interface AgentLoopDeps {
   mcpToolSource?: McpToolSource;
   resolveSkills?: (skillIds: string[], tenantId: string) => Promise<Skill[]>;
   authorizeToolCall?: ToolCallAuthorizer;
+  /**
+   * 工具调用审计回调：每次工具执行完成后调用（含参数/结果/耗时/状态）。
+   * 用于写入 ai_tool_log 审计表；回调抛错不会阻断主流程。
+   */
+  auditToolCall?: (log: AgentToolAuditLog) => Promise<void>;
   /**
    * 在每次 LLM 请求前对消息做上下文变换（对齐参考实现 transformContext）。
    */
@@ -109,6 +329,8 @@ export interface AgentRunParams {
   thinkingLevel?: ThinkingLevel;
   temperature?: number;
   maxTokens?: number;
+  /** 按请求注入的工具注册表（KB 等租户相关工具已绑定请求 tenantId）；缺省使用 deps.toolRegistry */
+  toolRegistry?: ToolRegistry;
 }
 
 export interface AgentLoop {
@@ -478,6 +700,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
   return {
     async *runStream(params: AgentRunParams): AsyncIterable<StreamChunk> {
       const { message, tenantId, userId, signal, agentId } = params;
+      // 工具注册表：支持按请求注入（KB 等租户相关工具绑定请求 tenantId），缺省使用 deps.toolRegistry
+      const registry = params.toolRegistry ?? deps.toolRegistry;
 
       // 1. 获取 Agent 配置
       let agentConfig: AgentConfig | null = null;
@@ -491,7 +715,22 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
       let systemPrompt = params.systemPrompt ?? agentConfig?.systemPrompt ?? '你是一个智能助手。';
       let model = params.model ?? agentConfig?.model ?? 'default';
-      const maxIterations = agentConfig?.maxIterations ?? 10;
+      let maxIterations = agentConfig?.maxIterations ?? 10;
+      let maxTokensPerTurn = agentConfig?.maxTokensPerTurn;
+
+      // 深度研究模式：探索强度决定计算预算，并注入研究方法论
+      // 自定义预算（ResearchConfig 字段）覆盖深度预设，未配置时取 RESEARCH_DEPTH_MAP 默认值
+      const researchConfig = agentConfig?.research ?? undefined;
+      const researchMode = !!researchConfig?.depth && !!RESEARCH_DEPTH_MAP[researchConfig.depth];
+      let subtasksRan = false;
+      const allSources: string[] = [];
+      if (researchMode) {
+        const preset = RESEARCH_DEPTH_MAP[researchConfig!.depth!];
+        maxIterations = researchConfig!.maxIterations ?? preset.maxIterations;
+        maxTokensPerTurn = researchConfig!.maxTokensPerTurn ?? preset.maxTokensPerTurn;
+        const searchCount = researchConfig!.searchCount ?? preset.searchCount;
+        systemPrompt = `${systemPrompt}\n\n${buildResearchPrompt(researchConfig!.depth!, searchCount)}`;
+      }
 
       const skillIds = params.skillIds ?? agentConfig?.skillIds ?? [];
       if (deps.resolveSkills && skillIds.length > 0) {
@@ -501,9 +740,15 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
       }
 
+      // 知识库自主检索引导（替代自动注入：Agent 需主动使用 kb-* 工具检索）
+      const boundKbIds = params.knowledgeBaseIds ?? agentConfig?.knowledgeBaseIds ?? [];
+      if (boundKbIds.length > 0) {
+        systemPrompt = `${systemPrompt}\n\n## 知识库使用说明\n你已绑定 ${boundKbIds.length} 个知识库。回答涉及知识库内容的问题时，必须自主检索：先用 kb-browse / kb-outline 了解文档结构与标题大纲，再用 kb-search 定位相关内容，最后用 kb-read 阅读原文。禁止凭空回答知识库相关内容。`;
+      }
+
       // 2. 根据 Agent 配置和过滤器获取工具
       let agentTools = deps.agentTools ?? [];
-      if (deps.toolRegistry) {
+      if (registry) {
         // 合并 Agent 配置的工具和请求过滤器
         const agentToolNames = agentConfig?.tools ?? [];
         const requestFilter = params.tools ?? [];
@@ -518,8 +763,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           effectiveTools = agentToolNames;
         }
 
+        // 绑定知识库时自动启用知识库检索工具（替代自动注入）
+        if (boundKbIds.length > 0) {
+          const kbToolNames = ['kb-browse', 'kb-search', 'kb-read', 'kb-follow-link', 'kb-outline'];
+          effectiveTools = [...new Set([...effectiveTools, ...kbToolNames])];
+        }
+
         agentTools = wrapRegistryTools(
-          deps.toolRegistry,
+          registry,
           effectiveTools.length > 0 ? effectiveTools : undefined,
         );
       }
@@ -561,9 +812,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
       // 4. 加载对话历史
       let history: ChatMessage[] = params.history ? [...params.history] : [];
-      if (!params.history && deps.memory && params.sessionId) {
+      const memoryEnabled = agentConfig?.memoryConfig?.enabled !== false;
+      if (!params.history && deps.memory && params.sessionId && memoryEnabled) {
         try {
-          history = (await deps.memory.getHistory(params.sessionId, { tenantId, userId }, 20)).flatMap((item) =>
+          history = (await deps.memory.getHistory(
+            params.sessionId,
+            { tenantId, userId },
+            agentConfig?.memoryConfig?.maxHistoryMessages ?? 20,
+          )).flatMap((item) =>
             item.role === 'system' || item.role === 'user' || item.role === 'assistant' || item.role === 'tool'
               ? [{ role: item.role, content: item.content }]
               : [],
@@ -573,31 +829,25 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
       }
 
-      // 5. 加载知识库上下文（如果有）
-      let kbContext = '';
-      if (
-        agentConfig?.knowledgeBaseIds &&
-        agentConfig.knowledgeBaseIds.length > 0 &&
-        deps.knowledgeBase
-      ) {
+      // 4.1 长期记忆注入（用户级，按 memory_config.longTerm 开关）
+      if (agentConfig?.memoryConfig?.longTerm === true && deps.memory) {
         try {
-          const knowledgeBaseIds = params.knowledgeBaseIds ?? agentConfig.knowledgeBaseIds;
-          const kbResults = (await Promise.all(
-            knowledgeBaseIds.map((knowledgeBaseId) =>
-              deps.knowledgeBase!.grep(knowledgeBaseId, message, undefined, tenantId, 3),
-            ),
-          )).flat().sort((a, b) => b.score - a.score).slice(0, 3);
-          if (kbResults.length > 0) {
-            kbContext = `\n\n参考知识库内容：\n${kbResults.map((r) => `- ${r.excerpt}`).join('\n')}`;
+          const memories = await deps.memory.listLongTermMemories({ tenantId, userId });
+          if (memories.length > 0) {
+            const memoryBlock = memories
+              .slice(0, 5)
+              .map((m) => `- ${m.title}: ${m.content.slice(0, 200)}`)
+              .join('\n');
+            systemPrompt = `${systemPrompt}\n\n用户长期记忆（可结合上下文使用）：\n${memoryBlock}`;
           }
         } catch {
-          /* 知识库搜索失败不影响对话 */
+          /* 读取失败不影响对话 */
         }
       }
 
       // 6. 组装消息
       const messages: ChatMessage[] = [
-        { role: 'system', content: systemPrompt + kbContext },
+        { role: 'system', content: systemPrompt },
         ...history,
         { role: 'user', content: message },
       ];
@@ -697,9 +947,64 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         return added;
       }
 
+      // 深度研究：规划轮产出子问题 → 并行子任务检索 → 注入结果并进入综合轮
+      // 返回需要下发的 stage 事件（由生成器主体 yield）与是否继续进入综合轮
+      async function runResearchStageIfNeeded(): Promise<{
+        shouldContinue: boolean;
+        stageEvents: Array<{ type: 'stage'; stage: ResearchStage }>;
+      }> {
+        if (!researchMode || subtasksRan) return { shouldContinue: false, stageEvents: [] };
+        const maxSubtasks = researchConfig?.maxSubtasks ?? 6;
+        const subtasks = parseSubtasks(fullContent, maxSubtasks);
+        if (subtasks.length === 0) return { shouldContinue: false, stageEvents: [] };
+        subtasksRan = true;
+
+        const stageEvents: Array<{ type: 'stage'; stage: ResearchStage }> = [
+          { type: 'stage', stage: 'researching' },
+        ];
+        const results = await Promise.all(
+          subtasks.map((question, i) =>
+            runResearchSubtask(deps, {
+              question,
+              model,
+              tenantId,
+              userId,
+              toolNames: RESEARCH_SUBTASK_TOOLS,
+              signal,
+              toolRegistry: registry,
+              maxSubtaskTurns: researchConfig?.maxSubtaskTurns,
+            }),
+          ),
+        );
+
+        const injected = results
+          .map(
+            (r, i) =>
+              `### 子问题 ${i + 1}：${r.question}\n${r.summary}\n来源：\n${r.sources.map((s) => `- ${s}`).join('\n')}`,
+          )
+          .join('\n\n');
+        messages.push({
+          role: 'system',
+          content: `以下是并行子任务的研究结果，请基于这些结果综合撰写最终报告，并在报告中列出来源清单。\n\n${injected}`,
+        });
+
+        for (const r of results) {
+          for (const s of r.sources) {
+            if (!allSources.includes(s)) allSources.push(s);
+          }
+        }
+
+        stageEvents.push({ type: 'stage', stage: 'synthesizing' });
+        return { shouldContinue: true, stageEvents };
+      }
+
       while (iteration < maxIterations) {
         iteration++;
         if (signal?.aborted) break;
+        // 深度研究：规划阶段（首轮）
+        if (researchMode && iteration === 1) {
+          yield { type: 'stage', stage: 'planning' };
+        }
         await emitter.emit({ type: 'turn_start' }, signal);
         // 记录本轮起始消息数，用于 prepareNextTurn 的 newMessages
         turnStartIndex = messages.length;
@@ -729,7 +1034,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
         // 调用 LLM
         const effectiveTemperature = params.temperature ?? agentConfig?.temperature;
-        const effectiveMaxTokens = params.maxTokens ?? agentConfig?.maxTokensPerTurn;
+        const effectiveMaxTokens = params.maxTokens ?? maxTokensPerTurn;
         const toolDefs = buildToolDefs();
         const stream = deps.llmGateway.chatStream({
           model,
@@ -796,6 +1101,13 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           runSpan?.addEvent('ai.turn', { iteration, model, tool_calls: 0, output_chars: assistantContent.length });
           await applyPrepareNextTurn(assistantEventMsg, []);
           if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
+
+          // 深度研究：规划轮（无工具）→ 并行子任务 → 综合轮
+          {
+            const stage = await runResearchStageIfNeeded();
+            for (const ev of stage.stageEvents) yield ev;
+            if (stage.shouldContinue) continue;
+          }
 
           const queued = [
             ...((await deps.getSteeringMessages?.()) ?? []),
@@ -864,6 +1176,25 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             .map((c) => c.text)
             .join('\n');
 
+          // 工具审计（写入 ai_tool_log；失败不阻断主流程）
+          if (deps.auditToolCall) {
+            try {
+              await deps.auditToolCall({
+                toolCallId: fin.toolCall.id,
+                toolName: fin.toolCall.name,
+                input: fin.toolCall.arguments,
+                output: { content: resultStr.slice(0, 4000), isError: fin.isError },
+                status: fin.isError ? 'error' : 'success',
+                duration: fin.durationMs,
+                userId,
+                tenantId,
+                ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+              });
+            } catch {
+              /* 审计失败不影响对话 */
+            }
+          }
+
           // 输出安全检查
           if (fin.toolCall.name.startsWith('fs-') || fin.toolCall.name.startsWith('kb-')) {
             const outputCheck = guard.checkOutput(resultStr, context.systemPrompt);
@@ -927,6 +1258,13 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         // 检查提前终止
         if (isEarlyTermination(finalized)) break;
 
+        // 深度研究：规划轮（有工具）→ 并行子任务 → 综合轮
+        {
+          const stage = await runResearchStageIfNeeded();
+          for (const ev of stage.stageEvents) yield ev;
+          if (stage.shouldContinue) continue;
+        }
+
         const steeringMessages = (await deps.getSteeringMessages?.()) ?? [];
         if (steeringMessages.length > 0) {
           for (const steeringMessage of steeringMessages) {
@@ -944,8 +1282,16 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
       }
 
+      // 深度研究：下发引用来源清单（供前端渲染来源卡片）
+      if (researchMode && allSources.length > 0) {
+        yield {
+          type: 'sources',
+          sources: allSources.map((url) => ({ title: url, url })),
+        };
+      }
+
       // 9. 保存对话
-      if (deps.memory && params.sessionId) {
+      if (deps.memory && params.sessionId && memoryEnabled) {
         try {
           const memoryScope = { tenantId, userId };
           await deps.memory.appendMessage(params.sessionId, memoryScope, { role: 'user', content: message });

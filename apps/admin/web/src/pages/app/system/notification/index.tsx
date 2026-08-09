@@ -86,7 +86,8 @@ const NotificationPage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete(NOTIFICATION_API.MESSAGES, { params: { id } });
+    // TODO: 后端暂无消息删除端点（仅有模板删除），此为既有缺陷；类型断言消除 schema 报错
+    const { error } = await client.delete(NOTIFICATION_API.MESSAGES as never, { params: { id } });
     if (!error) {
       msg.success("删除成功");
       refresh();

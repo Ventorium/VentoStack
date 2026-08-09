@@ -121,6 +121,8 @@ export interface PlatformConfig {
 
   /** 是否启用多租户隔离（默认 false，向后兼容） */
   tenantEnabled?: boolean;
+  /** 当前部署的租户标识（未启用多租户时的默认租户，默认 'default'） */
+  tenantId?: string;
 }
 
 /** 平台实例 */
@@ -179,6 +181,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     rpOrigins,
     trustedProxies,
     tenantEnabled,
+    tenantId,
   } = config;
 
   const db = providedDb ?? createDatabase({ executor });
@@ -219,6 +222,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(rpOrigins !== undefined ? { rpOrigins } : {}),
     ...(trustedProxies !== undefined ? { trustedProxies } : {}),
     ...(tenantEnabled !== undefined ? { tenantEnabled } : {}),
+    ...(tenantId !== undefined ? { tenantId } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
 

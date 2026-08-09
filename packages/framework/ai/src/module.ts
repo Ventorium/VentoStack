@@ -26,7 +26,7 @@ import { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-re
 import type { LLMGateway, LLMProvider } from './llm-gateway/types';
 
 // Agent Engine
-import { type AgentLoop, createAgentLoop } from './agent-engine/agent-loop';
+import { type AgentConfig, type AgentLoop, createAgentLoop } from './agent-engine/agent-loop';
 import { type AgentEventEmitter, createEventEmitter } from './agent-engine/events';
 import {
   type AgentHarness,
@@ -60,6 +60,7 @@ import type { CompactionSettings } from './compaction/compaction';
 import { createLazyJsonlSessionStorage, createSession } from './session';
 
 import { type AgentCrudService, createAgentRoutes } from './routes/agent';
+import { createApprovalRoutes } from './routes/approval';
 import { createAuditRoutes } from './routes/audit';
 import { type ConversationService, createChatRoutes } from './routes/chat';
 // Routes
@@ -69,6 +70,7 @@ import { createProviderRoutes } from './routes/provider';
 import { createSkillRoutes } from './routes/skill';
 import { createToolRegistryRoutes } from './routes/tool-registry';
 import { createAgentService } from './services/agent';
+import { createApprovalService } from './services/approval';
 import { createScopedKBService } from './services/kb-scope';
 import { createMcpServerService } from './services/mcp-server';
 import type { McpServerService } from './services/mcp-server';
@@ -94,6 +96,7 @@ import {
   createJsonFormatTool,
   createKBBrowseTool,
   createKBFollowLinkTool,
+  createKBOutlineTool,
   createKBReadTool,
   createKBSearchTool,
   createUuidTool,
@@ -227,6 +230,27 @@ export interface AIModuleDeps {
 
 // ---- Provider 创建 ----
 
+/** 从 agent 的 config JSON 中提取深度研究配置（存在 research 字段时返回） */
+function extractResearch(config: unknown): { research: AgentConfig['research'] } | Record<string, never> {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
+  const research = (config as Record<string, unknown>).research;
+  if (!research || typeof research !== 'object' || Array.isArray(research)) return {};
+  const depth = (research as Record<string, unknown>).depth;
+  if (depth === 'quick' || depth === 'normal' || depth === 'deep') {
+    // 透传自定义预算字段（创建 Agent 时可按需覆盖深度预设；非法值忽略）
+    const raw = research as Record<string, unknown>;
+    const out: AgentConfig['research'] = { depth };
+    for (const key of ['maxIterations', 'maxTokensPerTurn', 'searchCount', 'maxSubtasks', 'maxSubtaskTurns'] as const) {
+      const value = raw[key];
+      if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+        out[key] = value;
+      }
+    }
+    return { research: out };
+  }
+  return {};
+}
+
 export function createConfiguredProvider(
   config: LLMProviderConfig,
   customFactories: Record<string, LLMProviderFactory> = {},
@@ -278,6 +302,12 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       : {}),
   });
 
+  // 审批服务（高风险工具人工审批；授权链路见下方 authorizeToolCall）
+  const approvalService = createApprovalService({
+    db: db as import('@ventostack/database').Database,
+    eventBus,
+  });
+
   // 创建 LLM providers
   const providers: LLMProvider[] = deps.llmProviders.map((config) =>
     createConfiguredProvider(config, deps.providerFactories),
@@ -290,7 +320,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     async resolveProvider(modelRef, tenantId) {
       let effectiveModel = modelRef;
       if (effectiveModel === 'default') {
-        effectiveModel = (await providerService.getConfig('model_purpose_default_chat')) ?? '';
+        // 双轨对齐：优先读取前端设置页写入的 default_model，兼容历史 model_purpose_default_chat
+        effectiveModel = (await providerService.getConfig('default_model'))
+          ?? (await providerService.getConfig('model_purpose_default_chat'))
+          ?? '';
       }
       if (!effectiveModel) return null;
       const runtime = await providerService.resolveRuntimeModel(
@@ -355,42 +388,70 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     : undefined;
 
   // 创建工具注册表并注册所有内置工具
-  const toolRegistry = createToolRegistry();
+  // KB 等租户相关工具按租户绑定：对话路由按请求 tenantId 构建请求级注册表（见 createChatRoutes options），
+  // 此处的默认注册表供工具发现/管理路由使用。
+  function buildToolRegistry(tenantId: string): ToolRegistry {
+    const registry = createToolRegistry();
 
-  // 无依赖工具
-  toolRegistry.register(createCalculatorTool());
-  toolRegistry.register(createDatetimeTool());
-  toolRegistry.register(createWebFetchTool());
-  toolRegistry.register(createWebSearchTool());
-  toolRegistry.register(createJsonFormatTool());
-  toolRegistry.register(createUuidTool());
-  toolRegistry.register(createBase64Tool());
-  toolRegistry.register(createHashTool());
+    // 无依赖工具
+    registry.register(createCalculatorTool());
+    registry.register(createDatetimeTool());
+    registry.register(createWebFetchTool());
+    registry.register(createWebSearchTool());
+    registry.register(createJsonFormatTool());
+    registry.register(createUuidTool());
+    registry.register(createBase64Tool());
+    registry.register(createHashTool());
 
-  // 知识库工具
-  toolRegistry.register(createKBBrowseTool({ kbService: knowledgeBase, tenantId: 'default' }));
-  toolRegistry.register(createKBReadTool({ kbService: knowledgeBase, tenantId: 'default' }));
-  toolRegistry.register(createKBSearchTool({ kbService: knowledgeBase, tenantId: 'default' }));
-  toolRegistry.register(createKBFollowLinkTool({ kbService: knowledgeBase, tenantId: 'default' }));
+    // 知识库工具（tenantId 为请求级租户标识：memory 隔离、skill/KB 归属、审计）
+    registry.register(createKBBrowseTool({ kbService: knowledgeBase, tenantId }));
+    registry.register(createKBReadTool({ kbService: knowledgeBase, tenantId }));
+    registry.register(createKBSearchTool({ kbService: knowledgeBase, tenantId }));
+    registry.register(createKBFollowLinkTool({ kbService: knowledgeBase, tenantId }));
+    registry.register(createKBOutlineTool({ kbService: knowledgeBase, tenantId }));
 
-  // 文件系统工具
-  toolRegistry.register(createFsLsTool(knowledgeBase, ''));
-  toolRegistry.register(createFsCatTool(knowledgeBase, ''));
-  toolRegistry.register(createFsGrepTool(knowledgeBase, ''));
-  toolRegistry.register(createFsFindTool(knowledgeBase, ''));
-  toolRegistry.register(createFsHeadTool(knowledgeBase, ''));
-  toolRegistry.register(createFsTailTool(knowledgeBase, ''));
+    // 文件系统工具
+    registry.register(createFsLsTool(knowledgeBase, ''));
+    registry.register(createFsCatTool(knowledgeBase, ''));
+    registry.register(createFsGrepTool(knowledgeBase, ''));
+    registry.register(createFsFindTool(knowledgeBase, ''));
+    registry.register(createFsHeadTool(knowledgeBase, ''));
+    registry.register(createFsTailTool(knowledgeBase, ''));
 
-  // 文件读写工具
-  toolRegistry.register(createFileReadTool({ allowedPaths: [storagePath] }));
-  toolRegistry.register(createFileWriteTool({ allowedPaths: [storagePath] }));
+    // 文件读写工具
+    registry.register(createFileReadTool({ allowedPaths: [storagePath] }));
+    registry.register(createFileWriteTool({ allowedPaths: [storagePath] }));
+
+    return registry;
+  }
+
+  // 默认租户注册表（供工具发现/管理路由；对话按请求 tenantId 另行构建）
+  const toolRegistry = buildToolRegistry('default');
 
   // Agent CRUD 服务（先创建，供 AgentLoop 使用）
   const agentDbService = createAgentService({ db: db as import('@ventostack/database').Database });
   const agentCrudService: AgentCrudService = {
     create: (params) =>
       agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
-    getById: (id, tenantId) => agentDbService.getById(id, tenantId),
+    getById: (id, tenantId) =>
+      agentDbService.getById(id, tenantId).then((item): AgentConfig | null => {
+        if (!item) return null;
+        return {
+          id: item.id,
+          name: item.name,
+          systemPrompt: item.systemPrompt,
+          model: item.model,
+          ...(Array.isArray(item.tools) ? { tools: item.tools as string[] } : {}),
+          ...(Array.isArray(item.knowledgeBaseIds) ? { knowledgeBaseIds: item.knowledgeBaseIds as string[] } : {}),
+          ...(Array.isArray(item.skillIds) ? { skillIds: item.skillIds as string[] } : {}),
+          ...(Array.isArray(item.mcpServerIds) ? { mcpServerIds: item.mcpServerIds as string[] } : {}),
+          ...(typeof item.maxIterations === 'number' ? { maxIterations: item.maxIterations } : {}),
+          ...(typeof item.maxTokensPerTurn === 'number' ? { maxTokensPerTurn: item.maxTokensPerTurn } : {}),
+          ...(item.memoryConfig ? { memoryConfig: item.memoryConfig } : {}),
+          ...(extractResearch(item.config)),
+          tenantId: item.tenantId,
+        };
+      }),
     list: (params) => agentDbService.list(params),
     update: (id, params, tenantId) =>
       agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId),
@@ -427,6 +488,55 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     prepareNextTurn: deps.hooks?.prepareNextTurn,
     getApiKey: deps.hooks?.getApiKey,
     dynamicToolResolver: deps.hooks?.dynamicToolResolver,
+    // 高风险工具审批：已批准（未过期且参数一致）直接放行；否则创建审批请求并拒绝本次执行
+    authorizeToolCall: async ({ toolCall, args, context }) => {
+      const recent = await approvalService.findRecentApproved(
+        toolCall.name,
+        args as Record<string, unknown>,
+        context.userId,
+        context.tenantId,
+      );
+      if (recent) return { approved: true, reason: '该工具此前已获审批' };
+      try {
+        const request = await approvalService.request(
+          toolCall.name,
+          args as Record<string, unknown>,
+          context.userId,
+          context.tenantId,
+        );
+        return {
+          approved: false,
+          reason: `工具 ${toolCall.name} 需要人工审批：已创建审批请求 ${request.id}，请管理员审批后重试`,
+        };
+      } catch (err) {
+        return {
+          approved: false,
+          reason: `审批请求创建失败：${err instanceof Error ? err.message : String(err)}`,
+        };
+      }
+    },
+    // 工具审计：每次工具执行写入 ai_tool_log（失败仅告警，不阻断对话）
+    auditToolCall: async (log) => {
+      try {
+        await (db as import('@ventostack/database').Database).raw(
+          `INSERT INTO ai_tool_log (id, conversation_id, tool_name, input, output, status, duration, user_id, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            crypto.randomUUID(),
+            log.sessionId ?? null,
+            log.toolName,
+            JSON.stringify(log.input),
+            JSON.stringify(log.output),
+            log.status,
+            log.duration,
+            log.userId,
+            log.tenantId,
+          ],
+        );
+      } catch (err) {
+        console.error('[ai] 写入工具审计日志失败:', err);
+      }
+    },
     tracer: deps.tracer,
     parentSpanContext: deps.parentSpanContext,
     mcpToolSource,
@@ -454,20 +564,60 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const agentRouter = createAgentRoutes(agentCrudService, authMiddleware, perm, {
     storagePath: `${storagePath}/skills/.workspace`,
   });
+  // 会话服务：基于 memory（JSONL 用户级会话存储），实现真实 CRUD 与历史查询
   const conversationService: ConversationService = {
-    async create(_params) {
-      return { id: crypto.randomUUID() };
+    async create(params) {
+      const { sessionId } = await memory.createSession({
+        userId: params.userId,
+        agentId: params.agentId,
+        tenantId: params.tenantId,
+      });
+      return { id: sessionId };
     },
-    async getById(_id, _userId) {
-      return null;
+    async getById(id, userId, tenantId) {
+      const session = await memory.getSession(id, { tenantId, userId });
+      if (!session) return null;
+      return {
+        id: session.sessionId,
+        agentId: session.agentId,
+        userId: session.userId,
+        title: session.title,
+        status: session.status,
+        messageCount: session.messageCount,
+        tenantId: session.tenantId,
+        createdAt: session.createdAt.toISOString(),
+        updatedAt: session.updatedAt.toISOString(),
+      };
     },
-    async list(_params) {
-      return [];
+    async list(params) {
+      const sessions = await memory.listSessions(
+        { tenantId: params.tenantId, userId: params.userId },
+        params.agentId,
+      );
+      return sessions.map((s) => ({
+        id: s.sessionId,
+        agentId: s.agentId,
+        userId: s.userId,
+        title: s.title,
+        status: s.status,
+        messageCount: s.messageCount,
+        tenantId: s.tenantId,
+        createdAt: s.createdAt.toISOString(),
+        updatedAt: s.updatedAt.toISOString(),
+      }));
     },
-    async delete(_id, _userId) {},
+    async delete(id, userId, tenantId) {
+      await memory.deleteSession(id, { tenantId, userId });
+    },
+    async getMessages(id, userId, tenantId, limit) {
+      return memory.getHistory(id, { tenantId, userId }, limit ?? 50);
+    },
   };
 
-  const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm, memory);
+  const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm, memory, {
+    // 对话/流式请求按 ctx.user.tenantId 构建请求级工具注册表（KB 工具绑定请求租户）
+    createTenantToolRegistry: buildToolRegistry,
+  });
 
   // Skill 服务
   const modelConfigService = createModelConfigService({ db });
@@ -502,6 +652,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     perm,
   );
   router.merge(auditRouter);
+
+  // 审批路由
+  const approvalRouter = createApprovalRoutes(approvalService, authMiddleware, perm);
+  router.merge(approvalRouter);
 
   // 创建 Harness 工厂
   function createHarness(partialOptions: Partial<AgentHarnessOptions>): AgentHarness {

@@ -1,11 +1,20 @@
+import { existsSync } from 'node:fs';
+import { readFile, readdir, stat } from 'node:fs/promises';
+import { join, resolve } from 'node:path';
 /**
  * Agent 路由
  */
-import { createRouter, fail, handleError, pageOf, paginated, parseBody, success } from "@ventostack/core";
-import type { Middleware, Router } from "@ventostack/core";
-import { join, resolve } from "node:path";
-import { readdir, stat, readFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import {
+  createRouter,
+  fail,
+  handleError,
+  pageOf,
+  paginated,
+  parseBody,
+  success,
+} from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
+import { paginationQuery, routeDoc } from './schema';
 
 export interface AgentCrudService {
   create(params: Record<string, unknown>): Promise<{ id: string }>;
@@ -32,13 +41,41 @@ export function createAgentRoutes(
   router.use(authMiddleware);
 
   router.post(
-    "/api/ai/agents",
-    perm("ai:agent", "create"),
+    '/api/ai/agents',
+    routeDoc('创建 Agent', {
+      body: {
+        name: { type: 'string', required: true, max: 128, description: 'Agent 名称' },
+        description: { type: 'string', description: '描述' },
+        model: { type: 'string', required: true, description: '模型 ID' },
+        systemPrompt: { type: 'string', required: true, description: '系统提示词' },
+        tools: { type: 'array', items: { type: 'string' }, description: '启用的工具名' },
+        knowledgeBaseIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '绑定的知识库 ID',
+        },
+        skillIds: { type: 'array', items: { type: 'string' }, description: '绑定的技能 ID' },
+        mcpServerIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '绑定的 MCP 服务 ID',
+        },
+        memoryConfig: {
+          type: 'object',
+          description: '记忆配置（enabled/longTerm/maxHistoryMessages）',
+        },
+        config: { type: 'object', description: '扩展配置（如 research.depth）' },
+        maxIterations: { type: 'int', description: '最大迭代轮数' },
+        maxTokensPerTurn: { type: 'int', description: '每轮 Token 上限' },
+        isPublic: { type: 'bool', description: '是否公开' },
+      },
+      responses: { 200: { id: { type: 'string', description: 'Agent ID' } } },
+    }),
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const userId = (ctx.user as { id?: string })?.id ?? "";
-        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const result = await agentService.create({
           ...body,
           tenantId,
@@ -49,19 +86,18 @@ export function createAgentRoutes(
         return handleError(e);
       }
     },
+    perm('ai:agent', 'create'),
   );
 
   router.get(
-    "/api/ai/agents",
-    perm("ai:agent", "list"),
+    '/api/ai/agents',
+    routeDoc('获取 Agent 列表', { query: paginationQuery }),
     async (ctx) => {
-      const { page, pageSize } = pageOf(
-        ctx.query as Record<string, unknown>,
-      );
-      const userId = (ctx.user as { id?: string })?.id ?? "";
-      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+      const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
+      const userId = (ctx.user as { id?: string })?.id ?? '';
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
       const roles = (ctx.user as { roles?: string[] })?.roles ?? [];
-      const isAdmin = roles.includes("admin");
+      const isAdmin = roles.includes('admin');
       const result = await agentService.list({
         tenantId,
         userId,
@@ -71,28 +107,55 @@ export function createAgentRoutes(
       });
       return paginated(result.list, result.total, page, pageSize);
     },
+    perm('ai:agent', 'list'),
   );
 
   router.get(
-    "/api/ai/agents/:id",
-    perm("ai:agent", "list"),
+    '/api/ai/agents/:id',
+    routeDoc('获取 Agent 详情'),
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
       const agent = await agentService.getById(id, tenantId);
-      if (!agent) return fail("Agent 不存在", 404, 404);
+      if (!agent) return fail('Agent 不存在', 404, 404);
       return success(agent);
     },
+    perm('ai:agent', 'list'),
   );
 
   // 更新 Agent
   router.put(
-    "/api/ai/agents/:id",
-    perm("ai:agent", "update"),
+    '/api/ai/agents/:id',
+    routeDoc('更新 Agent', {
+      body: {
+        name: { type: 'string', max: 128, description: 'Agent 名称' },
+        description: { type: 'string', description: '描述' },
+        model: { type: 'string', description: '模型 ID' },
+        systemPrompt: { type: 'string', description: '系统提示词' },
+        tools: { type: 'array', items: { type: 'string' }, description: '启用的工具名' },
+        knowledgeBaseIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '绑定的知识库 ID',
+        },
+        skillIds: { type: 'array', items: { type: 'string' }, description: '绑定的技能 ID' },
+        mcpServerIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '绑定的 MCP 服务 ID',
+        },
+        memoryConfig: { type: 'object', description: '记忆配置' },
+        config: { type: 'object', description: '扩展配置（如 research.depth）' },
+        maxIterations: { type: 'int', description: '最大迭代轮数' },
+        maxTokensPerTurn: { type: 'int', description: '每轮 Token 上限' },
+        isPublic: { type: 'bool', description: '是否公开' },
+        status: { type: 'string', description: '状态' },
+      },
+    }),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
-        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
         await agentService.update(id, body, tenantId);
         return success(null);
@@ -100,99 +163,98 @@ export function createAgentRoutes(
         return handleError(e);
       }
     },
+    perm('ai:agent', 'update'),
   );
 
   router.delete(
-    "/api/ai/agents/:id",
-    perm("ai:agent", "delete"),
+    '/api/ai/agents/:id',
+    routeDoc('删除 Agent'),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
-        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         await agentService.delete(id, tenantId);
         return success(null);
       } catch (e) {
         return handleError(e);
       }
     },
+    perm('ai:agent', 'delete'),
   );
 
   router.post(
-    "/api/ai/agents/:id/publish",
-    perm("ai:agent", "publish"),
+    '/api/ai/agents/:id/publish',
+    routeDoc('发布 Agent'),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
-        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         await agentService.publish(id, tenantId);
         return success(null);
       } catch (e) {
         return handleError(e);
       }
     },
+    perm('ai:agent', 'publish'),
   );
 
   // ── 工作区文件浏览 ──
-  const WORKSPACE_BASE = deps?.storagePath ?? "./data/skills/.workspace";
+  const WORKSPACE_BASE = deps?.storagePath ?? './data/skills/.workspace';
 
   // 列出工作区文件
-  router.get(
-    "/api/ai/agents/:id/workspace/files",
-    perm("ai:agent", "list"),
-    async (ctx) => {
-      try {
-        const id = (ctx.params as Record<string, string>).id!;
-        const workspaceDir = join(WORKSPACE_BASE, id);
-        if (!existsSync(workspaceDir)) return success([]);
+  router.get('/api/ai/agents/:id/workspace/files', perm('ai:agent', 'list'), async (ctx) => {
+    try {
+      const id = (ctx.params as Record<string, string>).id!;
+      const workspaceDir = join(WORKSPACE_BASE, id);
+      if (!existsSync(workspaceDir)) return success([]);
 
-        const files: Array<{ path: string; size: number; modifiedAt: string }> = [];
-        async function walk(dir: string, rel: string) {
-          const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
-          for (const item of items) {
-            const itemRel = rel ? `${rel}/${item.name}` : item.name;
-            const fullPath = join(dir, item.name);
-            if (item.isDirectory()) {
-              await walk(fullPath, itemRel);
-            } else {
-              const s = await stat(fullPath).catch(() => null);
-              files.push({
-                path: itemRel,
-                size: s?.size ?? 0,
-                modifiedAt: s?.mtime?.toISOString() ?? "",
-              });
-            }
+      const files: Array<{ path: string; size: number; modifiedAt: string }> = [];
+      async function walk(dir: string, rel: string) {
+        const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
+        for (const item of items) {
+          const itemRel = rel ? `${rel}/${item.name}` : item.name;
+          const fullPath = join(dir, item.name);
+          if (item.isDirectory()) {
+            await walk(fullPath, itemRel);
+          } else {
+            const s = await stat(fullPath).catch(() => null);
+            files.push({
+              path: itemRel,
+              size: s?.size ?? 0,
+              modifiedAt: s?.mtime?.toISOString() ?? '',
+            });
           }
         }
-        await walk(workspaceDir, "");
-        return success(files);
-      } catch (e) { return handleError(e); }
-    },
-  );
+      }
+      await walk(workspaceDir, '');
+      return success(files);
+    } catch (e) {
+      return handleError(e);
+    }
+  });
 
   // 读取工作区文件内容
-  router.get(
-    "/api/ai/agents/:id/workspace/file",
-    perm("ai:agent", "list"),
-    async (ctx) => {
-      try {
-        const id = (ctx.params as Record<string, string>).id!;
-        const filePath = ((ctx.query as Record<string, string>)?.path ?? "") as string;
-        if (!filePath) return fail("path 参数必填", 400, 400);
+  router.get('/api/ai/agents/:id/workspace/file', perm('ai:agent', 'list'), async (ctx) => {
+    try {
+      const id = (ctx.params as Record<string, string>).id!;
+      const filePath = ((ctx.query as Record<string, string>)?.path ?? '') as string;
+      if (!filePath) return fail('path 参数必填', 400, 400);
 
-        const workspaceDir = join(WORKSPACE_BASE, id);
-        const fullPath = resolve(join(workspaceDir, filePath));
+      const workspaceDir = join(WORKSPACE_BASE, id);
+      const fullPath = resolve(join(workspaceDir, filePath));
 
-        // 安全检查：确保路径在 workspace 内
-        if (!fullPath.startsWith(resolve(workspaceDir))) {
-          return fail("路径不合法", 400, 400);
-        }
-        if (!existsSync(fullPath)) return fail("文件不存在", 404, 404);
+      // 安全检查：确保路径在 workspace 内
+      if (!fullPath.startsWith(resolve(workspaceDir))) {
+        return fail('路径不合法', 400, 400);
+      }
+      if (!existsSync(fullPath)) return fail('文件不存在', 404, 404);
 
-        const content = await readFile(fullPath, "utf-8");
-        return success({ path: filePath, content });
-      } catch (e) { return handleError(e); }
-    },
-  );
+      const content = await readFile(fullPath, 'utf-8');
+      return success({ path: filePath, content });
+    } catch (e) {
+      return handleError(e);
+    }
+  });
 
   return router;
 }

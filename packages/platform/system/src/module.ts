@@ -147,6 +147,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     auditStore: auditLog,
     eventBus,
     configService,
+    // 与缓存命名空间/数据服务同一来源：tenantEnabled 时使用 deps.tenantId，否则 undefined（auth 内回退 'default'）
+    tenantId,
   });
   const userService = createUserService({ db, passwordHasher, cache, configService, tenantId });
   const roleService = createRoleService({ db, cache, tenantId });

@@ -154,7 +154,8 @@ function SkillsTab() {
   const installFromStore = useCallback(async (slug: string) => {
     setInstallingSlug(slug);
     try {
-      const { error } = (await client.post(`/api/ai/skills/store/${slug}/install`, {
+      const { error } = (await client.post("/api/ai/skills/store/:slug/install", {
+        params: { slug },
         body: {},
       })) as { error?: unknown };
       if (!error) {
