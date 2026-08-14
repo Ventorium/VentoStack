@@ -1,5 +1,10 @@
 // @ventostack/cli - CLI 入口和命令路由
 
+import { createScaffoldCommand } from "./commands/scaffold";
+import { createGenerateCommand } from "./commands/generate";
+import { createMigrateCommand } from "./commands/migrate";
+import { createPasswordCommand } from "./commands/password";
+
 /** 命令选项定义 */
 export interface CommandOption {
   /** 选项名称 */
@@ -175,12 +180,15 @@ export function createCLI(name: string, version: string): CLI {
 
 /**
  * 默认 CLI 运行入口
+ *
+ * 注册官方内置命令（create / generate / migrate / password）并启动。
  * @returns Promise<void>
  */
 export function run(): Promise<void> {
   const cli = createCLI("ventostack", "0.1.0");
-
-  // Commands are registered by the consuming app
-  // This is the default entry point
+  cli.register(createScaffoldCommand());
+  cli.register(createGenerateCommand());
+  cli.register(createMigrateCommand());
+  cli.register(createPasswordCommand());
   return cli.run();
 }

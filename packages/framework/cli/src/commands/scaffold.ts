@@ -24,7 +24,9 @@ const PACKAGE_JSON_TEMPLATE = (name: string): string =>
         test: "bun test",
         typecheck: "bunx tsc --noEmit",
       },
-      dependencies: {},
+      dependencies: {
+        "@ventostack/core": "latest",
+      },
       devDependencies: {
         "@types/bun": "latest",
         typescript: "^5",
