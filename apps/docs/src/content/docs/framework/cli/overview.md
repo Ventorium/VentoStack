@@ -5,7 +5,27 @@ description: VentoStack 命令行工具，支持代码生成、数据库迁移�
 
 # CLI 工具
 
-`@ventostack/cli` 提供 VentoStack 的命令行基础设施，基于链式注册模式构建，支持自定义命令扩展。
+`@ventostack/cli` 提供 VentoStack 的命令行基础设施，基于链式注册模式构建，支持自定义命令扩展。它有两种使用形态：
+
+1. **命令行工具（开箱即用）**：通过 `bin`（`ventostack`）直接执行脚手架、代码生成、迁移、密码哈希等官方命令
+2. **嵌入式库（API）**：业务应用可用 `createCLI()` + `createXxxCommand()` 组合自己的 CLI，复用官方命令或注册自定义命令
+
+## 安装与直接使用
+
+```bash
+bun add @ventostack/cli
+bunx @ventostack/cli <command> [options]
+```
+
+`ventostack` 是本包提供的 bin 命令名，与 `bunx @ventostack/cli` 等价（全局安装后可直接使用 `ventostack`，下述内置命令示例中的 `ventostack` 均可替换为 `bunx @ventostack/cli`）。
+
+```bash
+bunx @ventostack/cli create --name my-app          # 创建新项目
+bunx @ventostack/cli generate model User          # 生成 Model 模板
+bunx @ventostack/cli migrate status               # 查看迁移状态
+bunx @ventostack/cli password my-secret           # 生成密码哈希
+bunx @ventostack/cli help                         # 查看全部命令
+```
 
 ## CLI 入口
 
@@ -30,7 +50,7 @@ function createCLI(name: string, version: string): CLI
 ```ts
 import { run } from "@ventostack/cli";
 
-await run(); // 使用 "ventostack" 作为名称，版本 "0.1.0"
+await run(); // 注册全部官方命令（create/generate/migrate/password）并启动
 ```
 
 ### 自定义命令
