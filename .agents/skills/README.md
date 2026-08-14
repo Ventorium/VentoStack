@@ -18,6 +18,7 @@ description: |
 
 | Skill | 文件 | 适用场景 |
 |-------|------|----------|
+| **create-project** | `create-project.md` | 从零创建基于 `@ventostack/*` 的新项目（包选型/脚手架/能力接入/平台装配） |
 | **project-conventions** | `project-conventions.md` | 所有任务，全局命名/类型/测试/Git/文档约定 |
 | **framework-core** | `framework-core.md` | 修改 `packages/framework/core` 路由/中间件/Context/错误/生命周期 |
 | **framework-database** | `framework-database.md` | 修改 `packages/framework/database` 模型/查询/迁移/事务 |

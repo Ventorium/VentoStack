@@ -52,18 +52,12 @@ VentoStack 充分利用 Bun 的内置能力：
 
 ## 包结构
 
-| 包名 | 说明 |
-|---|---|
-| `@ventostack/core` | HTTP 应用、路由、中间件、错误处理、配置、校验、限流、熔断、WebSocket、gRPC、功能开关等 |
-| `@ventostack/database` | 查询构建器、模型定义、迁移、事务、连接池、读写分离、Schema 差异检测 |
-| `@ventostack/cache` | 缓存层，支持内存和 Redis 适配器、分布式锁、二级缓存、防雪崩 |
-| `@ventostack/auth` | JWT、密码哈希、Session、API Key、RBAC、ABAC、TOTP、OAuth、策略引擎、行级过滤 |
-| `@ventostack/events` | 事件总线、消息队列、事件溯源 |
-| `@ventostack/observability` | 日志、指标、追踪、健康检查 |
-| `@ventostack/openapi` | OpenAPI 3.0 Schema 构建、文档生成、路由元数据、Swagger/Scalar UI、API 版本管理 |
-| `@ventostack/testing` | 测试应用启动、HTTP 测试客户端、Fixture 管理、安全测试套件、测试数据工厂 |
-| `@ventostack/ai` | 工具注册表、权限沙箱、审批流、上下文管理、知识库、智能体注册表 |
-| `@ventostack/cli` | 脚手架和代码生成工具 |
+VentoStack 的全部能力以 `@ventostack/*` 系列包发布到 npm，共 **23 个包**，分为框架层（12 个）与平台层（11 个）：
+
+- **框架层**：`core`（HTTP 应用、路由、中间件、错误处理、配置、校验、限流、熔断、WebSocket、gRPC 等）、`database`、`cache`、`events`、`observability`、`openapi`、`testing`、`webhook`、`cli`、`file2md`、`ai`、`vite-bridge`
+- **平台层**：`auth`（JWT、密码哈希、Session、API Key、RBAC、ABAC、TOTP、OAuth、策略引擎、行级过滤）、`system`、`boot`、`gen`、`i18n`、`monitor`、`notification`、`oss`、`scheduler`、`workflow`、`integration`
+
+完整的包能力清单、依赖关系与按应用场景的选型指南，见 [包总览与选型](./packages)。
 
 ## 为什么选择 VentoStack？
 

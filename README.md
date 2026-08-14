@@ -14,22 +14,73 @@
 
 VentoStack 是一个基于 Bun 运行时构建的全栈后端框架，专为高性能和极致开发体验而设计。它遵循函数式优先的设计原则——无 class、无装饰器、显式依赖注入。
 
-## 模块概览
+## 包总览（npm）
 
-VentoStack 将后端能力拆分为可按需组合的独立包：
+VentoStack 的全部能力以 `@ventostack/*` 系列包发布到 npm，共 **23 个包**，分为「框架层」与「平台层」两层，可按需组合、按场景选包。框架层提供与业务无关的通用能力；平台层提供可直接组合的业务模块，由 `@ventostack/boot` 统一装配。
 
-| 包名 | 说明 |
+### 框架层（12 个）
+
+框架层全部基于 Bun 原生 API 实现，不依赖任何上层能力包：
+
+| 包名 | 核心能力 | 依赖 |
+|---|---|---|
+| `@ventostack/core` | HTTP 路由、Context、中间件、错误处理、生命周期、配置管理、Schema 校验、安全中间件（CORS/CSRF/SSRF/XSS/HMAC/上传/IP 过滤/限流）、WebSocket/RPC/gRPC | 无 |
+| `@ventostack/database` | 类型安全查询构建器、迁移、Seed、事务、连接池、读写分离、关系定义、Schema 差异、租户隔离 | core |
+| `@ventostack/cache` | 统一缓存接口、Redis/内存适配器、L1/L2 多级缓存、分布式锁、TTL 抖动 | core |
+| `@ventostack/events` | 事件总线、消息队列、延迟队列、Saga/TCC、本地与分布式调度 | core |
+| `@ventostack/observability` | 结构化日志（自动脱敏）、Prometheus 指标、OpenTelemetry 追踪、健康检查、审计日志（哈希链） | core |
+| `@ventostack/openapi` | OpenAPI 3.1 文档生成、请求校验、Swagger UI / Scalar UI、API 差异分析 | core |
+| `@ventostack/testing` | 测试应用/客户端、Fixture、数据 Factory、事务隔离、安全基线回归套件 | core |
+| `@ventostack/webhook` | Webhook 入站/出站、HMAC/RSA-SHA256 签名校验、时间戳防重放、指数退避重试 | core |
+| `@ventostack/cli` | 函数式 CLI、项目脚手架（`create`）、代码生成、迁移命令、安全密码生成 | core, database |
+| `@ventostack/file2md` | 办公文档转 Markdown（docx/pdf/xlsx/pptx/epub）、MIME 识别、ZIP 安全读取、OCR 接口 | 无（第三方：liteparse） |
+| `@ventostack/ai` | LLM 网关（多 Provider）、Agent Loop、Tool Registry、MCP Server、Session/Memory、Skill、RAG、沙箱执行、Token 预算 | core, database, cache, events, observability, file2md |
+| `@ventostack/vite-bridge` | 后端与 Vite 开发服务器的桥接，全栈本地开发体验 | core |
+
+### 平台层（11 个）
+
+平台层是完整的业务模块，遵循统一的 Module 结构（models/services/routes/migrations），通过 `@ventostack/boot` 按开关装配：
+
+| 包名 | 核心能力 | 依赖 |
+|---|---|---|
+| `@ventostack/auth` | JWT（算法白名单）、Session（内存/Redis）、API Key、RBAC/ABAC、策略引擎、行级数据过滤、TOTP、OAuth | core, database, cache |
+| `@ventostack/system` | 用户、角色、菜单、部门、岗位、字典、配置、公告、操作日志、登录/MFA/Passkey | core, database, cache, auth, events, observability |
+| `@ventostack/boot` | `createPlatform()` 组合入口，集中声明基础设施并按模块开关装配平台能力 | 全部平台包 |
+| `@ventostack/gen` | 数据库表导入、Model/Service/Routes/Types/测试代码生成 | core, database, auth |
+| `@ventostack/i18n` | Locale/Message 管理、运行时翻译、默认与回退语言策略 | core, database, auth |
+| `@ventostack/monitor` | 服务器/Redis/数据源/健康状态/在线用户监控 | core, database, auth, observability |
+| `@ventostack/notification` | 通知模板、站内信/SMTP/SMS/Webhook 多通道投递、已读状态 | core, database, auth, observability |
+| `@ventostack/oss` | 对象存储（本地/S3 适配器）、上传下载删除、签名 URL、路径遍历防护 | core, database, auth |
+| `@ventostack/scheduler` | 持久化定时任务、Cron 管理、执行日志、手动触发 | core, database, auth, events |
+| `@ventostack/workflow` | 流程定义与图校验、串行/会签/或签/比例审批、驳回/转交/加签/撤回 | core, database, auth, events |
+| `@ventostack/integration` | 第三方回调签名验证（Stripe/GitHub/DingTalk/Slack/Shopify/微信支付/支付宝） | webhook |
+
+### 按应用场景选包
+
+| 场景 | 推荐包组合 |
 |---|---|
-| `@ventostack/core` | HTTP 服务、路由、中间件、配置管理、生命周期、错误处理 |
-| `@ventostack/database` | 查询构建器、数据库迁移、连接池、事务管理 |
-| `@ventostack/cache` | 缓存层，支持内存适配器与 Redis 适配器 |
-| `@ventostack/auth` | JWT、RBAC 权限、OAuth 登录、Session 管理、MFA |
-| `@ventostack/events` | 事件总线、发布订阅、事件溯源、CQRS |
-| `@ventostack/observability` | 指标采集、链路追踪、结构化日志、健康检查 |
-| `@ventostack/openapi` | OpenAPI 3.1 文档生成与请求校验 |
-| `@ventostack/testing` | 测试工具、Mock 辅助、测试应用封装 |
-| `@ventostack/ai` | AI 集成：LLM 适配器、RAG 流水线、流式响应 |
-| `@ventostack/cli` | 脚手架与代码生成 CLI 工具 |
+| 纯 HTTP API 服务 | `@ventostack/core` |
+| API + 数据库（CRUD） | `core` + `database` |
+| 需要缓存/限流/分布式锁 | `core` + `cache` |
+| 需要登录与权限控制 | `auth` + `database` + `cache` |
+| 需要后台管理系统（用户/角色/菜单） | `boot` + `system` + `auth` |
+| 需要事件驱动 / 异步任务 | `events` |
+| 需要定时任务 | `scheduler` + `events` |
+| 需要监控告警 / 审计 | `observability` |
+| 需要对外 API 契约文档 | `openapi` |
+| 需要接收第三方回调（支付等） | `webhook` + `integration` |
+| 需要 AI Agent / RAG / MCP | `ai` + `file2md` + `database` + `cache` |
+| 需要文件上传 / 对象存储 | `oss` |
+| 需要站内信 / 邮件 / 短信通知 | `notification` |
+| 需要审批工作流 | `workflow` |
+| 需要代码生成（表 → CRUD） | `gen` |
+| 需要国际化 | `i18n` |
+| 需要服务器/缓存监控面板 | `monitor` |
+| 需要本地前后端联动开发 | `vite-bridge` |
+| 需要脚手架初始化项目 | `cli` |
+| 需要测试工具链 | `testing` |
+
+> 包依赖关系遵循单向分层：框架层不依赖平台层，平台层只依赖框架层。新增依赖包时必须评估安全边界（见上文「发布流程」与 `docs/` 中的安全规范）。
 
 ## 设计原则
 
@@ -188,21 +239,37 @@ router.get("/events", defineRouteConfig({
 ## 目录结构
 
 ```
-fullstack/
+VentoStack/
   apps/
     example/          - 示例应用
-    docs/             - 文档站点（Starlight）
+    docs/             - 文档站点（Astro Starlight）
+    admin/            - 管理后台（api 后端 + web 前端）
   packages/
-    core/             - 核心 HTTP 框架
-    database/         - 数据库层
-    cache/            - 缓存层
-    auth/             - 认证与授权
-    events/           - 事件系统
-    observability/    - 指标、追踪、日志
-    openapi/          - OpenAPI 文档生成
-    testing/          - 测试工具
-    ai/               - AI 集成
-    cli/              - CLI 工具
+    framework/        - 框架层（零第三方运行时依赖，发布到 npm）
+      core/           - 核心 HTTP 框架
+      database/       - 数据库层
+      cache/          - 缓存层
+      events/         - 事件系统
+      observability/  - 指标、追踪、日志
+      openapi/        - OpenAPI 文档生成
+      testing/        - 测试工具
+      webhook/        - Webhook 收发与签名校验
+      ai/             - AI 引擎
+      file2md/        - 文件转 Markdown
+      cli/            - CLI 工具
+      vite-bridge/    - Vite 开发桥接
+    platform/         - 平台层（业务模块，发布到 npm）
+      auth/           - 认证授权（JWT/RBAC/ABAC/TOTP/OAuth/Session）
+      system/         - 系统管理（用户/角色/菜单/字典等）
+      boot/           - createPlatform() 聚合器
+      gen/            - 代码生成
+      i18n/           - 国际化
+      monitor/        - 系统监控
+      notification/   - 通知中心
+      oss/            - 对象存储
+      scheduler/      - 定时任务
+      workflow/       - 审批工作流
+      integration/    - 第三方集成
   docs/               - 文档源文件
 ```
 

@@ -16,20 +16,67 @@ VentoStack is a Bun-native fullstack backend framework built for performance and
 
 ## Overview
 
-VentoStack provides a complete suite of backend capabilities as composable packages:
+VentoStack publishes its full capability set as `@ventostack/*` packages on npm — **23 packages** in total, split into two layers: the **framework layer** (12 packages, business-agnostic building blocks) and the **platform layer** (11 packages, ready-made business modules assembled by `@ventostack/boot`).
 
-| Package | Description |
+### Framework Layer (12)
+
+| Package | Capabilities | Depends on |
+|---|---|---|
+| `@ventostack/core` | HTTP routing, Context, middleware, error handling, lifecycle, config management, schema validation, security middleware (CORS/CSRF/SSRF/XSS/HMAC/upload/IP filter/rate limit), WebSocket/RPC/gRPC | none |
+| `@ventostack/database` | Typed query builder, migrations, seeds, transactions, connection pooling, read/write split, relations, schema diff, tenant isolation | core |
+| `@ventostack/cache` | Unified cache interface, Redis/memory adapters, L1/L2 multi-level cache, distributed locks, TTL jitter | core |
+| `@ventostack/events` | Event bus, message queue, delayed queue, Saga/TCC, local & distributed scheduling | core |
+| `@ventostack/observability` | Structured logging (auto-masked), Prometheus metrics, OpenTelemetry tracing, health checks, audited logs (hash chain) | core |
+| `@ventostack/openapi` | OpenAPI 3.1 generation, request validation, Swagger UI / Scalar UI, API diff analysis | core |
+| `@ventostack/testing` | Test app/client, fixtures, data factories, transaction isolation, security baseline regression suite | core |
+| `@ventostack/webhook` | Inbound/outbound webhooks, HMAC/RSA-SHA256 signature verification, replay protection, exponential backoff | core |
+| `@ventostack/cli` | Functional CLI, project scaffolding (`create`), code generation, migration commands, secure password generation | core, database |
+| `@ventostack/file2md` | Office docs to Markdown (docx/pdf/xlsx/pptx/epub), MIME detection, safe ZIP reads, OCR interface | none (3rd-party: liteparse) |
+| `@ventostack/ai` | LLM gateway (multi-provider), Agent Loop, Tool Registry, MCP Server, Session/Memory, Skill, RAG, sandboxed execution, token budgets | core, database, cache, events, observability, file2md |
+| `@ventostack/vite-bridge` | Bridge between the backend and the Vite dev server for fullstack local development | core |
+
+### Platform Layer (11)
+
+| Package | Capabilities | Depends on |
+|---|---|---|
+| `@ventostack/auth` | JWT (algorithm whitelist), Session (memory/Redis), API Keys, RBAC/ABAC, policy engine, row-level filtering, TOTP, OAuth | core, database, cache |
+| `@ventostack/system` | Users, roles, menus, departments, positions, dictionaries, configs, notices, operation logs, login/MFA/Passkey | core, database, cache, auth, events, observability |
+| `@ventostack/boot` | `createPlatform()` composition root that wires infrastructure and toggles platform modules | all platform packages |
+| `@ventostack/gen` | Database table import, Model/Service/Routes/Types/test code generation | core, database, auth |
+| `@ventostack/i18n` | Locale/Message management, runtime translation, default & fallback language policy | core, database, auth |
+| `@ventostack/monitor` | Server/Redis/datasource/health/online-user monitoring | core, database, auth, observability |
+| `@ventostack/notification` | Notification templates, in-app/SMTP/SMS/Webhook channels, read status | core, database, auth, observability |
+| `@ventostack/oss` | Object storage (local/S3 adapters), upload/download/delete, signed URLs, path traversal protection | core, database, auth |
+| `@ventostack/scheduler` | Persistent cron jobs, execution logs, manual triggers | core, database, auth, events |
+| `@ventostack/workflow` | Flow definitions & graph validation, serial/countersign/or-sign/ratio approval, reject/transfer/counter-sign/withdraw | core, database, auth, events |
+| `@ventostack/integration` | Third-party callback verification (Stripe/GitHub/DingTalk/Slack/Shopify/WeChat Pay/Alipay) | webhook |
+
+### Choosing Packages by Use Case
+
+| Use case | Recommended packages |
 |---|---|
-| `@ventostack/core` | HTTP server, routing, middleware, config, lifecycle, error handling |
-| `@ventostack/database` | Query builder, migrations, connection pooling, transactions |
-| `@ventostack/cache` | Cache layer with memory and Redis adapters |
-| `@ventostack/auth` | JWT, RBAC, OAuth, session management, MFA |
-| `@ventostack/events` | Event bus, pub/sub, event sourcing, CQRS |
-| `@ventostack/observability` | Metrics, tracing, structured logging, health checks |
-| `@ventostack/openapi` | OpenAPI 3.1 schema generation and validation |
-| `@ventostack/testing` | Test utilities, mocks, and test application helpers |
-| `@ventostack/ai` | AI integration with LLM adapters, RAG, and streaming |
-| `@ventostack/cli` | CLI tooling for scaffolding and code generation |
+| Plain HTTP API | `@ventostack/core` |
+| API + database (CRUD) | `core` + `database` |
+| Caching / rate limiting / distributed locks | `core` + `cache` |
+| Authentication & authorization | `auth` + `database` + `cache` |
+| Admin panel (users/roles/menus) | `boot` + `system` + `auth` |
+| Event-driven / async tasks | `events` |
+| Cron jobs | `scheduler` + `events` |
+| Monitoring / audit | `observability` |
+| API contract docs | `openapi` |
+| Third-party callbacks (payments) | `webhook` + `integration` |
+| AI agents / RAG / MCP | `ai` + `file2md` + `database` + `cache` |
+| File uploads / object storage | `oss` |
+| In-app / email / SMS notifications | `notification` |
+| Approval workflows | `workflow` |
+| Code generation (table → CRUD) | `gen` |
+| Internationalization | `i18n` |
+| Server/cache monitoring dashboard | `monitor` |
+| Local fullstack dev experience | `vite-bridge` |
+| Project scaffolding | `cli` |
+| Test tooling | `testing` |
+
+> Dependencies follow a one-way layering rule: the framework layer never depends on the platform layer; the platform layer only depends on the framework layer.
 
 ## Design Principles
 
