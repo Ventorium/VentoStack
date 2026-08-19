@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, rm, stat, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, join, resolve, sep } from 'node:path';
 /**
  * Skill 管理服务 — 已安装 Skills 的 CRUD、启用/禁用、安装/卸载/同步
  * 数据存储在 ai_skill 表，安装时从 skillhub 下载 zip 并解压
@@ -183,6 +183,17 @@ export function createSkillService(deps: SkillServiceDeps) {
       id,
       tenantId,
     ]);
+    // 清理 agent JSON 悬空引用（ai_agent.skill_ids）
+    await db.raw(
+      `UPDATE ai_agent
+       SET skill_ids = (
+         SELECT COALESCE(json_agg(elem), '[]')
+         FROM jsonb_array_elements_text(skill_ids::jsonb) elem
+         WHERE elem <> $1
+       ), updated_at = NOW()
+       WHERE tenant_id = $2 AND skill_ids IS NOT NULL`,
+      [id, tenantId],
+    );
     await db.raw('DELETE FROM ai_skill WHERE id = $1 AND tenant_id = $2', [id, tenantId]);
     await eventBus?.emit('ai.skill.uninstalled', { id, slug: skill.slug, tenantId });
   }
@@ -191,6 +202,8 @@ export function createSkillService(deps: SkillServiceDeps) {
 
   async function installFromStore(params: InstallFromStoreParams): Promise<SkillItem> {
     const { slug, tenantId } = params;
+
+    validateSlug(slug);
 
     // 检查是否已安装
     const existing = await getBySlug(slug, tenantId);
@@ -298,17 +311,18 @@ export function createSkillService(deps: SkillServiceDeps) {
     const detail = await store.getDetail(skill.slug);
     const latestVersion = detail.latestVersion.version;
 
-    if (latestVersion === skill.installedVersion) {
-      // 仅更新元数据
+    if (compareVersions(latestVersion, skill.installedVersion) <= 0) {
+      // 已是最新（或安装版本更新）→ 仅更新元数据
       await db.raw(
         `UPDATE ai_skill SET latest_version = $1, stats = $2, evaluation = $3, security_reports = $4, last_synced_at = NOW(), updated_at = NOW()
-         WHERE id = $5`,
+         WHERE id = $5 AND tenant_id = $6`,
         [
           latestVersion,
           JSON.stringify(detail.stats),
           JSON.stringify(await store.getEvaluation(skill.slug)),
           JSON.stringify(detail.securityReports),
           id,
+          tenantId,
         ],
       );
       return { updated: false, oldVersion: skill.installedVersion, newVersion: latestVersion };
@@ -317,8 +331,8 @@ export function createSkillService(deps: SkillServiceDeps) {
     // 有新版本 → 更新 latest_version，不自动升级
     await db.raw(
       `UPDATE ai_skill SET latest_version = $1, stats = $2, security_reports = $3, last_synced_at = NOW(), updated_at = NOW()
-       WHERE id = $4`,
-      [latestVersion, JSON.stringify(detail.stats), JSON.stringify(detail.securityReports), id],
+       WHERE id = $4 AND tenant_id = $5`,
+      [latestVersion, JSON.stringify(detail.stats), JSON.stringify(detail.securityReports), id, tenantId],
     );
 
     return { updated: true, oldVersion: skill.installedVersion, newVersion: latestVersion };
@@ -328,7 +342,7 @@ export function createSkillService(deps: SkillServiceDeps) {
     const skill = await getById(id, tenantId);
     if (!skill) throw new Error('Skill not found');
     if (!skill.latestVersion) throw new Error('No latest version available');
-    if (skill.latestVersion === skill.installedVersion)
+    if (compareVersions(skill.latestVersion, skill.installedVersion) <= 0)
       throw new Error('Already on latest version');
 
     const newVersion = skill.latestVersion;
@@ -358,7 +372,7 @@ export function createSkillService(deps: SkillServiceDeps) {
     await db.raw(
       `UPDATE ai_skill SET installed_version = $1, file_tree = $2, skill_md_content = $3, readme_content = $4,
        evaluation = $5, changelog = $6, last_synced_at = NOW(), updated_at = NOW()
-       WHERE id = $7`,
+       WHERE id = $7 AND tenant_id = $8`,
       [
         newVersion,
         JSON.stringify(files),
@@ -367,6 +381,7 @@ export function createSkillService(deps: SkillServiceDeps) {
         evaluation ? JSON.stringify(evaluation) : null,
         detail.latestVersion.changelog,
         id,
+        tenantId,
       ],
     );
 
@@ -394,11 +409,11 @@ export function createSkillService(deps: SkillServiceDeps) {
     for (const skill of skills) {
       try {
         const detail = await store.getDetail(skill.slug);
-        if (detail.latestVersion.version !== skill.installedVersion) {
-          // 更新 latest_version
+        if (compareVersions(detail.latestVersion.version, skill.installedVersion) > 0) {
+          // 更新 latest_version（带 tenant 条件）
           await db.raw(
-            'UPDATE ai_skill SET latest_version = $1, last_synced_at = NOW() WHERE id = $2',
-            [detail.latestVersion.version, skill.id],
+            'UPDATE ai_skill SET latest_version = $1, last_synced_at = NOW() WHERE id = $2 AND tenant_id = $3',
+            [detail.latestVersion.version, skill.id, tenantId],
           );
           updates.push({
             id: skill.id,
@@ -432,6 +447,8 @@ export function createSkillService(deps: SkillServiceDeps) {
     const { slug, name, tenantId } = params;
     const version = params.version ?? '1.0.0';
 
+    validateSlug(slug);
+
     const existing = await getBySlug(slug, tenantId);
     if (existing) throw new Error(`Skill "${slug}" 已安装`);
 
@@ -442,9 +459,14 @@ export function createSkillService(deps: SkillServiceDeps) {
     // 在线创建模式：直接使用 override 文件
     if (params.filesOverride) {
       const files = params.fileTreeOverride ?? [];
+      const skillDirResolved = resolve(skillDir);
       for (const f of params.filesOverride) {
-        const fullPath = join(skillDir, f.path);
-        await mkdir(join(fullPath, '..'), { recursive: true });
+        // 路径防护：仅允许 skillDir 内的相对路径（resolve 后 + 分隔符边界）
+        const fullPath = resolve(join(skillDirResolved, f.path));
+        if (fullPath !== skillDirResolved && !fullPath.startsWith(skillDirResolved + sep)) {
+          throw new Error(`非法文件路径：${f.path}，拒绝写入`);
+        }
+        await mkdir(dirname(fullPath), { recursive: true });
         await writeFile(fullPath, f.content);
         if (!files.find((x) => x.path === f.path)) {
           files.push({ path: f.path, size: f.content.length });
@@ -476,6 +498,18 @@ export function createSkillService(deps: SkillServiceDeps) {
     // 使用内置 ZIP 解析器解压
     const entries = readZipEntries(params.zipBuffer);
 
+    // 防 zip bomb：限制条目总数与单条目解压大小
+    const MAX_ZIP_ENTRIES = 500;
+    const MAX_ENTRY_SIZE = 20 * 1024 * 1024; // 20MB
+    if (entries.length > MAX_ZIP_ENTRIES) {
+      throw new Error(`ZIP 包条目过多（超过 ${MAX_ZIP_ENTRIES} 个），拒绝安装`);
+    }
+    for (const e of entries) {
+      if (e.data.length > MAX_ENTRY_SIZE) {
+        throw new Error(`ZIP 包中 ${e.name} 过大，拒绝安装`);
+      }
+    }
+
     // 预检: 检查是否包含 SKILL.md（可能在子目录中）
     const skillMdEntry = entries.find((e) => e.name === 'SKILL.md' || e.name.endsWith('/SKILL.md'));
     if (!skillMdEntry) {
@@ -500,6 +534,7 @@ export function createSkillService(deps: SkillServiceDeps) {
     }
 
     // 写入所有文件到磁盘
+    const skillDirResolved = resolve(skillDir);
     const files: Array<{ path: string; size: number }> = [];
     for (const entry of fileEntries) {
       let entryPath = entry.name;
@@ -508,7 +543,11 @@ export function createSkillService(deps: SkillServiceDeps) {
       }
       if (!entryPath) continue;
 
-      const fullPath = join(skillDir, entryPath);
+      // zip-slip 防护：确保解压路径仍在 skillDir 内（resolve 后 + 分隔符边界）
+      const fullPath = resolve(join(skillDirResolved, entryPath));
+      if (fullPath !== skillDirResolved && !fullPath.startsWith(skillDirResolved + sep)) {
+        throw new Error(`ZIP 包包含非法路径：${entry.name}，拒绝安装`);
+      }
       await mkdir(dirname(fullPath), { recursive: true });
       await writeFile(fullPath, entry.data);
       files.push({ path: entryPath, size: entry.data.length });
@@ -593,9 +632,13 @@ export function createSkillService(deps: SkillServiceDeps) {
     if (filePath === 'SKILL.md' && skill.skillMdContent) return skill.skillMdContent;
     if (filePath === 'README.md' && skill.readmeContent) return skill.readmeContent;
 
-    // 从本地文件系统读取
+    // 从本地文件系统读取（路径防护：resolve 后必须在 skill 目录内）
     const version = skill.installedVersion ?? '1.0.0';
-    const localPath = join(storagePath, skill.slug, version, filePath);
+    const skillDir = resolve(storagePath, skill.slug, version);
+    const localPath = resolve(join(skillDir, filePath));
+    if (localPath !== skillDir && !localPath.startsWith(skillDir + sep)) {
+      return null;
+    }
     if (existsSync(localPath)) {
       return Bun.file(localPath).text();
     }
@@ -623,7 +666,12 @@ export function createSkillService(deps: SkillServiceDeps) {
     if (skill.source !== 'upload') throw new Error('仅上传安装的技能支持编辑文件');
 
     const version = skill.installedVersion ?? '1.0.0';
-    const localPath = join(storagePath, skill.slug, version, filePath);
+    const skillDir = resolve(storagePath, skill.slug, version);
+    const localPath = resolve(join(skillDir, filePath));
+    // 路径防护：仅允许写入 skill 目录内
+    if (localPath !== skillDir && !localPath.startsWith(skillDir + sep)) {
+      throw new Error(`非法文件路径：${filePath}`);
+    }
     await mkdir(dirname(localPath), { recursive: true });
     await writeFile(localPath, content, 'utf-8');
 
@@ -660,6 +708,26 @@ export function createSkillService(deps: SkillServiceDeps) {
 }
 
 // ---- File tree scanner ----
+
+/** slug 合法性校验：仅允许字母数字与 ._-，防止路径穿越 */
+function validateSlug(slug: string): void {
+  if (!slug || !/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/.test(slug)) {
+    throw new Error(`非法 slug：${slug}`);
+  }
+}
+
+/** 版本号数值比较：1.10 > 1.9；非法分段按 0 处理 */
+function compareVersions(a: string | null | undefined, b: string | null | undefined): number {
+  const pa = (a ?? "").split(".").map((s) => Number.parseInt(s, 10) || 0);
+  const pb = (b ?? "").split(".").map((s) => Number.parseInt(s, 10) || 0);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const x = pa[i] ?? 0;
+    const y = pb[i] ?? 0;
+    if (x !== y) return x > y ? 1 : -1;
+  }
+  return 0;
+}
 
 async function scanDir(
   dirPath: string,

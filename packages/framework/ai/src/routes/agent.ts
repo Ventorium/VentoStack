@@ -1,6 +1,6 @@
 import { existsSync } from 'node:fs';
 import { readFile, readdir, stat } from 'node:fs/promises';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 /**
  * Agent 路由
  */
@@ -26,9 +26,18 @@ export interface AgentCrudService {
     page?: number;
     pageSize?: number;
   }): Promise<{ list: unknown[]; total: number }>;
-  update(id: string, params: Record<string, unknown>, tenantId: string): Promise<void>;
-  delete(id: string, tenantId: string): Promise<void>;
-  publish(id: string, tenantId: string): Promise<void>;
+  update(id: string, params: Record<string, unknown>, tenantId: string, opts?: { userId?: string; isAdmin?: boolean }): Promise<void>;
+  delete(id: string, tenantId: string, opts?: { userId?: string; isAdmin?: boolean }): Promise<void>;
+  publish(id: string, tenantId: string, opts?: { userId?: string; isAdmin?: boolean }): Promise<void>;
+}
+
+/** 从 ctx.user 提取当前用户信息（id + 是否超管） */
+function currentUser(ctx: { user?: { id?: string; roles?: string[] } }): { userId: string; isAdmin: boolean } {
+  const user = ctx.user;
+  return {
+    userId: user?.id ?? '',
+    isAdmin: (user?.roles ?? []).includes('admin'),
+  };
 }
 
 export function createAgentRoutes(
@@ -157,7 +166,13 @@ export function createAgentRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
-        await agentService.update(id, body, tenantId);
+        // status 只能通过 publish 接口变更，防止普通 update 直接绕过发布校验
+        if (body.status !== undefined) {
+          const { status: _ignored, ...rest } = body;
+          await agentService.update(id, rest, tenantId, currentUser(ctx));
+          return success(null);
+        }
+        await agentService.update(id, body, tenantId, currentUser(ctx));
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -173,7 +188,7 @@ export function createAgentRoutes(
       try {
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        await agentService.delete(id, tenantId);
+        await agentService.delete(id, tenantId, currentUser(ctx));
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -189,7 +204,7 @@ export function createAgentRoutes(
       try {
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        await agentService.publish(id, tenantId);
+        await agentService.publish(id, tenantId, currentUser(ctx));
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -205,7 +220,16 @@ export function createAgentRoutes(
   router.get('/api/ai/agents/:id/workspace/files', perm('ai:agent', 'list'), async (ctx) => {
     try {
       const id = (ctx.params as Record<string, string>).id!;
-      const workspaceDir = join(WORKSPACE_BASE, id);
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+      // 归属校验：agent 必须存在且属于当前租户
+      const agent = await agentService.getById(id, tenantId);
+      if (!agent) return fail('Agent 不存在', 404, 404);
+
+      const workspaceBase = resolve(WORKSPACE_BASE);
+      const workspaceDir = resolve(join(workspaceBase, id));
+      if (workspaceDir !== workspaceBase && !workspaceDir.startsWith(workspaceBase + sep)) {
+        return fail('路径不合法', 400, 400);
+      }
       if (!existsSync(workspaceDir)) return success([]);
 
       const files: Array<{ path: string; size: number; modifiedAt: string }> = [];
@@ -237,14 +261,23 @@ export function createAgentRoutes(
   router.get('/api/ai/agents/:id/workspace/file', perm('ai:agent', 'list'), async (ctx) => {
     try {
       const id = (ctx.params as Record<string, string>).id!;
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
       const filePath = ((ctx.query as Record<string, string>)?.path ?? '') as string;
       if (!filePath) return fail('path 参数必填', 400, 400);
 
-      const workspaceDir = join(WORKSPACE_BASE, id);
+      // 归属校验：agent 必须存在且属于当前租户
+      const agent = await agentService.getById(id, tenantId);
+      if (!agent) return fail('Agent 不存在', 404, 404);
+
+      const workspaceBase = resolve(WORKSPACE_BASE);
+      const workspaceDir = resolve(join(workspaceBase, id));
+      if (workspaceDir !== workspaceBase && !workspaceDir.startsWith(workspaceBase + sep)) {
+        return fail('路径不合法', 400, 400);
+      }
       const fullPath = resolve(join(workspaceDir, filePath));
 
-      // 安全检查：确保路径在 workspace 内
-      if (!fullPath.startsWith(resolve(workspaceDir))) {
+      // 安全检查：resolve 后 + 分隔符边界，确保路径在 workspace 内
+      if (fullPath !== workspaceDir && !fullPath.startsWith(workspaceDir + sep)) {
         return fail('路径不合法', 400, 400);
       }
       if (!existsSync(fullPath)) return fail('文件不存在', 404, 404);

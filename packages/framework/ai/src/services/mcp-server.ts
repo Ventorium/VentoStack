@@ -9,7 +9,46 @@
  * - sse: 通过 HTTP SSE 通信（远程工具服务）
  */
 import type { Database } from "@ventostack/database";
+import type { ConfigEncryptor } from "@ventostack/core";
 import { aiErrors } from "../errors";
+
+/**
+ * stdio 子进程环境变量透传白名单
+ * 仅透传运行所必需的基础变量，防止 JWT_SECRET / DATABASE_URL / S3 密钥等宿主敏感环境变量
+ * 泄露给第三方 MCP 子进程。用户显式配置的 env（ai_mcp_server.env）另行合并。
+ */
+const CHILD_ENV_ALLOWLIST = [
+  "PATH",
+  "HOME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TZ",
+  "TERM",
+  "SHELL",
+  "USER",
+  "LOGNAME",
+  "HOSTNAME",
+  "NO_COLOR",
+  "FORCE_COLOR",
+  "BUN_INSTALL",
+  "NODE_ENV",
+] as const;
+
+/** 构造 stdio 子进程环境：白名单宿主变量 + 用户显式配置项 */
+function buildChildEnv(userEnv?: Record<string, string> | null): Record<string, string> {
+  const env: Record<string, string> = {};
+  for (const key of CHILD_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  if (userEnv) {
+    for (const [k, v] of Object.entries(userEnv)) {
+      env[k] = v;
+    }
+  }
+  return env;
+}
 
 export interface McpServerItem {
   id: string;
@@ -84,6 +123,8 @@ export interface McpServerServiceDeps {
   db: Database;
   allowedStdioCommands?: string[];
   allowedHttpHosts?: string[];
+  /** 敏感字段（env/headers 中的 key/secret/token 等）加密器；不传则明文存储（测试场景） */
+  credentialEncryptor?: ConfigEncryptor;
   /** Internal Adapter seam used for alternate transports and deterministic tests. */
   clientFactory?: (server: McpServerItem) => McpClient;
   /** 连接池策略：上限与空闲回收 */
@@ -96,6 +137,52 @@ export interface McpServerServiceDeps {
 }
 
 const DEFAULT_STDIO_COMMANDS: string[] = [];
+
+/** 敏感字段 key 匹配规则：password/token/secret/key/authorization/credential 等 */
+const SENSITIVE_KEY_RE = /password|token|secret|key|authorization|credential/i;
+
+/** 判断字段名是否敏感（命中则需加密/脱敏） */
+function isSensitiveKey(key: string): boolean {
+  return SENSITIVE_KEY_RE.test(key);
+}
+
+/** 加密对象中的敏感字段值（ENC: 前缀），非敏感字段原样保留 */
+async function encryptSecretFields(
+  obj: Record<string, string> | null | undefined,
+  encryptor?: ConfigEncryptor,
+): Promise<Record<string, string> | null> {
+  if (!obj || !encryptor) return obj ?? null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = isSensitiveKey(k) && !encryptor.isEncrypted(v) ? await encryptor.encrypt(v) : v;
+  }
+  return out;
+}
+
+/** 解密对象中的敏感字段值（ENC: 前缀还原为明文） */
+async function decryptSecretFields(
+  obj: Record<string, string> | null | undefined,
+  encryptor?: ConfigEncryptor,
+): Promise<Record<string, string> | null> {
+  if (!obj || !encryptor) return obj ?? null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = isSensitiveKey(k) && encryptor.isEncrypted(v) ? await encryptor.decrypt(v) : v;
+  }
+  return out;
+}
+
+/** 脱敏对象中的敏感字段值（用于对外返回，隐藏真实值但保留 key） */
+function maskSecretFields(
+  obj: Record<string, string> | null | undefined,
+): Record<string, string> | null {
+  if (!obj) return obj ?? null;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    out[k] = isSensitiveKey(k) && v ? "********" : v;
+  }
+  return out;
+}
 
 function mapRow(r: Record<string, unknown>): McpServerItem {
   return {
@@ -219,6 +306,8 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
   async function create(params: CreateMcpServerParams): Promise<McpServerItem> {
     validateMcpConfig(params, allowedStdioCommands, allowedHttpHosts);
     const id = crypto.randomUUID();
+    const env = await encryptSecretFields(params.env, deps.credentialEncryptor);
+    const headers = await encryptSecretFields(params.headers, deps.credentialEncryptor);
     await db.raw(
       `INSERT INTO ai_mcp_server (id, name, description, transport_type, command, args, env, url, headers, tenant_id)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
@@ -226,9 +315,9 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
         id, params.name, params.description ?? null, params.transportType,
         params.command ?? null,
         params.args ? JSON.stringify(params.args) : null,
-        params.env ? JSON.stringify(params.env) : null,
+        env ? JSON.stringify(env) : null,
         params.url ?? null,
-        params.headers ? JSON.stringify(params.headers) : null,
+        headers ? JSON.stringify(headers) : null,
         params.tenantId,
       ],
     );
@@ -240,7 +329,11 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
       `SELECT * FROM ai_mcp_server WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
     ) as Array<Record<string, unknown>>;
-    return rows.length > 0 ? mapRow(rows[0]!) : null;
+    if (rows.length === 0) return null;
+    const item = mapRow(rows[0]!);
+    item.env = await decryptSecretFields(item.env, deps.credentialEncryptor);
+    item.headers = await decryptSecretFields(item.headers, deps.credentialEncryptor);
+    return item;
   }
 
   async function list(tenantId: string, params?: { enabled?: boolean; page?: number; pageSize?: number }): Promise<{ list: McpServerItem[]; total: number }> {
@@ -263,7 +356,14 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
       `SELECT * FROM ai_mcp_server WHERE ${where} ORDER BY created_at DESC LIMIT $${idx} OFFSET $${idx + 1}`,
       [...values, pageSize, offset],
     ) as Array<Record<string, unknown>>;
-    return { list: rows.map(mapRow), total };
+    const list: McpServerItem[] = [];
+    for (const row of rows) {
+      const item = mapRow(row);
+      item.env = await decryptSecretFields(item.env, deps.credentialEncryptor);
+      item.headers = await decryptSecretFields(item.headers, deps.credentialEncryptor);
+      list.push(item);
+    }
+    return { list, total };
   }
 
   async function update(id: string, params: UpdateMcpServerParams, tenantId: string): Promise<McpServerItem> {
@@ -287,9 +387,9 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     if (params.transportType !== undefined) { sets.push(`transport_type = $${idx++}`); values.push(params.transportType); }
     if (params.command !== undefined) { sets.push(`command = $${idx++}`); values.push(params.command); }
     if (params.args !== undefined) { sets.push(`args = $${idx++}`); values.push(JSON.stringify(params.args)); }
-    if (params.env !== undefined) { sets.push(`env = $${idx++}`); values.push(JSON.stringify(params.env)); }
+    if (params.env !== undefined) { sets.push(`env = $${idx++}`); values.push(JSON.stringify(await encryptSecretFields(params.env, deps.credentialEncryptor))); }
     if (params.url !== undefined) { sets.push(`url = $${idx++}`); values.push(params.url); }
-    if (params.headers !== undefined) { sets.push(`headers = $${idx++}`); values.push(JSON.stringify(params.headers)); }
+    if (params.headers !== undefined) { sets.push(`headers = $${idx++}`); values.push(JSON.stringify(await encryptSecretFields(params.headers, deps.credentialEncryptor))); }
     if (params.enabled !== undefined) { sets.push(`enabled = $${idx++}`); values.push(params.enabled); }
 
     if (sets.length === 0) return (await getById(id, tenantId))!;
@@ -308,6 +408,17 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
   async function deleteById(id: string, tenantId: string): Promise<void> {
     await closeClient(id, tenantId);
     await db.raw(`DELETE FROM ai_mcp_server WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+    // 清理 agent JSON 悬空引用（ai_agent.mcp_server_ids；ai_agent_mcp 表由外键 CASCADE 处理）
+    await db.raw(
+      `UPDATE ai_agent
+       SET mcp_server_ids = (
+         SELECT COALESCE(json_agg(elem), '[]')
+         FROM jsonb_array_elements_text(mcp_server_ids::jsonb) elem
+         WHERE elem <> $1
+       ), updated_at = NOW()
+       WHERE tenant_id = $2 AND mcp_server_ids IS NOT NULL`,
+      [id, tenantId],
+    );
   }
 
   async function setEnabled(id: string, tenantId: string, enabled: boolean): Promise<void> {
@@ -331,8 +442,8 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     } catch (e) {
       const error = e instanceof Error ? e.message : "连接测试失败";
       await db.raw(
-        `UPDATE ai_mcp_server SET status = 'error', last_error = $1, updated_at = NOW() WHERE id = $2`,
-        [error, id],
+        `UPDATE ai_mcp_server SET status = 'error', last_error = $1, updated_at = NOW() WHERE id = $2 AND tenant_id = $3`,
+        [error, id, tenantId],
       );
       return { success: false, error };
     }
@@ -346,9 +457,7 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     try {
       // 尝试启动进程并发送 initialize 请求
       const args = server.args ?? [];
-      const envVars: Record<string, string> = {};
-      if (server.env) Object.assign(envVars, server.env);
-      const env = { ...process.env, ...envVars };
+      const env = buildChildEnv(server.env);
       const proc = Bun.spawn([server.command, ...args], {
         stdin: "pipe",
         stdout: "pipe",
@@ -590,9 +699,7 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     if (validateStdioCommand(server.command, allowedStdioCommands)) return [];
     try {
       const args = server.args ?? [];
-      const envVars: Record<string, string> = {};
-      if (server.env) Object.assign(envVars, server.env);
-      const env = { ...process.env, ...envVars };
+      const env = buildChildEnv(server.env);
       const proc = Bun.spawn([server.command, ...args], {
         stdin: "pipe",
         stdout: "pipe",
@@ -909,7 +1016,7 @@ export function createMcpStdioClient(server: McpServerItem): McpClient {
     stdin: "pipe",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, ...(server.env ?? {}) },
+    env: buildChildEnv(server.env),
   });
   const encoder = new TextEncoder();
   const pending = new Map<string, {

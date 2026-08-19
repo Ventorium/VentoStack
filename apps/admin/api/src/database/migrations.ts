@@ -7,7 +7,7 @@ import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
 import { createI18nTables } from "@ventostack/i18n";
 import { createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
-import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables, addReasoningOptions, addProviderModelsDevSlug, dropAgentType, createAiMcpTables } from "@ventostack/ai";
+import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables, addModelCapabilities, addReasoningOptions, addProviderModelsDevSlug, dropAgentType, createAiMcpTables, addKbDocumentCount } from "@ventostack/ai";
 import { createNotifyTables } from "@ventostack/notification";
 import { createWorkflowTables, enhanceWorkflowTables, addBusinessType, addWorkflowHistoryTenant } from "@ventostack/workflow";
 import { createSysTables } from "./migrations/001_create_sys_tables";
@@ -60,10 +60,12 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(createAiAgentTables);
   runner.addMigration(createAiProviderTables);
   runner.addMigration(createAiSkillTables);
+  runner.addMigration(addModelCapabilities);
   runner.addMigration(addReasoningOptions);
   runner.addMigration(addProviderModelsDevSlug);
   runner.addMigration(dropAgentType);
   runner.addMigration(createAiMcpTables);
+  runner.addMigration(addKbDocumentCount);
 
   const executed = await runner.up();
 

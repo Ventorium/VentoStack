@@ -71,10 +71,21 @@ export interface AgentListParams {
   pageSize?: number;
 }
 
-export function createAgentService(deps: { db: Database }) {
+/** 依赖引用校验：由装配层注入，用于校验 model / 知识库 / Skill / MCP 引用是否存在且归属当前租户 */
+export interface AgentRefsValidator {
+  (params: {
+    model?: string;
+    knowledgeBaseIds?: string[];
+    skillIds?: string[];
+    mcpServerIds?: string[];
+  }, tenantId: string): Promise<void>;
+}
+
+export function createAgentService(deps: { db: Database; validateRefs?: AgentRefsValidator }) {
   const { db } = deps;
 
   async function create(params: CreateAgentParams): Promise<{ id: string }> {
+    await deps.validateRefs?.(params, params.tenantId);
     const id = crypto.randomUUID();
     await db.raw(
       `INSERT INTO ai_agent (id, name, description, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status)
@@ -102,7 +113,13 @@ export function createAgentService(deps: { db: Database }) {
     return { id };
   }
 
-  async function update(id: string, params: UpdateAgentParams, tenantId?: string): Promise<void> {
+  async function update(
+    id: string,
+    params: UpdateAgentParams,
+    tenantId?: string,
+    opts?: { userId?: string; isAdmin?: boolean },
+  ): Promise<void> {
+    await deps.validateRefs?.(params, tenantId ?? '');
     const sets: string[] = [];
     const values: unknown[] = [];
     let idx = 1;
@@ -132,6 +149,12 @@ export function createAgentService(deps: { db: Database }) {
     if (tenantId) {
       whereClauses.push(`tenant_id = $${idx}`);
       values.push(tenantId);
+      idx++;
+    }
+    // 归属检查：非管理员只能修改自己创建的 Agent
+    if (!opts?.isAdmin && opts?.userId) {
+      whereClauses.push(`created_by = $${idx}`);
+      values.push(opts.userId);
       idx++;
     }
 
@@ -237,14 +260,36 @@ export function createAgentService(deps: { db: Database }) {
     return { list, total };
   }
 
-  async function deleteAgent(id: string, tenantId: string): Promise<void> {
-    await db.raw(`DELETE FROM ai_agent WHERE id = $1 AND tenant_id = $2`, [id, tenantId]);
+  async function deleteAgent(
+    id: string,
+    tenantId: string,
+    opts?: { userId?: string; isAdmin?: boolean },
+  ): Promise<void> {
+    const whereClauses = [`id = $1`, `tenant_id = $2`];
+    const values: unknown[] = [id, tenantId];
+    // 归属检查：非管理员只能删除自己创建的 Agent
+    if (!opts?.isAdmin && opts?.userId) {
+      whereClauses.push(`created_by = $3`);
+      values.push(opts.userId);
+    }
+    await db.raw(`DELETE FROM ai_agent WHERE ${whereClauses.join(" AND ")}`, values);
   }
 
-  async function publish(id: string, tenantId: string): Promise<void> {
+  async function publish(
+    id: string,
+    tenantId: string,
+    opts?: { userId?: string; isAdmin?: boolean },
+  ): Promise<void> {
+    const whereClauses = [`id = $1`, `tenant_id = $2`];
+    const values: unknown[] = [id, tenantId];
+    // 归属检查：非管理员只能发布自己创建的 Agent
+    if (!opts?.isAdmin && opts?.userId) {
+      whereClauses.push(`created_by = $3`);
+      values.push(opts.userId);
+    }
     await db.raw(
-      `UPDATE ai_agent SET status = 'active', updated_at = NOW() WHERE id = $1 AND tenant_id = $2`,
-      [id, tenantId],
+      `UPDATE ai_agent SET status = 'active', updated_at = NOW() WHERE ${whereClauses.join(" AND ")}`,
+      values,
     );
   }
 

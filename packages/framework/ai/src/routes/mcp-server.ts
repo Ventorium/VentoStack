@@ -3,7 +3,20 @@
  */
 import { createRouter, success, paginated, fail, handleError, parseBody, pageOf } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
-import type { McpServerService } from "../services/mcp-server";
+import type { McpServerItem, McpServerService } from "../services/mcp-server";
+
+/** 对外脱敏：隐藏 env/headers 中敏感字段的真实值（服务层已解密，这里仅做展示脱敏） */
+function maskSecrets(item: McpServerItem): McpServerItem {
+  const sensitive = (v: Record<string, string> | null | undefined) => {
+    if (!v) return v;
+    const out: Record<string, string> = {};
+    for (const [k, val] of Object.entries(v)) {
+      out[k] = /password|token|secret|key|authorization|credential/i.test(k) && val ? "********" : val;
+    }
+    return out;
+  };
+  return { ...item, env: sensitive(item.env), headers: sensitive(item.headers) };
+}
 
 export function createMcpServerRoutes(
   mcpService: McpServerService,
@@ -25,7 +38,7 @@ export function createMcpServerRoutes(
         const listParams: { page: number; pageSize: number; enabled?: boolean } = { page, pageSize };
         if (q.enabled !== undefined) listParams.enabled = q.enabled === "true" || q.enabled === true;
         const result = await mcpService.list(tenantId, listParams);
-        return paginated(result.list, result.total, page, pageSize);
+        return paginated(result.list.map(maskSecrets), result.total, page, pageSize);
       } catch (e) { return handleError(e); }
     },
   );
@@ -40,7 +53,7 @@ export function createMcpServerRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
         const server = await mcpService.getById(id, tenantId);
         if (!server) return fail("MCP Server 不存在", 404, 404);
-        return success(server);
+        return success(maskSecrets(server));
       } catch (e) { return handleError(e); }
     },
   );

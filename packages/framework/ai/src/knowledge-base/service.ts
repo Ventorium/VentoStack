@@ -2,7 +2,7 @@
  * 知识库服务（本地文件目录模式）
  * 知识库 = 文件目录，LLM 用工具浏览和读取
  */
-import { resolve, join, relative, basename, extname, dirname } from "node:path";
+import { resolve, join, relative, basename, extname, dirname, sep } from "node:path";
 import {
   readdir,
   readFile,
@@ -14,7 +14,8 @@ import {
   unlink,
 } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { aiErrors } from "../errors";
+import { aiErrors, KnowledgeBaseError } from "../errors";
+import { createFileValidator } from "./file-security";
 import type {
   FileEntry,
   FileContent,
@@ -51,10 +52,12 @@ export function createKnowledgeBaseService(
 
   /**
    * 安全路径校验：确保路径在 basePath 内
+   * 使用 resolve 解析后比较 + 路径分隔符边界，防止 `../` 与同前缀目录绕过
    */
   function safePath(basePath: string, targetPath: string): string {
-    const resolved = resolve(basePath, targetPath);
-    if (!resolved.startsWith(basePath)) {
+    const base = resolve(basePath);
+    const resolved = resolve(base, targetPath);
+    if (resolved !== base && !resolved.startsWith(base + sep)) {
       throw aiErrors.kbFileNotFound();
     }
     return resolved;
@@ -149,8 +152,14 @@ export function createKnowledgeBaseService(
       await mkdir(join(kbPath, "sources"), { recursive: true });
       await mkdir(join(kbPath, "content"), { recursive: true });
 
-      // 保存元数据
-      const meta = { name: params.name, description: params.description ?? "", createdAt: new Date().toISOString() };
+      // 保存元数据（持久化 tenantId/userId，供租户归属校验）
+      const meta = {
+        name: params.name,
+        description: params.description ?? "",
+        createdAt: new Date().toISOString(),
+        tenantId: params.tenantId,
+        createdBy: params.userId,
+      };
       await writeFile(join(kbPath, "meta.json"), JSON.stringify(meta, null, 2), "utf-8");
 
       // 生成 README.md 索引
@@ -160,7 +169,8 @@ export function createKnowledgeBaseService(
         "utf-8",
       );
 
-      return { id, basePath: kbPath };
+      // 脱敏：不暴露服务器绝对路径
+      return { id, basePath: relative(storagePath, kbPath) };
     },
 
     async getById(id, tenantId) {
@@ -176,19 +186,27 @@ export function createKnowledgeBaseService(
       const metaPath = join(kbPath, "meta.json");
       let name = id;
       let description = "";
+      let metaTenantId: string | undefined;
       if (existsSync(metaPath)) {
         try {
           const meta = JSON.parse(await readFile(metaPath, "utf-8"));
           name = meta.name ?? id;
           description = meta.description ?? "";
+          metaTenantId = meta.tenantId;
         } catch { /* ignore */ }
+      }
+
+      // 租户校验：新数据（meta 中已持久化 tenantId）必须归属当前租户；旧数据无 tenantId 时兼容放行
+      if (metaTenantId && metaTenantId !== tenantId) {
+        return null;
       }
 
       return {
         id,
         name,
         description,
-        basePath: kbPath,
+        // 脱敏：不向调用方暴露服务器绝对路径，仅返回相对路径
+        basePath: relative(storagePath, kbPath),
         tenantId,
         createdBy: "",
         status: "active",
@@ -198,19 +216,24 @@ export function createKnowledgeBaseService(
       };
     },
 
-    async updateMeta(id: string, params: { name?: string; description?: string }) {
+    async updateMeta(id: string, params: { name?: string; description?: string }, tenantId?: string) {
       const kbPath = getKBPath(id);
       if (!existsSync(kbPath)) throw aiErrors.kbFileNotFound();
+      // 租户校验：meta.json 中记录 tenant_id，防止跨租户修改
       const metaPath = join(kbPath, "meta.json");
-      let meta: { name: string; description: string } = { name: id, description: "" };
+      let meta: { name: string; description: string; tenantId?: string } = { name: id, description: "" };
       if (existsSync(metaPath)) {
         try { meta = JSON.parse(await readFile(metaPath, "utf-8")); } catch { /* ignore */ }
       }
+      if (tenantId && meta.tenantId && meta.tenantId !== tenantId) {
+        throw aiErrors.kbNotFound();
+      }
       if (params.name !== undefined) meta.name = params.name;
       if (params.description !== undefined) meta.description = params.description;
+      if (tenantId) meta.tenantId = tenantId;
       await writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
       // Regenerate README with new name
-      await this.generateReadme(id, "");
+      await this.generateReadme(id, tenantId ?? "");
     },
 
     async list(params) {
@@ -243,7 +266,8 @@ export function createKnowledgeBaseService(
             id: item.name,
             name,
             description,
-            basePath: kbPath,
+            // 脱敏：不向调用方暴露服务器绝对路径，仅返回相对路径
+            basePath: relative(storagePath, kbPath),
             tenantId: params.tenantId,
             createdBy: "",
             status: "active",
@@ -269,6 +293,18 @@ export function createKnowledgeBaseService(
       const kbPath = getKBPath(id);
       if (!existsSync(kbPath)) return;
       await rm(kbPath, { recursive: true, force: true });
+      // 清理 agent JSON 悬空引用（ai_agent.knowledge_base_ids）
+      const db = deps.db as { raw(sql: string, params?: unknown[]): Promise<unknown> } | undefined;
+      await db?.raw(
+        `UPDATE ai_agent
+         SET knowledge_base_ids = (
+           SELECT COALESCE(json_agg(elem), '[]')
+           FROM jsonb_array_elements_text(knowledge_base_ids::jsonb) elem
+           WHERE elem <> $1
+         ), updated_at = NOW()
+         WHERE tenant_id = $2 AND knowledge_base_ids IS NOT NULL`,
+        [id, tenantId],
+      );
     },
 
     async ls(kbId, path, depth, tenantId) {
@@ -459,9 +495,15 @@ export function createKnowledgeBaseService(
       const oldFilePath = safePath(contentDir, oldPath);
       if (!existsSync(oldFilePath)) throw aiErrors.kbFileNotFound();
 
-      const newFilePath = join(dirname(oldFilePath), newName);
-      // 确保新路径仍在 contentDir 内
-      if (!newFilePath.startsWith(contentDir)) throw aiErrors.kbFileNotFound();
+      // newName 只允许普通文件名（不含路径分隔符），防止穿越
+      if (!newName || newName.includes("/") || newName.includes("\\") || newName === "." || newName === "..") {
+        throw aiErrors.kbFileNotFound();
+      }
+      const newFilePath = resolve(join(dirname(oldFilePath), newName));
+      // 确保新路径仍在 contentDir 内（resolve 后 + 分隔符边界）
+      if (newFilePath !== contentDir && !newFilePath.startsWith(resolve(contentDir) + sep)) {
+        throw aiErrors.kbFileNotFound();
+      }
 
       await rename(oldFilePath, newFilePath);
 
@@ -499,6 +541,17 @@ export function createKnowledgeBaseService(
       const sourcesDir = getSourcesPath(kbId);
       if (!existsSync(contentDir)) throw aiErrors.kbFileNotFound();
 
+      // 文件校验：大小上限 + 扩展名白名单
+      const validator = createFileValidator();
+      const check = validator.validateFile({ name: fileName, size: fileBuffer.length });
+      if (!check.valid) {
+        throw new KnowledgeBaseError(check.error ?? "文件校验失败", 400, "AI_KB_FILE_INVALID");
+      }
+
+      // 清洗文件名：剥离路径分隔符与穿越片段，仅保留 basename
+      const safeFileName = validator.sanitizeFileName(fileName.split(/[\\/]/).pop() ?? "");
+      if (!safeFileName) throw aiErrors.kbFileNotFound();
+
       const dir = targetDir ? safePath(contentDir, targetDir) : contentDir;
       await mkdir(dir, { recursive: true });
       await mkdir(sourcesDir, { recursive: true });
@@ -508,14 +561,13 @@ export function createKnowledgeBaseService(
 
       if (needsParsing(fileName)) {
         // 保存原始文件到 sources/
-        const safeFileName = fileName.replace(/[^\w._-]/g, "_");
         await writeFile(join(sourcesDir, safeFileName), fileBuffer);
         sourcePath = safeFileName;
 
         // 解析为 Markdown
-        const parsed = await parseFile(fileBuffer, fileName, { ocrEnabled: ocrOptions?.ocrEnabled !== false, ocrLanguage: ocrOptions?.ocrLanguage, ocrServerUrl: ocrOptions?.ocrServerUrl });
-        const mdFileName = fileName.replace(/\.[^.]+$/, ".md");
-        const mdFilePath = join(dir, mdFileName);
+        const parsed = await parseFile(fileBuffer, safeFileName, { ocrEnabled: ocrOptions?.ocrEnabled !== false, ocrLanguage: ocrOptions?.ocrLanguage, ocrServerUrl: ocrOptions?.ocrServerUrl });
+        const mdFileName = safeFileName.replace(/\.[^.]+$/, ".md");
+        const mdFilePath = safePath(dir, mdFileName);
         await writeFile(mdFilePath, parsed.markdown, "utf-8");
         contentPath = relative(contentDir, mdFilePath);
 
@@ -535,8 +587,8 @@ export function createKnowledgeBaseService(
         });
         await writeFile(manifestPath, JSON.stringify(manifest, null, 2), "utf-8");
       } else {
-        // 纯文本文件直接保存到 content/
-        const filePath = join(dir, fileName);
+        // 纯文本文件直接保存到 content/（使用清洗后的文件名 + safePath 边界校验）
+        const filePath = safePath(dir, safeFileName);
         await writeFile(filePath, fileBuffer);
         contentPath = relative(contentDir, filePath);
       }
@@ -550,9 +602,8 @@ export function createKnowledgeBaseService(
     // ── 获取源文件 ──
     async getSourceFile(kbId, path, tenantId) {
       const sourcesDir = getSourcesPath(kbId);
-      const filePath = join(sourcesDir, path);
-      // 安全检查：确保路径在 sourcesDir 内
-      if (!filePath.startsWith(sourcesDir)) return null;
+      // 安全检查：resolve 后 + 分隔符边界，确保路径在 sourcesDir 内
+      const filePath = safePath(sourcesDir, path);
       if (!existsSync(filePath)) return null;
 
       const buffer = await readFile(filePath);

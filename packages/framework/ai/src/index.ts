@@ -326,9 +326,11 @@ export { AiSkillModel, AiAgentSkillModel } from './models/skill';
 export { createAiSkillTables } from './migrations/006_create_ai_skill_tables';
 
 // ---- Model Capabilities Migration ----
+export { addModelCapabilities } from './migrations/007_add_model_capabilities';
 export { addReasoningOptions } from './migrations/008_add_reasoning_options';
 export { addProviderModelsDevSlug } from './migrations/009_add_provider_models_dev_slug';
 export { dropAgentType } from './migrations/010_drop_agent_type';
 
 // ---- MCP Migration ----
 export { createAiMcpTables } from './migrations/011_create_ai_mcp_tables';
+export { addKbDocumentCount } from './migrations/012_add_kb_document_count';

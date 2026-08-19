@@ -6,8 +6,8 @@ import { createRouter, success, paginated, fail, handleError, parseBody, pageOf 
 import type { Middleware, Router } from "@ventostack/core";
 import type { SkillStoreService } from "../services/skill-store";
 import type { createSkillService } from "../services/skill";
-import { join, resolve } from "node:path";
-import { readFile } from "node:fs/promises";
+import { join, resolve, sep } from "node:path";
+import { readFile, readdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 
 type SkillSvc = ReturnType<typeof createSkillService>;
@@ -281,6 +281,12 @@ export function createSkillRoutes(
         if (!slug) return fail("slug 必填", 400, 400);
         if (!name) return fail("name 必填", 400, 400);
 
+        // 上传大小限制（防 zip bomb）
+        const MAX_UPLOAD_SIZE = 50 * 1024 * 1024; // 50MB
+        if (file.size > MAX_UPLOAD_SIZE) {
+          return fail(`zip 文件过大（超过 ${Math.round(MAX_UPLOAD_SIZE / 1024 / 1024)}MB），拒绝上传`, 400, 400);
+        }
+
         const zipBuffer = Buffer.from(await file.arrayBuffer());
         const result = await skillService.installFromUpload({
           slug, name, description: description ?? undefined, version, zipBuffer, tenantId,
@@ -310,35 +316,44 @@ export function createSkillRoutes(
         if (!slug) return fail("slug 必填", 400, 400);
         if (!name) return fail("name 必填", 400, 400);
 
-        // 验证工作区存在且有 SKILL.md
-        const workspaceDir = resolve(join(WORKSPACE_BASE, agentId));
-        const skillMdPath = join(workspaceDir, "SKILL.md");
-        if (!existsSync(skillMdPath)) return fail("工作区中缺少 SKILL.md 文件", 400, 400);
+        // agentId 路径防护：resolve 后必须在 WORKSPACE_BASE 内
+        const workspaceBase = resolve(WORKSPACE_BASE);
+        const workspaceDir = resolve(join(workspaceBase, agentId));
+        if (workspaceDir !== workspaceBase && !workspaceDir.startsWith(workspaceBase + sep)) {
+          return fail("agentId 不合法", 400, 400);
+        }
 
-        // 读取工作区中的所有文件
-        const files = body.files as Array<{ path: string; content: string }> | undefined;
-        if (!files?.length) return fail("没有文件可安装", 400, 400);
+        // 从磁盘递归读取工作区中的所有文件（不信任客户端 body.files）
+        const fileBuffers: Array<{ path: string; content: Buffer }> = [];
+        async function walk(dir: string, rel: string) {
+          const items = await readdir(dir, { withFileTypes: true }).catch(() => []);
+          for (const item of items) {
+            const itemRel = rel ? `${rel}/${item.name}` : item.name;
+            const fullPath = join(dir, item.name);
+            if (item.isDirectory()) {
+              await walk(fullPath, itemRel);
+            } else {
+              fileBuffers.push({ path: itemRel, content: Buffer.from(await readFile(fullPath)) });
+            }
+          }
+        }
+        await walk(workspaceDir, "");
 
-        const skillMdContent = files.find(f => f.path === "SKILL.md")?.content ?? "";
-        const readmeContent = files.find(f => f.path === "README.md")?.content ?? null;
+        if (fileBuffers.length === 0) return fail("工作区中没有文件可安装", 400, 400);
 
-        const fileBuffers = files.map(f => ({
-          path: f.path,
-          content: Buffer.from(f.content, "utf-8"),
-        }));
+        const skillMd = fileBuffers.find((f) => f.path === "SKILL.md");
+        if (!skillMd) return fail("工作区中缺少 SKILL.md 文件", 400, 400);
 
-        const fileTree = files.map(f => ({
-          path: f.path,
-          size: Buffer.byteLength(f.content, "utf-8"),
-        }));
+        const readmeEntry = fileBuffers.find((f) => f.path === "README.md");
+        const fileTree = fileBuffers.map((f) => ({ path: f.path, size: f.content.length }));
 
         const result = await skillService.installFromUpload({
           slug, name, description, version,
           zipBuffer: Buffer.alloc(0),
           tenantId,
           filesOverride: fileBuffers,
-          skillMdContentOverride: skillMdContent,
-          readmeContentOverride: readmeContent,
+          skillMdContentOverride: skillMd.content.toString("utf-8"),
+          readmeContentOverride: readmeEntry ? readmeEntry.content.toString("utf-8") : null,
           fileTreeOverride: fileTree,
         });
 

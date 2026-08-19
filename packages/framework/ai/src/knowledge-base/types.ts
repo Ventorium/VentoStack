@@ -72,6 +72,12 @@ export interface KnowledgeBaseService {
     pageSize?: number;
   }): Promise<{ list: KnowledgeBase[]; total: number }>;
   delete(id: string, tenantId: string): Promise<void>;
+  /** 更新知识库元数据（name/description）；新数据按 meta.tenantId 校验租户归属 */
+  updateMeta(
+    id: string,
+    params: { name?: string; description?: string },
+    tenantId?: string,
+  ): Promise<void>;
 
   // 文件浏览（供 LLM 工具调用 + 前端）
   ls(

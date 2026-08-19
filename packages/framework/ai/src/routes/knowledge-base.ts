@@ -6,6 +6,7 @@ import { readFile, existsSync } from "node:fs/promises";
 import { createRouter, success, paginated, fail, handleError, parseBody, pageOf } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { KnowledgeBaseService } from "../knowledge-base/types";
+import { createFileValidator } from "../knowledge-base/file-security";
 
 export function createKnowledgeBaseRoutes(
   kbService: KnowledgeBaseService,
@@ -71,10 +72,15 @@ export function createKnowledgeBaseRoutes(
       try {
         const id = (ctx.params as Record<string, string>).id!;
         const body = await parseBody(ctx.request);
-        await kbService.updateMeta(id, {
-          name: body.name as string | undefined,
-          description: body.description as string | undefined,
-        });
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        await kbService.updateMeta(
+          id,
+          {
+            name: body.name as string | undefined,
+            description: body.description as string | undefined,
+          },
+          tenantId,
+        );
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -243,6 +249,11 @@ export function createKnowledgeBaseRoutes(
         const targetDir = (formData.get("dir") as string) || undefined;
 
         if (!file) return fail("请上传文件", 400, 400);
+
+        // 文件校验：大小上限 + 扩展名白名单
+        const validator = createFileValidator();
+        const check = validator.validateFile({ name: file.name, size: file.size });
+        if (!check.valid) return fail(check.error ?? "文件校验失败", 400, 400);
 
         // 读取 OCR 配置
         const [ocrEnabledCfg, ocrLanguageCfg, ocrServerUrlCfg] = await Promise.all([

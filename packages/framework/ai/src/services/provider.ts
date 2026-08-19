@@ -655,7 +655,7 @@ export function createProviderService(deps: {
        JOIN ai_provider p ON p.id = m.provider_id AND p.tenant_id = m.tenant_id
        WHERE m.tenant_id = $1 AND m.model_id = $2
          AND m.status = 1 AND p.status = 1
-         AND ($3 IS NULL OR p.name = $3)
+         AND ($3::text IS NULL OR p.name = $3::text)
        ORDER BY p.sort ASC, p.created_at ASC
        LIMIT 2`,
       [tenantId, modelId, providerName],

@@ -429,7 +429,39 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const toolRegistry = buildToolRegistry('default');
 
   // Agent CRUD 服务（先创建，供 AgentLoop 使用）
-  const agentDbService = createAgentService({ db: db as import('@ventostack/database').Database });
+  const agentDbService = createAgentService({
+    db: db as import('@ventostack/database').Database,
+    // 依赖引用校验：model / 知识库 / Skill / MCP 引用必须有效且归属当前租户
+    validateRefs: async (params, tenantId) => {
+      const tid = tenantId || 'default';
+      if (params.model && params.model !== 'default') {
+        const inRegistry = modelRegistry.has(params.model);
+        let runtime = null;
+        if (!inRegistry) {
+          try {
+            runtime = await providerService.resolveRuntimeModel(params.model, tid);
+          } catch {
+            runtime = null;
+          }
+        }
+        if (!inRegistry && !runtime) {
+          throw new Error(`模型 ${params.model} 未配置或不可用`);
+        }
+      }
+      for (const kbId of params.knowledgeBaseIds ?? []) {
+        const kb = await knowledgeBase.getById(kbId, tid);
+        if (!kb) throw new Error(`知识库 ${kbId} 不存在`);
+      }
+      for (const skillId of params.skillIds ?? []) {
+        const skill = await skillService.getById(skillId, tid);
+        if (!skill) throw new Error(`Skill ${skillId} 不存在或不属于当前租户`);
+      }
+      for (const mcpId of params.mcpServerIds ?? []) {
+        const mcp = await mcpServerService.getById(mcpId, tid);
+        if (!mcp) throw new Error(`MCP Server ${mcpId} 不存在或不属于当前租户`);
+      }
+    },
+  });
   const agentCrudService: AgentCrudService = {
     create: (params) =>
       agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
@@ -453,10 +485,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         };
       }),
     list: (params) => agentDbService.list(params),
-    update: (id, params, tenantId) =>
-      agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId),
-    delete: (id, tenantId) => agentDbService.delete(id, tenantId),
-    publish: (id, tenantId) => agentDbService.publish(id, tenantId),
+    update: (id, params, tenantId, opts) =>
+      agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId, opts),
+    delete: (id, tenantId, opts) => agentDbService.delete(id, tenantId, opts),
+    publish: (id, tenantId, opts) => agentDbService.publish(id, tenantId, opts),
   };
 
   const allowedMcpCommands = (process.env.AI_MCP_STDIO_COMMANDS ?? '')
@@ -471,6 +503,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     db: db as import('@ventostack/database').Database,
     allowedStdioCommands: allowedMcpCommands,
     allowedHttpHosts: allowedMcpHosts,
+    credentialEncryptor: deps.credentialEncryptor,
   });
   const mcpToolSource = createMcpToolSource(mcpServerService);
 
