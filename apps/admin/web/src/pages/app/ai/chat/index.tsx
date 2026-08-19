@@ -235,6 +235,13 @@ export default function AIChatPage() {
     setSessionId(threadId);
     setMessages([]);
     setTotalTokens({ input: 0, output: 0 });
+    // 重置能力开关为 agent 默认配置，避免上一个会话的开关状态残留
+    if (selectedAgent) {
+      setEnabledTools(selectedAgent.tools ?? []);
+      setEnabledSkills(selectedAgent.skills.map(s => s.id));
+      setEnabledMcp(selectedAgent.mcpServers.map(m => m.id));
+      setEnabledKbs(selectedAgent.knowledgeBases.map(k => k.id));
+    }
     try {
       const { data } = (await client.get("/api/ai/conversations/:id/messages", { params: { id: threadId } })) as { data?: Array<{ role: string; content: string }> };
       const history = (data ?? [])
@@ -247,7 +254,7 @@ export default function AIChatPage() {
         }));
       setMessages(history);
     } catch { /* 历史加载失败保持空 */ }
-  }, []);
+  }, [selectedAgent]);
 
   // 消息完成后刷新工作区文件
   useEffect(() => {
@@ -282,20 +289,7 @@ export default function AIChatPage() {
     if (!selectedAgent) return;
     try {
       const values = await exportForm.validateFields();
-      // 读取所有工作区文件
-      const files: Array<{ path: string; content: string }> = [];
-      for (const f of workspaceFiles) {
-        const { error, data } = (await client.get("/api/ai/agents/:id/workspace/file", { params: { id: selectedAgent.id }, query: { path: f.path } })) as { error?: unknown; data?: { content: string } };
-        if (!error && data) files.push({ path: f.path, content: data.content });
-      }
-
-      // 构建 FormData 上传
-      const formData = new FormData();
-      // 创建一个 zip-like 的结构，但这里直接用 upload 接口的 filesOverride 路径
-      // 实际上我们需要用 installFromUpload 的 filesOverride，但前端没有这个接口
-      // 所以我们用 slug + name + description + version 调用一个新接口
-      // 暂时用现有的 upload 接口，但需要创建一个 ZIP
-      // 简化方案：直接调用一个新接口来从工作区安装
+      // 后端从工作区磁盘读取文件，前端只需传元数据
       const { error } = (await client.post("/api/ai/skills/install-from-workspace", {
         body: {
           agentId: selectedAgent.id,
@@ -303,7 +297,6 @@ export default function AIChatPage() {
           name: values.name,
           description: values.description || "",
           version: values.version || "1.0.0",
-          files: files,
         },
       })) as { error?: unknown };
       if (!error) {
@@ -312,7 +305,7 @@ export default function AIChatPage() {
         exportForm.resetFields();
       }
     } catch { /* validation failed */ }
-  }, [selectedAgent, workspaceFiles, exportForm]);
+  }, [selectedAgent, exportForm]);
 
   // Send message
   const handleSend = useCallback(
@@ -413,6 +406,10 @@ export default function AIChatPage() {
               input: prev.input + usage.promptTokens,
               output: prev.output + usage.completionTokens,
             }));
+          },
+          onSession: (sid) => {
+            // 新建会话时后端下发 sessionId，绑定以便后续消息延续同一会话
+            setSessionId(sid);
           },
           onError: (error) => {
             // 标记所有 running 步骤为 error

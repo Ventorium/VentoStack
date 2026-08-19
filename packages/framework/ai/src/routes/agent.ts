@@ -100,19 +100,28 @@ export function createAgentRoutes(
 
   router.get(
     '/api/ai/agents',
-    routeDoc('获取 Agent 列表', { query: paginationQuery }),
+    routeDoc('获取 Agent 列表', {
+      query: {
+        ...paginationQuery,
+        status: { type: 'string', description: '按状态过滤（published / draft）' },
+        search: { type: 'string', description: '按名称或描述模糊搜索' },
+      },
+    }),
     async (ctx) => {
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
       const userId = (ctx.user as { id?: string })?.id ?? '';
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
       const roles = (ctx.user as { roles?: string[] })?.roles ?? [];
       const isAdmin = roles.includes('admin');
+      const q = ctx.query as Record<string, unknown>;
       const result = await agentService.list({
         tenantId,
         userId,
         isAdmin,
         page,
         pageSize,
+        status: q.status as string | undefined,
+        search: q.search as string | undefined,
       });
       return paginated(result.list, result.total, page, pageSize);
     },

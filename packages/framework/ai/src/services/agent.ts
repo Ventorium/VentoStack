@@ -69,6 +69,10 @@ export interface AgentListParams {
   isAdmin: boolean;
   page?: number;
   pageSize?: number;
+  /** 按状态过滤（如 published / draft）。缺省返回所有状态。 */
+  status?: string;
+  /** 按名称或描述模糊搜索 */
+  search?: string;
 }
 
 /** 依赖引用校验：由装配层注入，用于校验 model / 知识库 / Skill / MCP 引用是否存在且归属当前租户 */
@@ -203,13 +207,34 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
   }
 
   async function list(params: AgentListParams): Promise<{ list: AgentItem[]; total: number }> {
-    const { tenantId, userId, isAdmin, page = 1, pageSize = 20 } = params;
+    const { tenantId, userId, isAdmin, page = 1, pageSize = 20, status, search } = params;
     const offset = (page - 1) * pageSize;
 
-    const whereClause = isAdmin
-      ? `WHERE tenant_id = $1`
-      : `WHERE tenant_id = $1 AND (created_by = $2 OR is_public = true)`;
-    const queryParams = isAdmin ? [tenantId] : [tenantId, userId];
+    // 动态构建 WHERE 子句及参数数组
+    const conditions: string[] = [];
+    const queryParams: unknown[] = [];
+
+    if (isAdmin) {
+      conditions.push(`tenant_id = $${queryParams.length + 1}`);
+      queryParams.push(tenantId);
+    } else {
+      conditions.push(`tenant_id = $${queryParams.length + 1}`);
+      queryParams.push(tenantId);
+      conditions.push(`(created_by = $${queryParams.length + 1} OR is_public = true)`);
+      queryParams.push(userId);
+    }
+
+    if (status) {
+      conditions.push(`status = $${queryParams.length + 1}`);
+      queryParams.push(status);
+    }
+
+    if (search) {
+      conditions.push(`(name ILIKE $${queryParams.length + 1} OR description ILIKE $${queryParams.length + 1})`);
+      queryParams.push(`%${search}%`);
+    }
+
+    const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
     const countRows = await db.raw(
       `SELECT COUNT(*) as cnt FROM ai_agent ${whereClause}`,
