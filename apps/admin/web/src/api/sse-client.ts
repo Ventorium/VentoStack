@@ -16,6 +16,8 @@ export interface StreamCallbacks {
   onStage?: (stage: "planning" | "researching" | "synthesizing") => void;
   /** 引用来源清单（研究产出后下发） */
   onSources?: (sources: Array<{ title: string; url: string }>) => void;
+  /** 会话 ID 事件（新建会话时后端下发，前端据此绑定 sessionId） */
+  onSession?: (sessionId: string) => void;
   onError: (error: { code: string; message: string; recoverable: boolean }) => void;
   onDone: () => void;
 }
@@ -113,6 +115,9 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       break;
     case "sources":
       if (chunk.sources) callbacks.onSources?.(chunk.sources);
+      break;
+    case "session":
+      if (chunk.sessionId) callbacks.onSession?.(chunk.sessionId);
       break;
     case "error":
       if (chunk.error) callbacks.onError(chunk.error);

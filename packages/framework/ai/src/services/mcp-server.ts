@@ -141,9 +141,40 @@ const DEFAULT_STDIO_COMMANDS: string[] = [];
 /** 敏感字段 key 匹配规则：password/token/secret/key/authorization/credential 等 */
 const SENSITIVE_KEY_RE = /password|token|secret|key|authorization|credential/i;
 
+/** 脱敏占位值：对外返回时用于隐藏真实值，写入时须过滤避免覆盖真实密钥 */
+const MASK_VALUE = "********";
+
 /** 判断字段名是否敏感（命中则需加密/脱敏） */
 function isSensitiveKey(key: string): boolean {
   return SENSITIVE_KEY_RE.test(key);
+}
+
+/** 过滤对象中的脱敏占位值（********）：更新时跳过未修改的掩码字段，防止覆盖已存真实值 */
+function stripMaskedValues(
+  obj: Record<string, string> | null | undefined,
+): Record<string, string> | null | undefined {
+  if (!obj) return obj;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(obj)) {
+    if (v !== MASK_VALUE) out[k] = v;
+  }
+  return out;
+}
+
+/**
+ * 合并当前值与更新值：掩码字段（********）沿用当前真实值，其余字段采用新值。
+ * update 是整列替换，必须保留掩码字段对应的原值，否则会清空未修改的密钥。
+ */
+function mergeMaskedValues(
+  current: Record<string, string> | null | undefined,
+  incoming: Record<string, string> | null | undefined,
+): Record<string, string> | null | undefined {
+  if (!incoming) return incoming;
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(incoming)) {
+    out[k] = v === MASK_VALUE ? (current?.[k] ?? v) : v;
+  }
+  return out;
 }
 
 /** 加密对象中的敏感字段值（ENC: 前缀），非敏感字段原样保留 */
@@ -387,9 +418,9 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     if (params.transportType !== undefined) { sets.push(`transport_type = $${idx++}`); values.push(params.transportType); }
     if (params.command !== undefined) { sets.push(`command = $${idx++}`); values.push(params.command); }
     if (params.args !== undefined) { sets.push(`args = $${idx++}`); values.push(JSON.stringify(params.args)); }
-    if (params.env !== undefined) { sets.push(`env = $${idx++}`); values.push(JSON.stringify(await encryptSecretFields(params.env, deps.credentialEncryptor))); }
+    if (params.env !== undefined) { sets.push(`env = $${idx++}`); values.push(JSON.stringify(await encryptSecretFields(mergeMaskedValues(current.env, params.env), deps.credentialEncryptor))); }
     if (params.url !== undefined) { sets.push(`url = $${idx++}`); values.push(params.url); }
-    if (params.headers !== undefined) { sets.push(`headers = $${idx++}`); values.push(JSON.stringify(await encryptSecretFields(params.headers, deps.credentialEncryptor))); }
+    if (params.headers !== undefined) { sets.push(`headers = $${idx++}`); values.push(JSON.stringify(await encryptSecretFields(mergeMaskedValues(current.headers, params.headers), deps.credentialEncryptor))); }
     if (params.enabled !== undefined) { sets.push(`enabled = $${idx++}`); values.push(params.enabled); }
 
     if (sets.length === 0) return (await getById(id, tenantId))!;

@@ -1,7 +1,7 @@
 /**
  * 对话路由（含 SSE 流式）
  */
-import { createRouter, handleError, parseBody, success } from '@ventostack/core';
+import { createRouter, fail, handleError, parseBody, success } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { AgentLoop } from '../agent-engine/agent-loop';
 import type { MemoryService } from '../memory/types';
@@ -132,7 +132,9 @@ export function createChatRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        const limit = Number((ctx.query as Record<string, unknown>)?.limit ?? 50);
+        // limit 上限保护：防止一次性拉取超大历史导致内存/IO 压力
+        const rawLimit = Number((ctx.query as Record<string, unknown>)?.limit ?? 50);
+        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 200) : 50;
         const messages = await conversationService.getMessages(id, userId, tenantId, limit);
         return success(messages);
       } catch (e) {
@@ -209,11 +211,31 @@ export function createChatRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const toolRegistry = buildRequestToolRegistry(ctx);
 
+        // 输入校验：message 必填 + 长度上限（防超大输入拖垮 LLM 与内存）
+        const rawMessage = body.message as string | undefined;
+        if (!rawMessage || typeof rawMessage !== 'string') {
+          return fail('message 字段必填', 400, 400);
+        }
+        if (rawMessage.length > 200_000) {
+          return fail('message 长度超出上限（200000 字符）', 400, 400);
+        }
+
+        // 缺省会话时先创建会话，保证 runStream 能按 sessionId 持久化消息并返回真实会话 ID
+        let returnedSessionId = body.sessionId as string | undefined;
+        if (!returnedSessionId) {
+          const conv = await conversationService.create({
+            agentId: body.agentId as string,
+            userId,
+            tenantId,
+          });
+          returnedSessionId = conv.id;
+        }
+
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
           userId,
-          sessionId: body.sessionId as string | undefined,
-          message: body.message as string,
+          sessionId: returnedSessionId,
+          message: rawMessage,
           tenantId,
           toolRegistry,
           // 能力过滤器
@@ -231,7 +253,7 @@ export function createChatRoutes(
           }
         }
 
-        return success({ content, sessionId: body.sessionId });
+        return success({ content, sessionId: returnedSessionId });
       } catch (e) {
         return handleError(e);
       }
@@ -266,6 +288,15 @@ export function createChatRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const toolRegistry = buildRequestToolRegistry(ctx);
 
+        // 输入校验：message 必填 + 长度上限（与 /api/ai/chat 保持一致）
+        const rawMessage = body.message as string | undefined;
+        if (!rawMessage || typeof rawMessage !== 'string') {
+          return fail('message 字段必填', 400, 400);
+        }
+        if (rawMessage.length > 200_000) {
+          return fail('message 长度超出上限（200000 字符）', 400, 400);
+        }
+
         // 如果没有 sessionId，创建新会话
         let sessionId = body.sessionId as string | undefined;
         if (!sessionId) {
@@ -281,7 +312,7 @@ export function createChatRoutes(
           agentId: body.agentId as string,
           userId,
           sessionId,
-          message: body.message as string,
+          message: rawMessage,
           tenantId,
           signal: ctx.request.signal,
           toolRegistry,
@@ -292,7 +323,13 @@ export function createChatRoutes(
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
         });
 
-        return createSSEResponse(stream, {
+        // 在流开头下发 session 事件，前端据此绑定会话 ID（新建会话时前端无 sessionId）
+        const streamWithSession = (async function* () {
+          yield { type: 'session' as const, sessionId } as const;
+          yield* stream;
+        })();
+
+        return createSSEResponse(streamWithSession, {
           signal: ctx.request.signal,
         });
       } catch (e) {

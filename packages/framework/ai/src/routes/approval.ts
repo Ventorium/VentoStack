@@ -7,8 +7,8 @@ import { routeDoc } from './schema';
 
 export interface ApprovalCrudService {
   getStatus(id: string): Promise<unknown | null>;
-  approve(id: string, reviewedBy: string, reason?: string): Promise<unknown | null>;
-  reject(id: string, reviewedBy: string, reason?: string): Promise<unknown | null>;
+  approve(id: string, reviewedBy: string, reason?: string, tenantId?: string): Promise<unknown | null>;
+  reject(id: string, reviewedBy: string, reason?: string, tenantId?: string): Promise<unknown | null>;
   listPending(tenantId: string): Promise<unknown[]>;
 }
 
@@ -57,8 +57,9 @@ export function createApprovalRoutes(
       try {
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
-        const result = await approvalService.approve(id, userId, body.reason as string | undefined);
+        const result = await approvalService.approve(id, userId, body.reason as string | undefined, tenantId);
         if (!result) return fail('审批请求不存在或已处理', 404, 404);
         return success(result);
       } catch (e) {
@@ -80,8 +81,9 @@ export function createApprovalRoutes(
       try {
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
-        const result = await approvalService.reject(id, userId, body.reason as string | undefined);
+        const result = await approvalService.reject(id, userId, body.reason as string | undefined, tenantId);
         if (!result) return fail('审批请求不存在或已处理', 404, 404);
         return success(result);
       } catch (e) {

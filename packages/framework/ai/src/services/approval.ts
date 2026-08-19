@@ -101,36 +101,56 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     id: string,
     reviewedBy: string,
     reason?: string,
+    tenantId?: string,
   ): Promise<ApprovalRequest | null> {
+    const request = await getStatus(id);
+    if (!request) return null;
+    // 租户校验：只能审批本租户的请求
+    if (tenantId && request.tenantId !== tenantId) return null;
+    // 禁止自批：发起人不能审批自己发起的请求
+    if (request.requestedBy === reviewedBy) {
+      throw new Error("不能审批自己发起的请求");
+    }
+
     await db.raw(
       `UPDATE ai_approval_request SET status = 'approved', approved_by = $1, comment = $2, updated_at = NOW()
        WHERE id = $3 AND status = 'pending'`,
       [reviewedBy, reason ?? null, id],
     );
 
-    const request = await getStatus(id);
-    if (request?.status === "approved") {
+    const updated = await getStatus(id);
+    if (updated?.status === "approved") {
       await eventBus?.emit("ai.approval.approved", { id, reviewedBy });
     }
-    return request;
+    return updated;
   }
 
   async function reject(
     id: string,
     reviewedBy: string,
     reason?: string,
+    tenantId?: string,
   ): Promise<ApprovalRequest | null> {
+    const request = await getStatus(id);
+    if (!request) return null;
+    // 租户校验：只能拒绝本租户的请求
+    if (tenantId && request.tenantId !== tenantId) return null;
+    // 禁止自批：发起人不能拒绝自己发起的请求
+    if (request.requestedBy === reviewedBy) {
+      throw new Error("不能拒绝自己发起的请求");
+    }
+
     await db.raw(
       `UPDATE ai_approval_request SET status = 'rejected', approved_by = $1, comment = $2, updated_at = NOW()
        WHERE id = $3 AND status = 'pending'`,
       [reviewedBy, reason ?? null, id],
     );
 
-    const request = await getStatus(id);
-    if (request?.status === "rejected") {
+    const updated = await getStatus(id);
+    if (updated?.status === "rejected") {
       await eventBus?.emit("ai.approval.rejected", { id, reviewedBy });
     }
-    return request;
+    return updated;
   }
 
   async function getStatus(id: string): Promise<ApprovalRequest | null> {

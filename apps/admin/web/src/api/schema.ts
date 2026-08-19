@@ -1569,7 +1569,9 @@ export type OpenAPIs = {
     '/api/ai/agents': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        status?: string,
+        search?: string
       },
       params: never,
       headers: never,

@@ -90,7 +90,8 @@ export type StreamChunk =
     }
   | { type: 'tool_call_start'; toolCall?: ToolCall }
   | ResearchStageChunk
-  | ResearchSourcesChunk;
+  | ResearchSourcesChunk
+  | { type: 'session'; sessionId: string };
 
 export interface TokenUsage {
   promptTokens: number;

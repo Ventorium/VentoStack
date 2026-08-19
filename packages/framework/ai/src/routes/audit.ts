@@ -54,7 +54,9 @@ export function createAuditRoutes(
 
       const rows = await db.raw(
         `SELECT id, tool_name as "toolName", user_id as "userId",
-                status, duration, input, output,
+                status, duration,
+                CASE WHEN input IS NULL THEN NULL ELSE LEFT(input::text, 500) END as input,
+                CASE WHEN output IS NULL THEN NULL ELSE LEFT(output::text, 500) END as output,
                 created_at as "createdAt"
          FROM ai_tool_log ${where}
          ORDER BY created_at DESC
