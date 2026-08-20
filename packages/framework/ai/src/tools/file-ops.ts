@@ -3,7 +3,7 @@
  * 提供受控的文件读写能力
  * 安全措施：路径白名单、大小限制、权限检查
  */
-import { resolve } from "node:path";
+import { resolve, sep } from "node:path";
 
 export interface FileOpsToolDeps {
   /** 允许访问的基础目录 */
@@ -16,6 +16,14 @@ export interface FileOpsToolDeps {
 
 const DEFAULT_MAX_READ_SIZE = 100 * 1024;  // 100KB
 const DEFAULT_MAX_WRITE_SIZE = 500 * 1024; // 500KB
+
+/** 路径边界校验：resolved 必须等于 base 或在 base + sep 之内，防止同前缀目录绕过 */
+function isPathAllowed(resolvedPath: string, allowedPaths: string[]): boolean {
+  return allowedPaths.some((base) => {
+    const resolvedBase = resolve(base);
+    return resolvedPath === resolvedBase || resolvedPath.startsWith(resolvedBase + sep);
+  });
+}
 
 export function createFileReadTool(deps: FileOpsToolDeps) {
   const maxReadSize = deps.maxReadSize ?? DEFAULT_MAX_READ_SIZE;
@@ -36,12 +44,9 @@ export function createFileReadTool(deps: FileOpsToolDeps) {
       const filePath = params.path as string;
       if (!filePath) return { error: "路径不能为空" };
 
-      // 路径安全检查：使用 node:path 的同步 resolve（Bun.resolve 是异步的）
+      // 路径安全检查：resolve + 分隔符边界，防止同前缀目录绕过
       const resolved = resolve(filePath);
-      const isAllowed = deps.allowedPaths.some(
-        (p) => resolved.startsWith(resolve(p)),
-      );
-      if (!isAllowed) {
+      if (!isPathAllowed(resolved, deps.allowedPaths)) {
         return { error: "不允许访问该路径" };
       }
 
@@ -94,12 +99,9 @@ export function createFileWriteTool(deps: FileOpsToolDeps) {
         return { error: `内容过大 (${content.length} bytes)，最大允许 ${maxWriteSize} bytes` };
       }
 
-      // 路径安全检查：使用 node:path 的同步 resolve（Bun.resolve 是异步的）
+      // 路径安全检查：resolve + 分隔符边界，防止同前缀目录绕过
       const resolved = resolve(filePath);
-      const isAllowed = deps.allowedPaths.some(
-        (p) => resolved.startsWith(resolve(p)),
-      );
-      if (!isAllowed) {
+      if (!isPathAllowed(resolved, deps.allowedPaths)) {
         return { error: "不允许写入该路径" };
       }
 

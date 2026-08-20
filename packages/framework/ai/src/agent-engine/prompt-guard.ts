@@ -49,7 +49,8 @@ const LEAK_PATTERNS = [
 export function createPromptGuard(
   config: PromptGuardConfig = { enabled: true },
 ): PromptGuard {
-  const maxInputLength = config.maxInputLength ?? 10000;
+  // 与 chat 路由的 message 长度上限保持一致（200000），避免长文本被误判为注入攻击
+  const maxInputLength = config.maxInputLength ?? 200_000;
 
   return {
     checkInput(message: string): PromptGuardResult {

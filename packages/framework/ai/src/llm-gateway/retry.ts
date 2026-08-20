@@ -39,9 +39,11 @@ export async function withRetry<T>(
     } catch (err) {
       lastError = err instanceof Error ? err : new Error(String(err));
 
+      const rawCode = (err as { code?: unknown })?.code;
       const statusCode =
         (err as { status?: number })?.status ??
-        (err as { statusCode?: number })?.statusCode;
+        (err as { statusCode?: number })?.statusCode ??
+        (typeof rawCode === "number" ? rawCode : undefined);
       const isRetryable =
         retryableStatusCodes.includes(statusCode ?? 0) ||
         (err as { code?: string })?.code === "ETIMEDOUT" ||

@@ -81,6 +81,8 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
 
       if (!response.ok) {
         const _errBody = await response.text().catch(() => '');
+        // 429 限流单独映射，供 retry.ts 走 Retry-After 指数退避；其余错误保持 5xx 语义
+        if (response.status === 429) throw aiErrors.llmRateLimited('openai');
         throw aiErrors.llmTimeout('openai');
       }
 
