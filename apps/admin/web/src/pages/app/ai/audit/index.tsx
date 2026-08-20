@@ -50,7 +50,25 @@ const AIAuditPage = () => {
   useEffect(() => { refresh(1); }, []);
 
   const handleSearch = () => { setPage(1); refresh(1); };
-  const handleReset = () => { setSearchText(""); setStatusFilter(undefined); setPage(1); refresh(1, pageSize); };
+  const handleReset = () => {
+    const clearedSearch = "";
+    const clearedStatus = undefined;
+    setSearchText(clearedSearch);
+    setStatusFilter(clearedStatus);
+    setPage(1);
+    // 直接传 cleared 值，避免 refresh 闭包捕获 setState 前的旧值
+    setLoading(true);
+    try {
+      client.get("/api/ai/audit", {
+        query: { page: 1, pageSize },
+      }).then(({ error, data: result }) => {
+        if (!error && result) {
+          setData(result.list);
+          setTotal(result.total);
+        }
+      }).finally(() => setLoading(false));
+    } catch { /* ignore */ }
+  };
   const handlePageChange = (p: number, ps: number) => { setPage(p); setPageSize(ps); refresh(p, ps); };
 
   const columns: ColumnsType<AIToolLogItem> = [

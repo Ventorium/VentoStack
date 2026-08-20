@@ -92,7 +92,8 @@ export default function KnowledgeBasesPage() {
 
   useEffect(() => {
     refresh(1);
-  }, [refresh]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const handleCreate = async () => {
     try {

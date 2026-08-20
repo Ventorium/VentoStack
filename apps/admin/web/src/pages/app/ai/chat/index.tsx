@@ -459,9 +459,14 @@ export default function AIChatPage() {
   // Stop generation
   const handleStop = useCallback(() => {
     abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
     setLoading(false);
     setMessages((prev) =>
-      prev.map((msg) => (msg.isStreaming ? { ...msg, isStreaming: false } : msg)),
+      prev.map((msg) =>
+        msg.isStreaming
+          ? { ...msg, isStreaming: false, content: msg.content || "（已停止）" }
+          : msg,
+      ),
     );
   }, []);
 
@@ -471,7 +476,14 @@ export default function AIChatPage() {
     setSessionId(undefined);
     setActiveThreadId(null);
     setTotalTokens({ input: 0, output: 0 });
-  }, []);
+    // 重置能力开关为 agent 默认配置
+    if (selectedAgent) {
+      setEnabledTools(selectedAgent.tools ?? []);
+      setEnabledSkills(selectedAgent.skills.map((s) => s.id));
+      setEnabledMcp(selectedAgent.mcpServers.map((m) => m.id));
+      setEnabledKbs(selectedAgent.knowledgeBases.map((k) => k.id));
+    }
+  }, [selectedAgent]);
 
   // Regenerate last assistant message
   const handleRegenerate = useCallback((messageId: string) => {
