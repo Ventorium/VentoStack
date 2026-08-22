@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { createAgentLoop } from "../../agent-engine/agent-loop";
 import { createEventEmitter } from "../../agent-engine/events";
+import { createToolRegistry } from "../../tool-registry";
 import type { AgentTool } from "../../agent-engine/types";
 import type { ChatParams, ChatResult, LLMGateway, LLMProvider, StreamChunk } from "../../llm-gateway/types";
 
@@ -408,5 +409,101 @@ describe("Agent loop conformance", () => {
     expect(toolSpan.attributes.is_error).toBe(false);
     // ai.run 应包含 turn 事件
     expect(runSpan.events.some((e) => e.name === "ai.turn")).toBe(true);
+  });
+});
+
+describe("Agent loop tool policy（默认拒绝）", () => {
+  test("rejects the run when the configured agent does not exist", async () => {
+    const gateway = createGateway([[{ type: "content", delta: "should not run" }, { type: "done" }]]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentService: { getById: async () => null },
+    });
+
+    const chunks = await collect(loop.runStream({
+      agentId: "missing-agent",
+      userId: "user",
+      tenantId: "tenant",
+      message: "run",
+    }));
+
+    const errorChunk = chunks.find((c) => c.type === "error");
+    expect(errorChunk).toBeDefined();
+    expect((errorChunk as { error: { code: string } }).error.code).toBe("AGENT_NOT_FOUND");
+    expect(chunks.some((c) => c.type === "content")).toBe(false);
+  });
+
+  test("exposes no registry tools when the agent has no tool whitelist（默认拒绝）", async () => {
+    const requests: ChatParams[] = [];
+    const gateway = createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests);
+    const registry = createToolRegistry();
+    registry.register({
+      name: "file-read",
+      description: "read files",
+      parameters: [{ name: "path", type: "string" as const, required: true }],
+      handler: async () => "content",
+    });
+
+    const loop = createAgentLoop({ llmGateway: gateway, toolRegistry: registry });
+
+    // 无白名单：请求体即使携带 tools 过滤器也不能扩权
+    await collect(loop.runStream({
+      agentId: "agent",
+      userId: "user",
+      tenantId: "tenant",
+      message: "run",
+      tools: ["file-read"],
+    }));
+
+    expect(requests.length).toBe(1);
+    expect(requests[0]!.tools).toBeUndefined();
+  });
+
+  test("intersects the request filter with the agent whitelist", async () => {
+    const requests: ChatParams[] = [];
+    const gateway = createGateway([
+      [
+        { type: "tool_call_start", toolCall: { id: "call-1", name: "calculator", arguments: {} } },
+        { type: "done" },
+      ],
+      [{ type: "content", delta: "done" }, { type: "done" }],
+    ], requests);
+    const registry = createToolRegistry();
+    for (const name of ["calculator", "datetime"]) {
+      registry.register({
+        name,
+        description: name,
+        parameters: [],
+        handler: async () => "ok",
+      });
+    }
+
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      toolRegistry: registry,
+      agentService: {
+        getById: async () => ({
+          id: "agent",
+          name: "agent",
+          systemPrompt: "",
+          model: "test/model",
+          tenantId: "tenant",
+          tools: ["calculator"],
+        }),
+      },
+    });
+
+    // datetime 不在白名单内，请求过滤器无法将其引入
+    await collect(loop.runStream({
+      agentId: "agent",
+      userId: "user",
+      tenantId: "tenant",
+      message: "run",
+      tools: ["datetime", "calculator"],
+    }));
+
+    expect(requests.length).toBeGreaterThanOrEqual(1);
+    const offered = (requests[0]!.tools ?? []).map((t) => t.name);
+    expect(offered).toEqual(["calculator"]);
   });
 });

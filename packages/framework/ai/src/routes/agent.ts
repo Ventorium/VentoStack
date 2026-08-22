@@ -40,6 +40,51 @@ function currentUser(ctx: { user?: { id?: string; roles?: string[] } }): { userI
   };
 }
 
+/** Agent 路由请求体字段白名单（status 不在其中：只能通过 publish 接口变更） */
+const AGENT_BODY_FIELDS = [
+  'name', 'description', 'model', 'systemPrompt', 'tools',
+  'knowledgeBaseIds', 'skillIds', 'mcpServerIds',
+  'modelOverrides', 'memoryConfig', 'config',
+  'maxIterations', 'maxTokensPerTurn', 'isPublic',
+] as const;
+
+/** 迭代轮数 / 单轮 Token / 能力清单长度的硬上限（防止单条消息放大成天文数字的 LLM 成本） */
+const MAX_ITERATIONS_LIMIT = 50;
+const MAX_TOKENS_PER_TURN_LIMIT = 100_000;
+const MAX_LIST_LENGTH = 20;
+
+/** 校验 Agent 请求体的数值上限与数组规模；返回错误信息或 null */
+function validateAgentBody(body: Record<string, unknown>): string | null {
+  if (body.maxIterations !== undefined) {
+    const v = Number(body.maxIterations);
+    if (!Number.isInteger(v) || v < 1 || v > MAX_ITERATIONS_LIMIT) {
+      return `maxIterations 必须是 1-${MAX_ITERATIONS_LIMIT} 之间的整数`;
+    }
+  }
+  if (body.maxTokensPerTurn !== undefined) {
+    const v = Number(body.maxTokensPerTurn);
+    if (!Number.isInteger(v) || v < 1 || v > MAX_TOKENS_PER_TURN_LIMIT) {
+      return `maxTokensPerTurn 必须是 1-${MAX_TOKENS_PER_TURN_LIMIT} 之间的整数`;
+    }
+  }
+  for (const field of ['tools', 'knowledgeBaseIds', 'skillIds', 'mcpServerIds'] as const) {
+    const list = body[field];
+    if (list !== undefined && (!Array.isArray(list) || list.length > MAX_LIST_LENGTH)) {
+      return `${field} 必须是数组且最多 ${MAX_LIST_LENGTH} 项`;
+    }
+  }
+  return null;
+}
+
+/** 按白名单拷贝请求体字段（丢弃 status 等未声明字段） */
+function pickAgentFields(body: Record<string, unknown>): Record<string, unknown> {
+  const params: Record<string, unknown> = {};
+  for (const field of AGENT_BODY_FIELDS) {
+    if (body[field] !== undefined) params[field] = body[field];
+  }
+  return params;
+}
+
 export function createAgentRoutes(
   agentService: AgentCrudService,
   authMiddleware: Middleware,
@@ -69,6 +114,10 @@ export function createAgentRoutes(
           items: { type: 'string' },
           description: '绑定的 MCP 服务 ID',
         },
+        modelOverrides: {
+          type: 'object',
+          description: '模型覆盖配置（能力 → 模型 ID 映射）',
+        },
         memoryConfig: {
           type: 'object',
           description: '记忆配置（enabled/longTerm/maxHistoryMessages）',
@@ -85,8 +134,12 @@ export function createAgentRoutes(
         const body = await parseBody(ctx.request);
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        // 字段白名单 + 数值上限校验：status 不在白名单内，只能通过 publish 接口变更
+        const validationError = validateAgentBody(body);
+        if (validationError) return fail(validationError, 400, 400);
+        const params = pickAgentFields(body);
         const result = await agentService.create({
-          ...body,
+          ...params,
           tenantId,
           createdBy: userId,
         });
@@ -162,12 +215,15 @@ export function createAgentRoutes(
           items: { type: 'string' },
           description: '绑定的 MCP 服务 ID',
         },
+        modelOverrides: {
+          type: 'object',
+          description: '模型覆盖配置（能力 → 模型 ID 映射）',
+        },
         memoryConfig: { type: 'object', description: '记忆配置' },
         config: { type: 'object', description: '扩展配置（如 research.depth）' },
         maxIterations: { type: 'int', description: '最大迭代轮数' },
         maxTokensPerTurn: { type: 'int', description: '每轮 Token 上限' },
         isPublic: { type: 'bool', description: '是否公开' },
-        status: { type: 'string', description: '状态' },
       },
     }),
     async (ctx) => {
@@ -176,12 +232,10 @@ export function createAgentRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
         // status 只能通过 publish 接口变更，防止普通 update 直接绕过发布校验
-        if (body.status !== undefined) {
-          const { status: _ignored, ...rest } = body;
-          await agentService.update(id, rest, tenantId, currentUser(ctx));
-          return success(null);
-        }
-        await agentService.update(id, body, tenantId, currentUser(ctx));
+        const { status: _ignored, ...rest } = body;
+        const validationError = validateAgentBody(rest);
+        if (validationError) return fail(validationError, 400, 400);
+        await agentService.update(id, pickAgentFields(rest), tenantId, currentUser(ctx));
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -225,8 +279,8 @@ export function createAgentRoutes(
   // ── 工作区文件浏览 ──
   const WORKSPACE_BASE = deps?.storagePath ?? './data/skills/.workspace';
 
-  // 列出工作区文件
-  router.get('/api/ai/agents/:id/workspace/files', perm('ai:agent', 'list'), async (ctx) => {
+  // 列出工作区文件（独立细粒度权限：读取 Agent 工作区原始文件不应随列表权限放开）
+  router.get('/api/ai/agents/:id/workspace/files', perm('ai:agent', 'workspace'), async (ctx) => {
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
@@ -266,8 +320,8 @@ export function createAgentRoutes(
     }
   });
 
-  // 读取工作区文件内容
-  router.get('/api/ai/agents/:id/workspace/file', perm('ai:agent', 'list'), async (ctx) => {
+  // 读取工作区文件内容（独立细粒度权限，同上）
+  router.get('/api/ai/agents/:id/workspace/file', perm('ai:agent', 'workspace'), async (ctx) => {
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';

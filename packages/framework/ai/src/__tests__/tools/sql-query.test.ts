@@ -259,4 +259,52 @@ describe("sql-query tool", () => {
       expect(tool.parameters[1].required).toBe(false);
     });
   });
+
+  // ─── 租户列遮蔽防护 ───
+  describe("租户列遮蔽防护", () => {
+    test.each([
+      // 显式 AS 别名伪装 tenant_id（外层过滤被派生表同名列遮蔽恒真）
+      "SELECT secret, 't1' AS tenant_id FROM sys_config",
+      // 隐式省略 AS 的表达式别名
+      "SELECT secret, 1 tenant_id FROM sys_config",
+      // 双引号别名
+      'SELECT secret FROM sys_config AS "tenant_id"',
+      // CASE…END 表达式别名（end 不属于裸列引用上下文）
+      "SELECT secret, CASE WHEN true THEN 't1' ELSE 'x' END tenant_id FROM secrets",
+      // 带引号字符串常量别名
+      "SELECT * FROM users WHERE name = 'x' AS tenant_id",
+    ])("拦截列别名伪装 tenant_id：%s", async (sql) => {
+      const db = createMockDb([{ secret: "data" }]);
+      const tool = createSQLQueryTool({ db: db as any, tenantId: "attacker-t1" });
+      const result = await tool.handler({ sql });
+      expect(result).toEqual({ error: "SQL 不允许将表达式别名为 tenant_id 输出列" });
+    });
+
+    test.each([
+      // 裸列引用：直接输出本租户的 tenant_id 列
+      "SELECT tenant_id FROM users",
+      // 函数聚合中的裸列
+      "SELECT max(tenant_id) FROM users",
+      // GROUP BY / ORDER BY 中的裸列
+      "SELECT tenant_id, count(*) FROM users GROUP BY tenant_id ORDER BY tenant_id",
+      // WHERE 中引用
+      "SELECT id FROM users WHERE tenant_id IS NOT NULL",
+      // 与其他值比较的表达式
+      "SELECT id FROM users WHERE tenant_id <> ''",
+    ])("放行合法裸列引用：%s", async (sql) => {
+      const db = createMockDb([]);
+      const tool = createSQLQueryTool({ db: db as any, tenantId: "t1" });
+      const result = await tool.handler({ sql });
+      expect(result).not.toHaveProperty("error");
+    });
+
+    test("字面量中包含 tenant_id 文本不误报", async () => {
+      const db = createMockDb([]);
+      const tool = createSQLQueryTool({ db: db as any, tenantId: "t1" });
+      const result = await tool.handler({
+        sql: "SELECT * FROM logs WHERE message = 'tenant_id is t1'",
+      });
+      expect(result).not.toHaveProperty("error");
+    });
+  });
 });

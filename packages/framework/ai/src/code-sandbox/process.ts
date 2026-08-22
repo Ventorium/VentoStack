@@ -1,7 +1,9 @@
 /**
  * 进程沙盒 — 仅 Bun 环境
- * 使用 Bun.spawn + --no-permission 实现进程级隔离
- * 安全措施：uid/gid 约束、环境变量白名单、输出大小限制、超时控制
+ * 使用 Bun.spawn + --no-permission 实现受限执行
+ * 实际隔离边界：超时控制、环境变量白名单、输出大小限制、Bun 权限模型（--no-permission）。
+ * 注意：子进程继承服务账号 uid/gid 运行，无 CPU/内存限制，networkAccess 配置在本实现中不生效；
+ * 需要强隔离（网络/内存/文件系统边界）时请使用 docker 沙箱（--network none / --memory）。
  */
 import { mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";

@@ -154,6 +154,44 @@ describe("web_fetch tool", () => {
       expect(result).toEqual({ error: "URL 必须以 http:// 或 https:// 开头" });
     });
 
+    test.each([
+      "http://localhost:3000/admin",
+      "http://127.0.0.1/secret",
+      "http://10.0.0.5/internal",
+      "http://192.168.1.10/router",
+      "https://172.16.0.9/metadata",
+      "http://169.254.169.254/latest/meta-data",
+      "http://my-service.internal/api",
+      "http://[::1]/admin",
+      "http://[::ffff:10.0.0.1]/admin",
+      // 根标签尾点 FQDN 写法（与不带尾点的主机等价）
+      "http://127.0.0.1./secret",
+      "http://localhost./admin",
+      "http://my-service.internal./api",
+    ])("拒绝内网/私有地址：%s", async (url) => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mock(async () => new Response("pwned", { status: 200 })) as any;
+      try {
+        const tool = createWebFetchTool();
+        const result = await tool.handler({ url });
+        expect(result).toEqual({ error: "不允许抓取内网或私有地址" });
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
+    test("公网地址正常抓取", async () => {
+      const originalFetch = globalThis.fetch;
+      globalThis.fetch = mock(async () => new Response("# ok", { status: 200 })) as any;
+      try {
+        const tool = createWebFetchTool();
+        const result = await tool.handler({ url: "https://example.com/docs" });
+        expect(result).not.toHaveProperty("error");
+      } finally {
+        globalThis.fetch = originalFetch;
+      }
+    });
+
     test("HTTP 错误返回错误信息", async () => {
       const originalFetch = globalThis.fetch;
       globalThis.fetch = mock(async () => new Response("not found", { status: 404 })) as any;

@@ -24,8 +24,12 @@ export interface ApprovalServiceDeps {
   eventBus?: EventBus;
 }
 
-/** 审批请求默认过期时间：5 分钟 */
-const EXPIRY_MS = 5 * 60 * 1000;
+/** 审批请求待审批有效期：24 小时（超时未处理自动过期） */
+const PENDING_EXPIRY_MS = 24 * 60 * 60 * 1000;
+/** 批准后的使用窗口：10 分钟内同用户同参数重试可直接放行 */
+export const APPROVED_VALIDITY_MS = 10 * 60 * 1000;
+/** 机会性清理的最小间隔：10 分钟（避免每次轮询都打清理 SQL） */
+const CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
 
 /** 将查询结果行映射为 ApprovalRequest */
 function mapRow(r: Record<string, unknown>): ApprovalRequest {
@@ -64,6 +68,19 @@ function canonicalJson(value: unknown): string {
 
 export function createApprovalService(deps: ApprovalServiceDeps) {
   const { db, eventBus } = deps;
+  let lastCleanupAt = 0;
+
+  /** 机会性清理：将过期 pending 请求标记为 expired（按最小间隔节流，失败不影响主流程） */
+  async function opportunisticCleanup(): Promise<void> {
+    const now = Date.now();
+    if (now - lastCleanupAt < CLEANUP_INTERVAL_MS) return;
+    lastCleanupAt = now;
+    try {
+      await cleanup();
+    } catch {
+      /* 清理失败不阻断审批主流程 */
+    }
+  }
 
   async function request(
     toolName: string,
@@ -72,7 +89,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     tenantId: string,
   ): Promise<ApprovalRequest> {
     const id = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + EXPIRY_MS);
+    const expiresAt = new Date(Date.now() + PENDING_EXPIRY_MS);
 
     await db.raw(
       `INSERT INTO ai_approval_request (id, tool_name, input, requested_by, status, expires_at, tenant_id)
@@ -81,6 +98,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     );
 
     await eventBus?.emit("ai.approval.requested", { id, toolName, tenantId });
+    void opportunisticCleanup();
 
     return {
       id,
@@ -112,16 +130,22 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
       throw new Error("不能审批自己发起的请求");
     }
 
-    await db.raw(
-      `UPDATE ai_approval_request SET status = 'approved', approved_by = $1, comment = $2, updated_at = NOW()
-       WHERE id = $3 AND status = 'pending'`,
-      [reviewedBy, reason ?? null, id],
-    );
+    // 批准后的使用窗口从批准时刻起算（而非请求时刻），
+    // 保证管理员响应耗时不会吞掉重试窗口
+    const approvedUntil = new Date(Date.now() + APPROVED_VALIDITY_MS);
+
+    // 原子更新：仅 pending 且未过期的请求可被批准，过期请求返回 null；
+    // RETURNING 保证并发下只有真正生效的 UPDATE 被视为成功（避免双管理员重复放行/重复事件）
+    const updatedRows = await db.raw(
+      `UPDATE ai_approval_request SET status = 'approved', approved_by = $1, comment = $2, expires_at = $3, updated_at = NOW() WHERE id = $4 AND status = 'pending' AND expires_at > NOW() RETURNING id`,
+      [reviewedBy, reason ?? null, approvedUntil, id],
+    ) as unknown[];
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) return null;
 
     const updated = await getStatus(id);
-    if (updated?.status === "approved") {
-      await eventBus?.emit("ai.approval.approved", { id, reviewedBy });
-    }
+    // 读回兜底：RETURNING 生效但读回异常时仍视为不可批准
+    if (updated?.status !== "approved") return null;
+    await eventBus?.emit("ai.approval.approved", { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
     return updated;
   }
 
@@ -140,16 +164,16 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
       throw new Error("不能拒绝自己发起的请求");
     }
 
-    await db.raw(
-      `UPDATE ai_approval_request SET status = 'rejected', approved_by = $1, comment = $2, updated_at = NOW()
-       WHERE id = $3 AND status = 'pending'`,
+    // 原子更新：仅 pending 且未过期的请求可被拒绝；RETURNING 保证并发下只报一次成功
+    const updatedRows = await db.raw(
+      `UPDATE ai_approval_request SET status = 'rejected', approved_by = $1, comment = $2, updated_at = NOW() WHERE id = $3 AND status = 'pending' AND expires_at > NOW() RETURNING id`,
       [reviewedBy, reason ?? null, id],
-    );
+    ) as unknown[];
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) return null;
 
     const updated = await getStatus(id);
-    if (updated?.status === "rejected") {
-      await eventBus?.emit("ai.approval.rejected", { id, reviewedBy });
-    }
+    if (updated?.status !== "rejected") return null;
+    await eventBus?.emit("ai.approval.rejected", { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
     return updated;
   }
 

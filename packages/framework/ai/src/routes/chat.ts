@@ -1,7 +1,7 @@
 /**
  * 对话路由（含 SSE 流式）
  */
-import { createRouter, fail, handleError, parseBody, success } from '@ventostack/core';
+import { createRouter, fail, handleError, parseBody, success, rateLimit } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { AgentLoop } from '../agent-engine/agent-loop';
 import type { MemoryService } from '../memory/types';
@@ -44,6 +44,18 @@ export function createChatRoutes(
 ): Router {
   const router = createRouter();
   router.use(authMiddleware);
+
+  // 对话端点限流：按「租户:用户」维度限流（在认证之后执行，键来自已验证身份，不信任代理头）。
+  // 仅作用于真正调用 LLM 的两个消息端点，防止单用户高频请求放大 LLM 成本
+  const chatLimiter = rateLimit({
+    windowMs: 60_000,
+    max: 30,
+    message: 'AI 对话请求过于频繁，请稍后再试',
+    keyFn: (ctx) => {
+      const user = ctx.user as { id?: string; tenantId?: string } | undefined;
+      return `ai-chat:${user?.tenantId ?? 'unknown'}:${user?.id ?? 'unknown'}`;
+    },
+  });
 
   /** 请求级工具注册表：有租户标识且配置了工厂时构建，否则使用 agentLoop 的默认注册表 */
   function buildRequestToolRegistry(ctx: { user?: unknown }): ToolRegistry | undefined {
@@ -258,6 +270,7 @@ export function createChatRoutes(
         return handleError(e);
       }
     },
+    chatLimiter,
     perm('ai:chat', 'use'),
   );
 
@@ -336,6 +349,7 @@ export function createChatRoutes(
         return handleError(e);
       }
     },
+    chatLimiter,
     perm('ai:chat', 'use'),
   );
 

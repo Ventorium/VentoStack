@@ -138,6 +138,42 @@ if (!status) {
 const cleaned = approval.cleanup();
 ```
 
+### 持久化审批服务（数据库版）
+
+平台装配使用基于 `ai_approval_request` 表的持久化审批服务（`createApprovalService`），语义与内存版不同：
+
+| 行为 | 说明 |
+|------|------|
+| 待审批有效期 | 请求创建后 **24 小时**内未处理自动过期 |
+| 批准后使用窗口 | 批准时刻起算 **10 分钟**，窗口内同用户同工具同参数（canonical JSON 比对）的重试直接放行 |
+| 过期不可批 | 已过期的 pending 请求无法被批准或拒绝（原子 UPDATE 保证并发安全），返回 null |
+| 禁止自批 | 发起人不能批准/拒绝自己发起的请求 |
+| 参数一致性 | 重试放行要求参数完全一致；参数不同必须重新发起审批 |
+
+> 审批事件通过事件总线广播：`ai.approval.requested` / `ai.approval.approved` / `ai.approval.rejected`。如需通知管理员，请订阅 `ai.approval.requested` 并接入 notification 模块。
+
+## 工具执行安全策略
+
+Agent Loop 对注册表工具执行默认拒绝策略：
+
+```typescript
+// 可用工具 = Agent 配置白名单 ∩ 请求过滤器
+// Agent 未配置白名单时不暴露任何注册表工具；请求体无法单独扩权
+agentConfig.tools = ["calculator", "kb-search"];
+
+// 绑定知识库时自动追加 kb-* 只读检索工具
+agentConfig.knowledgeBaseIds = ["kb-1"];
+```
+
+安全基线：
+
+- **Agent 必须存在**：配置了 `agentService` 时，`agentId` 查不到配置会以 `AGENT_NOT_FOUND` 错误终止，不再降级为通用助手。
+- **文件工具租户隔离**：`file-read` / `file-write` 仅允许访问 `<storagePath>/tenants/<tenantId>/` 目录。
+- **web-fetch 内网防护**：默认拒绝 localhost、私网 IPv4/IPv6、链路本地（含云元数据地址）等目标 URL；可通过 `createWebFetchTool({ readerBaseUrl, allowPrivateHosts })` 指向自建 Reader 或显式放开。
+- **terminal 白名单**：仅允许只读命令白名单，禁用全部 shell 结构字符（管道/分号/重定向/命令替换）与 `find -delete/-exec` 类写副作用旗标。
+- **sql-query 租户列防护**：拒绝把表达式别名为 `tenant_id` 输出列的查询（防止外层租户过滤被派生表遮蔽恒真）；裸列引用不受限。
+- **成本硬封顶**：单次运行迭代数上限 `AGENT_MAX_ITERATIONS_LIMIT`（50）、单轮生成 Token 上限 `AGENT_MAX_TOKENS_PER_TURN_LIMIT`（100000）、研究子任务数量/轮数上限（10 / 8）；对话端点按「租户+用户」限流（默认 30 次/分钟）。
+
 ## 上下文管理
 
 `createContextManager()` 创建对话上下文管理器，维护多轮对话的消息历史：

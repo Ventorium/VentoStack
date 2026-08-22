@@ -21,6 +21,44 @@ const CTE_WRITE_PATTERN = /\bWITH\b.*\b(INSERT|UPDATE|DELETE)\b/i;
 /** 多语句检测，避免 SELECT 后拼接额外语句 */
 const MULTI_STATEMENT_PATTERN = /;\s*\S/;
 
+/**
+ * 租户列遮蔽检测：外层包装为 `SELECT * FROM (<用户SQL>) s WHERE tenant_id = $1`，
+ * 若用户 SQL 把任意表达式别名为 tenant_id 输出列（如 `SELECT secret, '<我的租户>' AS tenant_id`），
+ * 派生表的同名列会遮蔽外层过滤使其恒真，造成跨租户读取。
+ */
+/**
+ * 租户列遮蔽检测：外层包装为 `SELECT * FROM (<用户SQL>) s WHERE tenant_id = $1`，
+ * 若用户 SQL 把任意表达式别名为 tenant_id 输出列（如 `SELECT secret, '<我的租户>' AS tenant_id`），
+ * 派生表的同名列会遮蔽外层过滤使其恒真，造成跨租户读取。
+ * 在 maskLiterals 掩码后的结构视图上检测；裸列引用（SELECT tenant_id / GROUP BY tenant_id /
+ * max(tenant_id)）不受限。正则为纵深防御层之一，工具仍要求人工审批。
+ */
+const TENANT_COLUMN_RE = /(?<![\w"])"?tenant_id"?(?=\s*(?:,|from\b|\)|$))/gi;
+/** 裸列引用的安全前缀：运算符/分隔符结尾，或表达式上下文关键字结尾 */
+const SAFE_COLUMN_PREFIX = /[=(+\-*/<>!&|.,]$/;
+const SAFE_COLUMN_KEYWORD = /\b(select|distinct|by|from|where|and|or|on|in|is|like|between|having|case|when|then|else|not|asc|desc|using|join|lateral)$/i;
+// 注意：`end` 不在白名单内——`CASE…END tenant_id` 是表达式别名（遮蔽攻击向量），而非裸列引用
+
+function shadowsTenantColumn(structuralSql: string): boolean {
+  TENANT_COLUMN_RE.lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = TENANT_COLUMN_RE.exec(structuralSql)) !== null) {
+    const before = structuralSql.slice(0, match.index).replace(/\s+$/, "");
+    // 空前缀（直接跟在 SELECT 后）、运算符/分隔符之后、SQL 关键字之后均为裸列引用
+    const isBareRef =
+      before === "" ||
+      SAFE_COLUMN_PREFIX.test(before) ||
+      SAFE_COLUMN_KEYWORD.test(before);
+    if (!isBareRef) return true;
+  }
+  return false;
+}
+
+/** 将字符串字面量替换为占位，避免字面量内容干扰结构检测；双引号标识符保留（其名称具有结构意义） */
+function maskLiterals(sql: string): string {
+  return sql.replace(/'(?:[^']|'')*'/g, "''");
+}
+
 export function createSQLQueryTool(deps: SQLQueryToolDeps) {
   const { db, tenantId } = deps;
   const maxRows = deps.maxRows ?? 100;
@@ -71,6 +109,11 @@ export function createSQLQueryTool(deps: SQLQueryToolDeps) {
 
       if (MULTI_STATEMENT_PATTERN.test(cleanSql)) {
         return { error: "不允许多语句 SQL" };
+      }
+
+      // 3.5 租户列遮蔽检测：输出列不得伪装 tenant_id（否则外层租户过滤被遮蔽恒真）
+      if (shadowsTenantColumn(maskLiterals(cleanSql))) {
+        return { error: "SQL 不允许将表达式别名为 tenant_id 输出列" };
       }
 
       // 5. 安全防护：检查括号匹配，防止通过闭合包装子查询绕过租户过滤

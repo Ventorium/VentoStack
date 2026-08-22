@@ -13,6 +13,8 @@
 import { createRouter } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { EventBus } from '@ventostack/events';
+import { join } from 'node:path';
+import { sanitize } from '@ventostack/observability';
 
 import type { ConfigEncryptor } from '@ventostack/core';
 // LLM Gateway
@@ -391,6 +393,11 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // KB 等租户相关工具按租户绑定：对话路由按请求 tenantId 构建请求级注册表（见 createChatRoutes options），
   // 此处的默认注册表供工具发现/管理路由使用。
   function buildToolRegistry(tenantId: string): ToolRegistry {
+    // 防御性校验：tenantId 会拼进文件工具的 allowedPaths，
+    // 含路径分隔符或 ../ 的异常值会移动基准目录造成跨租户读写（fail-closed）
+    if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(tenantId)) {
+      throw new Error(`Invalid tenantId for tool registry: ${tenantId}`);
+    }
     const registry = createToolRegistry();
 
     // 无依赖工具
@@ -418,9 +425,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     registry.register(createFsHeadTool(knowledgeBase, ''));
     registry.register(createFsTailTool(knowledgeBase, ''));
 
-    // 文件读写工具
-    registry.register(createFileReadTool({ allowedPaths: [storagePath] }));
-    registry.register(createFileWriteTool({ allowedPaths: [storagePath] }));
+    // 文件读写工具（租户作用域：仅允许访问本租户目录，防止跨租户文件读取/写入）
+    const tenantRoot = join(storagePath, 'tenants', tenantId);
+    registry.register(createFileReadTool({ allowedPaths: [tenantRoot] }));
+    registry.register(createFileWriteTool({ allowedPaths: [tenantRoot] }));
 
     return registry;
   }
@@ -548,7 +556,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         };
       }
     },
-    // 工具审计：每次工具执行写入 ai_tool_log（失败仅告警，不阻断对话）
+    // 工具审计：每次工具执行写入 ai_tool_log（入参/出参先经 sanitize 递归脱敏；失败仅告警，不阻断对话）
     auditToolCall: async (log) => {
       try {
         await (db as import('@ventostack/database').Database).raw(
@@ -558,8 +566,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
             crypto.randomUUID(),
             log.sessionId ?? null,
             log.toolName,
-            JSON.stringify(log.input),
-            JSON.stringify(log.output),
+            JSON.stringify(sanitize(log.input)),
+            JSON.stringify(sanitize(log.output)),
             log.status,
             log.duration,
             log.userId,

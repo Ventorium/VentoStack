@@ -60,6 +60,15 @@ export const RESEARCH_DEPTH_MAP: Record<
   deep: { maxIterations: 20, maxTokensPerTurn: 8192, searchCount: 8 },
 };
 
+/** 迭代轮数硬上限：无论 Agent 配置如何，单次运行不超过此轮数（防止成本放大攻击） */
+export const AGENT_MAX_ITERATIONS_LIMIT = 50;
+/** 单轮生成 Token 硬上限 */
+export const AGENT_MAX_TOKENS_PER_TURN_LIMIT = 100_000;
+/** 深度研究并行子任务数量上限 */
+export const MAX_RESEARCH_SUBTASKS = 10;
+/** 深度研究单个子任务最大轮数上限 */
+export const MAX_RESEARCH_SUBTASK_TURNS = 8;
+
 const RESEARCH_DEPTH_LABEL: Record<ResearchDepth, string> = {
   quick: '快速探索',
   normal: '常规研究',
@@ -121,6 +130,8 @@ async function runResearchSubtask(
     model: string;
     tenantId: string;
     userId: string;
+    /** 主 Agent 的 id，用于子任务工具审计与审批上下文归属 */
+    agentId?: string;
     toolNames: string[];
     signal?: AbortSignal;
     /** 按请求注入的工具注册表（KB 工具已绑定请求租户）；缺省使用 deps.toolRegistry */
@@ -129,7 +140,7 @@ async function runResearchSubtask(
     maxSubtaskTurns?: number;
   },
 ): Promise<{ question: string; summary: string; sources: string[] }> {
-  const { question, model, tenantId, userId, toolNames, signal, toolRegistry } = options;
+  const { question, model, tenantId, userId, agentId, toolNames, signal, toolRegistry } = options;
   const system = [
     '你是子问题研究员，负责独立研究一个子问题。',
     '步骤：先用 web_search 检索多个关键词，再用 web_fetch 阅读权威来源原文。',
@@ -140,22 +151,23 @@ async function runResearchSubtask(
     { role: 'user', content: question },
   ];
 
-  const tools: LLMToolDefinition[] = toolRegistry
-    ? toolRegistry
-        .list()
-        .filter((t) => toolNames.includes(t.name))
-        .map((t) => ({
-          name: t.name,
-          description: t.description,
-          parameters: {
-            type: 'object' as const,
-            properties: Object.fromEntries(
-              t.parameters.map((p) => [p.name, { type: p.type, description: p.description, ...(p.schema ?? {}) }]),
-            ),
-            required: t.parameters.filter((p) => p.required).map((p) => p.name),
-          },
-        }))
-    : [];
+  // 子任务与主循环共用同一工具执行管线：白名单包装 + 参数校验 + 钩子 + 审批授权，
+  // 防止并行子任务成为绕过审批的后门
+  const agentTools = toolRegistry ? wrapRegistryTools(toolRegistry, toolNames) : [];
+  const subtaskContext: AgentContext = {
+    agentId: agentId ?? 'research-subtask',
+    userId,
+    tenantId,
+    systemPrompt: system,
+    messages,
+    tools: agentTools,
+  };
+
+  const tools: LLMToolDefinition[] = agentTools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    parameters: t.parameters as LLMToolDefinition['parameters'],
+  }));
 
   let fullContent = '';
   const sources: string[] = [];
@@ -180,14 +192,62 @@ async function runResearchSubtask(
     }
     fullContent += content;
 
-    if (toolCalls.length === 0 || !toolRegistry) break;
+    if (toolCalls.length === 0 || agentTools.length === 0) break;
+
+    // 先把带 tool_calls 的 assistant 消息写入对话，保证后续 tool 消息有配对的调用来源
+    // （缺失会导致下一轮请求出现悬空 tool_call_id 被 provider 拒绝）
+    messages.push({
+      role: 'assistant',
+      content,
+      ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+    });
+
+    const assistantEventMsg: AgentEventMessage = {
+      role: 'assistant',
+      content,
+      ...(toolCalls.length > 0 ? { toolCalls } : {}),
+      timestamp: Date.now(),
+    };
 
     for (const tc of toolCalls) {
-      const result = await toolRegistry.execute(tc.name, tc.arguments as Record<string, unknown>);
-      const text =
-        typeof result.result === 'string'
-          ? result.result
-          : JSON.stringify(result.result ?? result.error ?? '');
+      if (signal?.aborted) break;
+      // 与主循环一致的准备阶段：参数校验、beforeToolCall、requiresApproval 审批
+      const prepared = await prepareToolCall(
+        subtaskContext,
+        assistantEventMsg,
+        { id: tc.id, name: tc.name, arguments: (tc.arguments ?? {}) as Record<string, unknown> },
+        agentTools,
+        deps.beforeToolCall,
+        deps.authorizeToolCall,
+        signal,
+      );
+
+      let text = '';
+      let status: 'success' | 'error' = 'success';
+      let duration = 0;
+      if (prepared.kind === 'immediate') {
+        status = prepared.isError ? 'error' : 'success';
+        text = prepared.result.content
+          .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+          .map((c) => c.text)
+          .join('\n');
+      } else {
+        const finalized = await executePreparedToolCall(
+          subtaskContext,
+          assistantEventMsg,
+          prepared,
+          deps.afterToolCall,
+          async () => {},
+          signal,
+          deps.tracer,
+        );
+        duration = finalized.durationMs;
+        status = finalized.isError ? 'error' : 'success';
+        text = finalized.result.content
+          .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+          .map((c) => c.text)
+          .join('\n');
+      }
 
       // 子任务工具调用同样写入审计（与主循环一致）
       if (deps.auditToolCall) {
@@ -196,9 +256,9 @@ async function runResearchSubtask(
             toolCallId: tc.id,
             toolName: tc.name,
             input: tc.arguments,
-            output: { content: text.slice(0, 4000), isError: !result.success },
-            status: result.success ? 'success' : 'error',
-            duration: result.duration,
+            output: { content: text.slice(0, 4000), isError: status === 'error' },
+            status,
+            duration,
             userId,
             tenantId,
           });
@@ -353,10 +413,11 @@ function isEarlyTermination(finalizedCalls: Array<{ result: AgentToolResult }>):
 /** 从 ToolRegistry 包装为 AgentTool[] */
 function wrapRegistryTools(registry: ToolRegistry, filterTools?: string[]): AgentTool[] {
   const allTools = registry.list();
+  // filterTools 为 undefined 时返回全部；空数组表示默认拒绝（不暴露任何注册表工具）
   const filtered =
-    filterTools && filterTools.length > 0
-      ? allTools.filter((t) => filterTools.includes(t.name))
-      : allTools;
+    filterTools === undefined
+      ? allTools
+      : allTools.filter((t) => filterTools.includes(t.name));
 
   return filtered.map((toolDef) => ({
     name: toolDef.name,
@@ -703,7 +764,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       // 工具注册表：支持按请求注入（KB 等租户相关工具绑定请求 tenantId），缺省使用 deps.toolRegistry
       const registry = params.toolRegistry ?? deps.toolRegistry;
 
-      // 1. 获取 Agent 配置
+      // 1. 获取 Agent 配置（配置了 agentService 时必须命中，失败/不存在一律拒绝运行）
       let agentConfig: AgentConfig | null = null;
       if (deps.agentService) {
         try {
@@ -711,12 +772,25 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         } catch (err) {
           console.error('Failed to fetch agent config:', err);
         }
+        if (!agentConfig) {
+          const notFound = {
+            code: 'AGENT_NOT_FOUND' as const,
+            message: `Agent ${agentId} 不存在或不可用`,
+            recoverable: false,
+          };
+          await emitter.emit({ type: 'error', error: notFound }, signal);
+          yield { type: 'error', error: notFound };
+          return;
+        }
       }
 
       let systemPrompt = params.systemPrompt ?? agentConfig?.systemPrompt ?? '你是一个智能助手。';
       let model = params.model ?? agentConfig?.model ?? 'default';
-      let maxIterations = agentConfig?.maxIterations ?? 10;
-      let maxTokensPerTurn = agentConfig?.maxTokensPerTurn;
+      // 硬封顶：Agent 配置的迭代/Token 预算不能超过平台上限（防成本放大）
+      let maxIterations = Math.min(agentConfig?.maxIterations ?? 10, AGENT_MAX_ITERATIONS_LIMIT);
+      let maxTokensPerTurn = agentConfig?.maxTokensPerTurn === undefined
+        ? undefined
+        : Math.min(agentConfig.maxTokensPerTurn, AGENT_MAX_TOKENS_PER_TURN_LIMIT);
 
       // 深度研究模式：探索强度决定计算预算，并注入研究方法论
       // 自定义预算（ResearchConfig 字段）覆盖深度预设，未配置时取 RESEARCH_DEPTH_MAP 默认值
@@ -726,8 +800,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       const allSources: string[] = [];
       if (researchMode) {
         const preset = RESEARCH_DEPTH_MAP[researchConfig!.depth!];
-        maxIterations = researchConfig!.maxIterations ?? preset.maxIterations;
-        maxTokensPerTurn = researchConfig!.maxTokensPerTurn ?? preset.maxTokensPerTurn;
+        maxIterations = Math.min(
+          researchConfig!.maxIterations ?? preset.maxIterations,
+          AGENT_MAX_ITERATIONS_LIMIT,
+        );
+        maxTokensPerTurn = Math.min(
+          researchConfig!.maxTokensPerTurn ?? preset.maxTokensPerTurn,
+          AGENT_MAX_TOKENS_PER_TURN_LIMIT,
+        );
         const searchCount = researchConfig!.searchCount ?? preset.searchCount;
         systemPrompt = `${systemPrompt}\n\n${buildResearchPrompt(researchConfig!.depth!, searchCount)}`;
       }
@@ -746,33 +826,28 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         systemPrompt = `${systemPrompt}\n\n## 知识库使用说明\n你已绑定 ${boundKbIds.length} 个知识库。回答涉及知识库内容的问题时，必须自主检索：先用 kb-browse / kb-outline 了解文档结构与标题大纲，再用 kb-search 定位相关内容，最后用 kb-read 阅读原文。禁止凭空回答知识库相关内容。`;
       }
 
-      // 2. 根据 Agent 配置和过滤器获取工具
+      // 2. 根据 Agent 配置和过滤器获取工具（默认拒绝：Agent 未配置白名单时不暴露注册表工具）
       let agentTools = deps.agentTools ?? [];
       if (registry) {
-        // 合并 Agent 配置的工具和请求过滤器
         const agentToolNames = agentConfig?.tools ?? [];
         const requestFilter = params.tools ?? [];
 
-        // 如果有过滤器，使用交集；否则使用 Agent 配置的工具
-        let effectiveTools: string[] = [];
-        if (requestFilter.length > 0 && agentToolNames.length > 0) {
-          effectiveTools = agentToolNames.filter((t) => requestFilter.includes(t));
-        } else if (requestFilter.length > 0) {
-          effectiveTools = requestFilter;
-        } else if (agentToolNames.length > 0) {
-          effectiveTools = agentToolNames;
-        }
+        // 工具可用性 = Agent 配置白名单 ∩ 请求过滤器；白名单为空 = 无工具（请求不能单独扩权）
+        const effectiveTools =
+          requestFilter.length > 0 && agentToolNames.length > 0
+            ? agentToolNames.filter((t) => requestFilter.includes(t))
+            : agentToolNames;
 
-        // 绑定知识库时自动启用知识库检索工具（替代自动注入）
+        // 绑定知识库时自动启用知识库检索工具（租户级只读检索能力）
+        const allowedTools = [...effectiveTools];
         if (boundKbIds.length > 0) {
           const kbToolNames = ['kb-browse', 'kb-search', 'kb-read', 'kb-follow-link', 'kb-outline'];
-          effectiveTools = [...new Set([...effectiveTools, ...kbToolNames])];
+          for (const name of kbToolNames) {
+            if (!allowedTools.includes(name)) allowedTools.push(name);
+          }
         }
 
-        agentTools = wrapRegistryTools(
-          registry,
-          effectiveTools.length > 0 ? effectiveTools : undefined,
-        );
+        agentTools = wrapRegistryTools(registry, allowedTools);
       }
       const mcpServerIds = params.mcpServerIds ?? agentConfig?.mcpServerIds ?? [];
       if (deps.mcpToolSource && mcpServerIds.length > 0) {
@@ -810,7 +885,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         return;
       }
 
-      // 4. 加载对话历史
+      // 4. 加载对话历史（tool 轨迹已持久化但不回放：tool 消息缺少 tool_call_id，回放会被 provider 拒绝；
+      // 工具使用痕迹由 assistant 消息中的调用摘要保留）
       let history: ChatMessage[] = params.history ? [...params.history] : [];
       const memoryEnabled = agentConfig?.memoryConfig?.enabled !== false;
       if (!params.history && deps.memory && params.sessionId && memoryEnabled) {
@@ -820,14 +896,24 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             { tenantId, userId },
             agentConfig?.memoryConfig?.maxHistoryMessages ?? 20,
           )).flatMap((item) =>
-            item.role === 'system' || item.role === 'user' || item.role === 'assistant' || item.role === 'tool'
+            item.role === 'system' || item.role === 'user' || item.role === 'assistant'
               ? [{ role: item.role, content: item.content }]
               : [],
           );
-        } catch {
-          /* 失败则以空历史继续 */
+        } catch (err) {
+          console.error('[ai] 加载对话历史失败，以空历史继续:', err);
         }
       }
+
+      /** 增量持久化对话消息（用户/assistant/工具轨迹），失败仅记录不阻断对话 */
+      const persistMemoryMessage = async (msg: { role: string; content: string }): Promise<void> => {
+        if (!deps.memory || !params.sessionId || !memoryEnabled) return;
+        try {
+          await deps.memory.appendMessage(params.sessionId, { tenantId, userId }, msg);
+        } catch (err) {
+          console.error('[ai] 持久化对话消息失败:', err);
+        }
+      };
 
       // 4.1 长期记忆注入（用户级，按 memory_config.longTerm 开关）
       if (agentConfig?.memoryConfig?.longTerm === true && deps.memory) {
@@ -840,8 +926,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               .join('\n');
             systemPrompt = `${systemPrompt}\n\n用户长期记忆（可结合上下文使用）：\n${memoryBlock}`;
           }
-        } catch {
-          /* 读取失败不影响对话 */
+        } catch (err) {
+          console.error('[ai] 读取长期记忆失败:', err);
         }
       }
 
@@ -861,6 +947,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         messages,
         tools: runtimeTools,
       };
+
+      // 用户消息先行落盘：即使后续轮次中断也不丢失
+      await persistMemoryMessage({ role: 'user', content: message });
 
       // 7. 工具定义（每轮从运行时工具集重算，支持动态工具引入）
       const buildToolDefs = () =>
@@ -954,7 +1043,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         stageEvents: Array<{ type: 'stage'; stage: ResearchStage }>;
       }> {
         if (!researchMode || subtasksRan) return { shouldContinue: false, stageEvents: [] };
-        const maxSubtasks = researchConfig?.maxSubtasks ?? 6;
+        const maxSubtasks = Math.min(researchConfig?.maxSubtasks ?? 6, MAX_RESEARCH_SUBTASKS);
         const subtasks = parseSubtasks(fullContent, maxSubtasks);
         if (subtasks.length === 0) return { shouldContinue: false, stageEvents: [] };
         subtasksRan = true;
@@ -963,16 +1052,20 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           { type: 'stage', stage: 'researching' },
         ];
         const results = await Promise.all(
-          subtasks.map((question, i) =>
+          subtasks.map((question) =>
             runResearchSubtask(deps, {
               question,
               model,
               tenantId,
               userId,
+              ...(agentId ? { agentId } : {}),
               toolNames: RESEARCH_SUBTASK_TOOLS,
               signal,
               toolRegistry: registry,
-              maxSubtaskTurns: researchConfig?.maxSubtaskTurns,
+              maxSubtaskTurns: Math.min(
+                researchConfig?.maxSubtaskTurns ?? 4,
+                MAX_RESEARCH_SUBTASK_TURNS,
+              ),
             }),
           ),
         );
@@ -1034,7 +1127,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
         // 调用 LLM
         const effectiveTemperature = params.temperature ?? agentConfig?.temperature;
-        const effectiveMaxTokens = params.maxTokens ?? maxTokensPerTurn;
+        // 运行时覆盖同样受硬封顶约束
+        const effectiveMaxTokens = params.maxTokens !== undefined
+          ? Math.min(params.maxTokens, AGENT_MAX_TOKENS_PER_TURN_LIMIT)
+          : maxTokensPerTurn;
         const toolDefs = buildToolDefs();
         const stream = deps.llmGateway.chatStream({
           model,
@@ -1091,6 +1187,15 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
         };
         messages.push(assistantChatMsg);
+
+        // 增量持久化 assistant 消息（含工具调用摘要，跨轮/跨进程保留工具使用痕迹）
+        await persistMemoryMessage({
+          role: 'assistant',
+          content:
+            toolCalls.length > 0
+              ? `${assistantContent}\n[工具调用: ${toolCalls.map((tc) => tc.name).join(', ')}]`
+              : assistantContent,
+        });
 
         await emitter.emit({ type: 'message_start', message: assistantEventMsg }, signal);
         await emitter.emit({ type: 'message_end', message: assistantEventMsg }, signal);
@@ -1195,17 +1300,15 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             }
           }
 
-          // 输出安全检查
-          if (fin.toolCall.name.startsWith('fs-') || fin.toolCall.name.startsWith('kb-')) {
-            const outputCheck = guard.checkOutput(resultStr, context.systemPrompt);
-            if (!outputCheck.safe) {
-              messages.push({
-                role: 'tool',
-                tool_call_id: fin.toolCall.id,
-                content: JSON.stringify({ error: true, message: '工具输出被安全策略拦截' }),
-              });
-              continue;
-            }
+          // 输出安全检查（覆盖全部工具结果：web/MCP 等外部内容是间接注入与提示词泄露的主要通道）
+          const outputCheck = guard.checkOutput(resultStr, context.systemPrompt);
+          if (!outputCheck.safe) {
+            messages.push({
+              role: 'tool',
+              tool_call_id: fin.toolCall.id,
+              content: JSON.stringify({ error: true, message: '工具输出被安全策略拦截' }),
+            });
+            continue;
           }
 
           // 截断工具结果
@@ -1217,6 +1320,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             tool_call_id: fin.toolCall.id,
             content: truncated,
           });
+
+          // 增量持久化工具结果（与 ai_tool_log 审计互补，保证会话内可追溯）
+          await persistMemoryMessage({ role: 'tool', content: `[${fin.toolCall.name}] ${truncated}` });
 
           const toolMessage: AgentEventMessage = {
             role: 'tool',
@@ -1290,19 +1396,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         };
       }
 
-      // 9. 保存对话
-      if (deps.memory && params.sessionId && memoryEnabled) {
-        try {
-          const memoryScope = { tenantId, userId };
-          await deps.memory.appendMessage(params.sessionId, memoryScope, { role: 'user', content: message });
-          await deps.memory.appendMessage(params.sessionId, memoryScope, {
-            role: 'assistant',
-            content: fullContent,
-          });
-        } catch {
-          /* 保存失败不影响返回 */
-        }
-      }
+      // 9. 对话已在循环中增量持久化（用户消息先行落盘，assistant/工具轨迹逐轮写入），无需重复保存
 
       await emitter.emit(
         {

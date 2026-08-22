@@ -32,7 +32,8 @@ describe("createApprovalService", () => {
     };
 
     const { db } = createMockDatabase({
-      "UPDATE ai_approval_request SET status = 'approved'": [],
+      // RETURNING 生效：UPDATE 返回受影响行
+      "UPDATE ai_approval_request SET status = 'approved'": [{ id: "a1" }],
       "SELECT id": [approvalRow],
     });
     const eventBus = createMockEventBus();
@@ -165,5 +166,91 @@ describe("createApprovalService", () => {
 
     const count = await service.cleanup();
     expect(typeof count).toBe("number");
+  });
+
+  test("approve returns null for expired request（过期不可批）", async () => {
+    const expiredPendingRow = {
+      id: "a1",
+      toolName: "terminal",
+      input: { command: "ls" },
+      requestedBy: "user1",
+      // 过期未处理：状态仍是 pending，但 expires_at 已过
+      status: "pending",
+      approvedBy: null,
+      comment: null,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      tenantId: "t1",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { db } = createMockDatabase({
+      "UPDATE ai_approval_request SET status = 'approved'": [],
+      "SELECT id": [expiredPendingRow],
+    });
+    const service = createApprovalService({ db });
+
+    const result = await service.approve("a1", "admin1");
+    expect(result).toBeNull();
+  });
+
+  test("reject returns null for expired request", async () => {
+    const expiredPendingRow = {
+      id: "a1",
+      toolName: "terminal",
+      input: { command: "ls" },
+      requestedBy: "user1",
+      status: "pending",
+      approvedBy: null,
+      comment: null,
+      expiresAt: new Date(Date.now() - 60_000).toISOString(),
+      tenantId: "t1",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { db } = createMockDatabase({
+      "UPDATE ai_approval_request SET status = 'rejected'": [],
+      "SELECT id": [expiredPendingRow],
+    });
+    const service = createApprovalService({ db });
+
+    const result = await service.reject("a1", "admin1");
+    expect(result).toBeNull();
+  });
+
+  test("approve extends usage window from approval time（批准后重算有效期）", async () => {
+    const approvedRow = {
+      id: "a1",
+      toolName: "terminal",
+      input: { command: "ls" },
+      requestedBy: "user1",
+      status: "approved",
+      approvedBy: "admin1",
+      comment: null,
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      tenantId: "t1",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    const { db, exec } = createMockDatabase({
+      // RETURNING 生效：UPDATE 返回受影响行
+      "UPDATE ai_approval_request SET status = 'approved'": [{ id: "a1" }],
+      "SELECT id": [approvedRow],
+    });
+    const service = createApprovalService({ db });
+
+    const before = Date.now();
+    const result = await service.approve("a1", "admin1");
+    expect(result).not.toBeNull();
+
+    // UPDATE 调用的第 4 个参数应是批准时刻起算的新过期时间（约 10 分钟后）
+    const updateCall = exec.calls.find((args) => String(args[0]).includes("SET status = 'approved'"));
+    expect(updateCall).toBeDefined();
+    const newExpiresAt = (updateCall![1] as unknown[])[2] as Date;
+    expect(newExpiresAt).toBeInstanceOf(Date);
+    expect(newExpiresAt.getTime()).toBeGreaterThanOrEqual(before);
+    expect(newExpiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 11 * 60 * 1000);
   });
 });
