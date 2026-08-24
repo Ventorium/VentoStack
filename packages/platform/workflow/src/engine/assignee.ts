@@ -142,21 +142,23 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
           : [initiator.deptId];
 
         // 批量查找所有部门下的有效用户（排除软删除）
+        const deptPlaceholders = deptChain.map((_, i) => `$${i + 1}`);
         const allUsers = await db.raw(
-          'SELECT id FROM sys_user WHERE dept_id = ANY($1) AND status = 1 AND deleted_at IS NULL',
-          [deptChain],
+          `SELECT id FROM sys_user WHERE dept_id IN (${deptPlaceholders.join(', ')}) AND status = 1 AND deleted_at IS NULL`,
+          deptChain,
         );
         if (allUsers.length === 0) return [];
 
         const allUserIds = (allUsers as Array<{ id: string }>).map((u) => u.id);
 
         // 批量获取这些用户的标签
+        const tagPlaceholders = allUserIds.map((_, i) => `$${i + 1}`);
         const userTagRows = await db.raw(
           `SELECT ut.user_id, t.code
            FROM sys_user_tag ut
            JOIN sys_tag t ON t.id = ut.tag_id
-           WHERE ut.user_id = ANY($1) AND t.status = 1 AND t.deleted_at IS NULL`,
-          [allUserIds],
+           WHERE ut.user_id IN (${tagPlaceholders.join(', ')}) AND t.status = 1 AND t.deleted_at IS NULL`,
+          allUserIds,
         );
 
         // 按用户分组标签

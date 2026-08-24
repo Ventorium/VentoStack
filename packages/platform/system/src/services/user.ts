@@ -307,12 +307,13 @@ export function createUserService(deps: {
       // 批量获取用户标签
       if (list.length > 0) {
         const userIds = list.map((u) => u.id);
+        const placeholders = userIds.map((_, i) => `$${i + 1}`);
         const tagRows = await db.raw(
           `SELECT ut.user_id, t.id, t.name, t.code
            FROM sys_user_tag ut
            JOIN sys_tag t ON t.id = ut.tag_id
-           WHERE ut.user_id = ANY($1) AND t.status = 1 AND t.deleted_at IS NULL`,
-          [userIds],
+           WHERE ut.user_id IN (${placeholders.join(", ")}) AND t.status = 1 AND t.deleted_at IS NULL`,
+          userIds,
         );
         const tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
         for (const tr of tagRows as Array<{
