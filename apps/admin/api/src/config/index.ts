@@ -53,6 +53,12 @@ const rawConfig = createConfig(
       default: 'info',
       options: ['debug', 'info', 'warn', 'error'],
     },
+    MAX_BODY_SIZE: {
+      type: 'number',
+      env: 'MAX_BODY_SIZE',
+      default: 1024 * 1024,
+      description: '全局请求体上限（字节，最小 1024）。文件上传走独立上传通道不受此限制',
+    },
     CACHE_DRIVER: {
       type: 'string',
       env: 'CACHE_DRIVER',
@@ -114,7 +120,7 @@ const rawConfig = createConfig(
       type: 'boolean',
       env: 'TENANT_ENABLED',
       default: false,
-      description: '是否启用多租户隔离',
+      description: '[实验性] 多租户隔离开关：数据模型层尚未实现租户列与查询过滤，开启仅影响 boot 预留配置，不提供真实隔离',
     },
     AI_ENABLED: {
       type: 'boolean',
@@ -144,6 +150,28 @@ const rawConfig = createConfig(
 // 跨字段校验
 if (rawConfig.CACHE_DRIVER === 'redis' && !rawConfig.REDIS_URL) {
   throw new Error('REDIS_URL is required when CACHE_DRIVER=redis');
+}
+// 生产环境拒绝已知占位符凭据原样上线
+const JWT_SECRET_PLACEHOLDER = 'change-me-at-least-32-chars-long';
+if (rawConfig.NODE_ENV === 'production') {
+  if (rawConfig.JWT_SECRET.includes(JWT_SECRET_PLACEHOLDER)) {
+    throw new Error(
+      'JWT_SECRET 仍为示例占位符，生产环境拒绝启动。请设置真实凭据后重新部署',
+    );
+  }
+  // DATABASE_URL 仅检查密码段是否为占位符，避免真实凭据中碰巧含占位子串被误杀
+  let dbPassword: string;
+  try {
+    dbPassword = new URL(rawConfig.DATABASE_URL).password;
+  } catch {
+    // 非标准 URL 格式退化为整串等值比较
+    dbPassword = rawConfig.DATABASE_URL.trim();
+  }
+  if (dbPassword === 'change-me') {
+    throw new Error(
+      'DATABASE_URL 的数据库口令仍为示例占位符，生产环境拒绝启动。请设置真实凭据后重新部署',
+    );
+  }
 }
 if (rawConfig.STORAGE_DRIVER === 's3') {
   if (!rawConfig.S3_BUCKET) throw new Error('S3_BUCKET is required when STORAGE_DRIVER=s3');

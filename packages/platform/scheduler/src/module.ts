@@ -25,7 +25,8 @@ export interface SchedulerModuleDeps {
   handlers: JobHandlerMap;
   jwt: JWTManager;
   jwtSecret: string;
-  rbac?: RBAC;
+  /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
+  rbac: RBAC;
 }
 
 export function createSchedulerModule(deps: SchedulerModuleDeps): SchedulerModule {

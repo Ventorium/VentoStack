@@ -699,6 +699,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const data = await dictService.listDataByType(code);
             return success(data);
           },
+          perm('system', 'dict:list'),
         );
       },
     }),
@@ -1486,6 +1487,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   // === Operation logs (read-only) ===
   const opLogPerm = perm('system', 'log:list');
+  /** 清空日志需要独立的删除权限，避免仅授予查看权限即可清空日志 */
+  const logDeletePerm = perm('system', 'log:delete');
   userRouter.get(
     '/api/system/operation-logs',
     {
@@ -1609,7 +1612,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       await db.raw('TRUNCATE TABLE sys_login_log');
       return success(null);
     },
-    opLogPerm,
+    logDeletePerm,
   );
 
   // === Dashboard stats ===
@@ -1643,6 +1646,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
       return success({ userCount, roleCount, todayLogs, unreadNotices });
     },
+    perm('system', 'dashboard:list'),
   );
 
   // === Published notices for current user (with read status) ===

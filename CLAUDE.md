@@ -560,16 +560,14 @@ const { error, data } = await client.get('/api/system/users', { query: cleanPara
 
 ```typescript
 // auth-guard.ts
-export function createPermMiddleware(rbac?: RBAC): (resource: string, action: string) => Middleware {
+export function createPermMiddleware(rbac: RBAC): (resource: string, action: string) => Middleware {
   return (resource: string, action: string): Middleware => {
     return async (ctx, next) => {
       const user = ctx.user as AuthUser | undefined;
       if (!user) return unauthorized();
-      if (rbac) {
-        if (user.roles.includes("admin")) return next(); // 超管跳过
-        if (!user.roles.some(role => rbac.hasPermission(role, resource, action))) {
-          return forbidden();
-        }
+      if (user.roles.includes("admin")) return next(); // 超管跳过
+      if (!user.roles.some(role => rbac.hasPermission(role, resource, action))) {
+        return forbidden();
       }
       return next();
     };

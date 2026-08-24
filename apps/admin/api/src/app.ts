@@ -8,11 +8,11 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { createPlatform } from '@ventostack/boot';
 import {
+  configureMaxBodySize,
   cors,
   createApp,
   createRouter,
   createStaticMiddleware,
-  createTenantMiddleware,
   errorHandler,
   rateLimit,
   requestId,
@@ -60,6 +60,11 @@ export interface AppContext {
 export async function buildApp(opts?: {
   existingBridge?: import('@ventostack/vite-bridge').ViteBridge;
 }): Promise<AppContext> {
+  // =============================================
+  // 0. 请求体上限（环境变量可调；非法值在此 fail-fast）
+  // =============================================
+  configureMaxBodySize(env.MAX_BODY_SIZE);
+
   // =============================================
   // 1. 基础设施层
   // =============================================
@@ -229,21 +234,23 @@ export async function buildApp(opts?: {
     if (env.NODE_ENV === 'production') {
       headers.set('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
     }
-    // CSP: 允许同源和行内脚本/样式（SPA 需要）
-    headers.set(
-      'Content-Security-Policy',
-      [
-        "default-src 'self'",
-        "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
-        "style-src 'self' 'unsafe-inline'",
-        "img-src 'self' data: blob:",
-        "font-src 'self' data:",
-        "connect-src 'self'",
-        "frame-ancestors 'none'",
-        "base-uri 'self'",
-        "form-action 'self'",
-      ].join('; '),
-    );
+    // CSP: 允许同源和行内脚本/样式（SPA 需要）。
+    // 生产环境移除 unsafe-eval（构建产物无需 eval，收窄代码执行面）；
+    // 开发模式保留（Vite HMR 依赖 eval）
+    const cspDirectives = [
+      "default-src 'self'",
+      env.NODE_ENV === 'production'
+        ? "script-src 'self' 'unsafe-inline'"
+        : "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+      "style-src 'self' 'unsafe-inline'",
+      "img-src 'self' data: blob:",
+      "font-src 'self' data:",
+      "connect-src 'self'",
+      "frame-ancestors 'none'",
+      "base-uri 'self'",
+      "form-action 'self'",
+    ].join('; ');
+    headers.set('Content-Security-Policy', cspDirectives);
     return new Response(response.body, {
       status: response.status,
       statusText: response.statusText,
@@ -379,38 +386,42 @@ export async function buildApp(opts?: {
     app.use(spaMiddleware);
   }
 
-  // 4e. 认证端点限流（防暴力破解）
-  const authRateLimit = rateLimit({
+  // 4e. 认证端点限流（防暴力破解）：按敏感度拆分为独立桶，
+  // 避免高频 refresh 挤占登录预算、或 NAT 办公网因共享桶被整体锁死
+  const authLoginRateLimit = rateLimit({
     windowMs: 15 * 60 * 1000,
-    max: 20,
+    max: 10,
     message: '登录尝试过于频繁，请稍后再试',
   });
-  const authRateLimitPaths = new Set([
+  const authRefreshRateLimit = rateLimit({
+    windowMs: 15 * 60 * 1000,
+    max: 60,
+    message: '操作过于频繁，请稍后再试',
+  });
+  const authLoginLimitPaths = new Set([
     '/api/auth/login',
     '/api/auth/register',
-    '/api/auth/refresh',
     '/api/auth/forgot-password',
     '/api/auth/reset-password-by-token',
     '/api/auth/mfa/login',
-    '/api/auth/mfa/setup',
-    '/api/auth/mfa/verify',
     '/api/auth/passkey/login-begin',
     '/api/auth/passkey/login-finish',
   ]);
+  const authRefreshLimitPaths = new Set(['/api/auth/refresh']);
   const authRateLimitMiddleware: Middleware = (ctx, next) => {
     const pathname = new URL(ctx.request.url).pathname;
-    return authRateLimitPaths.has(pathname) ? authRateLimit(ctx, next) : next();
+    if (authLoginLimitPaths.has(pathname)) return authLoginRateLimit(ctx, next);
+    if (authRefreshLimitPaths.has(pathname)) return authRefreshRateLimit(ctx, next);
+    return next();
   };
   app.use(authRateLimitMiddleware);
 
-  // 4e-1. 多租户中间件（TENANT_ENABLED=true 时注册）
+  // 4e-1. 多租户：数据模型层尚未实现租户列与查询过滤，此处不注入租户中间件，
+  // 避免"客户端可控 x-tenant-id 头被盲信"的假隔离；真租户化需先完成 P0 数据层改造
   if (env.TENANT_ENABLED) {
-    const { middleware: tenantMiddleware } = createTenantMiddleware({
-      strategy: 'header',
-      headerName: 'x-tenant-id',
-    });
-    app.use(tenantMiddleware);
-    serverLogger.info('多租户隔离已启用（strategy: header, x-tenant-id）');
+    serverLogger.warn(
+      'TENANT_ENABLED=true 仅启用 boot 层预留配置：当前数据模型无租户列/查询过滤，不提供真实租户隔离（实验性）',
+    );
   }
 
   // 4e. 平台模块路由（createPlatform 自动聚合了所有模块路由）

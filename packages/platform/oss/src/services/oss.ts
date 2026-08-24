@@ -25,6 +25,7 @@ export interface OSSFileRecord {
   mimeType: string | null;
   extension: string | null;
   bucket: string;
+  tenantId: string;
   uploaderId: string | null;
   createdAt: string;
 }
@@ -40,6 +41,8 @@ export interface PaginatedResult<T> {
 
 /** 文件列表查询参数 */
 export interface ListParams {
+  /** 租户 ID（必填，强制租户隔离） */
+  tenantId: string;
   bucket?: string;
   uploaderId?: string;
   page?: number;
@@ -48,13 +51,14 @@ export interface ListParams {
 
 /** OSS 服务接口 */
 export interface OSSService {
-  upload(params: UploadParams, uploaderId: string): Promise<OSSFileRecord>;
+  upload(params: UploadParams, uploaderId: string, tenantId: string): Promise<OSSFileRecord>;
   download(
     fileId: string,
+    tenantId: string,
   ): Promise<{ stream: ReadableStream; contentType: string; filename: string } | null>;
-  delete(fileId: string): Promise<void>;
-  getSignedUrl(fileId: string, expiresIn?: number): Promise<string | null>;
-  getById(fileId: string): Promise<OSSFileRecord | null>;
+  delete(fileId: string, tenantId: string): Promise<void>;
+  getSignedUrl(fileId: string, tenantId: string, expiresIn?: number): Promise<string | null>;
+  getById(fileId: string, tenantId: string): Promise<OSSFileRecord | null>;
   list(params: ListParams): Promise<PaginatedResult<OSSFileRecord>>;
 }
 
@@ -65,7 +69,7 @@ export function createOSSService(deps: {
   const { db, storage } = deps;
 
   return {
-    async upload(params, uploaderId) {
+    async upload(params, uploaderId, tenantId): Promise<OSSFileRecord> {
       const { filename, data, contentType, bucket = "default" } = params;
       const id = crypto.randomUUID();
 
@@ -74,9 +78,9 @@ export function createOSSService(deps: {
       const detectedMime = data.length >= 12 ? detectMIME(data) : null;
       const mime = contentType ?? detectedMime ?? (ext ? mimeFromExtension(ext) : null);
 
-      // Generate storage path: bucket/yyyymmdd/id.ext
+      // Generate storage path: bucket/tenant/yyyymmdd/id.ext（租户段隔离物理存储）
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const storagePath = `${bucket}/${date}/${id}${ext ?? ""}`;
+      const storagePath = `${bucket}/${tenantId}/${date}/${id}${ext ?? ""}`;
 
       // Write to storage adapter
       await storage.write(storagePath, data, mime ?? undefined);
@@ -90,6 +94,7 @@ export function createOSSService(deps: {
         mime_type: mime,
         extension: ext,
         bucket,
+        tenant_id: tenantId,
         uploader_id: uploaderId,
       });
 
@@ -101,15 +106,18 @@ export function createOSSService(deps: {
         mimeType: mime,
         extension: ext,
         bucket,
+        tenantId,
         uploaderId,
         createdAt: new Date().toISOString(),
       };
     },
 
-    async download(fileId) {
+    // 按文件 ID + 租户过滤，防止跨租户越权访问
+    async download(fileId, tenantId) {
       const file = await db
         .query(OSSFileModel)
         .where("id", "=", fileId)
+        .where("tenant_id", "=", tenantId)
         .select("id", "original_name", "storage_path", "mime_type")
         .get();
       if (!file) return null;
@@ -124,22 +132,28 @@ export function createOSSService(deps: {
       };
     },
 
-    async delete(fileId) {
+    async delete(fileId, tenantId) {
       const file = await db
         .query(OSSFileModel)
         .where("id", "=", fileId)
+        .where("tenant_id", "=", tenantId)
         .select("storage_path")
         .get();
       if (!file) return;
 
       await storage.delete(file.storage_path);
-      await db.query(OSSFileModel).where("id", "=", fileId).hardDelete();
+      await db
+        .query(OSSFileModel)
+        .where("id", "=", fileId)
+        .where("tenant_id", "=", tenantId)
+        .hardDelete();
     },
 
-    async getSignedUrl(fileId, expiresIn = 3600) {
+    async getSignedUrl(fileId, tenantId, expiresIn = 3600) {
       const file = await db
         .query(OSSFileModel)
         .where("id", "=", fileId)
+        .where("tenant_id", "=", tenantId)
         .select("storage_path")
         .get();
       if (!file) return null;
@@ -147,10 +161,11 @@ export function createOSSService(deps: {
       return storage.getSignedUrl(file.storage_path, expiresIn);
     },
 
-    async getById(fileId) {
+    async getById(fileId, tenantId) {
       const row = await db
         .query(OSSFileModel)
         .where("id", "=", fileId)
+        .where("tenant_id", "=", tenantId)
         .select(
           "id",
           "original_name",
@@ -159,6 +174,7 @@ export function createOSSService(deps: {
           "mime_type",
           "extension",
           "bucket",
+          "tenant_id",
           "uploader_id",
           "created_at",
         )
@@ -173,16 +189,18 @@ export function createOSSService(deps: {
         mimeType: row.mime_type ?? null,
         extension: row.extension ?? null,
         bucket: row.bucket,
+        tenantId: row.tenant_id ?? "default",
         uploaderId: row.uploader_id ?? null,
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       };
     },
 
-    async list(params) {
-      const { bucket, uploaderId, page = 1, pageSize = 10 } = params;
+    async list(params): Promise<PaginatedResult<OSSFileRecord>> {
+      const { tenantId, bucket, uploaderId, page = 1, pageSize = 10 } = params;
+      // 租户过滤为强制条件，bucket/uploaderId 仅作为租户内的附加筛选
 
-      let query = db.query(OSSFileModel);
+      let query = db.query(OSSFileModel).where("tenant_id", "=", tenantId);
       if (bucket) query = query.where("bucket", "=", bucket);
       if (uploaderId) query = query.where("uploader_id", "=", uploaderId);
 
@@ -197,6 +215,7 @@ export function createOSSService(deps: {
           "mime_type",
           "extension",
           "bucket",
+          "tenant_id",
           "uploader_id",
           "created_at",
         )
@@ -205,7 +224,7 @@ export function createOSSService(deps: {
         .offset((page - 1) * pageSize)
         .list();
 
-      const items = rows.map((row) => ({
+      const items: OSSFileRecord[] = rows.map((row) => ({
         id: row.id,
         originalName: row.original_name,
         storagePath: row.storage_path,
@@ -213,6 +232,7 @@ export function createOSSService(deps: {
         mimeType: row.mime_type ?? null,
         extension: row.extension ?? null,
         bucket: row.bucket,
+        tenantId: row.tenant_id ?? "default",
         uploaderId: row.uploader_id ?? null,
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),

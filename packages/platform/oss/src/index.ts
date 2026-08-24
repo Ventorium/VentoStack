@@ -35,3 +35,5 @@ export type { OSSModule, OSSModuleDeps } from "./module";
 
 // Migrations
 export { createOssTables } from "./migrations/001_create_oss_tables";
+export { addDirectorySupport } from "./migrations/002_add_directory_support";
+export { addTenantIdToOssFile } from "./migrations/003_add_tenant_id_to_oss_file";

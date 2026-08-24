@@ -1,5 +1,6 @@
 import { client } from "@/api";
 import { msg } from "@/components/GlobalMessage";
+import { resolvePostLoginTarget } from "@/components/RequireAuth";
 import { STORAGE_KEYS } from "@/constants";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import {
@@ -12,10 +13,11 @@ import { getPasswordRules } from "@/utils/validators";
 import { Button, Checkbox, Divider, Form, Input, Modal } from "antd";
 import type { OTPRef } from "antd/es/input/Otp";
 import { useEffect, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 
 const LoginPage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login, completeMFALogin, passkeyLogin } = useAuth();
   const siteName = usePublicConfig((s) => s.config.siteName);
   const passkeyEnabled = usePublicConfig((s) => s.config.passkeyEnabled);
@@ -67,7 +69,7 @@ const LoginPage = () => {
       if (user.mfaSetupRequired) {
         msg.warning("请尽快在个人中心设置多因素认证");
       }
-      navigate("/app", { replace: true });
+      navigate(resolvePostLoginTarget(location.state), { replace: true });
     } else if (result && "code" in result && result.code === "mfa_required") {
       setMfaInfo(result as MfaRequiredInfo);
     } else if (result && "code" in result && result.code === "password_expired") {
@@ -84,7 +86,7 @@ const LoginPage = () => {
       msg.success("登录成功");
       setMfaInfo(null);
       setMfaCode("");
-      navigate("/app", { replace: true });
+      navigate(resolvePostLoginTarget(location.state), { replace: true });
     } else {
       setMfaCode("");
       inputRef.current?.focus();
@@ -123,7 +125,7 @@ const LoginPage = () => {
     setPasskeyLoading(false);
     if (result && "id" in result) {
       msg.success("登录成功");
-      navigate("/app", { replace: true });
+      navigate(resolvePostLoginTarget(location.state), { replace: true });
     }
   };
 

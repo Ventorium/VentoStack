@@ -328,11 +328,12 @@ describe("Security: Auth", () => {
   });
 
   describe("找回密码安全", () => {
-    test("不存在的邮箱也返回成功（防邮箱枚举）", async () => {
+    test("不存在的邮箱静默成功且不产生重置令牌（防邮箱枚举）", async () => {
       const s = setup();
-      // 空结果 = 无此邮箱用户
+      // 空结果 = 无此邮箱用户：返回 void，且不触发任何令牌下发事件
       const result = await s.authService.forgotPassword("nonexist@test.com");
-      expect(result.resetToken).toBeTruthy();
+      expect(result).toBeUndefined();
+      expect(s.eventBus.emit).not.toHaveBeenCalled();
     });
 
     test("重置 token 使用后立即失效", async () => {
@@ -345,7 +346,14 @@ describe("Security: Auth", () => {
         },
       ]);
 
-      const { resetToken } = await s.authService.forgotPassword("admin@test.com");
+      await s.authService.forgotPassword("admin@test.com");
+
+      // 重置令牌仅经事件通道下发（禁止进入 HTTP 响应）
+      const emitCalls = (s.eventBus.emit as ReturnType<typeof import("bun:test").mock>).mock
+        .calls as unknown as Array<[string, { resetToken: string }]>;
+      const evt = emitCalls.find(([name]) => name === "auth.password.reset_requested");
+      expect(evt).toBeDefined();
+      const resetToken = evt![1].resetToken;
 
       // 第一次使用成功
       s.passwordHasher.hash.mockResolvedValue("hashed_newpwd" as any);

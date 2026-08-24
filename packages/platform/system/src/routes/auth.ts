@@ -5,7 +5,7 @@
  * 需认证端点（logout/reset-password/MFA）在子 router 上通过 use(authMiddleware) 保护。
  */
 
-import { createRouter, fail, parseBody, success } from "@ventostack/core";
+import { createRouter, VentoStackError, fail, parseBody, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
 
@@ -105,6 +105,12 @@ function clearTokenCookies(response: Response, request: Request): Response {
   return response;
 }
 
+/** 提取业务错误携带的 HTTP 状态码（如 parseBody 抛出的 413），异常未携带时回退默认值 */
+function errorStatus(e: unknown, fallback: number): number {
+  if (e instanceof VentoStackError && e.code >= 400 && e.code < 600) return e.code;
+  return fallback;
+}
+
 export function createAuthRoutes(
   authService: AuthService,
   authMiddleware: Middleware,
@@ -154,7 +160,8 @@ export function createAuthRoutes(
           });
         }
         const msg = e instanceof Error ? e.message : "登录失败";
-        return fail(msg, 401, 401);
+        const loginStatus = errorStatus(e, 401);
+        return fail(msg, loginStatus, loginStatus);
       }
     },
   );
@@ -189,8 +196,14 @@ export function createAuthRoutes(
         const result = await authService.register(registerParams);
         return success(result);
       } catch (e) {
+        // 注册开关关闭时返回 403，并附带明确错误码便于前端识别
+        const err = e as Error & { code?: string };
+        if (err.code === "register_disabled") {
+          return fail("注册已关闭", 403, 403, { code: "register_disabled" });
+        }
         const msg = e instanceof Error ? e.message : "注册失败";
-        return fail(msg, 400);
+        const regStatus = errorStatus(e, 400);
+        return fail(msg, regStatus, regStatus);
       }
     },
   );
@@ -206,7 +219,7 @@ export function createAuthRoutes(
           description: "注册邮箱",
         },
       },
-      responses: { 200: { resetToken: { type: "string" as const, description: "密码重置令牌" } } },
+      responses: { 200: { message: { type: "string" as const, description: "固定提示（不区分邮箱是否存在，防枚举）" } } },
       openapi: { summary: "忘记密码", tags: ["auth"], operationId: "forgotPassword" },
     },
     async (ctx) => {
@@ -214,11 +227,13 @@ export function createAuthRoutes(
         const body = await parseBody(ctx.request);
         const email = body.email as string;
         if (!email) return fail("请输入邮箱", 400);
-        const result = await authService.forgotPassword(email);
-        return success({ resetToken: result.resetToken });
+        // 重置令牌仅经事件通道投递给通知层（邮件），禁止进入 HTTP 响应
+        await authService.forgotPassword(email);
+        return success({ message: "如果该邮箱已注册，密码重置链接将发送至邮箱" });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "找回密码失败";
-        return fail(msg, 400);
+        const forgotStatus = errorStatus(e, 400);
+        return fail(msg, forgotStatus, forgotStatus);
       }
     },
   );
@@ -239,7 +254,8 @@ export function createAuthRoutes(
         return success(null);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "重置失败";
-        return fail(msg, 400);
+        const status = errorStatus(e, 400);
+        return fail(msg, status, status);
       }
     },
   );
@@ -299,7 +315,8 @@ export function createAuthRoutes(
         return withTokenCookies(success(result), ctx.request, result);
       } catch (e) {
         const msg = e instanceof Error ? e.message : "MFA 验证失败";
-        return fail(msg, 401, 401);
+        const status = errorStatus(e, 401);
+        return fail(msg, status, status);
       }
     },
   );

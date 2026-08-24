@@ -22,7 +22,8 @@ export interface NotificationModuleDeps {
   db: Database;
   jwt: JWTManager;
   jwtSecret: string;
-  rbac?: RBAC;
+  /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
+  rbac: RBAC;
   channels: Map<string, NotifyChannel>;
 }
 

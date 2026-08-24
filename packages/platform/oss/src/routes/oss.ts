@@ -9,6 +9,21 @@ import type { OSSService } from "../services/oss";
 /** 上传文件大小限制 (50MB) */
 const MAX_UPLOAD_SIZE = 50 * 1024 * 1024;
 
+/** 认证用户（含 JWT 携带的租户 ID） */
+interface OSSAuthUser {
+  id: string;
+  tenantId?: string | null;
+}
+
+/**
+ * 从请求上下文提取租户 ID
+ * 单租户部署下 JWT 不携带 tenantId，回退 'default'。
+ */
+function getTenantId(ctx: { user?: unknown }): string {
+  const user = ctx.user as OSSAuthUser | undefined;
+  return user?.tenantId ?? "default";
+}
+
 const fileItemSchema = {
   id: { type: "uuid" as const, description: "文件 ID" },
   filename: { type: "string" as const, description: "文件名" },
@@ -65,7 +80,12 @@ export function createOSSRoutes(
         }
 
         const bucket = (formData.get("bucket") as string) ?? "default";
+        // bucket 会拼进对象存储 key，仅允许安全字符，防止路径穿越
+        if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(bucket)) {
+          return fail("bucket 名称不合法", 400);
+        }
         const user = ctx.user as { id: string };
+        const tenantId = getTenantId(ctx);
         const arrayBuffer = await file.arrayBuffer();
         const data = Buffer.from(arrayBuffer);
 
@@ -77,6 +97,7 @@ export function createOSSRoutes(
             bucket,
           },
           user.id,
+          tenantId,
         );
 
         return success(result);
@@ -103,7 +124,9 @@ export function createOSSRoutes(
     async (ctx) => {
       const q = ctx.query as Record<string, unknown>;
       const { page, pageSize } = pageOf(q);
+      // 租户由认证态决定，bucket/uploaderId 仅作为租户内附加筛选
       const result = await ossService.list({
+        tenantId: getTenantId(ctx),
         bucket: q.bucket as string | undefined,
         uploaderId: q.uploaderId as string | undefined,
         page,
@@ -123,7 +146,7 @@ export function createOSSRoutes(
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      const file = await ossService.getById(id);
+      const file = await ossService.getById(id, getTenantId(ctx));
       if (!file) return fail("文件不存在", 404, 404);
       return success(file);
     },
@@ -138,7 +161,7 @@ export function createOSSRoutes(
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      const result = await ossService.download(id);
+      const result = await ossService.download(id, getTenantId(ctx));
       if (!result) return fail("文件不存在", 404, 404);
 
       return new Response(result.stream, {
@@ -171,7 +194,7 @@ export function createOSSRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const q = ctx.query as Record<string, unknown>;
       const expiresIn = q.expiresIn ? Number(q.expiresIn) : 3600;
-      const url = await ossService.getSignedUrl(id, expiresIn);
+      const url = await ossService.getSignedUrl(id, getTenantId(ctx), expiresIn);
       if (!url) return fail("文件不存在", 404, 404);
       return success({ url, expiresIn });
     },
@@ -186,7 +209,7 @@ export function createOSSRoutes(
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
-      await ossService.delete(id);
+      await ossService.delete(id, getTenantId(ctx));
       return success(null);
     },
     perm("oss", "file:delete"),

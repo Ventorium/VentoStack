@@ -5,7 +5,7 @@
 import { createTagLogger } from "@ventostack/core";
 import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
 import { createI18nTables } from "@ventostack/i18n";
-import { createOssTables } from "@ventostack/oss";
+import { addDirectorySupport, addTenantIdToOssFile, createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
 import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables, addModelCapabilities, addReasoningOptions, addProviderModelsDevSlug, dropAgentType, createAiMcpTables, addKbDocumentCount } from "@ventostack/ai";
 import { createNotifyTables } from "@ventostack/notification";
@@ -52,6 +52,8 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addBusinessType);
   runner.addMigration(addWorkflowHistoryTenant);
   runner.addMigration(createOssTables);
+  runner.addMigration(addDirectorySupport);
+  runner.addMigration(addTenantIdToOssFile);
   runner.addMigration(createNotifyTables);
   runner.addMigration(createSchedulerTables);
 

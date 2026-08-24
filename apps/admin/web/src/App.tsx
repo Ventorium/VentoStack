@@ -1,6 +1,7 @@
 import GlobalHistory from "@/components/GlobalHistory";
 import GlobalMessage from "@/components/GlobalMessage";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { buildLoginRedirect, LOGIN_PATH } from "@/components/RequireAuth";
 import { usePublicConfig } from "@/hooks/usePublicConfig";
 import { useTheme } from "@/hooks/useTheme";
 import { useAuth } from "@/store/useAuth";
@@ -53,7 +54,7 @@ const AppRoutes = () => {
 
 const _App = () => {
   const navigate = useNavigate();
-  const { pathname } = useLocation();
+  const { pathname, search } = useLocation();
   const {
     ready: authReady,
     computed: { logged },
@@ -68,11 +69,13 @@ const _App = () => {
       if (logged) {
         // fetch menus when logged in and not already fetched
         fetchRoutes();
-      } else if (pathname !== "/auth/login") {
-        navigate("/auth/login", { replace: true });
+      } else if (pathname !== LOGIN_PATH) {
+        // 与 RequireAuth 守卫保持一致：携带原始目标，登录成功后可回跳
+        const { to, state: loginState } = buildLoginRedirect(pathname, search);
+        navigate(to, { replace: true, state: loginState });
       }
     }
-  }, [authReady, logged, pathname, navigate, fetchRoutes]);
+  }, [authReady, logged, pathname, search, navigate, fetchRoutes]);
 
   // 动态更新 document.title：系统名称 - 当前菜单标题
   useEffect(() => {

@@ -59,7 +59,7 @@ export interface AuthService {
     email?: string;
     phone?: string;
   }): Promise<{ userId: string }>;
-  forgotPassword(email: string): Promise<{ resetToken: string }>;
+  forgotPassword(email: string): Promise<void>;
   resetPasswordByToken(token: string, newPassword: string): Promise<void>;
   resetPassword(userId: string, newPassword: string): Promise<void>;
   forceLogout(userId: string): Promise<{ sessions: number; devices: number }>;
@@ -531,6 +531,15 @@ export function createAuthService(deps: {
     async register(params) {
       const { username, password, email, phone } = params;
 
+      // 0. 注册开关：仅在配置显式为 true/1 时开启（fail-closed：缺失或其他任何值一律关闭）
+      const registerEnabled = await configService.getValue("sys_register_enabled");
+      const registerFlag = registerEnabled?.trim().toLowerCase();
+      if (registerFlag !== "true" && registerFlag !== "1") {
+        const err = new Error("注册已关闭") as Error & { code?: string };
+        err.code = "register_disabled";
+        throw err;
+      }
+
       // 密码策略校验
       const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
       const complexity =
@@ -575,7 +584,7 @@ export function createAuthService(deps: {
         .select("id", "username", "email")
         .get();
 
-      // 即使找不到用户也返回成功，防止邮箱枚举
+      // 即使找不到用户也静默成功，防止邮箱枚举
       if (!user) {
         await auditStore.append({
           actor: redactEmail(email),
@@ -584,9 +593,7 @@ export function createAuthService(deps: {
           result: "failure",
           metadata: { email: redactEmail(email) },
         });
-        // 返回一个无效 token，调用方无法区分
-        const dummyToken = crypto.randomUUID();
-        return { resetToken: dummyToken };
+        return;
       }
 
       const resetToken = crypto.randomUUID();
@@ -604,7 +611,7 @@ export function createAuthService(deps: {
         metadata: { email: redactEmail(email), username: user.username },
       });
 
-      // 触发事件，通知层可监听并发送邮件
+      // 触发事件，通知层可监听并发送邮件（token 仅经事件通道投递，禁止进入 HTTP 响应）
       await eventBus.emit("auth.password.reset_requested" as any, {
         userId: user.id,
         email,
@@ -612,8 +619,6 @@ export function createAuthService(deps: {
         resetToken,
         expiresIn: RESET_TOKEN_TTL,
       });
-
-      return { resetToken };
     },
 
     async resetPasswordByToken(token, newPassword) {

@@ -96,6 +96,14 @@ export const initConfigSeed: Seed = {
         group: "passkey",
         remark: "全局Passkey开关，开启后用户可使用通行密钥登录",
       },
+      {
+        name: "启用用户自注册",
+        key: "sys_register_enabled",
+        value: "false",
+        type: 2,
+        group: "login",
+        remark: "全局注册开关，关闭后 /api/auth/register 返回「注册已关闭」",
+      },
     ];
 
     for (const cfg of configs) {
@@ -108,6 +116,6 @@ export const initConfigSeed: Seed = {
       );
     }
 
-    log.info("Config seed created — 12 system configs");
+    log.info("Config seed created — 13 system configs");
   },
 };

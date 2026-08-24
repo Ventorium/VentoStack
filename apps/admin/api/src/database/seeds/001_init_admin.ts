@@ -20,8 +20,9 @@ export const initAdminSeed: Seed = {
     const adminRoleId = generateUUID();
 
     // Hash the admin password using @ventostack/auth
+    // 生产部署必须通过 ADMIN_INIT_PASSWORD 环境变量设置初始密码，admin123 仅为本地开发兜底
     const passwordHasher = createPasswordHasher();
-    const passwordHash = await passwordHasher.hash("admin123");
+    const passwordHash = await passwordHasher.hash(process.env.ADMIN_INIT_PASSWORD ?? "admin123");
 
     // Insert admin role
     await executor(
@@ -254,7 +255,9 @@ export const initAdminSeed: Seed = {
         { name: "公告修改", permission: "system:notice:edit", sort: 3 },
         { name: "公告删除", permission: "system:notice:remove", sort: 4 },
       ],
-      日志管理: [],
+      日志管理: [
+        { name: "清空日志", permission: "system:log:delete", sort: 1 },
+      ],
       在线用户: [
         { name: "在线查询", permission: "system:online:list", sort: 1 },
         { name: "强退用户", permission: "system:online:forceLogout", sort: 2 },
@@ -272,7 +275,10 @@ export const initAdminSeed: Seed = {
         { name: "文件上传", permission: "system:oss:upload", sort: 2 },
         { name: "文件删除", permission: "system:oss:remove", sort: 3 },
       ],
-      系统监控: [{ name: "监控查询", permission: "system:monitor:list", sort: 1 }],
+      系统监控: [
+        { name: "监控查询", permission: "system:monitor:list", sort: 1 },
+        { name: "仪表盘查看", permission: "system:dashboard:list", sort: 2 },
+      ],
       消息中心: [
         { name: "消息查询", permission: "system:notification:list", sort: 1 },
         { name: "消息发送", permission: "system:notification:send", sort: 2 },

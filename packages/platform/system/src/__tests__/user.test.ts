@@ -3,12 +3,16 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
+import { createUserRoutes } from "../routes/user";
 import { createUserService } from "../services/user";
 import {
   createMockConfigService,
   createMockDatabase,
   createMockExecutor,
+  createMockJWTManager,
   createMockPasswordHasher,
+  createMockRBAC,
   createTestCache,
 } from "./helpers";
 
@@ -143,5 +147,78 @@ describe("UserService", () => {
     // 不传 deptId 时不应有 dept_id 相关的 WHERE 条件
     const selectCalls = s.calls.filter((c) => c.text.startsWith("SELECT"));
     expect(selectCalls.every((c) => !c.text.includes("dept_id IS") && !c.text.includes("dept_id IN"))).toBe(true);
+  });
+});
+
+describe("用户导出权限（安全回归）", () => {
+  /** 构造认证中间件：固定注入测试用户，跳过真实 JWT 校验 */
+  function createAuthMiddlewareForTest(jwt: ReturnType<typeof createMockJWTManager>) {
+    return createAuthMiddleware(jwt, "test-secret");
+  }
+
+  /** 从编译路由表中按 strippedPath + method 定位处理器 */
+  function findRouteHandler(
+    compiled: Record<string, Record<string, (req: Request) => Promise<Response>>>,
+    path: string,
+    method: string,
+  ) {
+    return compiled[path]?.[method];
+  }
+
+  /** 构造携带用户信息的 mock token（mock JWT verify 直接 base64 解码首段） */
+  const testToken = Buffer.from(
+    JSON.stringify({ sub: "u1", roles: ["editor"], username: "editor" }),
+  ).toString("base64url");
+
+  /** 构造导出接口请求 */
+  function buildExportRequest() {
+    const request = new Request("http://localhost/api/system/users/export", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${testToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    (request as Request & { params?: Record<string, string> }).params = {};
+    return request;
+  }
+
+  /** 构造编译后的用户路由，便于直接调用指定方法+路径 */
+  function setupRoutes(rbacHasPermission: boolean) {
+    const mockExec = createMockExecutor();
+    const { db, registerModel } = createMockDatabase(mockExec);
+    registerModel("sys_user", "sys_user", true);
+    const cache = createTestCache();
+    const passwordHasher = createMockPasswordHasher();
+    const configService = createMockConfigService();
+    const userService = createUserService({ db, passwordHasher, cache, configService });
+
+    const jwt = createMockJWTManager();
+    const authMiddleware = createAuthMiddlewareForTest(jwt);
+    const rbac = createMockRBAC();
+    rbac.hasPermission.mockReturnValue(rbacHasPermission as never);
+    const perm = createPermMiddleware(rbac as never);
+
+    return createUserRoutes(userService, authMiddleware, perm).compile();
+  }
+
+  test("POST /api/system/users/export 无 user:export 权限时返回 403", async () => {
+    const compiled = setupRoutes(false);
+    // 找到导出路由的处理器
+    const handler = findRouteHandler(compiled, "/api/system/users/export", "POST");
+    expect(handler).toBeDefined();
+
+    const response = await handler!(buildExportRequest());
+    expect(response.status).toBe(403);
+    const body = (await response.json()) as { message?: string };
+    expect(body.message).toContain("system:user:export");
+  });
+
+  test("POST /api/system/users/export 拥有权限时正常导出", async () => {
+    const compiled = setupRoutes(true);
+    const handler = findRouteHandler(compiled, "/api/system/users/export", "POST");
+    expect(handler).toBeDefined();
+
+    const response = await handler!(buildExportRequest());
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Content-Type")).toContain("text/csv");
   });
 });

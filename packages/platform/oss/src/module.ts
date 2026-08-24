@@ -19,7 +19,8 @@ export interface OSSModuleDeps {
   storage: StorageAdapter;
   jwt: JWTManager;
   jwtSecret: string;
-  rbac?: RBAC;
+  /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
+  rbac: RBAC;
 }
 
 export function createOSSModule(deps: OSSModuleDeps): OSSModule {
@@ -27,6 +28,7 @@ export function createOSSModule(deps: OSSModuleDeps): OSSModule {
 
   const ossService = createOSSService({ db, storage });
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  // rbac 必填：无 RBAC 实例时直接失败，禁止静默跳过权限检查
   const perm = createPermMiddleware(rbac);
 
   const router = createOSSRoutes(ossService, authMiddleware, perm);

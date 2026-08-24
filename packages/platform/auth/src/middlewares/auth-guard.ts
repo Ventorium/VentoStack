@@ -85,10 +85,10 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
 /**
  * 创建权限校验中间件工厂
  *
- * @param rbac RBAC 管理器实例（可选，未提供时跳过权限检查）
+ * @param rbac RBAC 管理器实例（必填：缺失时宁可启动失败，也不静默跳过权限检查）
  */
 export function createPermMiddleware(
-  rbac?: RBAC,
+  rbac: RBAC,
 ): (resource: string, action: string) => Middleware {
   return (resource: string, action: string): Middleware => {
     return async (ctx, next) => {
@@ -100,18 +100,16 @@ export function createPermMiddleware(
         });
       }
 
-      if (rbac) {
-        // 超级管理员跳过权限检查
-        if (user.roles.includes(SUPER_ADMIN_ROLE)) return next();
-        const allowed = user.roles.some((role) =>
-          rbac.hasPermission(role, resource, action),
+      // 超级管理员跳过权限检查
+      if (user.roles.includes(SUPER_ADMIN_ROLE)) return next();
+      const allowed = user.roles.some((role) =>
+        rbac.hasPermission(role, resource, action),
+      );
+      if (!allowed) {
+        return new Response(
+          JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),
+          { status: 403, headers: JSON_HEADERS },
         );
-        if (!allowed) {
-          return new Response(
-            JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),
-            { status: 403, headers: JSON_HEADERS },
-          );
-        }
       }
       return next();
     };

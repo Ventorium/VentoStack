@@ -85,12 +85,48 @@ export function paginated<T>(list: T[], total: number, page: number, pageSize: n
 
 // ========== 路由公共工具 ==========
 
+/** parseBody 默认请求体上限：1MB（可通过 configureMaxBodySize 按应用调整） */
+export const DEFAULT_MAX_BODY_SIZE = 1024 * 1024;
+
+/** 应用级请求体上限（字节）；未配置时回落 DEFAULT_MAX_BODY_SIZE */
+let configuredMaxBodySize: number | undefined;
+
 /**
- * 从请求体解析 JSON，空 body 返回空对象
+ * 配置全局默认请求体上限（字节）。应在应用装配阶段调用一次；
+ * 单次调用可用 parseBody(request, { maxSize }) 临时覆盖。
  */
-export async function parseBody<T = Record<string, unknown>>(request: Request): Promise<T> {
+export function configureMaxBodySize(bytes: number): void {
+  if (!Number.isInteger(bytes) || bytes < 1024) {
+    throw new Error("maxBodySize 必须是不小于 1024 的整数字节数");
+  }
+  configuredMaxBodySize = bytes;
+}
+
+/** 当前生效的全局默认上限（字节） */
+export function getMaxBodySize(): number {
+  return configuredMaxBodySize ?? DEFAULT_MAX_BODY_SIZE;
+}
+
+/**
+ * 从请求体解析 JSON，空 body 返回空对象。
+ * 超过大小上限（Content-Length 预检 + 实际字节数兜底）时抛出 413 VentoStackError，
+ * 防止无上限的 JSON 体耗尽内存（DoS）。
+ */
+export async function parseBody<T = Record<string, unknown>>(
+  request: Request,
+  options?: { maxSize?: number },
+): Promise<T> {
+  const maxSize = options?.maxSize ?? getMaxBodySize();
+  const declaredLength = Number(request.headers.get("content-length") ?? "");
+  if (Number.isFinite(declaredLength) && declaredLength > maxSize) {
+    throw new VentoStackError(`请求体过大，最大 ${Math.floor(maxSize / 1024)}KB`, 413, "PAYLOAD_TOO_LARGE");
+  }
   const text = await request.text();
   if (!text) return {} as T;
+  // chunked 等无 Content-Length 的请求按实际字节数兜底校验
+  if (Buffer.byteLength(text) > maxSize) {
+    throw new VentoStackError(`请求体过大，最大 ${Math.floor(maxSize / 1024)}KB`, 413, "PAYLOAD_TOO_LARGE");
+  }
   return JSON.parse(text) as T;
 }
 

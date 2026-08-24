@@ -56,7 +56,7 @@ docker compose up -d
 | `LOG_LEVEL` | 否 | `info` | 日志级别 |
 | `ADMIN_PORT` | 否 | `9322` | 管理端点端口（`/health`、`/metrics`、`/docs`）；设为 `0` 则禁用独立端口，回退到主端口 |
 | `ADMIN_HOST` | 否 | `127.0.0.1` | 管理端口绑定地址，默认仅本地访问 |
-| `TENANT_ENABLED` | 否 | `false` | 是否启用多租户隔离（开启后自动注入 tenant_id 过滤和缓存键命名空间） |
+| `TENANT_ENABLED` | 否 | `false` | [实验性] 多租户隔离开关：数据模型层暂无租户列与查询过滤，开启仅启用 boot 预留配置，不提供真实隔离 |
 
 ### 健康检查
 

@@ -43,8 +43,10 @@ export function createNotificationRoutes(
     async (ctx) => {
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
       const q = ctx.query as Record<string, unknown>;
+      // 强制按当前登录用户过滤，忽略客户端传参，防止水平越权查看他人消息
+      const user = ctx.user as { id: string };
       const result = await notificationService.listMessages({
-        receiverId: q.receiverId as string | undefined,
+        receiverId: user.id,
         channel: q.channel as string | undefined,
         status: q.status !== undefined ? Number(q.status) : undefined,
         page,

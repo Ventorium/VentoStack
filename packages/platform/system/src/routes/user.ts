@@ -220,6 +220,8 @@ export function createUserRoutes(
         return fail(e instanceof Error ? e.message : "导出失败", 400);
       }
     },
+    // 导出包含全量用户数据，需独立导出权限
+    perm("system", "user:export"),
   );
 
   return router;

@@ -294,9 +294,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         cache,
         // framework/ai 不依赖 platform/auth：认证与权限中间件由平台组装层注入
         authMiddleware: createAuthMiddleware(jwt, jwtSecret),
-        permMiddleware: rbac
-          ? createPermMiddleware(rbac)
-          : () => async (_ctx: unknown, next: () => Promise<Response>) => next(),
+        permMiddleware: createPermMiddleware(rbac),
         eventBus,
         credentialEncryptor: createConfigEncryptor({
           key: config.aiConfig!.credentialEncryptionKey,

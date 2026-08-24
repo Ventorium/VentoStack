@@ -358,7 +358,7 @@ describe("AuthService", () => {
 
   describe("register", () => {
     test("registers new user with hashed password", async () => {
-      const s = setup();
+      const s = setup({ sys_register_enabled: "true" });
       s.results.set("INSERT", [{ id: "new-1" }]);
 
       const result = await s.authService.register({
@@ -368,6 +368,31 @@ describe("AuthService", () => {
 
       expect(result.userId).toBeTruthy();
       expect(s.passwordHasher.hash).toHaveBeenCalledWith("pass123");
+    });
+
+    test("rejects registration when sys_register_enabled is 'false'", async () => {
+      const s = setup({ sys_register_enabled: "false" });
+
+      await expect(
+        s.authService.register({ username: "newuser", password: "pass123" }),
+      ).rejects.toThrow("注册已关闭");
+      // 不应创建用户
+      expect(s.passwordHasher.hash).not.toHaveBeenCalled();
+      expect(s.calls.some((c) => c.text.includes("INSERT INTO sys_user"))).toBe(false);
+    });
+
+    test("rejects registration when sys_register_enabled is missing", async () => {
+      const s = setup();
+
+      await expect(
+        s.authService.register({ username: "newuser", password: "pass123" }),
+      ).rejects.toThrow("注册已关闭");
+      // 错误应携带明确错误码，便于路由层识别
+      await s.authService.register({ username: "newuser", password: "pass123" }).catch(
+        (e: Error & { code?: string }) => {
+          expect(e.code).toBe("register_disabled");
+        },
+      );
     });
   });
 
