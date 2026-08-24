@@ -110,16 +110,25 @@ const rawClient = createFetchClient<OpenAPIs>({
 
     // 401 — token 过期或登录失败
     if (response.status === 401) {
-      // 无任何 token（如登录接口），尝试显示服务端返回的错误消息
+      const url = typeof _request?.url === "string" ? _request.url : "";
+      const isLoginRequest = url.includes("/api/auth/login") || url.includes("/api/login");
+
+      // 无 access token：仅登录接口需要把服务端错误展示给用户；
+      // 启动探测 / 自动 refresh 等未登录场景的 401 属于预期行为，静默跳转登录页即可
       if (!getAccessToken()) {
-        try {
-          const json: unknown = await response.clone().json();
-          if (json && typeof json === "object" && "message" in json) {
-            msg.error((json as { message: string }).message);
+        if (isLoginRequest) {
+          try {
+            const json: unknown = await response.clone().json();
+            if (json && typeof json === "object" && "message" in json) {
+              msg.error((json as { message: string }).message);
+            }
+          } catch {
+            msg.error("登录失败");
           }
-        } catch {
-          msg.error("登录失败");
+          return;
         }
+        clearToken();
+        globalNavigate("/auth/login", { replace: true });
         return;
       }
       // 有 access token 但无 refresh token，清除并跳转登录页
@@ -220,7 +229,8 @@ async function requestWithRefresh(
   const result = await methodFn(path, options);
 
   // Only attempt refresh for 401 on non-auth paths. Browser refresh tokens live in HttpOnly cookies.
-  if (result.error && result.response?.status === 401 && !isAuthPath(path)) {
+  // 从未登录过（本地无 access token）时不发 refresh 请求，避免「缺少刷新令牌」的无效调用
+  if (result.error && result.response?.status === 401 && !isAuthPath(path) && getAccessToken()) {
     if (isRefreshing) {
       // Another request is already refreshing — queue this one
       try {
