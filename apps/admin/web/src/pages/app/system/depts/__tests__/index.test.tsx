@@ -70,9 +70,8 @@ describe("部门管理页", () => {
     const dept = {
       id: "d1",
       name: "技术部",
-      leader: "张三",
-      phone: "13800138000",
-      email: "tech@example.com",
+      leaderUserId: "u1",
+      leaderName: "张三",
       status: 1,
       sort: 1,
       parentId: "",

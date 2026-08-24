@@ -69,9 +69,8 @@ export interface DeptItem {
   parentId: string | null;
   name: string;
   sort: number;
-  leader: string;
-  phone: string;
-  email: string;
+  leaderUserId: string | null;
+  leaderName: string;
   status: number;
   createdAt: string;
   children: DeptItem[];

@@ -20,6 +20,8 @@ import { removeSysTheme } from "./migrations/008_remove_sys_theme";
 import { addDictIsSystem } from "./migrations/009_dict_is_system";
 import { addSortRemark } from "./migrations/010_add_sort_remark";
 import { createTagTables } from "./migrations/011_create_tag_tables";
+import { addDeptLeaderUserId } from "./migrations/012_add_dept_leader_user_id";
+import { dropDeptPhoneEmail } from "./migrations/013_drop_dept_phone_email";
 
 const logger = createTagLogger("migrations");
 
@@ -44,6 +46,12 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
 
   // 标签管理
   runner.addMigration(createTagTables);
+
+  // 部门负责人关联用户
+  runner.addMigration(addDeptLeaderUserId);
+
+  // 部门移除 phone/email 列
+  runner.addMigration(dropDeptPhoneEmail);
 
   // 平台模块表结构由 platform packages 提供，注册顺序由 admin 应用控制。
   runner.addMigration(createI18nTables);

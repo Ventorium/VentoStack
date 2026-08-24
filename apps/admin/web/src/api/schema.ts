@@ -434,17 +434,13 @@ export type OpenAPIs = {
            */
           sort?: number,
           /**
-           * @description 负责人
+           * @description 负责人用户 ID
            */
-          leader?: string,
+          leaderUserId?: string,
           /**
-           * @description 联系电话
+           * @description 负责人名称
            */
-          phone?: string,
-          /**
-           * @description 邮箱
-           */
-          email?: string,
+          leaderName?: string,
           /**
            * @description 状态
            */
@@ -1940,9 +1936,9 @@ export type OpenAPIs = {
       },
       response: {
         /**
-         * @description 密码重置令牌
+         * @description 固定提示（不区分邮箱是否存在，防枚举）
          */
-        resetToken?: string
+        message?: string
       }
     },
     /**
@@ -2447,17 +2443,9 @@ export type OpenAPIs = {
          */
         sort?: number,
         /**
-         * @description 负责人
+         * @description 负责人用户 ID
          */
-        leader?: string,
-        /**
-         * @description 联系电话
-         */
-        phone?: string,
-        /**
-         * @description 邮箱
-         */
-        email?: string,
+        leaderUserId?: string,
         /**
          * @description 状态
          */
@@ -4025,17 +4013,9 @@ export type OpenAPIs = {
          */
         sort?: number,
         /**
-         * @description 负责人
+         * @description 负责人用户 ID
          */
-        leader?: string,
-        /**
-         * @description 联系电话
-         */
-        phone?: string,
-        /**
-         * @description 邮箱
-         */
-        email?: string,
+        leaderUserId?: string,
         /**
          * @description 状态
          */

@@ -4,7 +4,6 @@ import ActionColumn from "@/components/ActionColumn";
 import DictSelect from "@/components/DictSelect";
 import { msg } from "@/components/GlobalMessage";
 import { fmtDate } from "@/utils/fmtDate";
-import { emailRules, phoneRules } from "@/utils/validators";
 import { PlusOutlined } from "@ant-design/icons";
 import { ExpandAltOutlined, ShrinkOutlined } from "@ant-design/icons";
 import {
@@ -16,13 +15,14 @@ import {
   InputNumber,
   Modal,
   Row,
+  Select,
   Space,
   Table,
   Tag,
   TreeSelect,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 function toTreeSelectData(items: DeptItem[]): any[] {
   return items.map((item) => ({
@@ -30,6 +30,74 @@ function toTreeSelectData(items: DeptItem[]): any[] {
     title: item.name,
     children: item.children?.length ? toTreeSelectData(item.children) : undefined,
   }));
+}
+
+interface UserOption {
+  id: string;
+  nickname: string | null;
+  username: string;
+}
+
+/** 负责人用户远程搜索选择（按用户名/昵称模糊查询） */
+function LeaderSelect({
+  value,
+  onChange,
+  initialLabel,
+}: {
+  value?: string | null;
+  onChange?: (v: string | null) => void;
+  /** 编辑回填时显示的初始 label（负责人昵称） */
+  initialLabel?: string;
+}) {
+  const [options, setOptions] = useState<UserOption[]>([]);
+  const [fetching, setFetching] = useState(false);
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // 用初始 label 构造回填选项
+  useEffect(() => {
+    if (value && initialLabel && !options.some((o) => o.id === value)) {
+      setOptions([{ id: value, nickname: initialLabel, username: "" }]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [value, initialLabel]);
+
+  const handleSearch = useCallback((keyword: string) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    if (!keyword.trim()) return;
+    timerRef.current = setTimeout(async () => {
+      setFetching(true);
+      try {
+        const { data } = await client.get("/api/system/users", {
+          query: { page: 1, pageSize: 20, username: keyword.trim() },
+        });
+        setOptions((data as { list?: UserOption[] } | undefined)?.list ?? []);
+      } finally {
+        setFetching(false);
+      }
+    }, 300);
+  }, []);
+
+  return (
+    <Select
+      showSearch
+      allowClear
+      filterOption={false}
+      placeholder="搜索并选择用户"
+      notFoundContent={fetching ? "搜索中…" : "暂无匹配用户"}
+      value={value ?? undefined}
+      labelInValue={false}
+      onSearch={handleSearch}
+      onChange={(v) => onChange?.(v ?? null)}
+      options={options.map((u) => ({
+        value: u.id,
+        label: u.nickname
+          ? u.username
+            ? `${u.nickname}（${u.username}）`
+            : u.nickname
+          : u.username,
+      }))}
+    />
+  );
 }
 
 const DeptPage = () => {
@@ -94,9 +162,7 @@ const DeptPage = () => {
       parentId: r.parentId,
       name: r.name,
       sort: r.sort,
-      leader: r.leader,
-      phone: r.phone,
-      email: r.email,
+      leaderUserId: r.leaderUserId,
       status: r.status,
     });
     setModalOpen(true);
@@ -165,9 +231,7 @@ const DeptPage = () => {
 
   const columns: ColumnsType<DeptItem> = [
     { title: "部门名称", dataIndex: "name", key: "name" },
-    { title: "负责人", dataIndex: "leader", key: "leader", width: 120 },
-    { title: "电话", dataIndex: "phone", key: "phone", width: 140 },
-    { title: "邮箱", dataIndex: "email", key: "email", width: 200 },
+    { title: "负责人", dataIndex: "leaderName", key: "leaderName", width: 120 },
     {
       title: "状态",
       dataIndex: "status",
@@ -298,20 +362,8 @@ const DeptPage = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="leader" label="负责人">
-                <Input />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="phone" label="电话" rules={phoneRules}>
-                <Input />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="email" label="邮箱" rules={emailRules}>
-                <Input />
+              <Form.Item name="leaderUserId" label="负责人">
+                <LeaderSelect initialLabel={editingDept?.leaderName ?? undefined} />
               </Form.Item>
             </Col>
           </Row>
