@@ -53,29 +53,43 @@ function LeaderSelect({
   const [fetching, setFetching] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  const loadOptions = useCallback(async (keyword?: string) => {
+    setFetching(true);
+    try {
+      const { data } = await client.get("/api/system/users", {
+        query: keyword?.trim()
+          ? { page: 1, pageSize: 20, username: keyword.trim() }
+          : { page: 1, pageSize: 20 },
+      });
+      setOptions((data as { list?: UserOption[] } | undefined)?.list ?? []);
+    } finally {
+      setFetching(false);
+    }
+  }, []);
+
+  // 挂载即预加载一批用户，保证点开下拉就有数据
+  useEffect(() => {
+    loadOptions();
+  }, [loadOptions]);
+
   // 用初始 label 构造回填选项
   useEffect(() => {
     if (value && initialLabel && !options.some((o) => o.id === value)) {
-      setOptions([{ id: value, nickname: initialLabel, username: "" }]);
+      setOptions((prev) => [
+        { id: value, nickname: initialLabel, username: "" },
+        ...prev,
+      ]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, initialLabel]);
 
-  const handleSearch = useCallback((keyword: string) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    if (!keyword.trim()) return;
-    timerRef.current = setTimeout(async () => {
-      setFetching(true);
-      try {
-        const { data } = await client.get("/api/system/users", {
-          query: { page: 1, pageSize: 20, username: keyword.trim() },
-        });
-        setOptions((data as { list?: UserOption[] } | undefined)?.list ?? []);
-      } finally {
-        setFetching(false);
-      }
-    }, 300);
-  }, []);
+  const handleSearch = useCallback(
+    (keyword: string) => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current = setTimeout(() => loadOptions(keyword), 300);
+    },
+    [loadOptions],
+  );
 
   return (
     <Select
