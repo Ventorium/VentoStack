@@ -88,13 +88,17 @@ describe("AssigneeResolver", () => {
         id: "u1", nickname: "张三", dept_id: deptId ?? "dept-1",
       }]);
       results.set("SELECT r.code FROM sys_role r JOIN", []);
-      results.set("SELECT leader FROM sys_dept WHERE id", [{ leader: superiorId ?? null }]);
+      results.set("SELECT leader_user_id FROM sys_dept WHERE id", [
+        { leader_user_id: superiorId ?? null },
+      ]);
     }
 
-    it("initiator_superior — should return superior", async () => {
+    it("initiator_superior — currently returns empty (TODO: report-line not implemented)", async () => {
+      // 直属上级（个人汇报对象）尚未建模，superior 与 dept_leader 不应再共用 leader_user_id，
+      // 在引入组织汇报线模型前固定返回空，避免误用
       setupInitiatorMocks("leader-1");
       const node = makeNode({ assignee: { mode: "lookup", lookupKey: "initiator_superior" } });
-      expect(await resolver.resolve(node, makeCtx())).toEqual(["leader-1"]);
+      expect(await resolver.resolve(node, makeCtx())).toEqual([]);
     });
 
     it("initiator_superior — no superior → empty", async () => {
@@ -192,7 +196,7 @@ describe("resolveInitiatorDetail", () => {
       id: "u1", nickname: "张三", dept_id: "dept-1",
     }]);
     results.set("SELECT r.code FROM sys_role r JOIN", [{ code: "admin" }, { code: "user" }]);
-    results.set("SELECT leader FROM sys_dept WHERE id", [{ leader: "leader-1" }]);
+    results.set("SELECT leader_user_id FROM sys_dept WHERE id", [{ leader_user_id: "leader-1" }]);
 
     const detail = await resolveInitiatorDetail(db, "u1");
     expect(detail.id).toBe("u1");

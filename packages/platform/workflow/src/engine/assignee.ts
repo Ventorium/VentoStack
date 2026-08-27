@@ -11,10 +11,20 @@ import type { EngineContext, GraphNode } from './graph';
 
 /** 审批人配置 */
 export interface AssigneeConfig {
-  mode: 'fixed' | 'role' | 'department' | 'lookup' | 'form_field' | 'dept_tag';
+  mode:
+    | 'fixed'
+    | 'role'
+    | 'department'
+    | 'lookup'
+    | 'form_field'
+    | 'dept_tag'
+    | 'post'
+    | 'dept_post';
   userIds?: string[];
   roleId?: string;
   deptId?: string;
+  /** post/dept_post 模式: 岗位 ID */
+  postId?: string;
   lookupKey?:
     | 'initiator_superior'
     | 'initiator_dept_leader'
@@ -92,7 +102,10 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
         const initiator = await resolveInitiatorDetail(db, ctx.initiator.id);
         switch (assignee.lookupKey) {
           case 'initiator_superior':
-            return initiator.superiorId ? [initiator.superiorId] : [];
+            // TODO: "直属上级" 应基于组织汇报线（sys_user_report_line 或类似）解析，
+            // 而非部门的 leader_user_id。两者语义不同——前者是个人汇报对象，后者是部门负责人。
+            // 在引入组织汇报线模型前，先返回空以避免与 initiator_dept_leader 误用。
+            return [];
           case 'initiator_dept_leader':
             return initiator.deptLeaderId ? [initiator.deptLeaderId] : [];
           case 'initiator_dept_hr': {
@@ -113,6 +126,32 @@ export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver
           default:
             return [];
         }
+      }
+
+      case 'post': {
+        // 按岗位找人：岗位下所有启用用户
+        if (!assignee.postId) return [];
+        const rows = await db.raw(
+          `SELECT u.id FROM sys_user_post up
+           JOIN sys_user u ON u.id = up.user_id
+           WHERE up.post_id = $1 AND u.status = 1 AND u.deleted_at IS NULL`,
+          [assignee.postId],
+        );
+        return (rows as Array<{ id: string }>).map((r) => r.id);
+      }
+
+      case 'dept_post': {
+        // 发起人所在部门内具有指定岗位的用户
+        if (!assignee.postId) return [];
+        const initiator = await resolveInitiatorDetail(db, ctx.initiator.id);
+        if (!initiator.deptId) return [];
+        const rows = await db.raw(
+          `SELECT u.id FROM sys_user_post up
+           JOIN sys_user u ON u.id = up.user_id
+           WHERE up.post_id = $1 AND u.dept_id = $2 AND u.status = 1 AND u.deleted_at IS NULL`,
+          [assignee.postId, initiator.deptId],
+        );
+        return (rows as Array<{ id: string }>).map((r) => r.id);
       }
 
       case 'form_field': {
@@ -229,15 +268,16 @@ export async function resolveInitiatorDetail(
   );
   result.roles = (roles as Array<{ code: string }>).map((r) => r.code);
 
-  // 查找直属上级（通过 dept 的 leader 字段）
+  // 查找直属上级（通过 dept 的 leader_user_id）
   if (u.dept_id) {
-    const dept = await db.raw('SELECT leader FROM sys_dept WHERE id = $1 AND deleted_at IS NULL', [
-      u.dept_id,
-    ]);
-    const [department] = dept as Array<{ leader?: string | null }>;
-    if (department?.leader) {
-      result.superiorId = department.leader;
-      result.deptLeaderId = department.leader;
+    const dept = await db.raw(
+      'SELECT leader_user_id FROM sys_dept WHERE id = $1 AND deleted_at IS NULL',
+      [u.dept_id],
+    );
+    const [department] = dept as Array<{ leader_user_id?: string | null }>;
+    if (department?.leader_user_id) {
+      result.superiorId = department.leader_user_id;
+      result.deptLeaderId = department.leader_user_id;
     }
   }
 
