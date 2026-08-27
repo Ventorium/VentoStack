@@ -13,10 +13,20 @@ export interface NodeConfig {
   strategy?: "sequential" | "parallel_and" | "parallel_or" | "percentage";
   percentage?: number;
   assignee?: {
-    mode: "fixed" | "role" | "department" | "lookup" | "form_field" | "dept_tag";
+    mode:
+      | "fixed"
+      | "role"
+      | "department"
+      | "lookup"
+      | "form_field"
+      | "dept_tag"
+      | "post"
+      | "dept_post";
     userIds?: string[];
     roleId?: string;
     deptId?: string;
+    /** post/dept_post 模式: 岗位 ID */
+    postId?: string;
     lookupKey?: string;
     formField?: string;
     tagId?: string;

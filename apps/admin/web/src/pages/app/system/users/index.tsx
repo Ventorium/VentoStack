@@ -1,5 +1,5 @@
 import { client } from "@/api";
-import type { DeptItem, PaginatedData, RoleItem, TagItem, UserItem } from "@/api/types";
+import type { DeptItem, PaginatedData, PostItem, RoleItem, TagItem, UserItem } from "@/api/types";
 import ActionColumn from "@/components/ActionColumn";
 import DictSelect from "@/components/DictSelect";
 import { msg } from "@/components/GlobalMessage";
@@ -114,6 +114,22 @@ const UserPage = () => {
   // Tag list state
   const [tagOptions, setTagOptions] = useState<Array<{ label: string; value: string }>>([]);
 
+  // Post list state
+  const [postOptions, setPostOptions] = useState<Array<{ label: string; value: string }>>([]);
+
+  // Fetch posts for selector
+  useEffect(() => {
+    const fetchPosts = async () => {
+      const { error, data } = (await client.get("/api/system/posts", {
+        query: { pageSize: 999 },
+      })) as { error?: unknown; data?: PaginatedData<PostItem> };
+      if (!error && data?.list) {
+        setPostOptions(data.list.map((p) => ({ label: p.name, value: p.id })));
+      }
+    };
+    fetchPosts();
+  }, []);
+
   // Fetch roles for selector
   useEffect(() => {
     const fetchRoles = async () => {
@@ -224,6 +240,7 @@ const UserPage = () => {
       status: r.status,
       deptId: r.deptId,
       roleIds: r.roles?.map((role) => role.id) ?? [],
+      postIds: r.posts?.map((post) => post.id) ?? [],
       tagIds,
     });
     setModalOpen(true);
@@ -243,6 +260,7 @@ const UserPage = () => {
             status: values.status,
             deptId: values.deptId,
             roleIds: values.roleIds,
+            postIds: values.postIds ?? [],
           },
         });
         if (!error) {
@@ -269,6 +287,7 @@ const UserPage = () => {
             status: values.status,
             deptId: values.deptId,
             roleIds: values.roleIds,
+            postIds: values.postIds ?? [],
           },
         });
         if (!error) {
@@ -440,6 +459,15 @@ const UserPage = () => {
                 {t.name}
               </Tag>
             ))
+          : "-",
+    },
+    {
+      title: "岗位",
+      key: "posts",
+      width: 160,
+      render: (_: unknown, r: UserItem) =>
+        r.posts?.length
+          ? r.posts.map((p) => <Tag key={p.id}>{p.name}</Tag>)
           : "-",
     },
     { title: "邮箱", dataIndex: "email", key: "email", width: 200 },
@@ -699,6 +727,11 @@ const UserPage = () => {
             <Col span={12}>
               <Form.Item name="roleIds" label="角色">
                 <Select mode="multiple" placeholder="选择角色" options={roleOptions} allowClear />
+              </Form.Item>
+            </Col>
+            <Col span={12}>
+              <Form.Item name="postIds" label="岗位">
+                <Select mode="multiple" placeholder="选择岗位" options={postOptions} allowClear />
               </Form.Item>
             </Col>
             <Col span={12}>

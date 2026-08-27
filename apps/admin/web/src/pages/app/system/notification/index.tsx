@@ -11,10 +11,12 @@ import { Badge, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } fr
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
 
+interface PostItem { id: string; name: string; code: string }
 const fetcher = (params: Record<string, unknown>) =>
   client.get(NOTIFICATION_API.MESSAGES, { query: cleanParams(params) });
 
 const channelOptions = [
+  { label: "站内信", value: "in_app" },
   { label: "邮件", value: "email" },
   { label: "短信", value: "sms" },
   { label: "Webhook", value: "webhook" },
@@ -50,7 +52,10 @@ const NotificationPage = () => {
     hasSelected,
   } = useTable<NotifyMessage>(fetcher);
   const [searchForm] = Form.useForm();
+  const [sendForm] = Form.useForm();
   const [detailModalOpen, setDetailModalOpen] = useState(false);
+  const [sendModalOpen, setSendModalOpen] = useState(false);
+  const [postOptions, setPostOptions] = useState<Array<{ label: string; value: string }>>([]);
   const [currentMessage, setCurrentMessage] = useState<NotifyMessage | null>(null);
 
   const handleSearch = () => {
@@ -60,6 +65,30 @@ const NotificationPage = () => {
   const handleReset = () => {
     searchForm.resetFields();
     onReset();
+  };
+
+  // 打开发送弹窗：拉取岗位列表
+  const openSendModal = async () => {
+    setSendModalOpen(true);
+    sendForm.resetFields();
+    sendForm.setFieldsValue({ channel: "in_app" });
+    const { error, data } = (await client.get("/api/system/posts", {
+      query: { pageSize: 999 },
+    })) as { error?: unknown; data?: { list?: PostItem[] } };
+    if (!error && data?.list) {
+      setPostOptions(data.list.map((p) => ({ label: p.name, value: p.id })));
+    }
+  };
+
+  const handleSend = async () => {
+    const values = await sendForm.validateFields();
+    const { error, data } = await client.post("/api/system/notification/send-by-posts" as any, {
+      body: values,
+    });
+    if (!error) {
+      msg.success(`已发送：成功 ${(data as { sent?: number })?.sent ?? 0} 条，失败 ${(data as { failed?: number })?.failed ?? 0} 条`);
+      setSendModalOpen(false);
+    }
   };
 
   const handleMarkAsRead = async (id: string) => {
@@ -187,6 +216,9 @@ const NotificationPage = () => {
         title={`消息列表（${total}）`}
         extra={
           <Space>
+            <Button type="primary" onClick={openSendModal}>
+              按岗位发送
+            </Button>
             {hasSelected && (
               <Button type="primary" size="small" onClick={handleBatchMarkAsRead}>
                 批量标记已读
@@ -221,6 +253,37 @@ const NotificationPage = () => {
           rowSelection={rowSelection}
         />
       </Card>
+      <Modal
+        title="按岗位发送通知"
+        open={sendModalOpen}
+        onCancel={() => setSendModalOpen(false)}
+        onOk={handleSend}
+        okText="发送"
+        width={520}
+      >
+        <Form form={sendForm} layout="vertical" preserve={false}>
+          <Form.Item name="postIds" label="目标岗位" rules={[{ required: true, message: "请选择至少一个岗位" }]}>
+            <Select
+              mode="multiple"
+              placeholder="选择岗位，发送给岗位下所有启用用户"
+              options={postOptions}
+              allowClear
+              showSearch
+              filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+            />
+          </Form.Item>
+          <Form.Item name="channel" label="渠道" rules={[{ required: true }]}>
+            <Select options={channelOptions} />
+          </Form.Item>
+          <Form.Item name="title" label="标题">
+            <Input placeholder="通知标题" />
+          </Form.Item>
+          <Form.Item name="content" label="内容" rules={[{ required: true, message: "请输入通知内容" }]}>
+            <Input.TextArea rows={4} placeholder="通知内容" />
+          </Form.Item>
+        </Form>
+      </Modal>
+
       <Modal
         title="消息详情"
         open={detailModalOpen}

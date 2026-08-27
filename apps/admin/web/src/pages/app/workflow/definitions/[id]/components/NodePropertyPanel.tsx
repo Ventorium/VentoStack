@@ -21,8 +21,13 @@ function useApiOptions() {
   const [roles, setRoles] = useState<Array<{ value: string; label: string }>>([]);
   const [depts, setDepts] = useState<Array<{ value: string; label: string }>>([]);
   const [tags, setTags] = useState<Array<{ value: string; label: string }>>([]);
+  const [posts, setPosts] = useState<Array<{ value: string; label: string }>>([]);
 
   useEffect(() => {
+    client.get("/api/system/posts", { query: { pageSize: 200 } }).then(({ data }) => {
+      const list = (data as { list?: Array<{ id: string; name: string }> })?.list ?? [];
+      setPosts(list.map((p) => ({ value: p.id, label: p.name })));
+    }).catch(() => {});
     client.get("/api/system/users", { query: { pageSize: 200 } }).then(({ data }) => {
       const list = (data as { list?: Array<{ id: string; nickname: string; username: string }> })?.list ?? [];
       setUsers(list.map((u) => ({ value: u.id, label: `${u.nickname || u.username}` })));
@@ -42,13 +47,13 @@ function useApiOptions() {
     }).catch(() => {});
   }, []);
 
-  return { users, roles, depts, tags };
+  return { users, roles, depts, tags, posts };
 }
 
 export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, onClose }: Props) {
   const [form] = Form.useForm();
   const d = (node?.data ?? null) as unknown as FlowNodeData | null;
-  const { users, roles, depts, tags } = useApiOptions();
+  const { users, roles, depts, tags, posts } = useApiOptions();
 
   useEffect(() => {
     if (!d || !node) return;
@@ -60,6 +65,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
       assigneeUserIds: d.config?.assignee?.userIds ?? [],
       assigneeRoleId: d.config?.assignee?.roleId ?? undefined,
       assigneeDeptId: d.config?.assignee?.deptId ?? undefined,
+      assigneePostId: d.config?.assignee?.postId ?? undefined,
       assigneeLookupKey: d.config?.assignee?.lookupKey ?? "",
       assigneeFormField: d.config?.assignee?.formField ?? "",
       assigneeTagCodes: d.config?.assignee?.tagCodes ?? [],
@@ -106,6 +112,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
         userIds: v.assigneeUserIds?.length > 0 ? v.assigneeUserIds : undefined,
         roleId: v.assigneeRoleId || undefined,
         deptId: v.assigneeDeptId || undefined,
+        postId: v.assigneePostId || undefined,
         lookupKey: v.assigneeLookupKey || undefined,
         formField: v.assigneeFormField || undefined,
         tagCodes: v.assigneeTagCodes?.length > 0 ? v.assigneeTagCodes : undefined,
@@ -158,6 +165,8 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                   { value: "lookup", label: "自动查找（上级/领导）" },
                   { value: "form_field", label: "表单字段指定" },
                   { value: "dept_tag", label: "按部门标签" },
+                  { value: "post", label: "按岗位" },
+                  { value: "dept_post", label: "发起人部门内按岗位" },
                 ]}
               />
             </Form.Item>
@@ -181,6 +190,12 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                   <Form.Item name="assigneeDeptId" label="部门">
                     <Select placeholder="选择部门" options={depts} showSearch allowClear
                       filterOption={(input, option) => (option?.label ?? "").toLowerCase().includes(input.toLowerCase())} />
+                  </Form.Item>
+                );
+                if (mode === "post" || mode === "dept_post") return (
+                  <Form.Item name="assigneePostId" label="岗位" rules={[{ required: true, message: "请选择岗位" }]}>
+                    <Select placeholder="选择岗位" options={posts} showSearch allowClear
+                      filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())} />
                   </Form.Item>
                 );
                 if (mode === "lookup") return (
