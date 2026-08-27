@@ -36,6 +36,28 @@ export function createNotificationRoutes(
     },
   );
 
+  // 按岗位批量投递
+  router.post(
+    "/api/system/notification/send-by-posts",
+    perm("notification", "message:send"),
+    async (ctx) => {
+      try {
+        const body = await parseBody(ctx.request);
+        const result = await notificationService.sendByPosts({
+          postIds: (body.postIds as string[]) ?? [],
+          templateId: body.templateId as string | undefined,
+          channel: body.channel as string,
+          title: body.title as string | undefined,
+          content: body.content as string,
+          variables: body.variables as Record<string, unknown> | undefined,
+        });
+        return success(result);
+      } catch (e) {
+        return fail(e instanceof Error ? e.message : "发送失败", 400);
+      }
+    },
+  );
+
   // 消息列表
   router.get(
     "/api/system/notification/messages",

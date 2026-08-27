@@ -76,6 +76,16 @@ export interface NotificationService {
     variables?: Record<string, unknown>;
   }): Promise<{ messageId: string }>;
 
+  /** 按岗位批量投递：岗位下所有启用用户各发一条 */
+  sendByPosts(params: {
+    postIds: string[];
+    templateId?: string;
+    channel: string;
+    title?: string;
+    content: string;
+    variables?: Record<string, unknown>;
+  }): Promise<{ sent: number; failed: number }>;
+
   listMessages(params: {
     receiverId?: string;
     channel?: string;
@@ -142,52 +152,97 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
     return { title, content };
   }
 
+  /** 单条投递（渠道 + 落库），send 与 sendByPosts 共用 */
+  async function sendMessage(params: {
+    templateId?: string;
+    receiverId: string;
+    channel: string;
+    title?: string;
+    content: string;
+    variables?: Record<string, unknown>;
+  }): Promise<{ messageId: string }> {
+    const messageId = crypto.randomUUID();
+    let { title, content } = params;
+
+    // If templateId provided, render template
+    if (params.templateId) {
+      const rendered = await renderTemplate(params.templateId, params.variables);
+      if (rendered) {
+        title = rendered.title;
+        content = rendered.content;
+      }
+    }
+
+    // Send via channel
+    const channel = channels.get(params.channel);
+    let status: number = MessageStatus.PENDING;
+    let sendAt: Date | null = null;
+    let error: string | null = null;
+
+    if (channel) {
+      const result = await channel.send({
+        to: params.receiverId,
+        title: title ?? '',
+        content,
+      });
+      status = result.success ? MessageStatus.SENT : MessageStatus.FAILED;
+      sendAt = result.success ? new Date() : null;
+      error = result.error ?? null;
+    }
+
+    await db.query(NotifyMessageModel).insert({
+      id: messageId,
+      template_id: params.templateId ?? null,
+      channel: params.channel,
+      receiver_id: params.receiverId,
+      title: title ?? null,
+      content,
+      variables: params.variables ? JSON.stringify(params.variables) : null,
+      status,
+      retry_count: 0,
+      send_at: sendAt,
+      error,
+    });
+
+    return { messageId };
+  }
+
   return {
     async send(params) {
-      const messageId = crypto.randomUUID();
-      let { title, content } = params;
+      return sendMessage(params);
+    },
 
-      // If templateId provided, render template
-      if (params.templateId) {
-        const rendered = await renderTemplate(params.templateId, params.variables);
-        if (rendered) {
-          title = rendered.title;
-          content = rendered.content;
+    async sendByPosts(params) {
+      if (params.postIds.length === 0) return { sent: 0, failed: 0 };
+
+      // 解析岗位下所有启用用户（去重，一个用户多岗位只发一条）
+      const placeholders = params.postIds.map((_, i) => `$${i + 1}`);
+      const rows = await db.raw(
+        `SELECT DISTINCT up.user_id FROM sys_user_post up
+         JOIN sys_user u ON u.id = up.user_id
+         WHERE up.post_id IN (${placeholders.join(', ')}) AND u.status = 1 AND u.deleted_at IS NULL`,
+        params.postIds,
+      );
+      const userIds = (rows as Array<{ user_id: string }>).map((r) => r.user_id);
+
+      let sent = 0;
+      let failed = 0;
+      for (const userId of userIds) {
+        try {
+          await sendMessage({
+            templateId: params.templateId,
+            receiverId: userId,
+            channel: params.channel,
+            title: params.title,
+            content: params.content,
+            variables: params.variables,
+          });
+          sent++;
+        } catch {
+          failed++;
         }
       }
-
-      // Send via channel
-      const channel = channels.get(params.channel);
-      let status: number = MessageStatus.PENDING;
-      let sendAt: Date | null = null;
-      let error: string | null = null;
-
-      if (channel) {
-        const result = await channel.send({
-          to: params.receiverId,
-          title: title ?? '',
-          content,
-        });
-        status = result.success ? MessageStatus.SENT : MessageStatus.FAILED;
-        sendAt = result.success ? new Date() : null;
-        error = result.error ?? null;
-      }
-
-      await db.query(NotifyMessageModel).insert({
-        id: messageId,
-        template_id: params.templateId ?? null,
-        channel: params.channel,
-        receiver_id: params.receiverId,
-        title: title ?? null,
-        content,
-        variables: params.variables ? JSON.stringify(params.variables) : null,
-        status,
-        retry_count: 0,
-        send_at: sendAt,
-        error,
-      });
-
-      return { messageId };
+      return { sent, failed };
     },
 
     async listMessages(params) {
