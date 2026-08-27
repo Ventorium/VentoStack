@@ -9,34 +9,70 @@
  * - Harness 扩展事件 (context / before_provider_request / abort / settled 等)
  */
 
+// ---- 运行上下文 ----
+
+/**
+ * 事件所属的 Agent 运行上下文。
+ * 由 runStream 内部的 emit 包装统一注入，用于并发运行时的事件路由
+ * （链路追踪、审计等订阅方据此关联 run，不注入则为 undefined）。
+ */
+export interface AgentRunContext {
+  runId: string;
+  parentRunId?: string;
+  sessionId?: string;
+  agentId?: string;
+  userId?: string;
+  tenantId?: string;
+}
+
+/** agent_start 附带的运行元数据（解析后的运行配置快照） */
+export interface AgentRunMeta {
+  model?: string;
+  maxIterations?: number;
+  researchMode?: boolean;
+  /** 触发本次运行的用户消息（截断保护） */
+  userMessage?: string;
+  skillIds?: string[];
+  knowledgeBaseIds?: string[];
+  mcpServerIds?: string[];
+  toolNames?: string[];
+}
+
 // ---- 事件类型 ----
 
 export interface AgentStartEvent {
   type: "agent_start";
+  run?: AgentRunContext;
+  meta?: AgentRunMeta;
 }
 
 export interface AgentEndEvent {
   type: "agent_end";
+  run?: AgentRunContext;
   messages: AgentEventMessage[];
 }
 
 export interface TurnStartEvent {
   type: "turn_start";
+  run?: AgentRunContext;
 }
 
 export interface TurnEndEvent {
   type: "turn_end";
+  run?: AgentRunContext;
   message: AgentEventMessage;
   toolResults: AgentToolResultEventMessage[];
 }
 
 export interface MessageStartEvent {
   type: "message_start";
+  run?: AgentRunContext;
   message: AgentEventMessage;
 }
 
 export interface MessageUpdateEvent {
   type: "message_update";
+  run?: AgentRunContext;
   message: AgentEventMessage;
   /** 增量更新内容 */
   delta?: string;
@@ -44,11 +80,13 @@ export interface MessageUpdateEvent {
 
 export interface MessageEndEvent {
   type: "message_end";
+  run?: AgentRunContext;
   message: AgentEventMessage;
 }
 
 export interface ToolExecutionStartEvent {
   type: "tool_execution_start";
+  run?: AgentRunContext;
   toolCallId: string;
   toolName: string;
   args: unknown;
@@ -56,6 +94,7 @@ export interface ToolExecutionStartEvent {
 
 export interface ToolExecutionUpdateEvent {
   type: "tool_execution_update";
+  run?: AgentRunContext;
   toolCallId: string;
   toolName: string;
   args: unknown;
@@ -64,6 +103,7 @@ export interface ToolExecutionUpdateEvent {
 
 export interface ToolExecutionEndEvent {
   type: "tool_execution_end";
+  run?: AgentRunContext;
   toolCallId: string;
   toolName: string;
   result: unknown;
@@ -73,12 +113,14 @@ export interface ToolExecutionEndEvent {
 // Harness 扩展事件
 export interface ContextEvent {
   type: "context";
+  run?: AgentRunContext;
   messages: AgentEventMessage[];
   systemPrompt: string;
 }
 
 export interface BeforeProviderRequestEvent {
   type: "before_provider_request";
+  run?: AgentRunContext;
   model: string;
   messageCount: number;
 }
@@ -86,21 +128,25 @@ export interface BeforeProviderRequestEvent {
 /** 工具结果引入了新工具，已注册到运行时工具集（对齐参考实现 addedToolNames） */
 export interface ToolsAddedEvent {
   type: "tools_added";
+  run?: AgentRunContext;
   toolNames: string[];
   previousToolNames: string[];
 }
 
 export interface AbortEvent {
   type: "abort";
+  run?: AgentRunContext;
   clearedMessages: AgentEventMessage[];
 }
 
 export interface SettledEvent {
   type: "settled";
+  run?: AgentRunContext;
 }
 
 export interface ErrorEvent {
   type: "error";
+  run?: AgentRunContext;
   error: { code: string; message: string; recoverable: boolean };
 }
 

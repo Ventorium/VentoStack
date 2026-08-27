@@ -38,6 +38,8 @@ import { createOSSModule } from '@ventostack/oss';
 import type { OSSModule, StorageAdapter } from '@ventostack/oss';
 import { createSchedulerModule } from '@ventostack/scheduler';
 import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
+import { createAiTraceModule } from '@ventostack/ai-trace';
+import type { AiTraceModule } from '@ventostack/ai-trace';
 import { createSystemModule } from '@ventostack/system';
 import type { SystemModule } from '@ventostack/system';
 import { createWorkflowModule } from '@ventostack/workflow';
@@ -94,6 +96,8 @@ export interface PlatformConfig {
     oss?: boolean;
     scheduler?: boolean;
     ai?: boolean;
+    /** AI 链路追踪（依赖 ai 模块，缺省跟随 ai 开关） */
+    aiTrace?: boolean;
   };
 
   /** OSS 存储适配器 */
@@ -142,6 +146,8 @@ export interface Platform {
   /** 定时任务模块 */
   scheduler?: SchedulerModule;
   ai?: AIModule;
+  /** AI 链路追踪模块 */
+  aiTrace?: AiTraceModule;
   /** 所有路由的聚合 */
   router: Router;
   /** 初始化所有模块 */
@@ -199,6 +205,8 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     oss: moduleFlags?.oss !== false,
     scheduler: moduleFlags?.scheduler !== false,
     ai: moduleFlags?.ai === true,
+    // 链路追踪依赖 ai 模块：ai 关闭时强制禁用
+    aiTrace: moduleFlags?.aiTrace !== false && moduleFlags?.ai === true,
   };
 
   // Create modules
@@ -305,6 +313,19 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
+  // AI 链路追踪：订阅 ai 模块事件流（system 须先创建以提供配置读取）
+  const aiTraceMod =
+    enabled.aiTrace && aiMod && system
+      ? createAiTraceModule({
+          db,
+          emitter: aiMod.services.eventEmitter,
+          configProvider: system.services.config,
+          jwt,
+          jwtSecret,
+          rbac,
+        })
+      : undefined;
+
   // Aggregate routers
   const { createRouter } = await import('@ventostack/core');
   const router = createRouter();
@@ -318,6 +339,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   if (oss) router.merge(oss.router);
   if (schedulerMod) router.merge(schedulerMod.router);
   if (aiMod) router.merge(aiMod.router);
+  if (aiTraceMod) router.merge(aiTraceMod.router);
 
   return {
     ...(system !== undefined ? { system } : {}),
@@ -329,6 +351,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(schedulerMod !== undefined ? { scheduler: schedulerMod } : {}),
     router,
     ...(aiMod !== undefined ? { ai: aiMod } : {}),
+    ...(aiTraceMod !== undefined ? { aiTrace: aiTraceMod } : {}),
     async init() {
       if (system) await system.init();
       if (monitor) await monitor.init();
@@ -338,6 +361,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       if (oss) await oss.init();
       if (schedulerMod) await schedulerMod.init();
       if (aiMod) await aiMod.init();
+      if (aiTraceMod) await aiTraceMod.init();
     },
   };
 }

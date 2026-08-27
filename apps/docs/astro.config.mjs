@@ -175,6 +175,10 @@ export default defineConfig({
           autogenerate: { directory: 'platform/scheduler' }
         },
         {
+          label: 'AI 链路追踪',
+          autogenerate: { directory: 'platform/ai-trace' }
+        },
+        {
           label: '代码生成',
           autogenerate: { directory: 'platform/gen' }
         },

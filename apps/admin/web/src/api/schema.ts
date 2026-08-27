@@ -1830,6 +1830,60 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 获取追踪会话列表
+     */
+    '/api/ai/trace/conversations': {
+      query: {
+        page?: number,
+        pageSize?: number,
+        agentId?: string,
+        userId?: string,
+        keyword?: string,
+        startTime?: string,
+        endTime?: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取会话消息时间线
+     */
+    '/api/ai/trace/conversations/:id': {
+      query: {
+        limit?: number
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取链路追踪详情
+     */
+    '/api/ai/trace/traces/:traceId': {
+      query: never,
+      params: {
+        traceId: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取链路追踪开关状态
+     */
+    '/api/ai/trace/config': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
     }
   },
   post: {
@@ -2279,6 +2333,10 @@ export type OpenAPIs = {
          * @description 角色 ID 列表
          */
         roleIds?: any[],
+        /**
+         * @description 岗位 ID 列表
+         */
+        postIds?: any[],
         /**
          * @description 状态
          */
@@ -2852,6 +2910,13 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    '/api/system/notification/send-by-posts': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/system/notification/messages/read-batch': {
       query: never,
       params: never,
@@ -3138,6 +3203,10 @@ export type OpenAPIs = {
          * @description 绑定的 MCP 服务 ID
          */
         mcpServerIds?: string[],
+        /**
+         * @description 模型覆盖配置（能力 → 模型 ID 映射）
+         */
+        modelOverrides?: {},
         /**
          * @description 记忆配置（enabled/longTerm/maxHistoryMessages）
          */
@@ -3824,6 +3893,10 @@ export type OpenAPIs = {
          */
         roleIds?: any[],
         /**
+         * @description 岗位 ID 列表
+         */
+        postIds?: any[],
+        /**
          * @description 状态
          */
         status?: number
@@ -4462,6 +4535,10 @@ export type OpenAPIs = {
          */
         mcpServerIds?: string[],
         /**
+         * @description 模型覆盖配置（能力 → 模型 ID 映射）
+         */
+        modelOverrides?: {},
+        /**
          * @description 记忆配置
          */
         memoryConfig?: {},
@@ -4480,11 +4557,7 @@ export type OpenAPIs = {
         /**
          * @description 是否公开
          */
-        isPublic?: boolean,
-        /**
-         * @description 状态
-         */
-        status?: string
+        isPublic?: boolean
       },
       response: any
     },
@@ -4557,6 +4630,21 @@ export type OpenAPIs = {
       },
       headers: never,
       body: never,
+      response: any
+    },
+    /**
+     * 设置链路追踪开关
+     */
+    '/api/ai/trace/config': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 是否开启链路追踪
+         */
+        enabled: boolean
+      },
       response: any
     }
   }

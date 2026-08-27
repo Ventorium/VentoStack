@@ -547,3 +547,88 @@ export interface StoreSkillItem {
   source: string;
   score: number;
 }
+
+// ===== AI Trace（链路追踪） =====
+export type TraceStatus = "running" | "success" | "error" | "aborted" | "interrupted";
+export type TraceSpanType = "llm" | "tool";
+export type TraceSpanCategory = "llm" | "knowledge_base" | "mcp" | "builtin";
+
+export interface TraceTokenUsage {
+  promptTokens: number;
+  completionTokens: number;
+  totalTokens: number;
+}
+
+export interface TraceConversationItem {
+  id: string;
+  title: string | null;
+  agentId: string | null;
+  userId: string | null;
+  tenantId: string;
+  messageCount: number;
+  traceCount: number;
+  totalTokens: number;
+  lastTraceAt: string;
+  createdAt: string | null;
+}
+
+export interface TraceMessageItem {
+  traceId: string;
+  userMessage: string;
+  assistantPreview: string;
+  status: TraceStatus;
+  model: string | null;
+  turnCount: number;
+  toolCount: number;
+  usage: TraceTokenUsage | null;
+  durationMs: number | null;
+  startedAt: string;
+}
+
+export interface TraceSpanItem {
+  id: string;
+  traceId: string;
+  seq: number;
+  turnIndex: number;
+  spanType: TraceSpanType;
+  name: string;
+  category: TraceSpanCategory | null;
+  status: TraceStatus;
+  input: Record<string, unknown> | null;
+  output: Record<string, unknown> | null;
+  error: string | null;
+  startedAt: string;
+  endedAt: string | null;
+  durationMs: number | null;
+}
+
+export interface TraceDetail {
+  trace: {
+    id: string;
+    conversationId: string;
+    agentId: string | null;
+    userId: string;
+    tenantId: string;
+    status: TraceStatus;
+    userMessage: string | null;
+    assistantPreview: string | null;
+    systemPrompt: string | null;
+    model: string | null;
+    meta: {
+      skillIds?: string[] | null;
+      knowledgeBaseIds?: string[] | null;
+      mcpServerIds?: string[] | null;
+      toolNames?: string[] | null;
+      maxIterations?: number | null;
+      researchMode?: boolean | null;
+    } | null;
+    usage: TraceTokenUsage | null;
+    error: string | null;
+    turnCount: number;
+    toolCount: number;
+    durationMs: number | null;
+    startedAt: string;
+    endedAt: string | null;
+  };
+  spans: TraceSpanItem[];
+}

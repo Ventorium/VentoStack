@@ -1,0 +1,31 @@
+{
+  "name": "@ventostack/ai-trace",
+  "version": "0.1.0",
+  "type": "module",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ventorium/VentoStack.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@ventostack/core": "workspace:*",
+    "@ventostack/database": "workspace:*",
+    "@ventostack/observability": "workspace:*",
+    "@ventostack/ai": "workspace:*",
+    "@ventostack/auth": "workspace:*"
+  },
+  "devDependencies": {
+    "@ventostack/testing": "workspace:*"
+  }
+}

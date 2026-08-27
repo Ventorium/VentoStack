@@ -6,7 +6,7 @@ import type { McpToolSource } from './mcp-tool-source';
 import type { Skill } from '../skills/types';
 import { formatSkillInvocation } from '../skills/system-prompt';
 import type { ToolRegistry } from '../tool-registry';
-import type { AgentEventEmitter, AgentEventMessage, AgentToolResultEventMessage } from './events';
+import type { AgentEvent, AgentEventEmitter, AgentEventMessage, AgentRunContext, AgentRunMeta, AgentToolResultEventMessage } from './events';
 import { createEventEmitter } from './events';
 import { fitMessagesToBudget } from './prompt-builder';
 import { type PromptGuard, createPromptGuard } from './prompt-guard';
@@ -764,6 +764,17 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       // 工具注册表：支持按请求注入（KB 等租户相关工具绑定请求 tenantId），缺省使用 deps.toolRegistry
       const registry = params.toolRegistry ?? deps.toolRegistry;
 
+      // 运行上下文：本 run 内所有事件统一注入，供订阅方（链路追踪/审计）在并发运行间路由
+      const runContext: AgentRunContext = {
+        runId: crypto.randomUUID(),
+        ...(params.sessionId ? { sessionId: params.sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(userId ? { userId } : {}),
+        ...(tenantId ? { tenantId } : {}),
+      };
+      const emit = (event: AgentEvent, s?: AbortSignal): Promise<void> =>
+        emitter.emit({ ...event, run: runContext }, s);
+
       // 1. 获取 Agent 配置（配置了 agentService 时必须命中，失败/不存在一律拒绝运行）
       let agentConfig: AgentConfig | null = null;
       if (deps.agentService) {
@@ -778,7 +789,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             message: `Agent ${agentId} 不存在或不可用`,
             recoverable: false,
           };
-          await emitter.emit({ type: 'error', error: notFound }, signal);
+          await emit({ type: 'error', error: notFound }, signal);
           yield { type: 'error', error: notFound };
           return;
         }
@@ -863,7 +874,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       // 3. 输入安全检查
       const inputCheck = guard.checkInput(message);
       if (!inputCheck.safe && inputCheck.level === 'blocked') {
-        await emitter.emit(
+        await emit(
           {
             type: 'error',
             error: {
@@ -969,7 +980,27 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       let iteration = 0;
       let fullContent = '';
 
-      await emitter.emit({ type: 'agent_start' }, signal);
+      // 运行元数据快照：解析后的配置（模型/能力绑定/研究模式），随 agent_start 事件下发
+      const runMeta: AgentRunMeta = {
+        model,
+        maxIterations,
+        researchMode,
+        userMessage: message.length > 4000 ? `${message.slice(0, 4000)}...[截断]` : message,
+        skillIds,
+        knowledgeBaseIds: boundKbIds,
+        mcpServerIds,
+        toolNames: runtimeTools.map((t) => t.name),
+      };
+      await emit({ type: 'agent_start', meta: runMeta }, signal);
+      // 初始上下文事件：完整初始消息（system + history + user）与最终 system prompt
+      await emit(
+        {
+          type: 'context',
+          messages: messages.map((m) => ({ role: m.role, content: m.content, timestamp: Date.now() })),
+          systemPrompt,
+        },
+        signal,
+      );
 
       // ---- Telemetry spans ----
       const tracer = deps.tracer;
@@ -1028,7 +1059,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           }
         }
         if (added.length > 0) {
-          await emitter.emit(
+          await emit(
             { type: 'tools_added', toolNames: added.map((t) => t.name), previousToolNames },
             signal,
           );
@@ -1098,11 +1129,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         if (researchMode && iteration === 1) {
           yield { type: 'stage', stage: 'planning' };
         }
-        await emitter.emit({ type: 'turn_start' }, signal);
+        await emit({ type: 'turn_start' }, signal);
         // 记录本轮起始消息数，用于 prepareNextTurn 的 newMessages
         turnStartIndex = messages.length;
 
-        await emitter.emit(
+        await emit(
           { type: 'before_provider_request', model, messageCount: messages.length },
           signal,
         );
@@ -1146,6 +1177,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
         let assistantContent = '';
         const toolCalls: ToolCall[] = [];
+        let turnUsage: { promptTokens: number; completionTokens: number } | undefined;
 
         for await (const chunk of stream) {
           switch (chunk.type) {
@@ -1162,9 +1194,24 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               yield chunk;
               break;
             case 'usage':
+              turnUsage = chunk.usage;
               yield chunk;
               break;
             case 'error':
+              // 流错误：补发 error 终止事件（订阅方如链路追踪据此收敛状态），再结束生成器
+              if (chunk.error) {
+                await emit(
+                  {
+                    type: 'error',
+                    error: {
+                      code: chunk.error.code,
+                      message: chunk.error.message,
+                      recoverable: chunk.error.recoverable,
+                    },
+                  },
+                  signal,
+                );
+              }
               yield chunk;
               return;
             case 'done':
@@ -1172,11 +1219,23 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           }
         }
 
-        // 构建 assistant 消息
+        // 构建 assistant 消息（附带本轮模型调用元数据：模型/提供商/终止原因/Token 用量）
         const assistantEventMsg: AgentEventMessage = {
           role: 'assistant',
           content: assistantContent,
           ...(toolCalls.length > 0 ? { toolCalls } : {}),
+          model,
+          provider: apiKeyProvider,
+          stopReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+          ...(turnUsage
+            ? {
+                usage: {
+                  promptTokens: turnUsage.promptTokens,
+                  completionTokens: turnUsage.completionTokens,
+                  totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
+                },
+              }
+            : {}),
           timestamp: Date.now(),
         };
 
@@ -1197,12 +1256,12 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               : assistantContent,
         });
 
-        await emitter.emit({ type: 'message_start', message: assistantEventMsg }, signal);
-        await emitter.emit({ type: 'message_end', message: assistantEventMsg }, signal);
+        await emit({ type: 'message_start', message: assistantEventMsg }, signal);
+        await emit({ type: 'message_end', message: assistantEventMsg }, signal);
 
         // 如果没有工具调用，先处理 steering/follow-up，再决定是否结束
         if (toolCalls.length === 0) {
-          await emitter.emit({ type: 'turn_end', message: assistantEventMsg, toolResults: [] }, signal);
+          await emit({ type: 'turn_end', message: assistantEventMsg, toolResults: [] }, signal);
           runSpan?.addEvent('ai.turn', { iteration, model, tool_calls: 0, output_chars: assistantContent.length });
           await applyPrepareNextTurn(assistantEventMsg, []);
           if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
@@ -1226,8 +1285,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               content: queuedMessage.content,
               timestamp: Date.now(),
             };
-            await emitter.emit({ type: 'message_start', message: eventMessage }, signal);
-            await emitter.emit({ type: 'message_end', message: eventMessage }, signal);
+            await emit({ type: 'message_start', message: eventMessage }, signal);
+            await emit({ type: 'message_end', message: eventMessage }, signal);
           }
           continue;
         }
@@ -1252,7 +1311,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             deps.beforeToolCall,
             deps.authorizeToolCall,
             deps.afterToolCall,
-            (ev, s) => emitter.emit(ev, s),
+            (ev, s) => emit(ev, s),
             signal,
             deps.tracer,
             runSpan?.context(),
@@ -1266,7 +1325,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             deps.beforeToolCall,
             deps.authorizeToolCall,
             deps.afterToolCall,
-            (ev, s) => emitter.emit(ev, s),
+            (ev, s) => emit(ev, s),
             signal,
             deps.tracer,
             runSpan?.context(),
@@ -1330,8 +1389,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             toolCallId: fin.toolCall.id,
             timestamp: Date.now(),
           };
-          await emitter.emit({ type: 'message_start', message: toolMessage }, signal);
-          await emitter.emit({ type: 'message_end', message: toolMessage }, signal);
+          await emit({ type: 'message_start', message: toolMessage }, signal);
+          await emit({ type: 'message_end', message: toolMessage }, signal);
 
           // 动态工具引入（对齐参考实现 addedToolNames）
           const added = await applyAddedTools(fin.result.addedToolNames);
@@ -1345,7 +1404,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           });
         }
 
-        await emitter.emit({
+        await emit({
           type: 'turn_end',
           message: assistantEventMsg,
           toolResults: toolResultEvents,
@@ -1380,8 +1439,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               content: steeringMessage.content,
               timestamp: Date.now(),
             };
-            await emitter.emit({ type: 'message_start', message: eventMessage }, signal);
-            await emitter.emit({ type: 'message_end', message: eventMessage }, signal);
+            await emit({ type: 'message_start', message: eventMessage }, signal);
+            await emit({ type: 'message_end', message: eventMessage }, signal);
           }
         }
 
@@ -1398,7 +1457,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
       // 9. 对话已在循环中增量持久化（用户消息先行落盘，assistant/工具轨迹逐轮写入），无需重复保存
 
-      await emitter.emit(
+      await emit(
         {
           type: 'agent_end',
           messages: [{ role: 'assistant', content: fullContent, timestamp: Date.now() }],
@@ -1410,6 +1469,20 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       runSpan?.setAttribute('output_chars', fullContent.length);
       runSpan?.setStatus('ok');
       } catch (error) {
+        // 异常路径补发 error 终止事件（订阅方据此收敛状态，避免链路记录停留在 running）
+        await emit(
+          {
+            type: 'error',
+            error: {
+              code: 'AGENT_LOOP_ERROR',
+              message: error instanceof Error ? error.message : String(error),
+              recoverable: false,
+            },
+          },
+          signal,
+        ).catch(() => {
+          /* 事件发射失败不改变原异常语义 */
+        });
         spanError(runSpan, error);
         throw error;
       } finally {
