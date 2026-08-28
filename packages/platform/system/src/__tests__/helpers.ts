@@ -255,6 +255,10 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     raw: mock(async (text: string, params?: unknown[]) => {
       return executor(text, params);
     }),
+    /** 事务：mock 环境下让 fn 直接在共享 executor 上运行（不真用 BEGIN/COMMIT，保证行为近似） */
+    async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
+      return fn(db as unknown as Database);
+    },
   };
 
   return { db: db as unknown as Database, registerModel, calls };

@@ -21,6 +21,8 @@ export interface CreateUserParams {
   phone?: string;
   nickname?: string;
   deptId?: string;
+  /** 岗位 ID 列表 */
+  postIds?: string[];
   status?: number;
   remark?: string;
 }
@@ -33,6 +35,8 @@ export interface UpdateUserParams {
   avatar?: string;
   gender?: number;
   deptId?: string;
+  /** 岗位 ID 列表 */
+  postIds?: string[];
   status?: number;
   remark?: string;
 }
@@ -48,6 +52,8 @@ export interface UserDetail {
   gender: number | null;
   status: number;
   deptId: string | null;
+  /** 岗位列表 */
+  posts: Array<{ id: string; name: string; code: string }>;
   mfaEnabled: boolean;
   remark: string | null;
   createdAt: string;
@@ -64,6 +70,8 @@ export interface UserListItem {
   status: number;
   deptId: string | null;
   tags?: Array<{ id: string; name: string; code: string }>;
+  /** 岗位列表 */
+  posts?: Array<{ id: string; name: string; code: string }>;
   createdAt: string;
 }
 
@@ -141,10 +149,70 @@ export function createUserService(deps: {
   const { db, passwordHasher, cache, configService } = deps;
   const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
 
+  /** 校验岗位 ID 均存在且启用，返回无效的岗位 ID */
+  async function findInvalidPostIds(postIds: string[]): Promise<string[]> {
+    if (postIds.length === 0) return [];
+    const placeholders = postIds.map((_, i) => `$${i + 1}`);
+    const rows = await db.raw(
+      `SELECT id FROM sys_post WHERE id IN (${placeholders.join(', ')}) AND status = 1 AND deleted_at IS NULL`,
+      postIds,
+    );
+    const valid = new Set((rows as Array<{ id: string }>).map((r) => r.id));
+    return postIds.filter((id) => !valid.has(id));
+  }
+
+  /** 覆盖用户的岗位关联（单条 CTE：DELETE+INSERT+ON CONFLICT，避免 Bun.sql 多连接池禁止 BEGIN/COMMIT 的限制） */
+  async function assignUserPosts(userId: string, postIds: string[]): Promise<void> {
+    if (postIds.length === 0) {
+      await db.raw('DELETE FROM sys_user_post WHERE user_id = $1', [userId]);
+      return;
+    }
+    const placeholders = postIds.map((_, i) => `$${i * 2 + 2}`).join(', ');
+    const params: string[] = [userId];
+    for (const postId of postIds) params.push(postId);
+    await db.raw(
+      `WITH d AS (DELETE FROM sys_user_post WHERE user_id = $1 RETURNING user_id)
+       INSERT INTO sys_user_post (user_id, post_id)
+       SELECT $1, unnest(ARRAY[${placeholders}]::varchar[])
+       WHERE EXISTS (SELECT 1 FROM d)
+       ON CONFLICT (user_id, post_id) DO NOTHING`,
+      params,
+    );
+  }
+
+  /** 查询用户岗位 */
+  async function getUserPosts(
+    userIds: string[],
+  ): Promise<Map<string, Array<{ id: string; name: string; code: string }>>> {
+    const map = new Map<string, Array<{ id: string; name: string; code: string }>>();
+    if (userIds.length === 0) return map;
+    const placeholders = userIds.map((_, i) => `$${i + 1}`);
+    const rows = await db.raw(
+      `SELECT up.user_id, p.id, p.name, p.code
+       FROM sys_user_post up
+       JOIN sys_post p ON p.id = up.post_id
+       WHERE up.user_id IN (${placeholders.join(', ')}) AND p.deleted_at IS NULL`,
+      userIds,
+    );
+    for (const r of rows as Array<{ user_id: string; id: string; name: string; code: string }>) {
+      const arr = map.get(r.user_id) ?? [];
+      arr.push({ id: r.id, name: r.name, code: r.code });
+      map.set(r.user_id, arr);
+    }
+    return map;
+  }
+
   return {
     async create(params) {
       const { username, password, email, phone, nickname, deptId, status, remark } = params;
       const id = crypto.randomUUID();
+
+      // 校验 + 去重岗位 ID（在事务前一次性做完，避免事务内浪费连接）
+      const dedupPostIds = params.postIds ? [...new Set(params.postIds)] : undefined;
+      const invalidPosts = await findInvalidPostIds(dedupPostIds ?? []);
+      if (invalidPosts.length > 0) {
+        throw new Error(`岗位不存在或已停用: ${invalidPosts.join(', ')}`);
+      }
 
       // 密码：若未提供则使用系统默认初始密码
       let actualPassword = password;
@@ -164,6 +232,8 @@ export function createUserService(deps: {
 
       const passwordHash = await passwordHasher.hash(actualPassword);
 
+      // 注：Bun.sql 多连接池禁止事务里 BEGIN/COMMIT，所以 sys_user insert + sys_user_post
+      // 覆盖写拆为两条串行 SQL；DELETE+INSERT 合并到 assignUserPosts 内部单条 CTE 保证原子。
       await db.query(UserModel).insert({
         id,
         username,
@@ -177,6 +247,9 @@ export function createUserService(deps: {
         mfa_enabled: false,
         password_changed_at: new Date(),
       });
+      if (dedupPostIds) {
+        await assignUserPosts(id, dedupPostIds);
+      }
 
       // 清除用户列表缓存
       await cache.del(ns.listKey('user'));
@@ -185,6 +258,13 @@ export function createUserService(deps: {
     },
 
     async update(id, params) {
+      // 校验岗位 ID（去重 + 上限保护，防止 IN 列表过长 / PK 冲突）
+      const dedupPostIds = params.postIds ? [...new Set(params.postIds)] : undefined;
+      const invalidPosts = await findInvalidPostIds(dedupPostIds ?? []);
+      if (invalidPosts.length > 0) {
+        throw new Error(`岗位不存在或已停用: ${invalidPosts.join(', ')}`);
+      }
+
       const updates: Record<string, unknown> = {};
       if (params.email !== undefined) updates.email = params.email;
       if (params.phone !== undefined) updates.phone = params.phone;
@@ -195,9 +275,17 @@ export function createUserService(deps: {
       if (params.status !== undefined) updates.status = params.status;
       if (params.remark !== undefined) updates.remark = params.remark;
 
-      if (Object.keys(updates).length === 0) return;
+      // 当既无字段需要更新、也不调整岗位时，直接返回
+      if (Object.keys(updates).length === 0 && dedupPostIds === undefined) return;
 
-      await db.query(UserModel).where('id', '=', id).update(updates);
+      // 注：Bun.sql 多连接池禁止事务里 BEGIN/COMMIT，sys_user update + sys_user_post
+      // 覆盖写拆为两条串行 SQL；DELETE+INSERT 合并到 assignUserPosts 内部单条 CTE 保证原子。
+      if (Object.keys(updates).length > 0) {
+        await db.query(UserModel).where('id', '=', id).update(updates);
+      }
+      if (dedupPostIds !== undefined) {
+        await assignUserPosts(id, dedupPostIds);
+      }
 
       // 清除用户缓存
       await cache.del(ns.detailKey('user', id));
@@ -240,6 +328,7 @@ export function createUserService(deps: {
 
       if (!row) return null;
 
+      const postMap = await getUserPosts([id]);
       const detail: UserDetail = {
         id: row.id,
         username: row.username,
@@ -250,6 +339,7 @@ export function createUserService(deps: {
         gender: row.gender ?? null,
         status: row.status,
         deptId: row.dept_id ?? null,
+        posts: postMap.get(id) ?? [],
         mfaEnabled: row.mfa_enabled,
         remark: row.remark ?? null,
         createdAt:
@@ -291,7 +381,18 @@ export function createUserService(deps: {
         .offset((page - 1) * pageSize)
         .list();
 
-      const list = rows.map((row) => ({
+      const list: Array<{
+        id: string;
+        username: string;
+        nickname: string | null;
+        email: string | null;
+        phone: string | null;
+        status: number;
+        deptId: string | null;
+        createdAt: string;
+        tags: Array<{ id: string; name: string; code: string }>;
+        posts: Array<{ id: string; name: string; code: string }>;
+      }> = rows.map((row) => ({
         id: row.id,
         username: row.username,
         nickname: row.nickname ?? null,
@@ -301,10 +402,13 @@ export function createUserService(deps: {
         deptId: row.dept_id ?? null,
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
-        tags: [] as Array<{ id: string; name: string; code: string }>,
+        tags: [],
+        posts: [],
       }));
 
-      // 批量获取用户标签
+      // 批量获取用户标签与岗位
+      let tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
+      let postMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       if (list.length > 0) {
         const userIds = list.map((u) => u.id);
         const placeholders = userIds.map((_, i) => `$${i + 1}`);
@@ -315,7 +419,6 @@ export function createUserService(deps: {
            WHERE ut.user_id IN (${placeholders.join(", ")}) AND t.status = 1 AND t.deleted_at IS NULL`,
           userIds,
         );
-        const tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
         for (const tr of tagRows as Array<{
           user_id: string;
           id: string;
@@ -326,8 +429,10 @@ export function createUserService(deps: {
           arr.push({ id: tr.id, name: tr.name, code: tr.code });
           tagMap.set(tr.user_id, arr);
         }
+        postMap = await getUserPosts(userIds);
         for (const item of list) {
           item.tags = tagMap.get(item.id) ?? [];
+          item.posts = postMap.get(item.id) ?? [];
         }
       }
 
