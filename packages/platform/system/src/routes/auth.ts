@@ -5,7 +5,7 @@
  * 需认证端点（logout/reset-password/MFA）在子 router 上通过 use(authMiddleware) 保护。
  */
 
-import { createRouter, VentoStackError, fail, parseBody, success } from "@ventostack/core";
+import { createRouter, VentoStackError, fail, parseBody, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
 
@@ -69,39 +69,39 @@ function getCookie(request: Request, name: string): string | undefined {
   return parseCookieHeader(request.headers.get("Cookie"))[name];
 }
 
-function cookieSecureAttribute(request: Request): string {
-  return new URL(request.url).protocol === "https:" ? "; Secure" : "";
+function cookieSecureAttribute(secureCookies: boolean): string {
+  return secureCookies ? "; Secure" : "";
 }
 
-function appendCookie(response: Response, request: Request, name: string, value: string, maxAge: number): Response {
+function appendCookie(response: Response, request: Request, name: string, value: string, maxAge: number, secureCookies: boolean): Response {
   response.headers.append(
     "Set-Cookie",
-    `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${cookieSecureAttribute(request)}`,
+    `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${cookieSecureAttribute(secureCookies)}`,
   );
   return response;
 }
 
-function appendClearedCookie(response: Response, request: Request, name: string): Response {
+function appendClearedCookie(response: Response, request: Request, name: string, secureCookies: boolean): Response {
   response.headers.append(
     "Set-Cookie",
-    `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${cookieSecureAttribute(request)}`,
+    `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${cookieSecureAttribute(secureCookies)}`,
   );
   return response;
 }
 
-function withTokenCookies(response: Response, request: Request, pair: TokenCookiePair): Response {
+function withTokenCookies(response: Response, request: Request, pair: TokenCookiePair, secureCookies: boolean): Response {
   if (pair.accessToken) {
-    appendCookie(response, request, "vs_access_token", pair.accessToken, pair.expiresIn ?? 900);
+    appendCookie(response, request, "vs_access_token", pair.accessToken, pair.expiresIn ?? 900, secureCookies);
   }
   if (pair.refreshToken) {
-    appendCookie(response, request, "vs_refresh_token", pair.refreshToken, pair.refreshExpiresIn ?? 604800);
+    appendCookie(response, request, "vs_refresh_token", pair.refreshToken, pair.refreshExpiresIn ?? 604800, secureCookies);
   }
   return response;
 }
 
-function clearTokenCookies(response: Response, request: Request): Response {
-  appendClearedCookie(response, request, "vs_access_token");
-  appendClearedCookie(response, request, "vs_refresh_token");
+function clearTokenCookies(response: Response, request: Request, secureCookies: boolean): Response {
+  appendClearedCookie(response, request, "vs_access_token", secureCookies);
+  appendClearedCookie(response, request, "vs_refresh_token", secureCookies);
   return response;
 }
 
@@ -116,6 +116,7 @@ export function createAuthRoutes(
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
   trustedProxies: string[] = [],
+  secureCookies = false,
 ): Router {
   const router = createRouter();
 
@@ -150,7 +151,7 @@ export function createAuthRoutes(
         };
         if (typeof body.deviceType === "string") loginParams.deviceType = body.deviceType;
         const result = await authService.login(loginParams);
-        return withTokenCookies(success(result), ctx.request, result);
+        return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e: unknown) {
         const err = e as Error & { code?: string; data?: { tempToken?: string } };
         if (err.code === "password_expired" && err.data?.tempToken) {
@@ -159,7 +160,7 @@ export function createAuthRoutes(
             tempToken: err.data.tempToken,
           });
         }
-        const msg = e instanceof Error ? e.message : "登录失败";
+        const msg = safeErrorMessage(e, "登录失败");
         const loginStatus = errorStatus(e, 401);
         return fail(msg, loginStatus, loginStatus);
       }
@@ -201,7 +202,7 @@ export function createAuthRoutes(
         if (err.code === "register_disabled") {
           return fail("注册已关闭", 403, 403, { code: "register_disabled" });
         }
-        const msg = e instanceof Error ? e.message : "注册失败";
+        const msg = safeErrorMessage(e, "注册失败");
         const regStatus = errorStatus(e, 400);
         return fail(msg, regStatus, regStatus);
       }
@@ -231,7 +232,7 @@ export function createAuthRoutes(
         await authService.forgotPassword(email);
         return success({ message: "如果该邮箱已注册，密码重置链接将发送至邮箱" });
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "找回密码失败";
+        const msg = safeErrorMessage(e, "找回密码失败");
         const forgotStatus = errorStatus(e, 400);
         return fail(msg, forgotStatus, forgotStatus);
       }
@@ -253,7 +254,7 @@ export function createAuthRoutes(
         await authService.resetPasswordByToken(body.token as string, body.newPassword as string);
         return success(null);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "重置失败";
+        const msg = safeErrorMessage(e, "重置失败");
         const status = errorStatus(e, 400);
         return fail(msg, status, status);
       }
@@ -275,9 +276,9 @@ export function createAuthRoutes(
         const refreshToken = (body.refreshToken as string | undefined) ?? getCookie(ctx.request, "vs_refresh_token");
         if (!refreshToken) return fail("缺少刷新令牌", 401, 401);
         const result = await authService.refreshToken(refreshToken);
-        return withTokenCookies(success(result), ctx.request, result);
+        return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "刷新令牌失败";
+        const msg = safeErrorMessage(e, "刷新令牌失败");
         return fail(msg, 401, 401);
       }
     },
@@ -312,9 +313,9 @@ export function createAuthRoutes(
               extractClientIP(ctx.request, trustedProxies),
               ctx.request.headers.get("user-agent") ?? "unknown",
             );
-        return withTokenCookies(success(result), ctx.request, result);
+        return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "MFA 验证失败";
+        const msg = safeErrorMessage(e, "MFA 验证失败");
         const status = errorStatus(e, 401);
         return fail(msg, status, status);
       }
@@ -349,7 +350,7 @@ export function createAuthRoutes(
           await authService.logout(user.id, "");
         }
       }
-      return clearTokenCookies(success(null), ctx.request);
+      return clearTokenCookies(success(null), ctx.request, secureCookies);
     },
   );
 
@@ -369,11 +370,11 @@ export function createAuthRoutes(
         await authService.resetPassword(body.userId as string, body.newPassword as string);
         return success(null);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "重置失败";
+        const msg = safeErrorMessage(e, "重置失败");
         return fail(msg, 400);
       }
     },
-    perm("system", "user:resetPwd"),
+    perm("system:user", "resetPwd"),
   );
 
   // MFA
@@ -383,8 +384,8 @@ export function createAuthRoutes(
       responses: {
         200: {
           secret: { type: "string" as const, description: "TOTP 密钥" },
-          qrCode: { type: "string" as const, description: "二维码数据 URL" },
-          backupCodes: { type: "array" as const, description: "备用恢复码" },
+          qrCodeUri: { type: "string" as const, description: "二维码数据 URL" },
+          recoveryCodes: { type: "array" as const, description: "备用恢复码" },
         },
       },
       openapi: { summary: "启用 MFA", tags: ["auth"], operationId: "enableMFA" },

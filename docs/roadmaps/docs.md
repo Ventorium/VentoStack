@@ -35,7 +35,7 @@
 - [x] 迁移系统（`createMigrator`）
 - [x] 事务管理（`createTransactionManager`）
 - [x] 分页与游标（`createPaginator`）
-- [x] 多租户支持（`createTenantManager`）
+- [ ] 多租户支持（`createTenantManager` 全仓库无此函数，未实现）
 - [x] 全文搜索（`createFullTextSearch`）
 
 ## 缓存模块（@ventostack/cache）

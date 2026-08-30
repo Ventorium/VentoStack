@@ -92,10 +92,10 @@ describe("消息中心页", () => {
 
   test("删除消息 API: DELETE /api/system/notification/messages/:id", () => {
     const client = { delete: mock(() => Promise.resolve({ error: null })) };
-    client.delete("/api/system/notification/messages", { params: { id: "456" } });
+    client.delete("/api/system/notification/messages/:id", { params: { id: "456" } });
     expect(client.delete).toHaveBeenCalledTimes(1);
     const [url, options] = client.delete.mock.calls[0];
-    expect(url).toBe("/api/system/notification/messages");
+    expect(url).toBe("/api/system/notification/messages/:id");
     expect(options.params.id).toBe("456");
   });
 

@@ -10,7 +10,7 @@ import {
   WorkflowInstanceModel, WorkflowTaskModel,
 } from "../models";
 import { workflowErrors } from "../engine/errors";
-import { DefStatus } from "./definition";
+import { DefStatus } from "./constants";
 
 /** 级联删除流程定义及其所有关联数据 */
 export async function cascadeDeleteDefinition(db: Database, id: string): Promise<void> {

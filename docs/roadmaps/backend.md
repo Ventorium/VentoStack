@@ -31,7 +31,7 @@
 - [x] 路由命名与反向生成 URL
 - [x] 路由参数类型约束与正则匹配
 - [x] 路由冲突检测与优先级排序
-- [x] 支持 WebSocket / SSE 路由
+- [x] 支持 WebSocket / SSE 路由（SSE 为内容协商跳过校验，无独立原语）
 
 ### 1.3 中间件系统
 - [x] 全局中间件 / 路由级中间件 / 分组中间件
@@ -55,7 +55,7 @@
 
 ### 1.6 多协议支持
 - [x] HTTP（REST）
-- [x] gRPC（强类型）
+- [ ] gRPC（强类型）（当前为进程内 RPC 抽象，非标准 gRPC 线协议）
 - [x] WebSocket（实时）
 - [x] 内部 RPC（service-to-service）
 
@@ -101,7 +101,7 @@
 - [x] 乐观锁（版本号/时间戳）
 - [x] 关联关系：一对一、一对多、多对多、Eager Loading / Lazy Loading
 - [x] 原生 SQL 支持与防注入
-- [x] 多数据库类型驱动（MySQL / PostgreSQL / SQLite / MSSQL）
+- [ ] 多数据库类型驱动（仅 SQL 方言层抽象，运行时仅 PostgreSQL）
 - [x] 读写分离 / 多数据源切换
 - [x] 连接池管理（最大连接数、空闲连接、超时回收）
 
@@ -136,7 +136,8 @@
 - [x] JWT 生成、解析、刷新、黑名单吊销
 - [x] OAuth2.0 / OIDC 集成（第三方登录）
 - [x] API Key 认证
-- [x] 多因素认证（TOTP / SMS）
+- [x] 多因素认证（TOTP 已实现）
+- [ ] SMS MFA（仅通知通道占位，未接入 MFA 流程）
 - [x] 多端登录支持
 
 ### 5.2 授权（Authorization）
@@ -161,7 +162,7 @@
 ## 六、异步与任务系统
 
 ### 6.1 消息队列支持（低优先级）
-- [x] Kafka / RabbitMQ / NATS / RocketMQ 适配
+- [ ] Kafka / RabbitMQ / NATS / RocketMQ 适配（仅接口 + 内存实现，外部 MQ 需自行提供实现）
 - [x] Producer / Consumer 抽象
 - [x] Retry / Dead Letter Queue
 - [x] 消息幂等性支持
@@ -201,7 +202,8 @@
 - [x] 集成 OpenTelemetry（分布式 Trace）
 - [x] 自动注入 TraceContext 到日志
 - [x] 跨服务 Context 传播（W3C TraceContext / B3）
-- [x] 接入 Jaeger / Zipkin / SkyWalking / Tempo
+- [x] 接入 Jaeger / Zipkin / Tempo（HTTP OTLP/Zipkin 导出器已实现）
+- [ ] SkyWalking 导出（未实现）
 
 ### 7.3 指标监控
 - [x] 暴露 `/metrics` 接口（Prometheus 格式）
@@ -243,7 +245,7 @@
 ### 9.2 限流与熔断
 - [x] Rate Limiter（Token Bucket / Leaky Bucket）
 - [x] Circuit Breaker（熔断）
-- [x] Fallback 机制
+- [ ] Fallback 机制（熔断器无 fallback 回调，直接抛 CircuitOpenError）
 
 ### 9.3 资源管理
 - [x] 连接池（DB / HTTP）
@@ -262,9 +264,10 @@
 - [x] 错误上报（Sentry / 钉钉告警）
 
 ### 10.2 多租户（Multi-tenancy）
-- [x] Tenant Isolation
-- [x] Tenant-aware Context
-- [x] 数据隔离策略
+> ⚠️ 平台层当前未启用：数据模型层尚未实现租户列与查询过滤（TENANT_ENABLED 为实验性开关，不提供真实隔离）
+- [ ] Tenant Isolation（平台层未实现）
+- [x] Tenant-aware Context（withTenant 查询构建器已具备）
+- [ ] 数据隔离策略（未实现）
 
 ### 10.3 审计日志（Audit Log）
 - [x] 谁在什么时候做了什么操作

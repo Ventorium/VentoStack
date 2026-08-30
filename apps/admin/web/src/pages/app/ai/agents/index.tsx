@@ -203,7 +203,7 @@ const AgentsPage = () => {
       const currentPage = p ?? page;
       const currentPageSize = ps ?? pageSize;
       const query: Record<string, unknown> = { page: currentPage, pageSize: currentPageSize };
-      if (searchText) query.name = searchText;
+      if (searchText) query.search = searchText;
       const { error, data: result } = await client.get("/api/ai/agents", { query }) as {
         error?: unknown; data?: PaginatedData<AgentItem>;
       };

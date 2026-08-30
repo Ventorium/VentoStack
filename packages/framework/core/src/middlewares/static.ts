@@ -59,7 +59,13 @@ export function createStaticMiddleware(options: StaticOptions): Middleware {
 
   return async (ctx, next) => {
     const url = new URL(ctx.request.url);
-    const pathname = decodeURIComponent(url.pathname);
+    let pathname: string;
+    try {
+      pathname = decodeURIComponent(url.pathname);
+    } catch {
+      // 畸形百分号编码（如 %E0%A4%A）→ 400，避免 500 泄露内部细节
+      return new Response("Bad Request", { status: 400 });
+    }
 
     // 仅处理匹配前缀的请求
     if (!pathname.startsWith(normalizedPrefix + "/") && pathname !== normalizedPrefix) {

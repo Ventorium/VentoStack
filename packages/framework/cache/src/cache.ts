@@ -48,6 +48,16 @@ export interface CacheAdapter {
   has(key: string): Promise<boolean>;
 
   /**
+   * 原子 SET NX EX：仅当键不存在时设置并带过期时间（分布式锁专用）。
+   * 非原子能力适配器可不实现（由调用方降级）。
+   * @param key 缓存键
+   * @param value 缓存值
+   * @param ttlSeconds 过期时间（秒）
+   * @returns true=设置成功（获得锁），false=键已存在
+   */
+  setNX?(key: string, value: string, ttlSeconds: number): Promise<boolean>;
+
+  /**
    * 清空所有缓存
    */
   flush(): Promise<void>;

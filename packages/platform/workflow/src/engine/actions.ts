@@ -20,6 +20,7 @@ import {
 } from "./graph";
 import type { AssigneeResolver, ApproveNodeConfig } from "./assignee";
 import { isNodeCompleted, type ApprovalStrategy } from "./strategy";
+import { workflowErrors } from "./errors";
 import {
   workflowInstanceCompleted,
   workflowInstanceRejected,
@@ -89,7 +90,7 @@ export async function createTasksForNode(
   const assignees = await deps.assigneeResolver.resolve(node, ctx);
   if (assignees.length === 0) {
     if (config?.onEmptyAssignee === "skip") return;
-    throw new Error(`节点「${node.name}」无可用审批人`);
+    throw workflowErrors.noAssignee(node.name);
   }
 
   if (strategy === "sequential") {
@@ -133,7 +134,7 @@ export async function advanceFromNode(
 
   const nextNodes = getNextNodes(graph, currentNodeId, ctx);
   if (nextNodes.length === 0) {
-    throw new Error(`节点「${currentNode.name}」无后续节点`);
+    throw workflowErrors.noNextNode(currentNode.name);
   }
 
   for (const nextNode of nextNodes) {
@@ -180,10 +181,12 @@ export async function processNodeCompletion(
     .select("id", "assignee_id", "status")
     .list();
 
-  const result = isNodeCompleted(allTasks, strategy, config?.percentage);
-
-  if (!result.completed) {
-    if (strategy === "sequential") {
+  // sequential 依次审批：当前审批人处理完成后，若还有未分配任务的审批人，
+  // 先创建下一位任务再返回（节点未完成），避免第 2 位及以后的审批人被静默跳过。
+  // 若已有人驳回则不再流转（走 handleNodeReject 终止/回退）。
+  if (strategy === "sequential") {
+    const hasRejected = allTasks.some((t: { status: number }) => t.status === TS.REJECTED);
+    if (!hasRejected) {
       const assignees = await deps.assigneeResolver.resolve(node, ctx);
       const assignedIds = new Set(allTasks.map((t: { assignee_id: string }) => t.assignee_id));
       const nextAssignee = assignees.find((id) => !assignedIds.has(id));
@@ -194,8 +197,14 @@ export async function processNodeCompletion(
           tenant_id: tenantId ?? null,
         });
         deps.eventBus?.emit(workflowTaskCreated, { instanceId, assigneeId: nextAssignee, nodeId });
+        return;
       }
     }
+  }
+
+  const result = isNodeCompleted(allTasks, strategy, config?.percentage);
+
+  if (!result.completed) {
     return;
   }
 

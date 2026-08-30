@@ -6,7 +6,7 @@
  */
 
 import type { Cache } from "@ventostack/cache";
-import { createRouter, fail, parseBody, success } from "@ventostack/core";
+import { createRouter, fail, parseBody, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { AuthService } from "../services/auth";
 import type { ConfigService } from "../services/config";
@@ -111,7 +111,7 @@ export function createPasskeyRoutes(
         const result = await passkeyService.beginAuthentication(body.username as string);
         return success(result);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "通行密钥登录失败";
+        const msg = safeErrorMessage(e, "通行密钥登录失败");
         return fail(msg, 400);
       }
     },
@@ -164,7 +164,7 @@ export function createPasskeyRoutes(
 
         return withTokenCookies(success(loginResult), ctx.request, loginResult);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "通行密钥验证失败";
+        const msg = safeErrorMessage(e, "通行密钥验证失败");
         return fail(msg, 401, 401);
       }
     },
@@ -196,7 +196,7 @@ export function createPasskeyRoutes(
         const result = await passkeyService.beginRegistration(user.id);
         return success(result);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "通行密钥注册失败";
+        const msg = safeErrorMessage(e, "通行密钥注册失败");
         return fail(msg, 400);
       }
     },
@@ -230,7 +230,7 @@ export function createPasskeyRoutes(
         );
         return success(result);
       } catch (e) {
-        const msg = e instanceof Error ? e.message : "通行密钥注册完成失败";
+        const msg = safeErrorMessage(e, "通行密钥注册完成失败");
         return fail(msg, 400);
       }
     },

@@ -1,7 +1,7 @@
 /**
  * AI 供应商与模型管理路由
  */
-import { createRouter, fail, handleError, parseBody, success } from "@ventostack/core";
+import { createRouter, fail, handleError, parseBody, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import { getPresets } from "../services/provider-presets";
 import type { createProviderService } from "../services/provider";
@@ -276,7 +276,7 @@ export function createProviderRoutes(
           return success({ status: "error", statusCode: resp.status, elapsed, message: text.slice(0, 200) });
         }
       } catch (e) {
-        return success({ status: "error", message: e instanceof Error ? e.message : "连接失败" });
+        return success({ status: "error", message: safeErrorMessage(e, "连接失败") });
       }
     },
   );
@@ -350,7 +350,7 @@ export function createProviderRoutes(
               results.push({ id, status: "error", elapsed, message: `HTTP ${resp.status}: ${text.slice(0, 100)}` });
             }
           } catch (e) {
-            results.push({ id, status: "error", message: e instanceof Error ? e.message : "连接失败" });
+            results.push({ id, status: "error", message: safeErrorMessage(e, "连接失败") });
           }
         }
 

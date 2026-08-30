@@ -49,7 +49,7 @@ import { createUserService } from './services/user';
 import type { UpdateUserParams } from './services/user';
 
 import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
-import { fail, pageOf, paginated, parseBody, success } from '@ventostack/core';
+import { fail, pageOf, paginated, parseBody, safeErrorMessage, success } from '@ventostack/core';
 import { type OperationLogEntry, createOperationLogMiddleware } from './middlewares/operation-log';
 import { createAuthRoutes } from './routes/auth';
 import { createCrudRoutes } from './routes/crud';
@@ -112,6 +112,8 @@ export interface SystemModuleDeps {
   tenantEnabled?: boolean;
   /** 当前租户 ID，启用多租户时传入以隔离缓存键 */
   tenantId?: string;
+  /** 认证 Cookie 是否附加 Secure 属性（生产环境应设为 true） */
+  secureCookies?: boolean;
 }
 
 export function createSystemModule(deps: SystemModuleDeps): SystemModule {
@@ -254,7 +256,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
   );
 
-  router.merge(createAuthRoutes(authService, authMiddleware, perm, deps.trustedProxies ?? []));
+  router.merge(createAuthRoutes(authService, authMiddleware, perm, deps.trustedProxies ?? [], deps.secureCookies ?? false));
   router.merge(
     createPasskeyRoutes(
       passkeyService,
@@ -274,8 +276,28 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       resource: 'system:role',
       service: {
         ...roleService,
-        create: (body) => roleService.create(body as CreateRoleParams),
-        update: (id, body) => roleService.update(id, body as Partial<CreateRoleParams>),
+        create: async (body) => {
+          const result = await roleService.create(body as CreateRoleParams);
+          // 新角色无菜单权限，但需确保 RBAC 有该角色（避免 hasPermission 对未知角色返回 false）
+          await permissionLoader.reloadAll();
+          return result;
+        },
+        update: async (id, body) => {
+          const result = await roleService.update(id, body as Partial<CreateRoleParams>);
+          const role = await roleService.getById(id);
+          if (role?.code) {
+            await permissionLoader.reloadRole(role.code);
+          }
+          return result;
+        },
+        delete: async (id) => {
+          const role = await roleService.getById(id);
+          const result = await roleService.delete(id);
+          if (role?.code) {
+            await permissionLoader.reloadRole(role.code);
+          }
+          return result;
+        },
       },
       authMiddleware,
       perm,
@@ -319,7 +341,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const menuIds = await roleService.getRoleMenuIds(id);
             return success({ menuIds });
           },
-          perm('system', 'role:list'),
+          perm('system:role', 'list'),
         );
         r.put(
           '/api/system/roles/:id/menus',
@@ -334,9 +356,14 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const body = await parseBody(ctx.request);
             const menuIds = (body.menuIds as string[]) ?? [];
             await roleService.assignMenus(id, menuIds);
+            // 角色-菜单变更后立即刷新 RBAC 内存权限，无需重启服务
+            const role = await roleService.getById(id);
+            if (role?.code) {
+              await permissionLoader.reloadRole(role.code);
+            }
             return success(null);
           },
-          perm('system', 'role:update'),
+          perm('system:role', 'update'),
         );
         r.put(
           '/api/system/roles/:id/data-scope',
@@ -361,7 +388,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             );
             return success(null);
           },
-          perm('system', 'role:update'),
+          perm('system:role', 'update'),
         );
         // Batch delete roles
         r.post(
@@ -373,6 +400,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const body = await parseBody(ctx.request);
             const ids = (body.ids as string[]) ?? [];
+            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
             let successCount = 0;
             let skipped = 0;
             for (const id of ids) {
@@ -394,7 +422,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
-          perm('system', 'role:delete'),
+          perm('system:role', 'delete'),
         );
       },
     }),
@@ -410,8 +438,22 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           const tree = await menuService.getAllTree();
           return { items: tree, total: tree.length, page: 1, pageSize: tree.length };
         },
-        create: (body) => menuService.create(body as CreateMenuParams),
-        update: (id, body) => menuService.update(id, body as Record<string, unknown>),
+        create: async (body) => {
+          const result = await menuService.create(body as CreateMenuParams);
+          // 菜单权限变更后刷新 RBAC（按钮权限来自菜单表）
+          await permissionLoader.reloadAll();
+          return result;
+        },
+        update: async (id, body) => {
+          const result = await menuService.update(id, body as Record<string, unknown>);
+          await permissionLoader.reloadAll();
+          return result;
+        },
+        delete: async (id) => {
+          const result = await menuService.delete(id);
+          await permissionLoader.reloadAll();
+          return result;
+        },
       },
       authMiddleware,
       perm,
@@ -471,7 +513,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const tree = await menuService.getTree();
             return success(tree);
           },
-          perm('system', 'menu:list'),
+          perm('system:menu', 'list'),
         );
       },
     }),
@@ -529,7 +571,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const tree = await deptService.getTree();
             return success(tree);
           },
-          perm('system', 'dept:list'),
+          perm('system:dept', 'list'),
         );
         // Batch delete depts
         r.post(
@@ -541,6 +583,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const body = await parseBody(ctx.request);
             const ids = (body.ids as string[]) ?? [];
+            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
             let successCount = 0;
             let skipped = 0;
             for (const id of ids) {
@@ -562,7 +605,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
-          perm('system', 'dept:delete'),
+          perm('system:dept', 'delete'),
         );
       },
     }),
@@ -615,6 +658,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const body = await parseBody(ctx.request);
             const ids = (body.ids as string[]) ?? [];
+            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
             let successCount = 0;
             let skipped = 0;
             for (const id of ids) {
@@ -627,7 +671,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
-          perm('system', 'post:delete'),
+          perm('system:post', 'delete'),
         );
       },
     }),
@@ -694,7 +738,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const data = await dictService.listDataByType(code);
             return success(data);
           },
-          perm('system', 'dict:list'),
+          perm('system:dict', 'list'),
         );
       },
     }),
@@ -757,7 +801,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             if (value === null) return fail('Config not found', 404, 404);
             return success({ key, value });
           },
-          perm('system', 'config:query'),
+          perm('system:config', 'query'),
         );
       },
     }),
@@ -807,7 +851,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             await noticeService.publish(id, user.id);
             return success(null);
           },
-          perm('system', 'notice:update'),
+          perm('system:notice', 'update'),
         );
         r.put(
           '/api/system/notices/:id/read',
@@ -831,6 +875,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const body = await parseBody(ctx.request);
             const ids = (body.ids as string[]) ?? [];
+            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
             const user = ctx.user as { id: string };
             let successCount = 0;
             let skipped = 0;
@@ -848,7 +893,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
-          perm('system', 'notice:update'),
+          perm('system:notice', 'update'),
         );
         // Batch revoke (unpublish)
         r.post(
@@ -860,6 +905,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const body = await parseBody(ctx.request);
             const ids = (body.ids as string[]) ?? [];
+            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
             let successCount = 0;
             let skipped = 0;
             for (const id of ids) {
@@ -876,7 +922,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
-          perm('system', 'notice:update'),
+          perm('system:notice', 'update'),
         );
         // Batch delete
         r.post(
@@ -888,6 +934,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const body = await parseBody(ctx.request);
             const ids = (body.ids as string[]) ?? [];
+            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
             let successCount = 0;
             let skipped = 0;
             for (const id of ids) {
@@ -900,7 +947,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
-          perm('system', 'notice:delete'),
+          perm('system:notice', 'delete'),
         );
       },
     }),
@@ -961,7 +1008,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const items = await tagService.listAll();
             return success(items);
           },
-          perm('system', 'tag:list'),
+          perm('system:tag', 'list'),
         );
         // 获取标签下的用户 ID 列表
         r.get(
@@ -975,7 +1022,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const userIds = await tagService.getUserIdsByTag(id);
             return success(userIds);
           },
-          perm('system', 'tag:query'),
+          perm('system:tag', 'query'),
         );
         // 根据标签 code 获取用户 ID 列表
         r.get(
@@ -993,7 +1040,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const userIds = await tagService.getUserIdsByTagCode(code);
             return success(userIds);
           },
-          perm('system', 'tag:query'),
+          perm('system:tag', 'query'),
         );
       },
     }),
@@ -1236,10 +1283,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         const result = await dictService.createData(body as unknown as CreateDictDataParams);
         return success(result);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : '创建失败', 400);
+        return fail(safeErrorMessage(e, '创建失败'), 400);
       }
     },
-    perm('system', 'dict:create'),
+    perm('system:dict', 'create'),
   );
   userRouter.put(
     '/api/system/dict/data/:id',
@@ -1259,10 +1306,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         await dictService.updateData(id, body as Record<string, unknown>);
         return success(null);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : '更新失败', 400);
+        return fail(safeErrorMessage(e, '更新失败'), 400);
       }
     },
-    perm('system', 'dict:update'),
+    perm('system:dict', 'update'),
   );
   userRouter.delete(
     '/api/system/dict/data/:id',
@@ -1275,10 +1322,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         await dictService.deleteData(id);
         return success(null);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : '删除失败', 400);
+        return fail(safeErrorMessage(e, '删除失败'), 400);
       }
     },
-    perm('system', 'dict:delete'),
+    perm('system:dict', 'delete'),
   );
   // Batch delete dict data
   userRouter.post(
@@ -1290,6 +1337,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const body = await parseBody(ctx.request);
       const ids = (body.ids as string[]) ?? [];
+      if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       let successCount = 0;
       let skipped = 0;
       for (const id of ids) {
@@ -1302,7 +1350,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
       return success({ success: successCount, skipped });
     },
-    perm('system', 'dict:delete'),
+    perm('system:dict', 'delete'),
   );
 
   // === Notice revoke ===
@@ -1316,7 +1364,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       await noticeService.revoke(id);
       return success(null);
     },
-    perm('system', 'notice:update'),
+    perm('system:notice', 'update'),
   );
 
   // === User unlock & blacklist ===
@@ -1334,7 +1382,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       await cache.del(ns.detailKey('user', id));
       return success(null);
     },
-    perm('system', 'user:update'),
+    perm('system:user', 'update'),
   );
 
   userRouter.put(
@@ -1353,7 +1401,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       await cache.del(ns.detailKey('user', id));
       return success(null);
     },
-    perm('system', 'user:update'),
+    perm('system:user', 'update'),
   );
 
   // Batch delete users
@@ -1366,6 +1414,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const body = await parseBody(ctx.request);
       const ids = (body.ids as string[]) ?? [];
+      if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       const user = ctx.user as { id: string };
       let successCount = 0;
       let skipped = 0;
@@ -1383,7 +1432,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
       return success({ success: successCount, skipped });
     },
-    perm('system', 'user:delete'),
+    perm('system:user', 'delete'),
   );
 
   // Batch update user status
@@ -1399,6 +1448,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const body = await parseBody(ctx.request);
       const ids = (body.ids as string[]) ?? [];
+      if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       const targetStatus = body.status as number;
       const user = ctx.user as { id: string };
       let successCount = 0;
@@ -1418,7 +1468,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
       return success({ success: successCount, skipped });
     },
-    perm('system', 'user:update'),
+    perm('system:user', 'update'),
   );
 
   // Batch reset user passwords
@@ -1431,6 +1481,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const body = await parseBody(ctx.request);
       const ids = (body.ids as string[]) ?? [];
+      if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       const defaultPwd = (await configService.getValue('sys_user_init_password')) || '123456';
       let successCount = 0;
       let skipped = 0;
@@ -1444,7 +1495,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
       return success({ success: successCount, skipped });
     },
-    perm('system', 'user:resetPwd'),
+    perm('system:user', 'resetPwd'),
   );
 
   // === User tag association ===
@@ -1459,7 +1510,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const tags = await tagService.getUserTags(id);
       return success(tags);
     },
-    perm('system', 'user:query'),
+    perm('system:user', 'query'),
   );
 
   userRouter.put(
@@ -1477,13 +1528,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       await tagService.assignUserTags(id, tagIds);
       return success(null);
     },
-    perm('system', 'user:update'),
+    perm('system:user', 'update'),
   );
 
   // === Operation logs (read-only) ===
-  const opLogPerm = perm('system', 'log:list');
+  const opLogPerm = perm('system:log', 'list');
   /** 清空日志需要独立的删除权限，避免仅授予查看权限即可清空日志 */
-  const logDeletePerm = perm('system', 'log:delete');
+  const logDeletePerm = perm('system:log', 'delete');
   userRouter.get(
     '/api/system/operation-logs',
     {
@@ -1641,7 +1692,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
       return success({ userCount, roleCount, todayLogs, unreadNotices });
     },
-    perm('system', 'dashboard:list'),
+    perm('system:dashboard', 'list'),
   );
 
   // === Published notices for current user (with read status) ===

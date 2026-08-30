@@ -1,6 +1,7 @@
 import { createPasswordHasher } from "@ventostack/auth";
 import { generateUUID } from "@ventostack/core";
 import type { Seed } from "@ventostack/database";
+import { env } from "../../config";
 
 /**
  * Initial admin seed: creates the admin user, admin role,
@@ -20,9 +21,10 @@ export const initAdminSeed: Seed = {
     const adminRoleId = generateUUID();
 
     // Hash the admin password using @ventostack/auth
-    // 生产部署必须通过 ADMIN_INIT_PASSWORD 环境变量设置初始密码，admin123 仅为本地开发兜底
+    // 初始密码经 config 模块读取：生产环境 ADMIN_INIT_PASSWORD 必填且禁止默认值，
+    // 此处兜底 admin123 仅用于本地开发（生产已由 config 校验拦截）
     const passwordHasher = createPasswordHasher();
-    const passwordHash = await passwordHasher.hash(process.env.ADMIN_INIT_PASSWORD ?? "admin123");
+    const passwordHash = await passwordHasher.hash(env.ADMIN_INIT_PASSWORD ?? "admin123");
 
     // Insert admin role
     await executor(
@@ -203,57 +205,65 @@ export const initAdminSeed: Seed = {
     > = {
       用户管理: [
         { name: "用户查询", permission: "system:user:list", sort: 1 },
-        { name: "用户新增", permission: "system:user:add", sort: 2 },
-        { name: "用户修改", permission: "system:user:edit", sort: 3 },
-        { name: "用户删除", permission: "system:user:remove", sort: 4 },
+        { name: "用户新增", permission: "system:user:create", sort: 2 },
+        { name: "用户详情", permission: "system:user:query", sort: 7 },
+        { name: "用户修改", permission: "system:user:update", sort: 3 },
+        { name: "用户删除", permission: "system:user:delete", sort: 4 },
         { name: "重置密码", permission: "system:user:resetPwd", sort: 5 },
         { name: "导出用户", permission: "system:user:export", sort: 6 },
       ],
       角色管理: [
         { name: "角色查询", permission: "system:role:list", sort: 1 },
-        { name: "角色新增", permission: "system:role:add", sort: 2 },
-        { name: "角色修改", permission: "system:role:edit", sort: 3 },
-        { name: "角色删除", permission: "system:role:remove", sort: 4 },
+        { name: "角色新增", permission: "system:role:create", sort: 2 },
+        { name: "角色详情", permission: "system:role:query", sort: 6 },
+        { name: "角色修改", permission: "system:role:update", sort: 3 },
+        { name: "角色删除", permission: "system:role:delete", sort: 4 },
         { name: "导出角色", permission: "system:role:export", sort: 5 },
       ],
       菜单管理: [
         { name: "菜单查询", permission: "system:menu:list", sort: 1 },
-        { name: "菜单新增", permission: "system:menu:add", sort: 2 },
-        { name: "菜单修改", permission: "system:menu:edit", sort: 3 },
-        { name: "菜单删除", permission: "system:menu:remove", sort: 4 },
+        { name: "菜单新增", permission: "system:menu:create", sort: 2 },
+        { name: "菜单详情", permission: "system:menu:query", sort: 5 },
+        { name: "菜单修改", permission: "system:menu:update", sort: 3 },
+        { name: "菜单删除", permission: "system:menu:delete", sort: 4 },
       ],
       部门管理: [
         { name: "部门查询", permission: "system:dept:list", sort: 1 },
-        { name: "部门新增", permission: "system:dept:add", sort: 2 },
-        { name: "部门修改", permission: "system:dept:edit", sort: 3 },
-        { name: "部门删除", permission: "system:dept:remove", sort: 4 },
+        { name: "部门新增", permission: "system:dept:create", sort: 2 },
+        { name: "部门详情", permission: "system:dept:query", sort: 5 },
+        { name: "部门修改", permission: "system:dept:update", sort: 3 },
+        { name: "部门删除", permission: "system:dept:delete", sort: 4 },
       ],
       岗位管理: [
         { name: "岗位查询", permission: "system:post:list", sort: 1 },
-        { name: "岗位新增", permission: "system:post:add", sort: 2 },
-        { name: "岗位修改", permission: "system:post:edit", sort: 3 },
-        { name: "岗位删除", permission: "system:post:remove", sort: 4 },
+        { name: "岗位新增", permission: "system:post:create", sort: 2 },
+        { name: "岗位详情", permission: "system:post:query", sort: 6 },
+        { name: "岗位修改", permission: "system:post:update", sort: 3 },
+        { name: "岗位删除", permission: "system:post:delete", sort: 4 },
         { name: "导出岗位", permission: "system:post:export", sort: 5 },
       ],
       字典管理: [
         { name: "字典查询", permission: "system:dict:list", sort: 1 },
-        { name: "字典新增", permission: "system:dict:add", sort: 2 },
-        { name: "字典修改", permission: "system:dict:edit", sort: 3 },
-        { name: "字典删除", permission: "system:dict:remove", sort: 4 },
+        { name: "字典新增", permission: "system:dict:create", sort: 2 },
+        { name: "字典详情", permission: "system:dict:query", sort: 6 },
+        { name: "字典修改", permission: "system:dict:update", sort: 3 },
+        { name: "字典删除", permission: "system:dict:delete", sort: 4 },
         { name: "导出字典", permission: "system:dict:export", sort: 5 },
       ],
       参数设置: [
         { name: "参数查询", permission: "system:config:list", sort: 1 },
-        { name: "参数新增", permission: "system:config:add", sort: 2 },
-        { name: "参数修改", permission: "system:config:edit", sort: 3 },
-        { name: "参数删除", permission: "system:config:remove", sort: 4 },
+        { name: "参数新增", permission: "system:config:create", sort: 2 },
+        { name: "参数详情", permission: "system:config:query", sort: 6 },
+        { name: "参数修改", permission: "system:config:update", sort: 3 },
+        { name: "参数删除", permission: "system:config:delete", sort: 4 },
         { name: "导出参数", permission: "system:config:export", sort: 5 },
       ],
       通知公告: [
         { name: "公告查询", permission: "system:notice:list", sort: 1 },
-        { name: "公告新增", permission: "system:notice:add", sort: 2 },
-        { name: "公告修改", permission: "system:notice:edit", sort: 3 },
-        { name: "公告删除", permission: "system:notice:remove", sort: 4 },
+        { name: "公告新增", permission: "system:notice:create", sort: 2 },
+        { name: "公告详情", permission: "system:notice:query", sort: 5 },
+        { name: "公告修改", permission: "system:notice:update", sort: 3 },
+        { name: "公告删除", permission: "system:notice:delete", sort: 4 },
       ],
       日志管理: [
         { name: "清空日志", permission: "system:log:delete", sort: 1 },
@@ -263,26 +273,35 @@ export const initAdminSeed: Seed = {
         { name: "强退用户", permission: "system:online:forceLogout", sort: 2 },
       ],
       定时任务: [
-        { name: "任务查询", permission: "system:scheduler:list", sort: 1 },
-        { name: "任务新增", permission: "system:scheduler:add", sort: 2 },
-        { name: "任务修改", permission: "system:scheduler:edit", sort: 3 },
-        { name: "任务删除", permission: "system:scheduler:remove", sort: 4 },
-        { name: "启停任务", permission: "system:scheduler:toggle", sort: 5 },
-        { name: "立即执行", permission: "system:scheduler:execute", sort: 6 },
+        { name: "任务查询", permission: "scheduler:job:list", sort: 1 },
+        { name: "任务新增", permission: "scheduler:job:create", sort: 2 },
+        { name: "任务详情", permission: "scheduler:job:query", sort: 7 },
+        { name: "任务修改", permission: "scheduler:job:update", sort: 3 },
+        { name: "任务删除", permission: "scheduler:job:delete", sort: 4 },
+        { name: "启停任务", permission: "scheduler:job:update", sort: 5 },
+        { name: "立即执行", permission: "scheduler:job:update", sort: 6 },
       ],
       文件管理: [
-        { name: "文件查询", permission: "system:oss:list", sort: 1 },
-        { name: "文件上传", permission: "system:oss:upload", sort: 2 },
-        { name: "文件删除", permission: "system:oss:remove", sort: 3 },
+        { name: "文件查询", permission: "oss:file:list", sort: 1 },
+        { name: "文件详情", permission: "oss:file:query", sort: 4 },
+        { name: "文件下载", permission: "oss:file:download", sort: 5 },
+        { name: "文件上传", permission: "oss:file:upload", sort: 2 },
+        { name: "文件删除", permission: "oss:file:delete", sort: 3 },
       ],
       系统监控: [
         { name: "监控查询", permission: "system:monitor:list", sort: 1 },
         { name: "仪表盘查看", permission: "system:dashboard:list", sort: 2 },
       ],
       消息中心: [
-        { name: "消息查询", permission: "system:notification:list", sort: 1 },
-        { name: "消息发送", permission: "system:notification:send", sort: 2 },
-        { name: "消息删除", permission: "system:notification:remove", sort: 3 },
+        { name: "消息查询", permission: "notification:message:list", sort: 1 },
+        { name: "消息详情", permission: "notification:message:query", sort: 4 },
+        { name: "模板管理", permission: "notification:template:list", sort: 5 },
+        { name: "模板新增", permission: "notification:template:create", sort: 6 },
+        { name: "模板修改", permission: "notification:template:update", sort: 7 },
+        { name: "模板删除", permission: "notification:template:delete", sort: 8 },
+        { name: "消息发送", permission: "notification:message:send", sort: 2 },
+        { name: "消息已读", permission: "notification:message:update", sort: 3 },
+        { name: "消息删除", permission: "notification:message:delete", sort: 9 },
       ],
     };
 

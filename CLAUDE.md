@@ -417,7 +417,7 @@ To use a skill, reference it in your task description or ask the AI to follow th
 ```
 VentoStack/
 ├── packages/framework/     ← 自研框架层（零第三方运行时依赖；例外：ai 的 ajv、file2md 的 liteparse）
-│   ├── core/               ← 路由/中间件/Context/生命周期/配置/安全中间件 (101 files)
+│   ├── core/               ← 路由/中间件/Context/生命周期/配置/安全中间件 (102 files)
 │   ├── database/           ← 链式查询构建器/迁移/事务/连接池 (27 files)
 │   ├── cache/              ← Redis 封装/内存适配器 (16 files)
 │   ├── events/             ← 事件总线/消息队列/调度器 (25 files)
@@ -425,22 +425,24 @@ VentoStack/
 │   ├── openapi/            ← OpenAPI 3.1 文档生成 + 请求校验 (22 files)
 │   ├── testing/            ← 测试工具/Mock/测试应用封装 (15 files)
 │   ├── webhook/            ← Webhook 入站/出站/签名校验 (8 files)
-│   ├── ai/                 ← AI 引擎（Agent Loop/LLM 网关/Tool/MCP/Session/Memory/Skill/RAG）(55 files)
-│   ├── file2md/            ← 文件转 Markdown（docx/pdf/xlsx/pptx/epub/html 等）(20 files)
-│   └── cli/                ← 脚手架/代码生成/迁移命令 (12 files)
+│   ├── ai/                 ← AI 引擎（Agent Loop/LLM 网关/Tool/MCP/Session/Memory/Skill/RAG）(197 files)
+│   ├── file2md/            ← 文件转 Markdown（docx/pdf/xlsx/pptx/epub/html 等）(65 files)
+│   ├── cli/                ← 脚手架/代码生成/迁移命令 (12 files)
+│   └── vite-bridge/        ← 后端与 Vite 开发服务器桥接（全栈本地开发）(6 files)
 │
 ├── packages/platform/      ← 业务平台层（依赖 framework）
-│   ├── auth/               ← JWT/RBAC/ABAC/TOTP/OAuth/Session/Token吊销 (30 files)
-│   ├── system/             ← 用户/角色/菜单/部门/岗位/字典/配置/公告 (56 files)
+│   ├── auth/               ← JWT/RBAC/ABAC/TOTP/OAuth/Session/Token吊销 (31 files)
+│   ├── system/             ← 用户/角色/菜单/部门/岗位/字典/配置/公告 (59 files)
 │   ├── boot/               ← createPlatform() 聚合器 (3 files)
-│   ├── gen/                ← 代码生成（表导入/模板渲染）(18 files)
-│   ├── i18n/               ← 国际化（语言包/运行时翻译）(14 files)
-│   ├── monitor/            ← 服务器/缓存/健康监控 (10 files)
-│   ├── notification/       ← 通知（站内信/SMTP/SMS/Webhook）(19 files)
-│   ├── oss/                ← 对象存储（本地/S3）(18 files)
-│   ├── scheduler/          ← 定时任务管理 (13 files)
-│   ├── workflow/           ← 工作流（状态机/审批链）(16 files)
-│   └── integration/        ← 第三方集成 (15 files)
+│   ├── gen/                ← 代码生成（表导入/模板渲染）(16 files)
+│   ├── i18n/               ← 国际化（语言包/运行时翻译）(12 files)
+│   ├── monitor/            ← 服务器/缓存/健康监控 (8 files)
+│   ├── notification/       ← 通知（站内信/SMTP/SMS/Webhook）(18 files)
+│   ├── oss/                ← 对象存储（本地/S3）(17 files)
+│   ├── scheduler/          ← 定时任务管理 (11 files)
+│   ├── workflow/           ← 工作流（状态机/审批链）(38 files)
+│   ├── integration/        ← 第三方集成 (15 files)
+│   └── ai-trace/           ← AI 问答链路追踪（订阅 ai 模块事件流）(21 files)
 │
 ├── apps/
 │   ├── admin/api/          ← 管理后台后端（Composition Root 模式）
@@ -539,8 +541,8 @@ const { error, data } = await client.get('/api/system/users', { query: cleanPara
 
 ## 18. Test Status
 
-- **2579 tests, 0 failures** (100% pass rate)
-- 框架层: 119 test files, 平台层: 56 test files, 示例: 6 test files, 前端: 23 test files
+- **3540 tests, 0 failures** (100% pass rate)
+- 框架层: 204 test files, 平台层: 61 test files, 示例: 6 test files, 前端: 23 test files, admin/api: 0（待补）
 - Mock Database: 平台模块测试使用 `createMockDatabase(mockExec)` 创建 mock db
 - 测试 helper 中的 executor 支持灵活 SQL 模式匹配（精确匹配 + 表名模糊匹配）
 
@@ -578,7 +580,7 @@ export function createPermMiddleware(rbac: RBAC): (resource: string, action: str
 ```typescript
 // module.ts
 const perm = createPermMiddleware(rbac);
-router.post("/api/system/xxx", perm("system:xxx:create"), handler);
+router.post("/api/system/xxx", perm("system:xxx", "create"), handler);
 ```
 
 **禁止**在 `module.ts` 中内联 `(ctx: any, next: any)` 权限中间件。
@@ -622,7 +624,7 @@ notifyChannels: new Map([
 - `admin` — VentoStack Admin 应用
 
 ### 环境变量
-参考 `.env.example`，必填项：`DATABASE_URL`、`JWT_SECRET`
+参考 `.env.example`，必填项：`DATABASE_URL`、`JWT_SECRET`；生产环境还需 `ADMIN_INIT_PASSWORD`（禁止 admin123）与 `REDIS_PASSWORD`（docker-compose）
 
 ---
 
@@ -654,7 +656,7 @@ notifyChannels: new Map([
 
 | 优先级 | 项目 | 状态 |
 |--------|------|------|
-| ~~P0~~ | ~~修复 140 个失败测试~~ | ✅ 已修复（2579/2579 通过） |
+| ~~P0~~ | ~~修复 140 个失败测试~~ | ✅ 已修复（3540/3540 通过） |
 | ~~P1~~ | ~~Dockerfile + docker-compose~~ | ✅ 已添加 |
 | P2 | 前端 `types.ts` 手写接口 → OpenAPI 自动生成 | 待处理 |
 | P2 | `schema.ts` 中 `any` 类型优化 | 待处理 |

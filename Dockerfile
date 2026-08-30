@@ -43,6 +43,10 @@ RUN bun build src/index.ts --outdir dist --target bun --minify
 FROM oven/bun:1.3-slim AS release
 WORKDIR /app
 
+# 预建上传目录并授权非 root 用户（bun），保证 named volume 首次挂载时可写
+# 注意：必须在 USER bun 之前以 root 执行
+RUN mkdir -p /app/uploads && chown -R bun:bun /app/uploads
+
 # 安全基线：非 root 用户
 USER bun
 
@@ -58,9 +62,9 @@ ENV PORT=9320
 ENV HOST=0.0.0.0
 ENV ADMIN_PORT=0
 
-# 健康检查
+# 健康检查：oven/bun:1.3-slim 不含 curl/wget，改用 bun 内置 fetch
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:9320/health/live || exit 1
+  CMD bun -e "fetch('http://127.0.0.1:9320/health/live').then(r => { if (!r.ok) process.exit(1) }).catch(() => process.exit(1))"
 
 EXPOSE 9320
 

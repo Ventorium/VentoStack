@@ -82,8 +82,26 @@ const rawConfig = createConfig(
       default: 5,
     },
     BCRYPT_COST: { type: 'number', env: 'BCRYPT_COST', default: 10 },
+    COOKIE_SECURE: {
+      type: 'boolean',
+      env: 'COOKIE_SECURE',
+      default: false,
+      description: '认证 Cookie 是否附加 Secure 属性。生产环境（反代 TLS 终结）必须设为 true，防止令牌 Cookie 明文传输',
+    },
+    ADMIN_INIT_PASSWORD: {
+      type: 'string',
+      env: 'ADMIN_INIT_PASSWORD',
+      sensitive: true,
+      description: '初始 admin 用户密码（仅首次初始化种子时使用）。生产环境必填，禁止使用默认值',
+    },
     WEBAUTHN_RP_ID: { type: 'string', env: 'WEBAUTHN_RP_ID', default: 'localhost' },
     WEBAUTHN_RP_NAME: { type: 'string', env: 'WEBAUTHN_RP_NAME', default: 'VentoStack Admin' },
+    TRUSTED_PROXIES: {
+      type: 'string',
+      env: 'TRUSTED_PROXIES',
+      default: '',
+      description: '可信反向代理 IP/CIDR 列表（逗号分隔）。配置后登录审计/限流/操作日志将读取代理头提取真实客户端 IP；留空则仅使用直接连接 IP，防止伪造',
+    },
     // ---- Storage ----
     STORAGE_DRIVER: {
       type: 'string',
@@ -172,6 +190,18 @@ if (rawConfig.NODE_ENV === 'production') {
       'DATABASE_URL 的数据库口令仍为示例占位符，生产环境拒绝启动。请设置真实凭据后重新部署',
     );
   }
+  // ADMIN_INIT_PASSWORD：生产环境必填且禁止默认值，防止全新数据库以 admin123 默认凭据上线
+  const ADMIN_PASSWORD_DEFAULT = 'admin123';
+  if (!rawConfig.ADMIN_INIT_PASSWORD) {
+    throw new Error(
+      'ADMIN_INIT_PASSWORD 未设置，生产环境拒绝启动。请设置初始 admin 密码后重新部署',
+    );
+  }
+  if (rawConfig.ADMIN_INIT_PASSWORD === ADMIN_PASSWORD_DEFAULT) {
+    throw new Error(
+      'ADMIN_INIT_PASSWORD 仍为默认值 admin123，生产环境拒绝启动。请设置强密码后重新部署',
+    );
+  }
 }
 if (rawConfig.STORAGE_DRIVER === 's3') {
   if (!rawConfig.S3_BUCKET) throw new Error('S3_BUCKET is required when STORAGE_DRIVER=s3');
@@ -202,6 +232,10 @@ if (jwtSecretBytes < 32) {
 export const env = {
   ...rawConfig,
   ALLOWED_ORIGINS: rawConfig.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),
+  TRUSTED_PROXIES: rawConfig.TRUSTED_PROXIES
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0),
 };
 
 export type EnvVars = typeof env;

@@ -48,6 +48,11 @@ export function createLock(adapter: CacheAdapter) {
    */
   async function tryAcquire(key: string, ttl: number): Promise<boolean> {
     const lockKey = `${LOCK_PREFIX}${key}`;
+    // 优先使用原子 SET NX EX（Redis 等支持 NX 的适配器），避免 check-then-set 竞态
+    if ("setNX" in adapter && typeof adapter.setNX === "function") {
+      return adapter.setNX(lockKey, "1", ttl);
+    }
+    // 降级：check-then-set（内存/文件等单机适配器可接受）
     const exists = await adapter.has(lockKey);
     if (exists) return false;
     await adapter.set(lockKey, "1", ttl);

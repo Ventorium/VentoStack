@@ -33,7 +33,7 @@ export function createMonitorRoutes(
       const status = await monitorService.getServerStatus();
       return success(status);
     },
-    perm("system", "monitor:list"),
+    perm("system:monitor", "list"),
   );
 
   // 缓存统计
@@ -53,7 +53,7 @@ export function createMonitorRoutes(
       const stats = await monitorService.getCacheStats();
       return success(stats);
     },
-    perm("system", "monitor:list"),
+    perm("system:monitor", "list"),
   );
 
   // 数据源状态
@@ -74,7 +74,7 @@ export function createMonitorRoutes(
       const status = await monitorService.getDataSourceStatus();
       return success(status);
     },
-    perm("system", "monitor:list"),
+    perm("system:monitor", "list"),
   );
 
   // 健康检查
@@ -93,7 +93,7 @@ export function createMonitorRoutes(
       const health = await monitorService.getHealthStatus();
       return success(health);
     },
-    perm("system", "monitor:list"),
+    perm("system:monitor", "list"),
   );
 
   // 在线用户列表
@@ -114,9 +114,10 @@ export function createMonitorRoutes(
     },
     async () => {
       const users = await monitorService.getOnlineUsers();
-      return success(users);
+      // 响应 schema 声明为 {list, total}，此处显式包装与契约一致
+      return success({ list: users, total: users.length });
     },
-    perm("system", "online:list"),
+    perm("system:online", "list"),
   );
 
   // 强制下线
@@ -134,7 +135,7 @@ export function createMonitorRoutes(
       await monitorService.forceLogout(sessionId, userId ?? "");
       return success(null);
     },
-    perm("system", "online:forceLogout"),
+    perm("system:online", "forceLogout"),
   );
 
   return router;

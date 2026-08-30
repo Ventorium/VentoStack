@@ -540,9 +540,9 @@ export default function ProfilePage() {
       title: "状态",
       dataIndex: "status",
       key: "status",
-      render: (status: string) => (
-        <Tag color={status === "success" ? "success" : "error"}>
-          {status === "success" ? "成功" : "失败"}
+      render: (status: number) => (
+        <Tag color={status === 1 ? "success" : "error"}>
+          {status === 1 ? "成功" : "失败"}
         </Tag>
       ),
     },

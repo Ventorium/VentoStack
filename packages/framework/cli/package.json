@@ -20,12 +20,15 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist", "templates"],
+  "files": [
+    "dist",
+    "templates"
+  ],
   "dependencies": {
     "@ventostack/core": "workspace:*",
     "@ventostack/database": "workspace:*"
   },
   "devDependencies": {
-    "bun-types": "latest"
+    "@types/bun": "latest"
   }
 }

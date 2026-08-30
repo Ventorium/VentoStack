@@ -6,7 +6,7 @@
 import type { Database } from "@ventostack/database";
 import type { StorageAdapter } from "../adapters/storage";
 import { OSSFileModel } from "../models";
-import { detectMIME, mimeFromExtension } from "./mime-detect";
+import { assertSafeUpload } from "./mime-detect";
 
 /** 上传参数 */
 export interface UploadParams {
@@ -45,6 +45,8 @@ export interface ListParams {
   tenantId: string;
   bucket?: string;
   uploaderId?: string;
+  /** 文件名模糊搜索 */
+  filename?: string;
   page?: number;
   pageSize?: number;
 }
@@ -73,13 +75,15 @@ export function createOSSService(deps: {
       const { filename, data, contentType, bucket = "default" } = params;
       const id = crypto.randomUUID();
 
-      // Detect MIME
-      const ext = filename.includes(".") ? `.${filename.split(".").pop()!.toLowerCase()}` : null;
-      const detectedMime = data.length >= 12 ? detectMIME(data) : null;
-      const mime = contentType ?? detectedMime ?? (ext ? mimeFromExtension(ext) : null);
+      // 安全校验：扩展名白名单 + magic bytes 校验，返回权威 MIME（拒绝伪造 contentType）
+      // 允许上传的文件类型由 UPLOAD_ALLOWED_EXTENSIONS 白名单决定，
+      // 显式排除 html/svg/xml/js 等可执行/可嵌入脚本类型，防止同源存储型 XSS。
+      const mime = assertSafeUpload(filename, data);
+      void contentType;
 
       // Generate storage path: bucket/tenant/yyyymmdd/id.ext（租户段隔离物理存储）
       const date = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+      const ext = filename.includes(".") ? `.${filename.split(".").pop()!.toLowerCase()}` : null;
       const storagePath = `${bucket}/${tenantId}/${date}/${id}${ext ?? ""}`;
 
       // Write to storage adapter
@@ -197,12 +201,13 @@ export function createOSSService(deps: {
     },
 
     async list(params): Promise<PaginatedResult<OSSFileRecord>> {
-      const { tenantId, bucket, uploaderId, page = 1, pageSize = 10 } = params;
-      // 租户过滤为强制条件，bucket/uploaderId 仅作为租户内的附加筛选
+      const { tenantId, bucket, uploaderId, filename, page = 1, pageSize = 10 } = params;
+      // 租户过滤为强制条件，bucket/uploaderId/filename 仅作为租户内的附加筛选
 
       let query = db.query(OSSFileModel).where("tenant_id", "=", tenantId);
       if (bucket) query = query.where("bucket", "=", bucket);
       if (uploaderId) query = query.where("uploader_id", "=", uploaderId);
+      if (filename) query = query.where("original_name", "LIKE", `%${filename}%`);
 
       const total = await query.count();
 

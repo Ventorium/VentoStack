@@ -173,16 +173,20 @@ packages/
 框架层（不变）：
 core ← database ← cache ← auth
 
-平台层（新增，只向下依赖框架层）：
-system    → auth, database, cache, observability
-scheduler → events, database, observability
-monitor   → observability, cache, database, auth
-gen       → database（通过 CLI 扩展点注册命令，不直接依赖 cli）
-oss       → core, database
-notification → events, database
+平台层（新增，只向下依赖框架层；auth 为能力层平台包，可被其他平台包消费）：
+system       → core, database, cache, auth, events, observability
+scheduler    → core, database, auth, events
+monitor      → core, database, auth, observability
+gen          → core, database, auth（已注册进 boot，经 createPlatform 装配）
+oss          → core, database, auth
+notification → core, database, auth, observability
+i18n         → core, database, auth
+workflow     → core, database, auth, events
+ai-trace     → core, database, observability, ai, auth
 ```
 
-平台层包之间**不互相依赖**（横向解耦）。跨包协作通过 EventBus 或注入回调实现。
+平台层包之间**仅允许依赖 auth 能力包**（JWT/RBAC/ABAC/Session 引擎），不互相依赖业务包（横向解耦）。
+跨包协作通过 EventBus 或注入回调实现。
 
 ---
 

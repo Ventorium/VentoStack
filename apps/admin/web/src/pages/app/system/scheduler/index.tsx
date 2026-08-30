@@ -84,7 +84,7 @@ const SchedulerPage = () => {
     }
   };
   const handleToggle = async (job: ScheduleJob) => {
-    const endpoint = job.status === "RUNNING" ? SCHEDULER_API.JOB_STOP : SCHEDULER_API.JOB_START;
+    const endpoint = job.status === 1 ? SCHEDULER_API.JOB_STOP : SCHEDULER_API.JOB_START;
     const { error } = await client.put(endpoint, { params: { id: job.id } });
     if (!error) {
       msg.success("状态切换成功");
@@ -118,7 +118,7 @@ const SchedulerPage = () => {
       key: "status",
       width: 100,
       render: (v: string) =>
-        v === "RUNNING" ? <Tag color="green">运行中</Tag> : <Tag color="orange">已暂停</Tag>,
+        v === 1 ? <Tag color="green">运行中</Tag> : <Tag color="orange">已暂停</Tag>,
     },
     { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
     {
@@ -137,7 +137,7 @@ const SchedulerPage = () => {
         <ActionColumn
           items={[
             { label: "编辑", onClick: () => openEdit(r) },
-            { label: r.status === "RUNNING" ? "暂停" : "启动", onClick: () => handleToggle(r) },
+            { label: r.status === 1 ? "暂停" : "启动", onClick: () => handleToggle(r) },
             {
               label: "立即执行",
               onClick: () => handleExecute(r.id),
@@ -167,8 +167,8 @@ const SchedulerPage = () => {
           </Form.Item>
           <Form.Item name="status" initialValue={undefined}>
             <Select placeholder="状态" className="w-[120px]" allowClear>
-              <Select.Option value="RUNNING">运行中</Select.Option>
-              <Select.Option value="PAUSED">已暂停</Select.Option>
+              <Select.Option value={1}>运行中</Select.Option>
+              <Select.Option value={0}>已暂停</Select.Option>
             </Select>
           </Form.Item>
           <Space>

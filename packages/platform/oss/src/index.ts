@@ -24,7 +24,7 @@ export type {
   ListParams,
   OSSService,
 } from "./services/oss";
-export { detectMIME, mimeFromExtension } from "./services/mime-detect";
+export { detectMIME, mimeFromExtension, assertSafeUpload, UPLOAD_ALLOWED_EXTENSIONS, STATIC_ALLOWED_EXTENSIONS } from "./services/mime-detect";
 
 // Routes
 export { createOSSRoutes } from "./routes/oss";

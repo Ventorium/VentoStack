@@ -113,7 +113,7 @@ function redactValue(value: unknown, sensitiveFields: string[]): unknown {
   if (typeof value === "object") {
     const result: Record<string, unknown> = {};
     for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-      if (sensitiveFields.includes(k.toLowerCase())) {
+      if (isSensitiveFieldName(k, sensitiveFields)) {
         result[k] = "***";
       } else {
         result[k] = redactValue(v, sensitiveFields);
@@ -122,6 +122,36 @@ function redactValue(value: unknown, sensitiveFields: string[]): unknown {
     return result;
   }
   return value;
+}
+
+/**
+ * 判断字段名是否为敏感字段（不区分大小写）。
+ *
+ * 匹配规则：
+ * 1. 精确匹配用户声明/默认的敏感字段名；
+ * 2. 字段名包含长度 ≥5 的敏感词根（覆盖 newPassword / oldPassword /
+ *    confirmPassword / apiToken 等变体，避免仅精确匹配导致的漏网）；
+ * 3. "key" 类短词仅按独立词或 `_key` / `-key` 后缀匹配，避免误伤
+ *    monkey / keyword 等普通字段。
+ *
+ * @param key 字段名
+ * @param sensitiveFields 敏感字段名列表
+ * @returns 是否为敏感字段
+ */
+export function isSensitiveFieldName(key: string, sensitiveFields: readonly string[]): boolean {
+  const k = key.toLowerCase();
+  // 1. 精确匹配
+  if (sensitiveFields.includes(k)) return true;
+  // 2. 包含匹配（仅长词根，避免 key 等短词误伤）
+  for (const field of sensitiveFields) {
+    const f = field.toLowerCase();
+    if (f.length >= 5 && k.includes(f)) return true;
+  }
+  // 3. "key" 短词：独立词或后缀
+  if (k === "key" || k.endsWith("_key") || k.endsWith("-key")) {
+    return true;
+  }
+  return false;
 }
 
 /** 对元数据对象进行脱敏处理

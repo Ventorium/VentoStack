@@ -19,7 +19,7 @@ import {
 } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import type { Router } from '@ventostack/core';
-import { createConfigEncryptor } from '@ventostack/core';
+import { createConfigEncryptor, createRouter } from '@ventostack/core';
 import type { Database, SqlExecutor, TableSchemaInfo } from '@ventostack/database';
 import { createDatabase } from '@ventostack/database';
 import type { EventBus } from '@ventostack/events';
@@ -44,6 +44,8 @@ import { createSystemModule } from '@ventostack/system';
 import type { SystemModule } from '@ventostack/system';
 import { createWorkflowModule } from '@ventostack/workflow';
 import type { WorkflowModule } from '@ventostack/workflow';
+import { createGenModule } from '@ventostack/gen';
+import type { GenModule } from '@ventostack/gen';
 
 /** 平台配置 */
 export interface PlatformConfig {
@@ -95,6 +97,7 @@ export interface PlatformConfig {
     workflow?: boolean;
     oss?: boolean;
     scheduler?: boolean;
+    gen?: boolean;
     ai?: boolean;
     /** AI 链路追踪（依赖 ai 模块，缺省跟随 ai 开关） */
     aiTrace?: boolean;
@@ -127,6 +130,8 @@ export interface PlatformConfig {
   tenantEnabled?: boolean;
   /** 当前部署的租户标识（未启用多租户时的默认租户，默认 'default'） */
   tenantId?: string;
+  /** 认证 Cookie 是否附加 Secure 属性（生产环境应设为 true，防止令牌 Cookie 明文传输） */
+  secureCookies?: boolean;
 }
 
 /** 平台实例 */
@@ -145,6 +150,8 @@ export interface Platform {
   oss?: OSSModule;
   /** 定时任务模块 */
   scheduler?: SchedulerModule;
+  /** 代码生成模块 */
+  gen?: GenModule;
   ai?: AIModule;
   /** AI 链路追踪模块 */
   aiTrace?: AiTraceModule;
@@ -188,6 +195,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     trustedProxies,
     tenantEnabled,
     tenantId,
+    secureCookies,
   } = config;
 
   const db = providedDb ?? createDatabase({ executor });
@@ -204,6 +212,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     workflow: moduleFlags?.workflow !== false,
     oss: moduleFlags?.oss !== false,
     scheduler: moduleFlags?.scheduler !== false,
+    gen: moduleFlags?.gen !== false,
     ai: moduleFlags?.ai === true,
     // 链路追踪依赖 ai 模块：ai 关闭时强制禁用
     aiTrace: moduleFlags?.aiTrace !== false && moduleFlags?.ai === true,
@@ -231,6 +240,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(trustedProxies !== undefined ? { trustedProxies } : {}),
     ...(tenantEnabled !== undefined ? { tenantEnabled } : {}),
     ...(tenantId !== undefined ? { tenantId } : {}),
+    ...(secureCookies !== undefined ? { secureCookies } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
 
@@ -296,6 +306,17 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
+  const genMod = enabled.gen
+    ? createGenModule({
+        db,
+        executor,
+        readTableSchema,
+        jwt,
+        jwtSecret,
+        rbac,
+      })
+    : undefined;
+
   const aiMod = enabled.ai
     ? createAIModule({
         db,
@@ -327,7 +348,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       : undefined;
 
   // Aggregate routers
-  const { createRouter } = await import('@ventostack/core');
   const router = createRouter();
 
   // Mount module routers
@@ -338,6 +358,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   if (workflow) router.merge(workflow.router);
   if (oss) router.merge(oss.router);
   if (schedulerMod) router.merge(schedulerMod.router);
+  if (genMod) router.merge(genMod.router);
   if (aiMod) router.merge(aiMod.router);
   if (aiTraceMod) router.merge(aiTraceMod.router);
 
@@ -349,6 +370,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(workflow !== undefined ? { workflow } : {}),
     ...(oss !== undefined ? { oss } : {}),
     ...(schedulerMod !== undefined ? { scheduler: schedulerMod } : {}),
+    ...(genMod !== undefined ? { gen: genMod } : {}),
     router,
     ...(aiMod !== undefined ? { ai: aiMod } : {}),
     ...(aiTraceMod !== undefined ? { aiTrace: aiTraceMod } : {}),
@@ -360,6 +382,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       if (workflow) await workflow.init();
       if (oss) await oss.init();
       if (schedulerMod) await schedulerMod.init();
+      if (genMod) await genMod.init();
       if (aiMod) await aiMod.init();
       if (aiTraceMod) await aiTraceMod.init();
     },

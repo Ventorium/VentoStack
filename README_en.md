@@ -245,19 +245,36 @@ router.get("/events", defineRouteConfig({
 ```
 fullstack/
   apps/
+    admin/api/        - Admin backend (Composition Root)
+    admin/web/        - Admin frontend (React + Ant Design + Zustand)
     example/          - Example application
     docs/             - Documentation site (Starlight)
-  packages/
+  packages/framework/ - Framework layer (business-agnostic, depends on core only)
     core/             - Core HTTP framework
     database/         - Database layer
     cache/            - Cache layer
-    auth/             - Authentication & authorization
     events/           - Event system
     observability/    - Metrics, tracing, logging
     openapi/          - OpenAPI schema generation
     testing/          - Test utilities
+    webhook/          - Webhook in/out with signature verification
     ai/               - AI integration
+    file2md/          - Office file to Markdown parser
     cli/              - CLI tools
+    vite-bridge/      - Vite dev server bridge
+  packages/platform/  - Business modules (depend on framework layer)
+    auth/             - JWT / RBAC / ABAC / TOTP / OAuth / Session
+    system/           - Users, roles, menus, depts, posts, dicts, configs
+    boot/             - createPlatform() composition root
+    gen/              - Code generator
+    i18n/             - Internationalization
+    monitor/          - System monitoring
+    notification/     - In-app / SMTP / SMS / Webhook notification
+    oss/              - Object storage (local / S3)
+    scheduler/        - Scheduled jobs
+    workflow/         - Workflow engine
+    integration/      - Third-party callback verification
+    ai-trace/         - AI Q&A trace
   docs/               - Documentation sources
 ```
 

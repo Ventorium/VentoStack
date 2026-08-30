@@ -178,7 +178,7 @@ export interface ScheduleJob {
   cron: string;
   handlerId: string;
   params: string;
-  status: string;
+  status: number;
   description: string;
   createdAt: string;
   updatedAt: string;
@@ -190,7 +190,7 @@ export interface ScheduleJobLog {
   jobName: string;
   startAt: string;
   endAt: string;
-  status: string;
+  status: number;
   result: string;
   error: string;
   durationMs: number;
@@ -278,7 +278,8 @@ export interface NotifyMessage {
   channel: string;
   title: string;
   content: string;
-  status: string;
+  status: number;
+  read: boolean;
   createdAt: string;
 }
 

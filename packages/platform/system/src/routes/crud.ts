@@ -5,7 +5,7 @@
  * 使用 router.use(authMiddleware) 注册为组中间件。
  */
 
-import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, RouteSchemaConfig, Router } from "@ventostack/core";
 
 interface CrudService {
@@ -93,6 +93,9 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
   // List
   const listConfig = schemas?.item
     ? ({
+        // strict: false — CRUD 列表允许任意搜索/筛选参数（name/status/type 等），
+        // 由各 service 自行消费，避免未知字段被 strict 校验拒绝导致搜索 400。
+        strict: false,
         query: {
           page: { type: "int" as const, default: 1, description: "页码" },
           pageSize: { type: "int" as const, default: 10, description: "每页数量" },
@@ -122,7 +125,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       });
       return paginated(result.items, result.total, result.page, result.pageSize);
     },
-    perm(module, `${resource}:list`),
+    perm(resource, "list"),
   );
 
   // Get by ID
@@ -142,7 +145,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         if (!item) return fail("Not found", 404, 404);
         return success(item);
       },
-      perm(module, `${resource}:query`),
+      perm(resource, "query"),
     );
   }
 
@@ -163,10 +166,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         const result = await service.create(body);
         return success(result);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : "Create failed", 400);
+        return fail(safeErrorMessage(e, "Create failed"), 400);
       }
     },
-    perm(module, `${resource}:create`),
+    perm(resource, "create"),
   );
 
   // Update
@@ -186,10 +189,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         await service.update(id, body);
         return success(null);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : "Update failed", 400);
+        return fail(safeErrorMessage(e, "Update failed"), 400);
       }
     },
-    perm(module, `${resource}:update`),
+    perm(resource, "update"),
   );
 
   // Delete
@@ -206,10 +209,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         await service.delete(id);
         return success(null);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : "Delete failed", 400);
+        return fail(safeErrorMessage(e, "Delete failed"), 400);
       }
     },
-    perm(module, `${resource}:delete`),
+    perm(resource, "delete"),
   );
 
   // Extra routes (also protected by authMiddleware via router.use above)

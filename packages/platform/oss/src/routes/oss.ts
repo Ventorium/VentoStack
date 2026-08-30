@@ -2,7 +2,7 @@
  * @ventostack/oss - 文件存储路由
  */
 
-import { createRouter, fail, pageOf, paginated, success } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { OSSService } from "../services/oss";
 
@@ -102,10 +102,10 @@ export function createOSSRoutes(
 
         return success(result);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : "上传失败", 400);
+        return fail(safeErrorMessage(e, "上传失败"), 400);
       }
     },
-    perm("oss", "file:upload"),
+    perm("oss:file", "upload"),
   );
 
   // List files
@@ -117,6 +117,7 @@ export function createOSSRoutes(
         pageSize: { type: "int" as const, default: 10, description: "每页数量" },
         bucket: { type: "string" as const, description: "存储桶筛选" },
         uploaderId: { type: "uuid" as const, description: "上传者 ID 筛选" },
+        filename: { type: "string" as const, description: "文件名模糊搜索" },
       },
       responses: { 200: paginatedFileSchema },
       openapi: { summary: "获取文件列表", tags: ["oss"], operationId: "listFiles" },
@@ -129,12 +130,13 @@ export function createOSSRoutes(
         tenantId: getTenantId(ctx),
         bucket: q.bucket as string | undefined,
         uploaderId: q.uploaderId as string | undefined,
+        filename: q.filename as string | undefined,
         page,
         pageSize,
       });
       return paginated(result.items, result.total, result.page, result.pageSize);
     },
-    perm("oss", "file:list"),
+    perm("oss:file", "list"),
   );
 
   // Get file metadata
@@ -150,7 +152,7 @@ export function createOSSRoutes(
       if (!file) return fail("文件不存在", 404, 404);
       return success(file);
     },
-    perm("oss", "file:query"),
+    perm("oss:file", "query"),
   );
 
   // Download file
@@ -172,7 +174,7 @@ export function createOSSRoutes(
         },
       });
     },
-    perm("oss", "file:download"),
+    perm("oss:file", "download"),
   );
 
   // Get signed URL
@@ -193,12 +195,13 @@ export function createOSSRoutes(
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       const q = ctx.query as Record<string, unknown>;
-      const expiresIn = q.expiresIn ? Number(q.expiresIn) : 3600;
+      // 过期时间上限 7 天（604800s），防止长期有效的签名 URL
+      const expiresIn = Math.min(Math.max(Number(q.expiresIn) || 3600, 60), 604800);
       const url = await ossService.getSignedUrl(id, getTenantId(ctx), expiresIn);
       if (!url) return fail("文件不存在", 404, 404);
       return success({ url, expiresIn });
     },
-    perm("oss", "file:query"),
+    perm("oss:file", "query"),
   );
 
   // Delete file
@@ -212,7 +215,7 @@ export function createOSSRoutes(
       await ossService.delete(id, getTenantId(ctx));
       return success(null);
     },
-    perm("oss", "file:delete"),
+    perm("oss:file", "delete"),
   );
 
   return router;

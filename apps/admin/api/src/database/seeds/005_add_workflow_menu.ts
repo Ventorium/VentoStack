@@ -83,6 +83,53 @@ export const addWorkflowMenuSeed: Seed = {
       ],
     );
 
+    // 按钮级权限（type=3）：与 workflow 路由 perm 调用一一对应
+    const buttonPermissions: Array<{
+      menuId: string;
+      buttons: Array<{ name: string; permission: string; sort: number }>;
+    }> = [
+      {
+        menuId: defMenuId,
+        buttons: [
+          { name: "流程新增", permission: "workflow:definition:create", sort: 1 },
+          { name: "流程详情", permission: "workflow:definition:query", sort: 2 },
+          { name: "流程修改", permission: "workflow:definition:update", sort: 3 },
+          { name: "流程删除", permission: "workflow:definition:delete", sort: 4 },
+          { name: "发布流程", permission: "workflow:definition:publish", sort: 5 },
+          { name: "停用流程", permission: "workflow:definition:disable", sort: 6 },
+          { name: "克隆流程", permission: "workflow:definition:create", sort: 7 },
+        ],
+      },
+      {
+        menuId: instanceMenuId,
+        buttons: [
+          { name: "发起申请", permission: "workflow:instance:create", sort: 1 },
+          { name: "申请详情", permission: "workflow:instance:query", sort: 2 },
+          { name: "撤回申请", permission: "workflow:instance:update", sort: 3 },
+        ],
+      },
+      {
+        menuId: taskMenuId,
+        buttons: [
+          { name: "审批通过", permission: "workflow:task:approve", sort: 1 },
+          { name: "审批驳回", permission: "workflow:task:reject", sort: 2 },
+          { name: "转办", permission: "workflow:task:transfer", sort: 3 },
+          { name: "加签", permission: "workflow:task:add-sign", sort: 4 },
+          { name: "催办", permission: "workflow:task:urge", sort: 5 },
+        ],
+      },
+    ];
+
+    for (const { menuId, buttons } of buttonPermissions) {
+      for (const btn of buttons) {
+        await executor(
+          `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+           VALUES ($1, $2, $3, NULL, NULL, NULL, 3, $4, NULL, $5, TRUE, 1, NOW(), NOW())`,
+          [generateUUID(), menuId, btn.name, btn.permission, btn.sort],
+        );
+      }
+    }
+
     // 绑定到 admin 角色
     const adminRole = await executor(`SELECT id FROM sys_role WHERE code = 'admin'`);
     const [admin] = adminRole as unknown as Array<{ id: string }>;
@@ -92,6 +139,17 @@ export const addWorkflowMenuSeed: Seed = {
         await executor('INSERT INTO sys_role_menu (role_id, menu_id) VALUES ($1, $2)', [
           adminRoleId,
           menuId,
+        ]);
+      }
+      // 绑定按钮权限到 admin 角色
+      const allChildMenuIds = await executor(
+        `SELECT id FROM sys_menu WHERE parent_id IN ($1, $2, $3)`,
+        [defMenuId, instanceMenuId, taskMenuId],
+      );
+      for (const row of allChildMenuIds as unknown as Array<{ id: string }>) {
+        await executor('INSERT INTO sys_role_menu (role_id, menu_id) VALUES ($1, $2)', [
+          adminRoleId,
+          row.id,
         ]);
       }
     }

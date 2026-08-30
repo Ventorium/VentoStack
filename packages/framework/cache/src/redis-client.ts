@@ -83,6 +83,11 @@ export function createRedisClient(options: RedisClientOptions): RedisClientInsta
     async exists(key: string) {
       return client.exists(key);
     },
+    async setNX(key: string, value: string, ttlSeconds: number) {
+      // 原子 SET NX EX：仅当键不存在时设置并带过期时间，用于分布式锁
+      const result = await client.send("SET", [key, value, "NX", "EX", String(ttlSeconds)]);
+      return result === "OK";
+    },
     async keys(pattern: string) {
       return client.keys(pattern);
     },

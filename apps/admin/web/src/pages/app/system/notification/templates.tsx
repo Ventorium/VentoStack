@@ -28,13 +28,13 @@ const fetcher = (params: Record<string, unknown>) =>
   client.get(NOTIFICATION_API.TEMPLATES, { query: cleanParams(params) });
 
 const channelOptions = [
-  { label: "邮件", value: "smtp" },
+  { label: "邮件", value: "email" },
   { label: "短信", value: "sms" },
   { label: "Webhook", value: "webhook" },
 ];
 
 const channelMap: Record<string, { label: string; color: string }> = {
-  smtp: { label: "邮件", color: "blue" },
+  email: { label: "邮件", color: "blue" },
   sms: { label: "短信", color: "green" },
   webhook: { label: "Webhook", color: "purple" },
 };

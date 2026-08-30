@@ -23,6 +23,8 @@ export interface CreateUserParams {
   deptId?: string;
   /** 岗位 ID 列表 */
   postIds?: string[];
+  /** 角色 ID 列表 */
+  roleIds?: string[];
   status?: number;
   remark?: string;
 }
@@ -37,6 +39,8 @@ export interface UpdateUserParams {
   deptId?: string;
   /** 岗位 ID 列表 */
   postIds?: string[];
+  /** 角色 ID 列表 */
+  roleIds?: string[];
   status?: number;
   remark?: string;
 }
@@ -54,6 +58,8 @@ export interface UserDetail {
   deptId: string | null;
   /** 岗位列表 */
   posts: Array<{ id: string; name: string; code: string }>;
+  /** 角色列表 */
+  roles: Array<{ id: string; name: string; code: string }>;
   mfaEnabled: boolean;
   remark: string | null;
   createdAt: string;
@@ -72,6 +78,8 @@ export interface UserListItem {
   tags?: Array<{ id: string; name: string; code: string }>;
   /** 岗位列表 */
   posts?: Array<{ id: string; name: string; code: string }>;
+  /** 角色列表 */
+  roles?: Array<{ id: string; name: string; code: string }>;
   createdAt: string;
 }
 
@@ -180,6 +188,59 @@ export function createUserService(deps: {
     );
   }
 
+  /** 校验角色 ID 均存在且启用，返回无效的角色 ID */
+  async function findInvalidRoleIds(roleIds: string[]): Promise<string[]> {
+    if (roleIds.length === 0) return [];
+    const placeholders = roleIds.map((_, i) => `$${i + 1}`);
+    const rows = await db.raw(
+      `SELECT id FROM sys_role WHERE id IN (${placeholders.join(', ')}) AND status = 1 AND deleted_at IS NULL`,
+      roleIds,
+    );
+    const valid = new Set((rows as Array<{ id: string }>).map((r) => r.id));
+    return roleIds.filter((id) => !valid.has(id));
+  }
+
+  /** 覆盖用户的角色关联（单条 CTE：DELETE+INSERT+ON CONFLICT，避免 BEGIN/COMMIT 限制） */
+  async function assignUserRoles(userId: string, roleIds: string[]): Promise<void> {
+    if (roleIds.length === 0) {
+      await db.raw('DELETE FROM sys_user_role WHERE user_id = $1', [userId]);
+      return;
+    }
+    const placeholders = roleIds.map((_, i) => `$${i * 2 + 2}`).join(', ');
+    const params: string[] = [userId];
+    for (const roleId of roleIds) params.push(roleId);
+    await db.raw(
+      `WITH d AS (DELETE FROM sys_user_role WHERE user_id = $1 RETURNING user_id)
+       INSERT INTO sys_user_role (user_id, role_id)
+       SELECT $1, unnest(ARRAY[${placeholders}]::varchar[])
+       WHERE EXISTS (SELECT 1 FROM d)
+       ON CONFLICT (user_id, role_id) DO NOTHING`,
+      params,
+    );
+  }
+
+  /** 查询用户角色 */
+  async function getUserRoles(
+    userIds: string[],
+  ): Promise<Map<string, Array<{ id: string; name: string; code: string }>>> {
+    const map = new Map<string, Array<{ id: string; name: string; code: string }>>();
+    if (userIds.length === 0) return map;
+    const placeholders = userIds.map((_, i) => `$${i + 1}`);
+    const rows = await db.raw(
+      `SELECT ur.user_id, r.id, r.name, r.code
+       FROM sys_user_role ur
+       JOIN sys_role r ON r.id = ur.role_id
+       WHERE ur.user_id IN (${placeholders.join(', ')}) AND r.deleted_at IS NULL`,
+      userIds,
+    );
+    for (const row of rows as Array<{ user_id: string; id: string; name: string; code: string }>) {
+      const arr = map.get(row.user_id) ?? [];
+      arr.push({ id: row.id, name: row.name, code: row.code });
+      map.set(row.user_id, arr);
+    }
+    return map;
+  }
+
   /** 查询用户岗位 */
   async function getUserPosts(
     userIds: string[],
@@ -212,6 +273,13 @@ export function createUserService(deps: {
       const invalidPosts = await findInvalidPostIds(dedupPostIds ?? []);
       if (invalidPosts.length > 0) {
         throw new Error(`岗位不存在或已停用: ${invalidPosts.join(', ')}`);
+      }
+
+      // 校验 + 去重角色 ID
+      const dedupRoleIds = params.roleIds ? [...new Set(params.roleIds)] : undefined;
+      const invalidRoles = await findInvalidRoleIds(dedupRoleIds ?? []);
+      if (invalidRoles.length > 0) {
+        throw new Error(`角色不存在或已停用: ${invalidRoles.join(', ')}`);
       }
 
       // 密码：若未提供则使用系统默认初始密码
@@ -250,6 +318,9 @@ export function createUserService(deps: {
       if (dedupPostIds) {
         await assignUserPosts(id, dedupPostIds);
       }
+      if (dedupRoleIds) {
+        await assignUserRoles(id, dedupRoleIds);
+      }
 
       // 清除用户列表缓存
       await cache.del(ns.listKey('user'));
@@ -265,6 +336,13 @@ export function createUserService(deps: {
         throw new Error(`岗位不存在或已停用: ${invalidPosts.join(', ')}`);
       }
 
+      // 校验角色 ID
+      const dedupRoleIds = params.roleIds ? [...new Set(params.roleIds)] : undefined;
+      const invalidRoles = await findInvalidRoleIds(dedupRoleIds ?? []);
+      if (invalidRoles.length > 0) {
+        throw new Error(`角色不存在或已停用: ${invalidRoles.join(', ')}`);
+      }
+
       const updates: Record<string, unknown> = {};
       if (params.email !== undefined) updates.email = params.email;
       if (params.phone !== undefined) updates.phone = params.phone;
@@ -275,8 +353,8 @@ export function createUserService(deps: {
       if (params.status !== undefined) updates.status = params.status;
       if (params.remark !== undefined) updates.remark = params.remark;
 
-      // 当既无字段需要更新、也不调整岗位时，直接返回
-      if (Object.keys(updates).length === 0 && dedupPostIds === undefined) return;
+      // 当既无字段需要更新、也不调整岗位/角色时，直接返回
+      if (Object.keys(updates).length === 0 && dedupPostIds === undefined && dedupRoleIds === undefined) return;
 
       // 注：Bun.sql 多连接池禁止事务里 BEGIN/COMMIT，sys_user update + sys_user_post
       // 覆盖写拆为两条串行 SQL；DELETE+INSERT 合并到 assignUserPosts 内部单条 CTE 保证原子。
@@ -285,6 +363,9 @@ export function createUserService(deps: {
       }
       if (dedupPostIds !== undefined) {
         await assignUserPosts(id, dedupPostIds);
+      }
+      if (dedupRoleIds !== undefined) {
+        await assignUserRoles(id, dedupRoleIds);
       }
 
       // 清除用户缓存
@@ -329,6 +410,7 @@ export function createUserService(deps: {
       if (!row) return null;
 
       const postMap = await getUserPosts([id]);
+      const roleMap = await getUserRoles([id]);
       const detail: UserDetail = {
         id: row.id,
         username: row.username,
@@ -340,6 +422,7 @@ export function createUserService(deps: {
         status: row.status,
         deptId: row.dept_id ?? null,
         posts: postMap.get(id) ?? [],
+        roles: roleMap.get(id) ?? [],
         mfaEnabled: row.mfa_enabled,
         remark: row.remark ?? null,
         createdAt:
@@ -392,6 +475,7 @@ export function createUserService(deps: {
         createdAt: string;
         tags: Array<{ id: string; name: string; code: string }>;
         posts: Array<{ id: string; name: string; code: string }>;
+        roles: Array<{ id: string; name: string; code: string }>;
       }> = rows.map((row) => ({
         id: row.id,
         username: row.username,
@@ -404,11 +488,13 @@ export function createUserService(deps: {
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
         tags: [],
         posts: [],
+        roles: [],
       }));
 
-      // 批量获取用户标签与岗位
+      // 批量获取用户标签、岗位与角色
       let tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       let postMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
+      let roleMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       if (list.length > 0) {
         const userIds = list.map((u) => u.id);
         const placeholders = userIds.map((_, i) => `$${i + 1}`);
@@ -430,9 +516,11 @@ export function createUserService(deps: {
           tagMap.set(tr.user_id, arr);
         }
         postMap = await getUserPosts(userIds);
+        roleMap = await getUserRoles(userIds);
         for (const item of list) {
           item.tags = tagMap.get(item.id) ?? [];
           item.posts = postMap.get(item.id) ?? [];
+          item.roles = roleMap.get(item.id) ?? [];
         }
       }
 
@@ -512,7 +600,11 @@ export function createUserService(deps: {
       const csvRows = rows.map((row) => {
         const escapeCsv = (val: unknown) => {
           if (val === null || val === undefined) return '';
-          const str = String(val);
+          let str = String(val);
+          // 公式注入防护：以 = + - @ 开头的单元格值前置单引号，防止 Excel/WPS 执行恶意公式
+          if (/^[=+\-@]/.test(str)) {
+            str = `'${str}`;
+          }
           if (str.includes(',') || str.includes('"') || str.includes('\n')) {
             return `"${str.replace(/"/g, '""')}"`;
           }

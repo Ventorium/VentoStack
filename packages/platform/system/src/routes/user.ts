@@ -5,7 +5,7 @@
  * 避免 get/post 等快捷方法将 authMiddleware 误识别为 handler。
  */
 
-import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { UserService } from "../services/user";
 
@@ -65,7 +65,7 @@ export function createUserRoutes(
       });
       return paginated(result.items, result.total, result.page, result.pageSize);
     },
-    perm("system", "user:list"),
+    perm("system:user", "list"),
   );
 
   router.get(
@@ -80,7 +80,7 @@ export function createUserRoutes(
       if (!user) return fail("用户不存在", 404, 404);
       return success(user);
     },
-    perm("system", "user:query"),
+    perm("system:user", "query"),
   );
 
   router.post(
@@ -112,10 +112,10 @@ export function createUserRoutes(
         const result = await userService.create(body as any);
         return success(result);
       } catch (e) {
-        return fail(e instanceof Error ? e.message : "创建失败", 400);
+        return fail(safeErrorMessage(e, "创建失败"), 400);
       }
     },
-    perm("system", "user:create"),
+    perm("system:user", "create"),
   );
 
   router.put(
@@ -138,7 +138,7 @@ export function createUserRoutes(
       await userService.update(id, body as any);
       return success(null);
     },
-    perm("system", "user:update"),
+    perm("system:user", "update"),
   );
 
   router.delete(
@@ -151,7 +151,7 @@ export function createUserRoutes(
       await userService.delete(id);
       return success(null);
     },
-    perm("system", "user:delete"),
+    perm("system:user", "delete"),
   );
 
   router.put(
@@ -168,7 +168,7 @@ export function createUserRoutes(
       await userService.resetPassword(id, body.newPassword as string);
       return success(null);
     },
-    perm("system", "user:resetPwd"),
+    perm("system:user", "resetPwd"),
   );
 
   router.put(
@@ -178,7 +178,7 @@ export function createUserRoutes(
         status: {
           type: "int" as const,
           required: true,
-          enum: ["0", "1"],
+          enum: [0, 1],
           description: "状态 0=停用 1=正常",
         },
       },
@@ -190,7 +190,7 @@ export function createUserRoutes(
       await userService.updateStatus(id, body.status as number);
       return success(null);
     },
-    perm("system", "user:update"),
+    perm("system:user", "update"),
   );
 
   router.post(
@@ -219,11 +219,11 @@ export function createUserRoutes(
           },
         });
       } catch (e) {
-        return fail(e instanceof Error ? e.message : "导出失败", 400);
+        return fail(safeErrorMessage(e, "导出失败"), 400);
       }
     },
     // 导出包含全量用户数据，需独立导出权限
-    perm("system", "user:export"),
+    perm("system:user", "export"),
   );
 
   return router;

@@ -141,12 +141,24 @@ export function pageOf(query: Record<string, unknown>): { page: number; pageSize
 }
 
 /**
- * 统一错误处理：VentoStackError 保留业务码，其余走 500
+ * 统一错误处理：VentoStackError 保留业务码，其余走 500（不泄露内部错误详情）
  */
 export function handleError(e: unknown): Response {
   if (e instanceof VentoStackError) {
     const status = e.code >= 400 && e.code < 600 ? e.code : 400;
     return fail(e.message, status, status);
   }
-  return fail(e instanceof Error ? e.message : "服务器内部错误", 500, 500);
+  // 非框架异常：返回固定脱敏文案，避免 SQL 细节 / 内部路径 / 供应商响应泄露。
+  // 完整错误信息应由调用方记录到服务端日志（如 logger.error(e)）。
+  return fail("服务器内部错误", 500, 500);
+}
+
+/**
+ * 将异常转换为安全的对外错误消息：
+ * - VentoStackError 保留业务消息（可安全展示）
+ * - 其他异常一律返回 fallback 文案，避免泄露内部细节
+ */
+export function safeErrorMessage(e: unknown, fallback: string): string {
+  if (e instanceof VentoStackError) return e.message;
+  return fallback;
 }

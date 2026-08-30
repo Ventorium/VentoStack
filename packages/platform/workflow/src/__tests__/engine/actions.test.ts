@@ -154,6 +154,78 @@ describe("actions.ts", () => {
       await expect(createTasksForNode(deps, db, "inst-1", node, makeCtx()))
         .rejects.toThrow("无可用审批人");
     });
+
+    it("sequential — should create task for first assignee only", async () => {
+      const node = { id: "n1", name: "依次", type: "approve" as const,
+        config: { strategy: "sequential", assignee: { mode: "fixed", userIds: ["u1", "u2", "u3"] } },
+        outgoingEdges: [], incomingEdges: [] };
+      await createTasksForNode(deps, db, "inst-1", node, makeCtx());
+      const insertCalls = calls.filter((c) => c.text.includes("INSERT INTO sys_workflow_task"));
+      expect(insertCalls.length).toBe(1);
+      expect(insertCalls[0]!.params).toContain("u1");
+      expect(insertCalls[0]!.params).not.toContain("u2");
+    });
+  });
+
+  describe("processNodeCompletion — sequential 依次审批多审批人", () => {
+    function seqGraphWithAssignees(userIds: string[]): WorkflowGraph {
+      const nodes: GraphNodeData[] = [
+        { id: "n-start", name: "开始", type: "start", config: null },
+        { id: "n-approve", name: "依次审批", type: "approve",
+          config: { strategy: "sequential", assignee: { mode: "fixed", userIds } } },
+        { id: "n-end", name: "结束", type: "end", config: null },
+      ];
+      const edges: GraphEdgeData[] = [
+        { id: "e1", source_node_id: "n-start", target_node_id: "n-approve" },
+        { id: "e2", source_node_id: "n-approve", target_node_id: "n-end" },
+      ];
+      return buildGraph(nodes, edges);
+    }
+
+    it("第一位审批人通过后创建下一位任务（不跳过 u2/u3）", async () => {
+      const graph = seqGraphWithAssignees(["u1", "u2", "u3"]);
+      // 当前只有 u1 的任务，状态 APPROVED
+      results.set("sys_workflow_task", [
+        { id: "t1", assignee_id: "u1", status: 1 },
+      ]);
+      const callsBefore = calls.length;
+      await processNodeCompletion(deps, db, "inst-1", graph, "n-approve", makeCtx());
+      // 应创建 u2 的新任务，且不推进节点（无 node_completed 历史）
+      const taskInserts = calls.slice(callsBefore).filter((c) => c.text.includes("INSERT INTO sys_workflow_task"));
+      expect(taskInserts.length).toBe(1);
+      expect(taskInserts[0]!.params).toContain("u2");
+      const hist = calls.slice(callsBefore).filter((c) => c.text.includes("INSERT INTO sys_workflow_history"));
+      expect(hist.some((h) => h.params?.includes("node_completed"))).toBe(false);
+    });
+
+    it("最后一位审批人通过后节点完成并推进到 end", async () => {
+      const graph = seqGraphWithAssignees(["u1", "u2"]);
+      // u1、u2 任务都已 APPROVED
+      results.set("sys_workflow_task", [
+        { id: "t1", assignee_id: "u1", status: 1 },
+        { id: "t2", assignee_id: "u2", status: 1 },
+      ]);
+      results.set("SELECT * FROM sys_workflow_instance WHERE id", [{ id: "inst-1", status: 0 }]);
+      await processNodeCompletion(deps, db, "inst-1", graph, "n-approve", makeCtx());
+      // 不再创建新任务
+      const taskInserts = calls.filter((c) => c.text.includes("INSERT INTO sys_workflow_task"));
+      expect(taskInserts.length).toBe(0);
+      // 节点完成 + 实例完结
+      expect(calls.some((c) => c.params?.includes("node_completed"))).toBe(true);
+      expect(calls.some((c) => c.text.includes("UPDATE sys_workflow_instance SET"))).toBe(true);
+    });
+
+    it("有人驳回时不创建下一位任务（直接驳回处理）", async () => {
+      const graph = seqGraphWithAssignees(["u1", "u2"]);
+      // u1 驳回，u2 尚未分配任务
+      results.set("sys_workflow_task", [
+        { id: "t1", assignee_id: "u1", status: 2 },
+      ]);
+      await processNodeCompletion(deps, db, "inst-1", graph, "n-approve", makeCtx());
+      // 不应创建 u2 任务
+      const taskInserts = calls.filter((c) => c.text.includes("INSERT INTO sys_workflow_task"));
+      expect(taskInserts.length).toBe(0);
+    });
   });
 
   describe("advanceFromNode", () => {

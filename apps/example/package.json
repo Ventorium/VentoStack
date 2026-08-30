@@ -9,7 +9,9 @@
     "@ventostack/cache": "workspace:*",
     "@ventostack/auth": "workspace:*",
     "@ventostack/events": "workspace:*",
-    "@ventostack/observability": "workspace:*"
+    "@ventostack/observability": "workspace:*",
+    "@ventostack/ai": "workspace:*",
+    "@ventostack/openapi": "workspace:*"
   },
   "devDependencies": {
     "@ventostack/testing": "workspace:*",

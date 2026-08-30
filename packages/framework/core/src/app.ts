@@ -176,12 +176,10 @@ export function createApp(config?: AppConfig): VentoStackApp {
       }
       activeRequests++;
       try {
-        // 注入真实客户端 IP（Bun Server 级别，无需反向代理即可获取）
-        if (
-          server &&
-          !request.headers.has('x-forwarded-for') &&
-          !request.headers.has('x-real-ip')
-        ) {
+        // 注入真实客户端 IP（Bun Server 级别，无需反向代理即可获取）。
+        // 无条件覆盖 x-real-ip：该头仅应由服务端写入，客户端提供的值不可信，
+        // 防止攻击者伪造后欺骗依赖代理头的审计/限流逻辑。
+        if (server) {
           try {
             const addr = server.requestIP(request);
             if (addr) {
@@ -191,7 +189,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
                 params?: Record<string, string>;
               };
               // Preserve Bun native route params
-              newReq.params = (request as Request & { params?: Record<string, string> }).params;
+              newReq.params = (request as Request & { params?: Record<string, string> }).params as Record<string, string>;
               request = newReq;
             }
           } catch {

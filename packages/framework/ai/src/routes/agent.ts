@@ -69,7 +69,8 @@ function validateAgentBody(body: Record<string, unknown>): string | null {
   }
   for (const field of ['tools', 'knowledgeBaseIds', 'skillIds', 'mcpServerIds'] as const) {
     const list = body[field];
-    if (list !== undefined && (!Array.isArray(list) || list.length > MAX_LIST_LENGTH)) {
+    // null 表示清空该能力列表（前端清空时发送 null），undefined 表示不修改
+    if (list !== undefined && list !== null && (!Array.isArray(list) || list.length > MAX_LIST_LENGTH)) {
       return `${field} 必须是数组且最多 ${MAX_LIST_LENGTH} 项`;
     }
   }

@@ -78,7 +78,7 @@ const SchedulerLogsPage = () => {
       key: "status",
       width: 100,
       render: (v: string) =>
-        v === "SUCCESS" ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>,
+        v === 1 ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>,
     },
     {
       title: "错误信息",
@@ -96,8 +96,8 @@ const SchedulerLogsPage = () => {
         <Form form={searchForm} layout="inline">
           <Form.Item name="status" initialValue={undefined}>
             <Select placeholder="状态" className="w-[120px]" allowClear>
-              <Select.Option value="SUCCESS">成功</Select.Option>
-              <Select.Option value="FAILED">失败</Select.Option>
+              <Select.Option value={1}>成功</Select.Option>
+              <Select.Option value={0}>失败</Select.Option>
             </Select>
           </Form.Item>
           <Space>

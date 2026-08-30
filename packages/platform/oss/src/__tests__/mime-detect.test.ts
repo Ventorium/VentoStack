@@ -3,7 +3,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
-import { detectMIME, mimeFromExtension } from "../services/mime-detect";
+import { assertSafeUpload, detectMIME, mimeFromExtension } from "../services/mime-detect";
 
 describe("MIME Detection", () => {
   describe("detectMIME (magic bytes)", () => {
@@ -52,7 +52,6 @@ describe("MIME Detection", () => {
       expect(mimeFromExtension(".png")).toBe("image/png");
       expect(mimeFromExtension(".gif")).toBe("image/gif");
       expect(mimeFromExtension(".webp")).toBe("image/webp");
-      expect(mimeFromExtension(".svg")).toBe("image/svg+xml");
     });
 
     test("文档扩展名", () => {
@@ -63,11 +62,12 @@ describe("MIME Detection", () => {
       );
     });
 
-    test("代码文件扩展名", () => {
-      expect(mimeFromExtension(".json")).toBe("application/json");
-      expect(mimeFromExtension(".html")).toBe("text/html");
-      expect(mimeFromExtension(".css")).toBe("text/css");
-      expect(mimeFromExtension(".js")).toBe("application/javascript");
+    test("可执行/可嵌入脚本类型不映射（安全白名单移除）", () => {
+      // 安全策略：html/svg/xml/js/css 等可执行或可嵌入脚本的类型不允许上传
+      expect(mimeFromExtension(".svg")).toBeNull();
+      expect(mimeFromExtension(".html")).toBeNull();
+      expect(mimeFromExtension(".css")).toBeNull();
+      expect(mimeFromExtension(".js")).toBeNull();
     });
 
     test("未知扩展名返回 null", () => {
@@ -78,6 +78,36 @@ describe("MIME Detection", () => {
     test("大小写不敏感", () => {
       expect(mimeFromExtension(".JPG")).toBe("image/jpeg");
       expect(mimeFromExtension(".PDF")).toBe("application/pdf");
+    });
+  });
+
+  describe("assertSafeUpload", () => {
+    test("允许白名单扩展名且 magic bytes 匹配", () => {
+      const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0]);
+      expect(assertSafeUpload("a.png", png)).toBe("image/png");
+    });
+
+    test("拒绝可执行类型（html/svg）", () => {
+      const data = Buffer.from("<script>alert(1)</script>");
+      expect(() => assertSafeUpload("a.html", data)).toThrow("不允许的文件类型");
+      expect(() => assertSafeUpload("a.svg", data)).toThrow("不允许的文件类型");
+      expect(() => assertSafeUpload("a.js", data)).toThrow("不允许的文件类型");
+    });
+
+    test("拒绝无扩展名文件", () => {
+      const data = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0, 0, 0, 0, 0, 0, 0]);
+      expect(() => assertSafeUpload("document", data)).toThrow("不允许的文件类型");
+    });
+
+    test("拒绝内容与扩展名不匹配的文件", () => {
+      // 扩展名是 png 但内容是文本
+      const data = Buffer.from("not really a png");
+      expect(() => assertSafeUpload("a.png", data)).toThrow("文件内容与扩展名不匹配");
+    });
+
+    test("拒绝伪装成图片的 HTML", () => {
+      const data = Buffer.from("<script>alert(1)</script>");
+      expect(() => assertSafeUpload("evil.png", data)).toThrow("文件内容与扩展名不匹配");
     });
   });
 });

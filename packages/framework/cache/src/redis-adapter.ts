@@ -23,6 +23,12 @@ export interface RedisCacheClientLike {
   exists(key: string): Promise<boolean>;
   /** 按模式匹配键 */
   keys(pattern: string): Promise<string[]>;
+  /**
+   * 原子 SET NX EX（仅当键不存在时设置并带过期时间）。
+   * 返回 true 表示设置成功（获得锁），false 表示键已存在。
+   * 非 Redis 客户端可留空（由调用方降级为非原子路径）。
+   */
+  setNX?(key: string, value: string, ttlSeconds: number): Promise<boolean>;
   /** 发送原始 Redis 命令，用于 FLUSHDB 等非标准方法 */
   send(command: string, args: string[]): Promise<unknown>;
 }
@@ -76,6 +82,19 @@ export function createRedisAdapter(options: RedisAdapterOptions): CacheAdapter {
     return client.exists(prefixed(key));
   }
 
+  async function setNX(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+    if (!client.setNX) {
+      // 无原子能力时降级为 check-then-set（尽力而为）
+      const p = prefixed(key);
+      const exists = await client.exists(p);
+      if (exists) return false;
+      await client.set(p, value);
+      if (ttlSeconds > 0) await client.expire(p, ttlSeconds);
+      return true;
+    }
+    return client.setNX(prefixed(key), value, ttlSeconds);
+  }
+
   async function flush(): Promise<void> {
     await client.send("FLUSHDB", []);
   }
@@ -97,5 +116,5 @@ export function createRedisAdapter(options: RedisAdapterOptions): CacheAdapter {
     return next;
   }
 
-  return { get, set, del, has, flush, keys, increment };
+  return { get, set, del, has, setNX, flush, keys, increment };
 }

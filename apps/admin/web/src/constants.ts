@@ -40,6 +40,7 @@ export const SCHEDULER_API = {
 /** 消息通知模块 */
 export const NOTIFICATION_API = {
   MESSAGES: "/api/system/notification/messages",
+  MESSAGE_DELETE: "/api/system/notification/messages/:id",
   UNREAD_COUNT: "/api/system/notification/messages/unread-count",
   MESSAGE_READ: "/api/system/notification/messages/:id/read",
   MESSAGE_READ_BATCH: "/api/system/notification/messages/read-batch",

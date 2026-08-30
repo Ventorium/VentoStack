@@ -17,11 +17,13 @@ import {
   rateLimit,
   requestId,
   requestLogger,
+  timeout,
 } from '@ventostack/core';
 import type { Middleware, VentoStackApp } from '@ventostack/core';
 import { createDatabase, listTables, readTableSchema } from '@ventostack/database';
 import { createEventBus, createScheduler } from '@ventostack/events';
 import { createInAppChannel } from '@ventostack/notification';
+import { STATIC_ALLOWED_EXTENSIONS } from '@ventostack/oss';
 import {
   createAuditLog,
   createDefaultHealthCheck,
@@ -173,7 +175,10 @@ export async function buildApp(opts?: {
     notifyChannels: new Map([['in_app', createInAppChannel()]]),
     // 多租户隔离开关
     tenantEnabled: env.TENANT_ENABLED,
-    // jobHandlers: { ... }, // 注册定时任务处理器
+    // 认证 Cookie Secure 属性（生产环境必须为 true，防止令牌明文传输）
+    secureCookies: env.COOKIE_SECURE || env.NODE_ENV === 'production',
+    // 可信反向代理 IP/CIDR 列表（登录审计/操作日志/限流据此提取真实客户端 IP）
+    trustedProxies: env.TRUSTED_PROXIES,
   });
 
   // 初始化所有模块（加载权限、启动定时任务等）
@@ -261,6 +266,16 @@ export async function buildApp(opts?: {
   });
   app.use(requestLogger());
 
+  // 4a-1. 全局请求超时兜底（30s）：防止慢查询/外部调用长期占用连接。
+  // 跳过 SSE 流式端点（AI 对话流可长连接），其余请求超时返回 408。
+  const ssePaths = new Set(['/api/ai/chat/stream']);
+  const timeoutMiddleware: Middleware = (ctx, next) => {
+    const pathname = new URL(ctx.request.url).pathname;
+    if (ssePaths.has(pathname)) return next();
+    return timeout({ ms: 30_000 })(ctx, next);
+  };
+  app.use(timeoutMiddleware);
+
   // 4b. 判断是否使用独立管理端口
   const useAdminPort = env.ADMIN_PORT > 0;
 
@@ -329,6 +344,8 @@ export async function buildApp(opts?: {
       createStaticMiddleware({
         root: env.STORAGE_LOCAL_PATH,
         prefix: '/uploads',
+        // 扩展名白名单：与 OSS 上传白名单一致，防止上传目录中的可执行文件被同源返回
+        allowedExtensions: STATIC_ALLOWED_EXTENSIONS,
       }),
     );
   }

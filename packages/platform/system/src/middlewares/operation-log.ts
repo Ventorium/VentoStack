@@ -5,6 +5,7 @@
  */
 
 import type { Middleware } from "@ventostack/core";
+import { isSensitiveFieldName } from "@ventostack/observability";
 import type { AuditStore } from "@ventostack/observability";
 
 /** 操作日志中间件配置 */
@@ -349,9 +350,10 @@ function sanitize(obj: unknown, sensitiveSet: Set<string>): unknown {
   if (typeof obj !== "object") return obj;
   if (Array.isArray(obj)) return obj.map((item) => sanitize(item, sensitiveSet));
 
+  const sensitiveFields = Array.from(sensitiveSet);
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(obj as Record<string, unknown>)) {
-    if (sensitiveSet.has(key.toLowerCase())) {
+    if (isSensitiveFieldName(key, sensitiveFields)) {
       result[key] = "******";
     } else if (typeof value === "object" && value !== null) {
       result[key] = sanitize(value, sensitiveSet);

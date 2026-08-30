@@ -37,6 +37,8 @@ export interface NotifyMessage {
   content: string;
   variables: Record<string, unknown> | null;
   status: number;
+  /** 是否已读（由 sys_notify_user_read 决定，与 status 发送状态维度不同） */
+  read: boolean;
   retryCount: number;
   sendAt: string | null;
   error: string | null;
@@ -90,6 +92,8 @@ export interface NotificationService {
     receiverId?: string;
     channel?: string;
     status?: number;
+    /** "read" 只看已读，"unread" 只看未读（基于 sys_notify_user_read） */
+    read?: string;
     page?: number;
     pageSize?: number;
   }): Promise<PaginatedResult<NotifyMessage>>;
@@ -98,6 +102,8 @@ export interface NotificationService {
   markRead(userId: string, messageId: string): Promise<void>;
   markBatchRead(userId: string, messageIds: string[]): Promise<void>;
   retry(messageId: string): Promise<void>;
+  /** 删除消息（校验归属，仅允许接收者本人删除） */
+  deleteMessage(userId: string, messageId: string): Promise<void>;
 
   // Template CRUD
   createTemplate(params: {
@@ -246,7 +252,7 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
     },
 
     async listMessages(params) {
-      const { receiverId, channel, status, page = 1, pageSize = 10 } = params;
+      const { receiverId, channel, status, read, page = 1, pageSize = 10 } = params;
 
       let query = db.query(NotifyMessageModel);
       if (receiverId) query = query.where('receiver_id', '=', receiverId);
@@ -275,7 +281,21 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
         .offset((page - 1) * pageSize)
         .list();
 
-      const items = rows.map((row) => ({
+      // 查询已读记录（sys_notify_user_read），用于返回 read 状态
+      // 已读状态与发送状态（status）是不同维度：status 表示发送结果，read 表示用户是否阅读
+      const readMessageIds = new Set<string>();
+      if (receiverId && rows.length > 0) {
+        const placeholders = rows.map((_, i) => `$${i + 2}`).join(', ');
+        const readRows = await db.raw(
+          `SELECT message_id FROM sys_notify_user_read WHERE user_id = $1 AND message_id IN (${placeholders})`,
+          [receiverId, ...rows.map((r) => r.id)],
+        );
+        for (const rr of readRows as Array<{ message_id: string }>) {
+          readMessageIds.add(rr.message_id);
+        }
+      }
+
+      let items = rows.map((row) => ({
         id: row.id,
         templateId: row.template_id ?? null,
         channel: row.channel,
@@ -284,11 +304,16 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
         content: row.content,
         variables: row.variables ? JSON.parse(row.variables as string) : null,
         status: row.status,
+        read: readMessageIds.has(row.id),
         retryCount: row.retry_count,
         sendAt: row.send_at ? row.send_at.toISOString() : null,
         error: row.error ?? null,
         createdAt: row.created_at.toISOString(),
       }));
+
+      // 按已读状态筛选（read=read 只看已读；read=unread 只看未读）
+      if (read === 'read') items = items.filter((m) => m.read);
+      if (read === 'unread') items = items.filter((m) => !m.read);
 
       return {
         items,
@@ -365,6 +390,21 @@ export function createNotificationService(deps: NotificationServiceDeps): Notifi
           send_at: sendAt,
           error: result.error ?? null,
         });
+    },
+
+    async deleteMessage(userId, messageId) {
+      // 校验归属：仅允许接收者本人删除
+      const msg = await db
+        .query(NotifyMessageModel)
+        .where('id', '=', messageId)
+        .where('receiver_id', '=', userId)
+        .select('id')
+        .get();
+      if (!msg) throw new Error('消息不存在或无权删除');
+
+      // 硬删除消息 + 清理已读记录
+      await db.query(NotifyMessageModel).where('id', '=', messageId).hardDelete();
+      await db.raw('DELETE FROM sys_notify_user_read WHERE message_id = $1', [messageId]);
     },
 
     async createTemplate(params) {

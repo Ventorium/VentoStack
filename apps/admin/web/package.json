@@ -7,7 +7,6 @@
     "build": "node scripts/build-info.mjs && vite build",
     "dev": "vite",
     "format": "biome check --write .",
-    "postinstall": "igit install 2>/dev/null || true",
     "lint:all": "npm run format",
     "preview": "vite preview",
     "gen:sdk": "o2t generate typescript"

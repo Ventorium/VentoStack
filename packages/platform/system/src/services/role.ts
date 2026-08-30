@@ -17,6 +17,8 @@ export interface CreateRoleParams {
   code: string;
   sort?: number;
   dataScope?: number;
+  /** 状态 0=停用 1=启用 */
+  status?: number;
   remark?: string;
 }
 
@@ -76,7 +78,7 @@ export function createRoleService(deps: {
 
   return {
     async create(params) {
-      const { name, code, sort, dataScope, remark } = params;
+      const { name, code, sort, dataScope, remark, status } = params;
       const id = crypto.randomUUID();
 
       await db.query(RoleModel).insert({
@@ -85,7 +87,7 @@ export function createRoleService(deps: {
         code,
         sort: sort ?? 0,
         data_scope: dataScope ?? null,
-        status: 1,
+        status: status ?? 1,
         remark: remark ?? null,
       });
 
@@ -101,6 +103,7 @@ export function createRoleService(deps: {
       if (params.sort !== undefined) updates.sort = params.sort;
       if (params.dataScope !== undefined) updates.data_scope = params.dataScope;
       if (params.remark !== undefined) updates.remark = params.remark;
+      if (params.status !== undefined) updates.status = params.status;
 
       if (Object.keys(updates).length === 0) return;
 

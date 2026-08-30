@@ -31,7 +31,7 @@ export interface UpdateDefParams {
   formConfig?: Record<string, unknown>; settings?: Record<string, unknown>;
 }
 
-export interface ListDefParams { status?: number; category?: string; businessType?: string; tenantId?: string; page?: number; pageSize?: number }
+export interface ListDefParams { status?: number; category?: string; businessType?: string; name?: string; tenantId?: string; page?: number; pageSize?: number }
 export interface PaginatedResult<T> { items: T[]; total: number; page: number; pageSize: number }
 
 export interface DefinitionService {
@@ -106,11 +106,12 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
   }
 
   async function list(params?: ListDefParams): Promise<PaginatedResult<WorkflowDefinition>> {
-    const { status, category, businessType, tenantId, page = 1, pageSize = 10 } = params ?? {};
+    const { status, category, businessType, name, tenantId, page = 1, pageSize = 10 } = params ?? {};
     let q = db.query(WorkflowDefModel);
     if (status !== undefined) q = q.where("status", "=", status);
     if (category) q = q.where("category", "=", category);
     if (businessType) q = q.where("business_type", "=", businessType);
+    if (name) q = q.where("name", "LIKE", `%${name}%`);
     if (tenantId) q = q.where("tenant_id", "=", tenantId);
     const total = await q.count();
     const rows = await q

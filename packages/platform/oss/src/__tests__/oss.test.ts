@@ -88,21 +88,54 @@ describe("OSS Service", () => {
       expect(result.mimeType).toBe("text/plain");
     });
 
-    test("无扩展名文件 fallback 到 magic byte 检测", async () => {
+    test("无扩展名文件被拒绝（安全白名单）", async () => {
       const s = setup();
       const data = Buffer.from([0x25, 0x50, 0x44, 0x46, 0x2d, 0, 0, 0, 0, 0, 0, 0]);
 
-      const result = await s.ossService.upload(
-        {
-          filename: "document",
-          data,
-        },
-        "user-1",
-        "default",
-      );
+      await expect(
+        s.ossService.upload(
+          {
+            filename: "document",
+            data,
+          },
+          "user-1",
+          "default",
+        ),
+      ).rejects.toThrow("不允许的文件类型");
+    });
 
-      expect(result.mimeType).toBe("application/pdf");
-      expect(result.extension).toBeNull();
+    test("拒绝可执行类型上传（HTML 防存储型 XSS）", async () => {
+      const s = setup();
+      const data = Buffer.from("<script>alert(document.cookie)</script>");
+
+      await expect(
+        s.ossService.upload(
+          {
+            filename: "evil.html",
+            data,
+            contentType: "text/html",
+          },
+          "user-1",
+          "default",
+        ),
+      ).rejects.toThrow("不允许的文件类型");
+    });
+
+    test("拒绝内容与扩展名不匹配的上传（伪装图片的 HTML）", async () => {
+      const s = setup();
+      const data = Buffer.from("<script>alert(1)</script>");
+
+      await expect(
+        s.ossService.upload(
+          {
+            filename: "evil.png",
+            data,
+            contentType: "image/png",
+          },
+          "user-1",
+          "default",
+        ),
+      ).rejects.toThrow("文件内容与扩展名不匹配");
     });
   });
 

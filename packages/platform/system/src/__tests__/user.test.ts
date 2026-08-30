@@ -69,6 +69,83 @@ describe("UserService", () => {
     expect(s.calls.some((c) => c.text.includes("UPDATE") || c.text.includes("update"))).toBe(true);
   });
 
+  test("create user persists roleIds to sys_user_role", async () => {
+    const s = setup();
+    // sys_user insert
+    s.results.set("INSERT", [{ id: "u-new" }]);
+    // findInvalidRoleIds 校验角色存在
+    s.results.set("sys_role WHERE id IN", [{ id: "r1" }, { id: "r2" }]);
+    const result = await s.userService.create({
+      username: "alice",
+      password: "pass123",
+      roleIds: ["r1", "r2"],
+    });
+    expect(result.id).toBeTruthy();
+    // 应执行 sys_user_role 覆盖写 CTE（含 DELETE FROM sys_user_role）
+    const roleCall = s.calls.find((c) => c.text.includes("sys_user_role"));
+    expect(roleCall).toBeDefined();
+    expect(roleCall!.text).toContain("DELETE FROM sys_user_role");
+    expect(roleCall!.params).toEqual([result.id, "r1", "r2"]);
+  });
+
+  test("create user rejects invalid roleIds", async () => {
+    const s = setup();
+    s.results.set("INSERT", [{ id: "u-new" }]);
+    // findInvalidRoleIds 只返回 r1，r-bad 不存在
+    s.results.set("sys_role WHERE id IN", [{ id: "r1" }]);
+    await expect(
+      s.userService.create({
+        username: "alice",
+        password: "pass123",
+        roleIds: ["r1", "r-bad"],
+      }),
+    ).rejects.toThrow("角色不存在或已停用");
+  });
+
+  test("update user replaces roleIds via CTE", async () => {
+    const s = setup();
+    s.results.set("sys_role WHERE id IN", [{ id: "r9" }]);
+    await s.userService.update("u1", { roleIds: ["r9"] });
+    const roleCall = s.calls.find((c) => c.text.includes("sys_user_role"));
+    expect(roleCall).toBeDefined();
+    expect(roleCall!.text).toContain("DELETE FROM sys_user_role");
+    expect(roleCall!.params).toEqual(["u1", "r9"]);
+  });
+
+  test("update user with empty roleIds clears roles", async () => {
+    const s = setup();
+    await s.userService.update("u1", { roleIds: [] });
+    const roleCall = s.calls.find((c) => c.text.includes("DELETE FROM sys_user_role"));
+    expect(roleCall).toBeDefined();
+    expect(roleCall!.params).toEqual(["u1"]);
+  });
+
+  test("getById returns roles list", async () => {
+    const s = setup();
+    // 用户基础查询：用 WHERE id 精确匹配（FROM sys_user 会误匹配 sys_user_role）
+    s.results.set("sys_user WHERE id", [
+      {
+        id: "u1",
+        username: "admin",
+        nickname: "Admin",
+        status: 1,
+        email: "a@b.com",
+        dept_id: null,
+        mfa_enabled: false,
+        remark: null,
+        created_at: new Date(),
+        updated_at: new Date(),
+      },
+    ]);
+    // getUserRoles 查询（sys_user_role JOIN sys_role）
+    s.results.set("sys_user_role", [
+      { user_id: "u1", id: "r1", name: "管理员", code: "admin" },
+    ]);
+    const user = await s.userService.getById("u1");
+    expect(user).not.toBeNull();
+    expect(user!.roles).toEqual([{ id: "r1", name: "管理员", code: "admin" }]);
+  });
+
   test("delete user performs soft delete", async () => {
     const s = setup();
     await s.userService.delete("u1");

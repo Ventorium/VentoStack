@@ -9,6 +9,29 @@ function setup() {
 }
 
 describe("createLock", () => {
+  test("uses setNX atomic path when adapter supports it", async () => {
+    let setNXCalled = false;
+    const adapter = {
+      ...createMemoryAdapter(),
+      setNX: async (key: string, value: string, ttlSeconds: number) => {
+        setNXCalled = true;
+        const exists = await adapter.has(key);
+        if (exists) return false;
+        await adapter.set(key, value, ttlSeconds);
+        return true;
+      },
+    };
+    const lock = createLock(adapter);
+
+    const l1 = await lock.acquire("atomic-resource");
+    expect(l1.acquired).toBe(true);
+    expect(setNXCalled).toBe(true);
+
+    // 再次获取应失败（锁已存在），且仍走 setNX 原子路径
+    const l2 = await lock.acquire("atomic-resource");
+    expect(l2.acquired).toBe(false);
+    expect(setNXCalled).toBe(true);
+  });
   test("acquire succeeds when lock is free", async () => {
     const { lock } = setup();
     const l = await lock.acquire("resource");

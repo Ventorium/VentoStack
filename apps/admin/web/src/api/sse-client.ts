@@ -36,12 +36,13 @@ export interface ChatStreamParams {
  * 后端 AI 流式 chunk（与 packages/framework/ai 的 StreamChunk 对齐）
  */
 export interface AIStreamChunk {
-  type: "content" | "tool_call_start" | "usage" | "stage" | "sources" | "error" | "done";
+  type: "content" | "tool_call_start" | "usage" | "stage" | "sources" | "session" | "error" | "done";
   delta?: string;
   toolCall?: { id: string; name: string };
   usage?: { promptTokens: number; completionTokens: number };
   stage?: "planning" | "researching" | "synthesizing";
   sources?: Array<{ title: string; url: string }>;
+  sessionId?: string;
   error?: { code: string; message: string; recoverable: boolean };
 }
 

@@ -232,6 +232,35 @@ describe("sensitive field redaction", () => {
     expect(entries[0].Cookie).toBe("***");
   });
 
+  test("redacts password variant fields (newPassword/oldPassword/confirmPassword)", () => {
+    const entries: LogEntry[] = [];
+    const logger = createLogger({ output: (e) => entries.push(e) });
+
+    logger.info("pwd-change", {
+      newPassword: "NewPass123",
+      oldPassword: "OldPass456",
+      confirmPassword: "NewPass123",
+      username: "admin",
+    });
+
+    expect(entries[0].newPassword).toBe("***");
+    expect(entries[0].oldPassword).toBe("***");
+    expect(entries[0].confirmPassword).toBe("***");
+    expect(entries[0].username).toBe("admin");
+  });
+
+  test("does not over-redact short key substrings (monkey/keyword)", () => {
+    const entries: LogEntry[] = [];
+    const logger = createLogger({ output: (e) => entries.push(e) });
+
+    logger.info("normal", { monkey: "banana", keyword: "search", api_key: "ak-123", name: "x" });
+
+    expect(entries[0].monkey).toBe("banana");
+    expect(entries[0].keyword).toBe("search");
+    // api_key 是独立词（_key 后缀），应被脱敏
+    expect(entries[0].api_key).toBe("***");
+  });
+
   test("handles null and undefined values in meta", () => {
     const entries: LogEntry[] = [];
     const logger = createLogger({ output: (e) => entries.push(e) });

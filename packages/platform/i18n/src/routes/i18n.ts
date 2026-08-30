@@ -2,7 +2,7 @@
  * @ventostack/i18n - 国际化路由
  */
 
-import { createRouter, fail, pageOf, paginated, parseBody, success } from "@ventostack/core";
+import { createRouter, fail, pageOf, paginated, parseBody, safeErrorMessage, success } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { I18nService } from "../services/i18n";
 
@@ -26,7 +26,7 @@ export function createI18nRoutes(
       });
       return success(result);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "创建失败", 400);
+      return fail(safeErrorMessage(e, "创建失败"), 400);
     }
   });
 
@@ -80,7 +80,7 @@ export function createI18nRoutes(
       );
       return success(null);
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "设置失败", 400);
+      return fail(safeErrorMessage(e, "设置失败"), 400);
     }
   });
 
@@ -94,7 +94,7 @@ export function createI18nRoutes(
       );
       return success({ count });
     } catch (e) {
-      return fail(e instanceof Error ? e.message : "导入失败", 400);
+      return fail(safeErrorMessage(e, "导入失败"), 400);
     }
   });
 
