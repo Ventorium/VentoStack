@@ -536,7 +536,7 @@ export function createKnowledgeBaseService(
     },
 
     // ── 文件上传（含解析）──
-    async uploadFile(kbId, fileName, fileBuffer, targetDir, tenantId, ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string }) {
+    async uploadFile(kbId, fileName, fileBuffer, targetDir, tenantId, ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string; ocrToken?: string }) {
       const contentDir = getContentPath(kbId);
       const sourcesDir = getSourcesPath(kbId);
       if (!existsSync(contentDir)) throw aiErrors.kbFileNotFound();
@@ -565,7 +565,7 @@ export function createKnowledgeBaseService(
         sourcePath = safeFileName;
 
         // 解析为 Markdown
-        const parsed = await parseFile(fileBuffer, safeFileName, { ocrEnabled: ocrOptions?.ocrEnabled !== false, ocrLanguage: ocrOptions?.ocrLanguage, ocrServerUrl: ocrOptions?.ocrServerUrl });
+        const parsed = await parseFile(fileBuffer, safeFileName, { ocrEnabled: ocrOptions?.ocrEnabled !== false, ocrLanguage: ocrOptions?.ocrLanguage, ocrServerUrl: ocrOptions?.ocrServerUrl, ocrToken: ocrOptions?.ocrToken });
         const mdFileName = safeFileName.replace(/\.[^.]+$/, ".md");
         const mdFilePath = safePath(dir, mdFileName);
         await writeFile(mdFilePath, parsed.markdown, "utf-8");

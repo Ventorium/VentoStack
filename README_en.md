@@ -31,7 +31,7 @@ VentoStack publishes its full capability set as `@ventostack/*` packages on npm 
 | `@ventostack/testing` | Test app/client, fixtures, data factories, transaction isolation, security baseline regression suite | core |
 | `@ventostack/webhook` | Inbound/outbound webhooks, HMAC/RSA-SHA256 signature verification, replay protection, exponential backoff | core |
 | `@ventostack/cli` | Functional CLI, project scaffolding (`create`), code generation, migration commands, secure password generation | core, database |
-| `@ventostack/file2md` | Office docs to Markdown (docx/pdf/xlsx/pptx/epub), MIME detection, safe ZIP reads, OCR interface | none (3rd-party: liteparse) |
+| `@ventostack/file2md` | File-to-Markdown facade: parsing delegated to @ventostack/file-parser (Rust napi: doc/docx/ppt/pptx/xls/xlsx/odt/pdf/html/epub/csv/images+OCR); local ZIP unpacking and text fallback | @ventostack/file-parser |
 | `@ventostack/ai` | LLM gateway (multi-provider), Agent Loop, Tool Registry, MCP Server, Session/Memory, Skill, RAG, sandboxed execution, token budgets | core, database, cache, events, observability, file2md |
 | `@ventostack/vite-bridge` | Bridge between the backend and the Vite dev server for fullstack local development | core |
 

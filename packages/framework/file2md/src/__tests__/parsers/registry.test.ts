@@ -8,7 +8,7 @@ describe("parser registry", () => {
     registerAllParsers(registry);
 
     const parser = registry.resolve("readme.md");
-    expect(parser?.name).toBe("markdown");
+    expect(parser?.name).toBe("fence");
   });
 
   test("resolves text parser for .txt files", () => {
@@ -16,7 +16,7 @@ describe("parser registry", () => {
     registerAllParsers(registry);
 
     const parser = registry.resolve("log.txt");
-    expect(parser?.name).toBe("text");
+    expect(parser?.name).toBe("fence");
   });
 
   test("resolves code parser for .ts files", () => {
@@ -24,7 +24,7 @@ describe("parser registry", () => {
     registerAllParsers(registry);
 
     const parser = registry.resolve("app.ts");
-    expect(parser?.name).toBe("code");
+    expect(parser?.name).toBe("fence");
   });
 
   test("resolves structured parser for .json files", () => {
@@ -32,7 +32,7 @@ describe("parser registry", () => {
     registerAllParsers(registry);
 
     const parser = registry.resolve("config.json");
-    expect(parser?.name).toBe("structured");
+    expect(parser?.name).toBe("fence");
   });
 
   test("resolves image parser for .png files", () => {
@@ -40,7 +40,7 @@ describe("parser registry", () => {
     registerAllParsers(registry);
 
     const parser = registry.resolve("photo.png");
-    expect(parser?.name).toBe("image");
+    expect(parser?.name).toBe("file-parser");
   });
 
   test("resolves pdf parser for .pdf files", () => {
@@ -48,7 +48,7 @@ describe("parser registry", () => {
     registerAllParsers(registry);
 
     const parser = registry.resolve("report.pdf");
-    expect(parser?.name).toBe("pdf");
+    expect(parser?.name).toBe("file-parser");
   });
 
   test("resolves unsupported parser for unknown extensions", () => {

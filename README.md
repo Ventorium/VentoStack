@@ -33,7 +33,7 @@ VentoStack 的全部能力以 `@ventostack/*` 系列包发布到 npm，共 **24 
 | `@ventostack/testing` | 测试应用/客户端、Fixture、数据 Factory、事务隔离、安全基线回归套件 | core |
 | `@ventostack/webhook` | Webhook 入站/出站、HMAC/RSA-SHA256 签名校验、时间戳防重放、指数退避重试 | core |
 | `@ventostack/cli` | 函数式 CLI、项目脚手架（`create`）、代码生成、迁移命令、安全密码生成 | core, database |
-| `@ventostack/file2md` | 办公文档转 Markdown（docx/pdf/xlsx/pptx/epub）、MIME 识别、ZIP 安全读取、OCR 接口 | 无（第三方：liteparse） |
+| `@ventostack/file2md` | 文件转 Markdown 门面：解析委托 @ventostack/file-parser（Rust napi，doc/docx/ppt/pptx/xls/xlsx/odt/pdf/html/epub/csv/图片OCR），本地保留 ZIP 解包与文本兜底 | @ventostack/file-parser |
 | `@ventostack/ai` | LLM 网关（多 Provider）、Agent Loop、Tool Registry、MCP Server、Session/Memory、Skill、RAG、沙箱执行、Token 预算 | core, database, cache, events, observability, file2md |
 | `@ventostack/vite-bridge` | 后端与 Vite 开发服务器的桥接，全栈本地开发体验 | core |
 

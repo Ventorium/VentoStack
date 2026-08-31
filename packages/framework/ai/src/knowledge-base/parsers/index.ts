@@ -18,7 +18,7 @@ export interface ParsedResult {
 export async function parseFile(
   buffer: Buffer,
   fileName: string,
-  ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string },
+  ocrOptions?: { ocrEnabled?: boolean; ocrLanguage?: string; ocrServerUrl?: string; ocrToken?: string },
 ): Promise<ParsedResult> {
   const { createFile2MdModule, createRemoteOCRService } = await import("@ventostack/file2md");
 
@@ -27,6 +27,7 @@ export async function parseFile(
     ocrService = createRemoteOCRService({
       serverUrl: ocrOptions.ocrServerUrl,
       defaultLanguage: ocrOptions.ocrLanguage ?? "ch",
+      token: ocrOptions.ocrToken,
     });
   }
 

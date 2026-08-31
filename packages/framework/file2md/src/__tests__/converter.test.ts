@@ -24,7 +24,7 @@ describe("converter", () => {
     const md = "# Hello\n\nWorld";
     const result = await converter.convertFile(Buffer.from(md), "test.md");
 
-    expect(result.parser).toBe("markdown");
+    expect(result.parser).toBe("fence");
     expect(result.outputs).toHaveLength(1);
     expect(result.outputs[0]!.content).toBe(md);
     expect(result.duration).toBeGreaterThanOrEqual(0);
@@ -34,7 +34,7 @@ describe("converter", () => {
     const converter = createConverter();
     const result = await converter.convertFile(Buffer.from("hello world"), "readme.txt");
 
-    expect(result.parser).toBe("text");
+    expect(result.parser).toBe("fence");
     expect(result.outputs[0]!.content).toContain("```txt");
     expect(result.outputs[0]!.content).toContain("hello world");
   });
@@ -44,7 +44,7 @@ describe("converter", () => {
     const code = 'const x = 1;';
     const result = await converter.convertFile(Buffer.from(code), "app.ts");
 
-    expect(result.parser).toBe("code");
+    expect(result.parser).toBe("fence");
     expect(result.outputs[0]!.content).toContain("```typescript");
   });
 
@@ -53,7 +53,7 @@ describe("converter", () => {
     const json = '{"key": "value"}';
     const result = await converter.convertFile(Buffer.from(json), "config.json");
 
-    expect(result.parser).toBe("structured");
+    expect(result.parser).toBe("fence");
     expect(result.outputs[0]!.content).toContain("```json");
   });
 
@@ -116,8 +116,8 @@ describe("converter", () => {
     ]);
 
     expect(results).toHaveLength(3);
-    expect(results[0]!.parser).toBe("markdown");
-    expect(results[1]!.parser).toBe("text");
-    expect(results[2]!.parser).toBe("structured");
+    expect(results[0]!.parser).toBe("fence");
+    expect(results[1]!.parser).toBe("fence");
+    expect(results[2]!.parser).toBe("fence");
   });
 });

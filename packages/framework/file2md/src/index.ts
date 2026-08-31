@@ -1,15 +1,19 @@
 /**
  * @ventostack/file2md — 任意文件 → Markdown 转换服务
  *
- * 支持格式：Markdown, 纯文本, 源代码, JSON/YAML/XML/CSV, 图片(OCR),
- * DOCX/PPTX/XLSX, DOC/PPT/XLS(LibreOffice), PDF, HTML, EPUB, ZIP
+ * 主解析委托 @ventostack/file-parser（Rust napi）：
+ * DOCX/DOC/PPTX/PPT/XLSX/XLS/ODT/PDF/HTML/EPUB/CSV/图片(OCR)；
+ * 本地仅保留 ZIP 解包与文本（markdown/代码/结构化）兜底。
  *
  * @example
  * ```ts
- * import { createFile2MdModule } from "@ventostack/file2md";
+ * import { createFile2MdModule, createRemoteOCRService } from "@ventostack/file2md";
  *
  * const file2md = createFile2MdModule({
- *   ocr: createRemoteOCRService({ serverUrl: "http://localhost:8866/predict/ocr_system" }),
+ *   ocr: createRemoteOCRService({
+ *     serverUrl: "https://…/api/v2/ocr/jobs",
+ *     token: "…",
+ *   }),
  * });
  *
  * const result = await file2md.convertFile(buffer, "report.pdf");
@@ -34,32 +38,19 @@ export type {
   ParseInput,
   ParseContext,
   OCRService,
-  OCROptions,
-  OCRResult,
-  OCRBlock,
   CleanerConfig,
   CleanerContext,
   CleanerRule,
 } from './types';
 
-// OCR 服务
+// OCR 配置工厂
 export { createRemoteOCRService, type RemoteOCRConfig } from './ocr/remote';
 
 // 解析器（单独导出供自定义组合）
 export {
-  createTextParser,
-  createCodeParser,
-  createMarkdownParser,
-  createStructuredParser,
-  createImageParser,
-  createDocxParser,
-  createPptxParser,
-  createXlsxParser,
-  createLegacyOfficeParser,
-  createPdfParser,
+  createNativeParser,
+  createFenceParser,
   createZipParser,
-  createHtmlParser,
-  createEpubParser,
   createUnsupportedParser,
   registerAllParsers,
 } from './parsers';

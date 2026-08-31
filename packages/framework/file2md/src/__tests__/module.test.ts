@@ -22,7 +22,7 @@ describe("file2md module", () => {
   test("convertFile works end-to-end", async () => {
     const mod = createFile2MdModule();
     const result = await mod.convertFile(Buffer.from("# Hello"), "test.md");
-    expect(result.parser).toBe("markdown");
+    expect(result.parser).toBe("fence");
     expect(result.outputs).toHaveLength(1);
     expect(result.outputs[0]!.content).toBe("# Hello");
   });
@@ -34,21 +34,21 @@ describe("file2md module", () => {
       { buffer: Buffer.from("log line"), fileName: "b.txt" },
     ]);
     expect(results).toHaveLength(2);
-    expect(results[0]!.parser).toBe("markdown");
-    expect(results[1]!.parser).toBe("text");
+    expect(results[0]!.parser).toBe("fence");
+    expect(results[1]!.parser).toBe("fence");
   });
 
-  test("module accepts custom OCR service", async () => {
+  test("module accepts an OCR service config", async () => {
     const mod = createFile2MdModule({
       ocr: {
-        name: "test-ocr",
-        async recognize() {
-          return { text: "OCR result", confidence: 0.95 };
-        },
+        endpoint: "https://ocr.example.com/api/v2/ocr/jobs",
+        language: "chi_sim",
+        headers: { Authorization: "bearer test-token" },
       },
     });
-    const result = await mod.convertFile(Buffer.from("fake-img"), "photo.png");
-    expect(result.outputs[0]!.content).toContain("OCR result");
+    // 文本路径不经过 OCR，配置存在也不影响转换
+    const result = await mod.convertFile(Buffer.from("# Hello"), "test.md");
+    expect(result.outputs[0]!.content).toBe("# Hello");
   });
 
   test("module respects default cleaner config", async () => {

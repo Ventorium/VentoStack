@@ -77,9 +77,13 @@ export function buildPptxZip(slides: Array<{ content: string; notes?: string }>)
 }
 
 export function buildXlsxZip(sheets: Array<{ name: string; rows: string[][] }>): Buffer {
+  const rels = sheets.map((_, i) =>
+    `<Relationship Id="rId${i + 1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet${i + 1}.xml"/>`
+  ).join("");
   const entries: ZipEntryInput[] = [
     { name: "docProps/core.xml", data: CORE_XML },
     { name: "xl/workbook.xml", data: workbookXml(sheets) },
+    { name: "xl/_rels/workbook.xml.rels", data: `<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${rels}</Relationships>` },
     { name: "xl/sharedStrings.xml", data: sharedStringsXml(sheets) },
   ];
   for (let i = 0; i < sheets.length; i++) {
@@ -129,7 +133,7 @@ const APP_XML = `<?xml version="1.0"?><Properties><Pages>5</Pages><Words>1000</W
 
 function workbookXml(sheets: Array<{ name: string }>): string {
   const se = sheets.map((s, i) => `<sheet name="${esc(s.name)}" sheetId="${i + 1}" r:id="rId${i + 1}"/>`).join("");
-  return `<?xml version="1.0"?><workbook xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${se}</sheets></workbook>`;
+  return `<?xml version="1.0"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${se}</sheets></workbook>`;
 }
 
 function sharedStringsXml(_sheets: Array<{ rows: string[][] }>): string {

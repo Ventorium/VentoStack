@@ -101,36 +101,20 @@ export interface FileParser {
 
 // ─── OCR ───
 
-export interface OCROptions {
-  /** 语言（如 "chi_sim", "eng"） */
-  language?: string;
-  /** 是否预处理图片（灰度、二值化、去噪） */
-  preprocess?: boolean;
-}
-
-export interface OCRResult {
-  /** 识别文本 */
-  text: string;
-  /** 置信度 0-1 */
-  confidence: number;
-  /** 识别语言 */
-  language?: string;
-  /** 文本块（含位置信息） */
-  blocks?: OCRBlock[];
-}
-
-export interface OCRBlock {
-  text: string;
-  /** 边界框 [x1, y1, x2, y2] */
-  bbox: [number, number, number, number];
-  confidence: number;
-}
-
+/**
+ * OCR 服务配置。
+ * 识别由 Rust file-parser 内置的 PaddleOCR provider 执行；
+ * 这里只描述连接参数（endpoint/鉴权/模型/语言）。
+ */
 export interface OCRService {
-  /** 识别图片内容 */
-  recognize(imageBuffer: Buffer, options?: OCROptions): Promise<OCRResult>;
-  /** 服务名称 */
-  name: string;
+  /** PaddleOCR 任务服务 URL（…/api/v2/ocr/jobs） */
+  endpoint: string;
+  /** 默认语言（如 "chi_sim", "eng"） */
+  language?: string;
+  /** 附加请求头（如 `Authorization: bearer …`） */
+  headers?: Record<string, string>;
+  /** 模型名（默认 PaddleOCR-VL-1.6） */
+  model?: string;
 }
 
 // ─── 清洗 ───
@@ -165,12 +149,10 @@ export interface CleanerRule {
 // ─── 模块配置 ───
 
 export interface File2MdConfig {
-  /** OCR 服务 */
+  /** OCR 服务配置 */
   ocr?: OCRService;
   /** 默认清洗配置 */
   defaultCleaner?: CleanerConfig;
-  /** LibreOffice 路径（默认 "soffice"） */
-  libreofficePath?: string;
   /** 最大文件大小（字节，默认 100MB） */
   maxFileSize?: number;
   /** ZIP 递归最大深度（默认 3） */

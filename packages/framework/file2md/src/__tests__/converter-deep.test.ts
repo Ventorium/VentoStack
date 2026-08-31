@@ -141,7 +141,7 @@ describe("converter — deep tests", () => {
     const converter = createConverter({ tmpDir: customTmp });
     // This should work (tmp dir is created automatically)
     const result = await converter.convertFile(Buffer.from("data"), "test.txt");
-    expect(result.parser).toBe("text");
+    expect(result.parser).toBe("fence");
   });
 
   test("custom maxFileSize is enforced", async () => {
@@ -151,7 +151,7 @@ describe("converter — deep tests", () => {
 
     // Small file should work
     const result = await converter.convertFile(smallFile, "small.txt");
-    expect(result.parser).toBe("text");
+    expect(result.parser).toBe("fence");
 
     // Big file should fail
     await expect(
@@ -163,6 +163,6 @@ describe("converter — deep tests", () => {
     const converter = createConverter();
     // Just verify it doesn't reject a normal-sized buffer
     const result = await converter.convertFile(Buffer.from("normal"), "normal.txt");
-    expect(result.parser).toBe("text");
+    expect(result.parser).toBe("fence");
   });
 });

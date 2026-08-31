@@ -256,10 +256,11 @@ export function createKnowledgeBaseRoutes(
         if (!check.valid) return fail(check.error ?? "文件校验失败", 400, 400);
 
         // 读取 OCR 配置
-        const [ocrEnabledCfg, ocrLanguageCfg, ocrServerUrlCfg] = await Promise.all([
+        const [ocrEnabledCfg, ocrLanguageCfg, ocrServerUrlCfg, ocrTokenCfg] = await Promise.all([
           providerService?.getConfig("ocr_enabled"),
           providerService?.getConfig("ocr_language"),
           providerService?.getConfig("ocr_server_url"),
+          providerService?.getConfig("ocr_token"),
         ]);
 
         const buffer = Buffer.from(await file.arrayBuffer());
@@ -273,6 +274,7 @@ export function createKnowledgeBaseRoutes(
             ocrEnabled: ocrEnabledCfg !== "false",
             ocrLanguage: ocrLanguageCfg ?? undefined,
             ocrServerUrl: ocrServerUrlCfg ?? undefined,
+            ocrToken: ocrTokenCfg ?? undefined,
           },
         );
 
