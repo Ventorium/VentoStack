@@ -27,7 +27,7 @@ describe("progress emitter", () => {
     const events: ConvertProgressEvent[] = [];
     const emit = createProgressEmitter((e) => events.push(e));
 
-    emit.emit("file_done", {
+    emit.emit("file_start", {
       fileName: "a.ts",
       progress: { current: 3, total: 10 },
     });
@@ -57,11 +57,10 @@ describe("progress emitter", () => {
 
     emit.emit("start", { fileName: "f" });
     emit.emit("parse_start", { fileName: "f" });
-    emit.emit("parse_done", { fileName: "f" });
     emit.emit("clean_start", { fileName: "f" });
     emit.emit("clean_done", { fileName: "f" });
     emit.emit("complete", { fileName: "f" });
 
-    expect(types).toEqual(["start", "parse_start", "parse_done", "clean_start", "clean_done", "complete"]);
+    expect(types).toEqual(["start", "parse_start", "clean_start", "clean_done", "complete"]);
   });
 });

@@ -3,7 +3,7 @@ import { createZipParser } from "../../parsers/zip";
 import { buildZip } from "../helpers/zip-builder";
 import type { ParseContext } from "../../types";
 
-const ctx: ParseContext = { tmpDir: "/tmp/test" };
+const ctx: ParseContext = {};
 
 describe("zip parser", () => {
   const parser = createZipParser();

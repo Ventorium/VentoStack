@@ -8,7 +8,6 @@ describe("file2md module", () => {
     expect(mod.convertBatch).toBeInstanceOf(Function);
     expect(mod.getSupportedFormats).toBeInstanceOf(Function);
     expect(mod.registerParser).toBeInstanceOf(Function);
-    expect(mod.registerRule).toBeInstanceOf(Function);
   });
 
   test("getSupportedFormats returns a list", () => {

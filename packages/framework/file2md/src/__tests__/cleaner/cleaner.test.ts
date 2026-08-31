@@ -23,12 +23,6 @@ describe("markdown cleaner", () => {
     expect(cleaner.clean(input, ctx)).toBe("HelloWorld");
   });
 
-  test("resolves HTML entities", () => {
-    const cleaner = createMarkdownCleaner({ enabledRules: ["html-artifacts"] });
-    const input = "Hello&nbsp;World &amp; Friends";
-    expect(cleaner.clean(input, ctx)).toBe("Hello World & Friends");
-  });
-
   test("removes empty headings", () => {
     const cleaner = createMarkdownCleaner({ enabledRules: ["headings"] });
     const input = "# Title\n\n## \n\nContent here";
@@ -85,8 +79,8 @@ describe("markdown cleaner", () => {
 
     const result = cleaner.clean(input, ctx);
     expect(result).toContain("# Title");
-    expect(result).toContain("Hello World");
-    expect(result).not.toContain("&nbsp;");
+    // 实体解码已随 html-artifacts 规则移除（Rust 侧已处理），字面 &nbsp; 保留
+    expect(result).toContain("Hello&nbsp;World");
     expect(result).toContain("Content");
     expect(result).not.toContain("第1页");
   });

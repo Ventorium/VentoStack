@@ -2,7 +2,7 @@ import { describe, test, expect } from "bun:test";
 import { createUnsupportedParser } from "../../parsers/unsupported";
 import type { ParseContext } from "../../types";
 
-const ctx: ParseContext = { tmpDir: "/tmp/test" };
+const ctx: ParseContext = {};
 
 describe("unsupported parser", () => {
   const parser = createUnsupportedParser();

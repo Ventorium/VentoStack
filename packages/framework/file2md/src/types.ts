@@ -41,11 +41,7 @@ export interface ConvertResult {
 export type ProgressEventType =
   | "start"
   | "file_start"
-  | "file_done"
-  | "ocr_start"
-  | "ocr_done"
   | "parse_start"
-  | "parse_done"
   | "clean_start"
   | "clean_done"
   | "error"
@@ -74,18 +70,12 @@ export interface ParseInput {
 export interface ParseContext {
   /** OCR 服务 */
   ocr?: OCRService;
-  /** 清洗配置 */
-  cleaner?: CleanerConfig;
   /** 进度回调 */
   onProgress?: (event: ConvertProgressEvent) => void;
-  /** 临时目录 */
-  tmpDir: string;
   /** 递归深度限制（用于 ZIP） */
   maxDepth?: number;
   /** 当前递归深度 */
   currentDepth?: number;
-  /** 源文件保存目录 */
-  sourceDir?: string;
 }
 
 export interface FileParser {
@@ -157,8 +147,6 @@ export interface File2MdConfig {
   maxFileSize?: number;
   /** ZIP 递归最大深度（默认 3） */
   maxZipDepth?: number;
-  /** 临时目录 */
-  tmpDir?: string;
 }
 
 export interface File2MdModule {
@@ -180,9 +168,6 @@ export interface File2MdModule {
 
   /** 注册自定义解析器 */
   registerParser(parser: FileParser): void;
-
-  /** 注册自定义清洗规则 */
-  registerRule(rule: CleanerRule): void;
 }
 
 export interface ConvertFileOptions {

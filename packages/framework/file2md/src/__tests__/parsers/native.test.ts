@@ -3,7 +3,7 @@ import { createNativeParser, buildOptionsJson } from "../../parsers/native";
 import type { ParseContext } from "../../types";
 import { buildDocxZip, buildXlsxZip } from "../helpers/zip-builder";
 
-const ctx: ParseContext = { tmpDir: "/tmp/test" };
+const ctx: ParseContext = {};
 
 /** @ventostack/file-parser 0.2.0 发布并安装后，委托用例才真正运行 */
 async function tryImportNative(): Promise<boolean> {

@@ -136,14 +136,6 @@ describe("converter — deep tests", () => {
     }
   });
 
-  test("custom tmpDir is respected", async () => {
-    const customTmp = `/tmp/f2m-custom-${Date.now()}`;
-    const converter = createConverter({ tmpDir: customTmp });
-    // This should work (tmp dir is created automatically)
-    const result = await converter.convertFile(Buffer.from("data"), "test.txt");
-    expect(result.parser).toBe("fence");
-  });
-
   test("custom maxFileSize is enforced", async () => {
     const converter = createConverter({ maxFileSize: 50 });
     const smallFile = Buffer.alloc(40);

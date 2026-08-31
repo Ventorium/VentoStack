@@ -6,7 +6,6 @@ import type { CleanerRule, CleanerConfig, CleanerContext } from "../types";
 
 import { unicodeRule } from "./rules/unicode";
 import { whitespaceRule } from "./rules/whitespace";
-import { htmlArtifactsRule } from "./rules/html-artifacts";
 import { blankLinesRule } from "./rules/blank-lines";
 import { headingsRule } from "./rules/headings";
 import { listsRule } from "./rules/lists";
@@ -19,7 +18,6 @@ import { linkCleanupRule } from "./rules/link-cleanup";
 const BUILTIN_RULES: CleanerRule[] = [
   unicodeRule,
   whitespaceRule,
-  htmlArtifactsRule,
   blankLinesRule,
   headingsRule,
   listsRule,
@@ -82,7 +80,6 @@ export function createMarkdownCleaner(config?: CleanerConfig): MarkdownCleaner {
 export {
   unicodeRule,
   whitespaceRule,
-  htmlArtifactsRule,
   blankLinesRule,
   headingsRule,
   listsRule,

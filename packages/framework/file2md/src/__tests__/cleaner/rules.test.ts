@@ -1,7 +1,6 @@
 import { describe, test, expect } from "bun:test";
 import { unicodeRule } from "../../cleaner/rules/unicode";
 import { whitespaceRule } from "../../cleaner/rules/whitespace";
-import { htmlArtifactsRule } from "../../cleaner/rules/html-artifacts";
 import { blankLinesRule } from "../../cleaner/rules/blank-lines";
 import { headingsRule } from "../../cleaner/rules/headings";
 import { listsRule } from "../../cleaner/rules/lists";
@@ -57,29 +56,6 @@ describe("individual cleaner rules", () => {
 
     test("preserves newlines", () => {
       expect(whitespaceRule.clean("a\nb\nc", ctx)).toBe("a\nb\nc");
-    });
-  });
-
-  // ── html-artifacts ──
-  describe("html-artifacts rule", () => {
-    test("decodes common HTML entities", () => {
-      expect(htmlArtifactsRule.clean("a&nbsp;b&amp;c&lt;d&gt;e&quot;f&#39;g", ctx))
-        .toBe("a b&c<d>e\"f'g");
-    });
-
-    test("removes empty HTML tags", () => {
-      expect(htmlArtifactsRule.clean("<div>text</div>", ctx)).toBe("text");
-      expect(htmlArtifactsRule.clean("<span class='x'>content</span>", ctx)).toBe("content");
-    });
-
-    test("converts <br> to newline", () => {
-      expect(htmlArtifactsRule.clean("line1<br>line2", ctx)).toBe("line1\nline2");
-      expect(htmlArtifactsRule.clean("line1<br/>line2", ctx)).toBe("line1\nline2");
-      expect(htmlArtifactsRule.clean("line1<br />line2", ctx)).toBe("line1\nline2");
-    });
-
-    test("removes unknown HTML entities", () => {
-      expect(htmlArtifactsRule.clean("text&unknown;more", ctx)).toBe("textmore");
     });
   });
 

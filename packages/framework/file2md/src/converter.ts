@@ -2,8 +2,8 @@
  * 核心转换编排器
  * 协调解析器注册表、OCR 服务、清洗引擎和进度追踪
  */
-import { extname, join } from "node:path";
-import { mkdir, writeFile, cp } from "node:fs/promises";
+import { join } from "node:path";
+import { mkdir, writeFile } from "node:fs/promises";
 import type {
   ConvertResult, ConvertFileOptions, ConvertBatchOptions,
   File2MdConfig, ParseContext, ConvertProgressEvent,
@@ -33,8 +33,6 @@ export function createConverter(config: File2MdConfig = {}): Converter {
   const registry = createParserRegistry();
   registerAllParsers(registry);
 
-  const defaultCleaner = createMarkdownCleaner(config.defaultCleaner);
-  const tmpDir = config.tmpDir ?? "/tmp/ventostack-file2md";
   const maxFileSize = config.maxFileSize ?? 100 * 1024 * 1024; // 100MB
 
   async function convertFile(
@@ -67,28 +65,15 @@ export function createConverter(config: File2MdConfig = {}): Converter {
     emitter.emit("parse_start", { fileName, message: `使用解析器: ${parser.name}` });
 
     // 构建解析上下文
-    const fileTmpDir = join(tmpDir, `convert-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
-    await mkdir(fileTmpDir, { recursive: true });
-
     const ctx: ParseContext = {
       ocr: options.ocr ?? config.ocr,
-      cleaner: options.cleaner ?? config.defaultCleaner,
       onProgress: options.onProgress,
-      tmpDir: fileTmpDir,
       maxDepth: config.maxZipDepth ?? 3,
       currentDepth: 0,
-      sourceDir: options.sourceDir,
     };
 
-    // 执行解析
-    let result: ConvertResult;
-    try {
-      result = await parser.parse({ buffer, fileName }, ctx);
-    } finally {
-      // 清理临时目录（不等待完成）
-      const { rm } = await import("node:fs/promises");
-      rm(fileTmpDir, { recursive: true, force: true }).catch(() => {});
-    }
+    // 执行解析（全内存，无需临时目录）
+    const result: ConvertResult = await parser.parse({ buffer, fileName }, ctx);
 
     // 保存源文件
     if (options.sourceDir) {

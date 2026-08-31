@@ -60,7 +60,6 @@ export {
   createMarkdownCleaner,
   unicodeRule,
   whitespaceRule,
-  htmlArtifactsRule,
   blankLinesRule,
   headingsRule,
   listsRule,
