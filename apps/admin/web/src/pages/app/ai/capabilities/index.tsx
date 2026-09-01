@@ -310,7 +310,7 @@ function SkillsTab() {
             <Radio.Button value="installed">已安装 ({total})</Radio.Button>
             <Radio.Button value="store">技能商店</Radio.Button>
           </Radio.Group>
-          <Button type="primary" ghost icon={<ThunderboltOutlined />} onClick={() => navigate("/app/ai/chat?agent=Skill%20Creator")}>在线创建</Button>
+          <Button type="primary" ghost icon={<ThunderboltOutlined />} onClick={() => navigate("/app/ai/chat/skill-creator")}>在线创建</Button>
         </Space>
         <Space>
           <Button icon={<UploadOutlined />} onClick={() => setUploadOpen(true)}>上传 ZIP</Button>

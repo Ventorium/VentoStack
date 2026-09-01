@@ -200,6 +200,7 @@ export default function AISettingsPage() {
   const [modelsList, setModelsList] = useState<ModelItem[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [syncingApi, setSyncingApi] = useState(false);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [testingModels, setTestingModels] = useState<Set<string>>(new Set());
   const [modelTestResults, setModelTestResults] = useState<
@@ -449,6 +450,22 @@ export default function AISettingsPage() {
     } finally {
       setSyncing(false);
     }
+  };
+
+  const handleSyncApi = async () => {
+    if (!modelsProvider) return;
+    setSyncingApi(true);
+    const { error, data } = await client.post('/api/ai/providers/:id/sync-api', {
+      params: { id: modelsProvider.id },
+    })
+    if (!error && data) {
+      msg.success(
+        `获取完成：新增 ${data.added}，更新 ${data.updated}，移除 ${data.removed}，共 ${data.total} 个模型`,
+      );
+      await refreshModels();
+      fetchProviders();
+    }
+    setSyncingApi(false);
   };
 
   // === Edit model ===
@@ -1167,6 +1184,9 @@ export default function AISettingsPage() {
                 从 models.dev 同步
               </Button>
             )}
+            <Button icon={<ApiOutlined />} loading={syncingApi} onClick={handleSyncApi}>
+              从接口获取
+            </Button>
             <Button
               icon={<PlusOutlined />}
               onClick={() => {
@@ -1185,8 +1205,8 @@ export default function AISettingsPage() {
         <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]">
           💡{' '}
           {modelsProvider?.presetId || modelsProvider?.modelsDevSlug
-            ? '点击「从 models.dev 同步」自动拉取模型列表，或点击「添加模型」手动添加。'
-            : '点击「添加模型」手动添加模型。'}{' '}
+            ? '点击「从 models.dev 同步」拉取模型与配置，或点击「从接口获取」访问供应商 /models 接口自动识别模型。'
+            : '点击「从接口获取」访问供应商 /models 接口自动识别模型，或点击「添加模型」手动添加。'}{' '}
           勾选模型后可批量删除或测试连通性。
         </div>
         {selectedModelIds.length > 0 && (

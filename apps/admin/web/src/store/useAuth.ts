@@ -2,7 +2,6 @@ import { client } from "@/api";
 import { globalNavigate } from "@/components/GlobalHistory";
 import { startAuthentication } from "@simplewebauthn/browser";
 import { create } from "zustand";
-import { clearToken, setAccessToken, setRefreshToken } from "./token";
 
 interface UserProfile {
   id: string;
@@ -52,7 +51,6 @@ export type AuthState = {
 };
 
 function onExpired() {
-  clearToken();
   globalNavigate("/auth/login", { replace: true });
 }
 
@@ -85,8 +83,6 @@ export const useAuth = create<AuthState>((set, get) => ({
     };
     if (!error && user) {
       set({ user });
-    } else {
-      clearToken();
     }
     set({ loading: false, ready: true });
   },
@@ -115,9 +111,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       if (data.mfaRequired && data.mfaToken) {
         return { code: "mfa_required" as const, mfaToken: data.mfaToken };
       }
-      // Normal login success
-      setAccessToken(data.accessToken);
-      if (data.refreshToken) setRefreshToken(data.refreshToken);
+      // Normal login success — tokens are set via HttpOnly cookies by the login response
       const { data: user } = (await client.get("/api/system/user/profile")) as {
         data?: UserProfile;
         error?: unknown;
@@ -141,8 +135,6 @@ export const useAuth = create<AuthState>((set, get) => ({
       error?: unknown;
     };
     if (!error && data) {
-      setAccessToken(data.accessToken);
-      if (data.refreshToken) setRefreshToken(data.refreshToken);
       const { data: user } = (await client.get("/api/system/user/profile")) as {
         data?: UserProfile;
         error?: unknown;
@@ -171,10 +163,7 @@ export const useAuth = create<AuthState>((set, get) => ({
         },
       );
       if (finishError || !finishResp) return null;
-      const finishData = finishResp as unknown as { accessToken: string; refreshToken?: string };
 
-      setAccessToken(finishData.accessToken);
-      if (finishData.refreshToken) setRefreshToken(finishData.refreshToken);
       const { data: user } = (await client.get("/api/system/user/profile")) as {
         data?: UserProfile;
         error?: unknown;

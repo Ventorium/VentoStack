@@ -26,6 +26,8 @@ interface TopToolbarProps {
     mcpServers: Array<{ id: string; name: string; description: string | null; toolCount: number }>;
     knowledgeBases: Array<{ id: string; name: string; description: string | null }>;
   };
+  /** 工具名称 → 说明（来自 /api/ai/tools 注册表） */
+  toolDescriptions?: Record<string, string>;
   enabledTools?: string[];
   enabledSkills?: string[];
   enabledMcp?: string[];
@@ -38,18 +40,19 @@ interface TopToolbarProps {
 }
 
 function AbilityPopover({
-  title, icon, items, selected, onToggle, renderItem,
+  title, icon, items, selected, onToggle, renderItem, width = 280,
 }: {
   title: string; icon: React.ReactNode;
   items: Array<{ id: string; name: string; description?: string | null; toolCount?: number }>;
   selected: string[];
   onToggle: (id: string, enabled: boolean) => void;
   renderItem?: (item: { id: string; name: string; description?: string | null; toolCount?: number }) => React.ReactNode;
+  width?: number;
 }) {
   const { token } = theme.useToken();
 
   return (
-    <div className="w-[280px] max-h-[320px] overflow-auto">
+    <div className="max-h-[320px] overflow-auto" style={{ width }}>
       <div className="font-medium" style={{ padding: "8px 12px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
         {title}
       </div>
@@ -84,7 +87,7 @@ function AbilityPopover({
 }
 
 export default function TopToolbar({
-  agentName, agent, enabledTools = [], enabledSkills = [], enabledMcp = [], enabledKbs = [],
+  agentName, agent, toolDescriptions, enabledTools = [], enabledSkills = [], enabledMcp = [], enabledKbs = [],
   onToggleTool, onToggleSkill, onToggleMcp, onToggleKb, onBack,
 }: TopToolbarProps) {
   const { token } = theme.useToken();
@@ -121,8 +124,8 @@ export default function TopToolbar({
             placement="bottomRight"
             content={
               <AbilityPopover
-                title="工具" icon={<ToolOutlined />}
-                items={agent.tools.map(t => ({ id: t, name: t }))}
+                title="工具" icon={<ToolOutlined />} width={380}
+                items={agent.tools.map(t => ({ id: t, name: t, description: toolDescriptions?.[t] }))}
                 selected={enabledTools}
                 onToggle={(id, enabled) => onToggleTool?.(id, enabled)}
               />

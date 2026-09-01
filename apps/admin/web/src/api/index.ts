@@ -1,12 +1,6 @@
 import { globalNavigate } from "@/components/GlobalHistory";
 import { msg } from "@/components/GlobalMessage";
-import {
-  clearToken,
-  getAccessToken,
-  setAccessToken,
-  setRefreshToken,
-} from "@/store/token";
-import { createFetchClient } from "@doremijs/o2t/client";
+import { createFetchClient, queryStringify } from "@doremijs/o2t/client";
 import type { OpenAPIs } from "./schema";
 
 // ---------------------------------------------------------------------------
@@ -23,8 +17,6 @@ async function refreshAccessToken(): Promise<boolean> {
       body: {},
     } as never);
     if (!error && data?.accessToken) {
-      setAccessToken(data.accessToken);
-      if (data.refreshToken) setRefreshToken(data.refreshToken);
       // Flush queued requests with the new token
       const queue = refreshQueue.splice(0);
       for (const entry of queue) {
@@ -45,7 +37,6 @@ async function refreshAccessToken(): Promise<boolean> {
 
 /** Reject all pending refresh queue entries and redirect to login. */
 function abortPendingRequests(reason: string): void {
-  clearToken();
   const queue = refreshQueue.splice(0);
   for (const entry of queue) {
     entry.reject(new Error(reason));
@@ -60,10 +51,6 @@ const rawClient = createFetchClient<OpenAPIs>({
   requestTimeoutMs: 10000,
   requestInterceptor(request) {
     request.init.credentials = "include";
-    const token = getAccessToken();
-    if (!["/api/login", "/api/auth/refresh"].includes(request.url) && token) {
-      request.init.headers.Authorization = `Bearer ${token}`;
-    }
     return request;
   },
   async responseInterceptor(_request, response) {
@@ -113,27 +100,18 @@ const rawClient = createFetchClient<OpenAPIs>({
       const url = typeof _request?.url === "string" ? _request.url : "";
       const isLoginRequest = url.includes("/api/auth/login") || url.includes("/api/login");
 
-      // 无 access token：仅登录接口需要把服务端错误展示给用户；
-      // 启动探测 / 自动 refresh 等未登录场景的 401 属于预期行为，静默跳转登录页即可
-      if (!getAccessToken()) {
-        if (isLoginRequest) {
-          try {
-            const json: unknown = await response.clone().json();
-            if (json && typeof json === "object" && "message" in json) {
-              msg.error((json as { message: string }).message);
-            }
-          } catch {
-            msg.error("登录失败");
+      // 仅登录接口需要把服务端错误展示给用户
+      if (isLoginRequest) {
+        try {
+          const json: unknown = await response.clone().json();
+          if (json && typeof json === "object" && "message" in json) {
+            msg.error((json as { message: string }).message);
           }
-          return;
+        } catch {
+          msg.error("登录失败");
         }
-        clearToken();
-        globalNavigate("/auth/login", { replace: true });
         return;
       }
-      // 有 access token 但无 refresh token，清除并跳转登录页
-      clearToken();
-      globalNavigate("/auth/login", { replace: true });
       return;
     }
 
@@ -209,15 +187,6 @@ function isAuthPath(url: string): boolean {
   );
 }
 
-/** Strip Authorization header so the request interceptor can re-add the fresh token. */
-function stripAuthHeader(
-  options: Record<string, unknown> | undefined,
-): Record<string, unknown> | undefined {
-  if (!options?.headers) return options;
-  const { Authorization: _, ...rest } = options.headers as Record<string, string>;
-  return { ...options, headers: Object.keys(rest).length > 0 ? rest : undefined };
-}
-
 type ClientResult = { error: boolean; response?: Response; data: unknown };
 
 async function requestWithRefresh(
@@ -229,15 +198,15 @@ async function requestWithRefresh(
   const result = await methodFn(path, options);
 
   // Only attempt refresh for 401 on non-auth paths. Browser refresh tokens live in HttpOnly cookies.
-  // 从未登录过（本地无 access token）时不发 refresh 请求，避免「缺少刷新令牌」的无效调用
-  if (result.error && result.response?.status === 401 && !isAuthPath(path) && getAccessToken()) {
+  // 页面重载后内存 access token 为空，但浏览器仍持有 HttpOnly refresh cookie，同样走 refresh 恢复登录态
+  if (result.error && result.response?.status === 401 && !isAuthPath(path)) {
     if (isRefreshing) {
       // Another request is already refreshing — queue this one
       try {
         await new Promise<void>((resolve, reject) => {
           refreshQueue.push({ resolve, reject });
         });
-        return methodFn(path, stripAuthHeader(options));
+        return methodFn(path, options);
       } catch {
         // Refresh was rejected (token expired, session invalid) — return original error
         return result;
@@ -247,7 +216,7 @@ async function requestWithRefresh(
     // Initiate refresh
     const refreshed = await refreshAccessToken();
     if (refreshed) {
-      return methodFn(path, stripAuthHeader(options));
+      return methodFn(path, options);
     }
   }
 

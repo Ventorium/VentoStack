@@ -48,7 +48,8 @@ export function createKnowledgeBaseRoutes(
         ctx.query as Record<string, unknown>,
       );
       const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
-      const result = await kbService.list({ tenantId, page, pageSize });
+      const name = (ctx.query as Record<string, unknown>).name as string | undefined;
+      const result = await kbService.list({ tenantId, page, pageSize, name });
       return paginated(result.list, result.total, page, pageSize);
     },
   );

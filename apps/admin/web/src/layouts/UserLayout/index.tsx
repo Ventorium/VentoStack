@@ -48,7 +48,7 @@ const UserLayout = ({ children }: UserLayoutProps) => {
       </Sider>
       <Layout>
         <Header />
-        <Content className="overflow-auto p-6" style={{ background: contentBg }}>
+        <Content className="overflow-auto p-3" style={{ background: contentBg }}>
           {children}
         </Content>
       </Layout>

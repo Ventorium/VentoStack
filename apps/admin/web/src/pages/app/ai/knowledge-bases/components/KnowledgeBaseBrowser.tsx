@@ -100,7 +100,7 @@ function isReadme(filePath: string): boolean {
 
 interface Props {
   kbId: string;
-  onBreadcrumb?: (items: React.ReactNode) => void;
+  onBreadcrumb?: (items: { kbName: string; pathParts: string[] }) => void;
 }
 
 export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
@@ -195,31 +195,10 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     }
   }, [kbId, renameModal, fetchFiles, fetchKb]);
 
-  // ── 面包屑 ──
-  const breadcrumb = (
-    <Breadcrumb
-      items={[
-        {
-          title: (
-            <a onClick={() => tryNavigate(() => setCurrentPath("."))}>
-              <HomeOutlined /> {kb?.name || "知识库"}
-            </a>
-          ),
-        },
-        ...pathParts.map((part, i) => {
-          const partPath = pathParts.slice(0, i + 1).join("/");
-          const isLast = i === pathParts.length - 1;
-          return {
-            title: isLast
-              ? <span>{part}</span>
-              : <a onClick={() => setCurrentPath(partPath)}>{part}</a>,
-          };
-        }),
-      ]}
-    />
-  );
-
-  useEffect(() => { onBreadcrumb?.(breadcrumb); }, [breadcrumb, onBreadcrumb]);
+  // ── 面包屑数据同步给父组件（避免直接传 JSX 导致每次渲染都是新对象触发死循环）──
+  useEffect(() => {
+    onBreadcrumb?.({ kbName: kb?.name || "知识库", pathParts });
+  }, [kb?.name, pathParts.join("/"), onBreadcrumb]);
 
   // ── 打开文件 ──
   const handleOpenFile = useCallback(async (filePath: string) => {

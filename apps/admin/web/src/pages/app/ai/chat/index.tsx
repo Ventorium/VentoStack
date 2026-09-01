@@ -3,7 +3,7 @@ import { streamChat, type ChatStreamParams } from "@/api/sse-client";
 import { Card, Empty, Button, Form, Input, Modal, Space, Tag, Typography, theme, Spin, message as msg } from "antd";
 import { RobotOutlined } from "@ant-design/icons";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useSearchParams } from "react-router-dom";
+import { useNavigate, useParams } from "react-router-dom";
 import type { ChatMessage, ModelOption } from "./types";
 
 import ThreadList from "./components/ThreadList";
@@ -32,7 +32,8 @@ interface AgentInfo {
 
 export default function AIChatPage() {
   const { token } = theme.useToken();
-  const [searchParams] = useSearchParams();
+  const { agentId } = useParams<{ agentId: string }>();
+  const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
   const [loadingAgents, setLoadingAgents] = useState(true);
@@ -68,9 +69,22 @@ export default function AIChatPage() {
   const [allSkills, setAllSkills] = useState<Array<{ id: string; name: string; description: string | null; enabled: boolean }>>([]);
   const [allMcpServers, setAllMcpServers] = useState<Array<{ id: string; name: string; description: string | null; status: string; toolCount: number }>>([]);
   const [allKnowledgeBases, setAllKnowledgeBases] = useState<Array<{ id: string; name: string; description: string | null }>>([]);
+  const [toolDescriptions, setToolDescriptions] = useState<Record<string, string>>({});
 
   // Fetch all available abilities for matching
   useEffect(() => {
+    // Fetch tool registry (name → description)
+    client.get("/api/ai/tools").then(({ data }) => {
+      const list = data as Array<{ name: string; description: string | null }> | undefined;
+      if (list?.length) {
+        const map: Record<string, string> = {};
+        for (const t of list) {
+          if (t.description) map[t.name] = t.description;
+        }
+        setToolDescriptions(map);
+      }
+    }).catch(() => {});
+
     // Fetch skills
     client.get("/api/ai/skills", { query: { pageSize: 100 } }).then(({ data }) => {
       const list = (data as { list?: Array<{ id: string; name: string; description: string | null; enabled: boolean }> })?.list;
@@ -138,6 +152,8 @@ export default function AIChatPage() {
     setThreads([]);
     setActiveThreadId(null);
     setSessionId(undefined);
+    // 同步到路径参数，刷新后可恢复
+    navigate(`/app/ai/chat/${agent.id}`, { replace: true });
 
     // Set default model based on agent config
     if (agent.model && dbModels.length > 0) {
@@ -186,14 +202,13 @@ export default function AIChatPage() {
     }
   }, [dbModels, allSkills, allMcpServers, allKnowledgeBases]);
 
-  // URL 参数自动选择 agent
+  // 路径参数自动选择 agent
   useEffect(() => {
-    const agentParam = searchParams.get("agent");
-    if (agentParam && agents.length > 0 && !selectedAgent) {
-      const matched = agents.find(a => a.name === agentParam || a.id === agentParam);
+    if (agentId && agents.length > 0 && !selectedAgent) {
+      const matched = agents.find(a => a.name === agentId || a.id === agentId);
       if (matched) handleSelectAgent(matched);
     }
-  }, [agents, searchParams, selectedAgent, handleSelectAgent]);
+  }, [agents, agentId, selectedAgent, handleSelectAgent]);
 
   // 获取工作区文件
   const fetchWorkspaceFiles = useCallback(async (agentId: string) => {
@@ -563,10 +578,11 @@ export default function AIChatPage() {
 
   return (
     <Card
+      className="h-full [&_.ant-card-body]:h-full"
       styles={{
         body: {
           padding: 0,
-          height: "calc(100vh - 180px)",
+          // height: "calc(100vh - 180px)",
           display: "flex",
           flexDirection: "column",
           overflow: "hidden",
@@ -577,6 +593,7 @@ export default function AIChatPage() {
       <TopToolbar
         agentName={selectedAgent.name}
         agent={selectedAgent}
+        toolDescriptions={toolDescriptions}
         enabledTools={enabledTools}
         enabledSkills={enabledSkills}
         enabledMcp={enabledMcp}
@@ -597,6 +614,7 @@ export default function AIChatPage() {
           setSelectedAgent(null);
           setMessages([]);
           setThreads([]);
+          navigate("/app/ai/chat", { replace: true });
         }}
       />
 

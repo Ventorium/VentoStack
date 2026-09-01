@@ -241,6 +241,7 @@ export function createKnowledgeBaseService(
         ? await readdir(storagePath, { withFileTypes: true }).catch(() => [])
         : [];
 
+      const nameFilter = params.name?.trim().toLowerCase();
       const list: KnowledgeBase[] = [];
       for (const item of items) {
         if (item.isDirectory()) {
@@ -260,6 +261,10 @@ export function createKnowledgeBaseService(
               name = meta.name ?? item.name;
               description = meta.description ?? "";
             } catch { /* ignore */ }
+          }
+
+          if (nameFilter && !name.toLowerCase().includes(nameFilter)) {
+            continue;
           }
 
           list.push({

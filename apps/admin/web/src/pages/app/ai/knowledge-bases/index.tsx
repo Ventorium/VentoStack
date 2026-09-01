@@ -8,11 +8,13 @@ import {
   EditOutlined,
   FileOutlined,
   FolderOutlined,
+  HomeOutlined,
   PlusOutlined,
   ReloadOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import {
+  Breadcrumb,
   Button,
   Card,
   Col,
@@ -64,7 +66,7 @@ export default function KnowledgeBasesPage() {
   const [editLoading, setEditLoading] = useState(false);
   const [drawerKbId, setDrawerKbId] = useState<string | null>(null);
   const [drawerKbName, setDrawerKbName] = useState<string>('');
-  const [breadcrumb, setBreadcrumb] = useState<React.ReactNode>(null);
+  const [breadcrumb, setBreadcrumb] = useState<{ kbName: string; pathParts: string[] } | null>(null);
 
   const refresh = useCallback(
     async (p?: number, ps?: number) => {
@@ -303,7 +305,22 @@ export default function KnowledgeBasesPage() {
         title={
           <div className="flex items-center gap-3">
             <span className="font-semibold">{drawerKbName}</span>
-            {breadcrumb}
+            {breadcrumb && (
+              <Breadcrumb
+                items={[
+                  {
+                    title: (
+                      <span>
+                        <HomeOutlined /> {breadcrumb.kbName}
+                      </span>
+                    ),
+                  },
+                  ...breadcrumb.pathParts.map((part) => ({
+                    title: <span>{part}</span>,
+                  })),
+                ]}
+              />
+            )}
           </div>
         }
         open={!!drawerKbId}

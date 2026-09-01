@@ -70,6 +70,7 @@ export interface KnowledgeBaseService {
     tenantId: string;
     page?: number;
     pageSize?: number;
+    name?: string;
   }): Promise<{ list: KnowledgeBase[]; total: number }>;
   delete(id: string, tenantId: string): Promise<void>;
   /** 更新知识库元数据（name/description）；新数据按 meta.tenantId 校验租户归属 */

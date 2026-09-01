@@ -289,8 +289,10 @@ export function createChatRoutes(
       },
       responses: {
         200: {
+          contentType: 'text/event-stream',
+          schema: { type: 'string' },
           description:
-            'SSE 流（content / tool_call_start / stage / sources / usage / error / done）',
+            'SSE 流（session / content / tool_call_start / stage / sources / usage / error / done）',
         },
       },
     }),

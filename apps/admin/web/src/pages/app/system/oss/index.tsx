@@ -4,7 +4,6 @@ import ActionColumn from "@/components/ActionColumn";
 import { msg } from "@/components/GlobalMessage";
 import { OSS_API } from "@/constants";
 import { useTable } from "@/hooks/useTable";
-import { getAccessToken } from "@/store/token";
 import { cleanParams } from "@/utils/cleanParams";
 import { fmtDate } from "@/utils/fmtDate";
 import {
@@ -67,7 +66,7 @@ const OSSPage = () => {
     name: "file",
     multiple: true,
     action: OSS_API.UPLOAD,
-    headers: { Authorization: `Bearer ${getAccessToken()}` },
+    withCredentials: true,
     onChange: handleUploadChange,
   };
 

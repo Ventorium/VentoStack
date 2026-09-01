@@ -321,7 +321,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     defaultModel: deps.defaultModel,
     async resolveProvider(modelRef, tenantId) {
       let effectiveModel = modelRef;
-      if (effectiveModel === 'default') {
+      // 空模型（Agent 未配置模型）与 'default' 同样回退到默认模型；
+      // gateway 在 defaultModel 未配置时会把 'default' 替换为 undefined 传入，此处必须一并兜底
+      if (!effectiveModel || effectiveModel === 'default') {
         // 双轨对齐：优先读取前端设置页写入的 default_model，兼容历史 model_purpose_default_chat
         effectiveModel = (await providerService.getConfig('default_model'))
           ?? (await providerService.getConfig('model_purpose_default_chat'))

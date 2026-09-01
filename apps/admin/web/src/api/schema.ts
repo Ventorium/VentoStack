@@ -3384,9 +3384,7 @@ export type OpenAPIs = {
          */
         knowledgeBaseIds?: string[]
       },
-      response: {
-        description?: any
-      }
+      response: string
     },
     /**
      * 创建供应商
@@ -3415,7 +3413,27 @@ export type OpenAPIs = {
         /**
          * @description API Key（加密存储）
          */
-        apiKey?: string
+        apiKey?: string,
+        /**
+         * @description 自定义请求头
+         */
+        headers?: {},
+        /**
+         * @description 扩展配置
+         */
+        extra?: {},
+        /**
+         * @description 预设 ID
+         */
+        presetId?: string,
+        /**
+         * @description models.dev 标识
+         */
+        modelsDevSlug?: string,
+        /**
+         * @description 排序
+         */
+        sort?: number
       },
       response: any
     },
@@ -3452,6 +3470,18 @@ export type OpenAPIs = {
       response: any
     },
     '/api/ai/providers/:id/sync': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 从供应商接口同步模型
+     */
+    '/api/ai/providers/:id/sync-api': {
       query: never,
       params: {
         id: string

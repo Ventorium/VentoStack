@@ -76,12 +76,12 @@ export function createFileValidator(
       return path
         .replace(/\.\./g, "")
         .replace(/[/\\]/g, "_")
-        .replace(/[^\w._-]/g, "");
+        .replace(/[^\p{L}\p{N}._-]/gu, "_");
     },
 
     sanitizeFileName(name) {
       return name
-        .replace(/[^\w._-]/g, "_")
+        .replace(/[^\p{L}\p{N}._-]/gu, "_")
         .replace(/_{2,}/g, "_")
         .replace(/^_|_$/g, "");
     },

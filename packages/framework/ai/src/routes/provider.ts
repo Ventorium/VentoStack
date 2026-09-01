@@ -57,6 +57,11 @@ export function createProviderRoutes(
         apiFormat: { type: "string", description: "API 格式" },
         baseUrl: { type: "string", description: "Base URL" },
         apiKey: { type: "string", description: "API Key（加密存储）" },
+        headers: { type: "object", description: "自定义请求头" },
+        extra: { type: "object", description: "扩展配置" },
+        presetId: { type: "string", description: "预设 ID" },
+        modelsDevSlug: { type: "string", description: "models.dev 标识" },
+        sort: { type: "int", description: "排序" },
       },
     }),
     async (ctx) => {
@@ -375,6 +380,23 @@ export function createProviderRoutes(
         return handleError(e);
       }
     },
+  );
+
+  // 从供应商自身 /models 接口同步模型
+  router.post(
+    "/api/ai/providers/:id/sync-api",
+    routeDoc("从供应商接口同步模型"),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+        const result = await providerService.syncModelsFromApi(id, tenantId);
+        return success(result);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm("ai:provider", "update"),
   );
 
   // === 全局模型列表（给对话用）===
