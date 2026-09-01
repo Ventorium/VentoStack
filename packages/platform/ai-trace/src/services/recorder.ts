@@ -10,7 +10,7 @@
  * assistant 输出 / 工具结果 / steering 注入的用户消息）。
  */
 
-import type { AgentEvent } from "@ventostack/ai";
+import type { AgentEvent, AgentEventMessage } from "@ventostack/ai";
 import { createTagLogger } from "@ventostack/core";
 import type { TraceEventEmitter } from "../types";
 import { createRunBuffer, type RunBuffer } from "./run-buffer";

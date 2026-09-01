@@ -47,7 +47,9 @@
       "@ventostack/system": ["../../../packages/platform/system/src/index.ts"],
       "@ventostack/system/*": ["../../../packages/platform/system/src/*"],
       "@ventostack/workflow": ["../../../packages/platform/workflow/src/index.ts"],
-      "@ventostack/workflow/*": ["../../../packages/platform/workflow/src/*"]
+      "@ventostack/workflow/*": ["../../../packages/platform/workflow/src/*"],
+      "@ventostack/ai-trace": ["../../../packages/platform/ai-trace/src/index.ts"],
+      "@ventostack/ai-trace/*": ["../../../packages/platform/ai-trace/src/*"]
     }
   },
   "include": ["src"]

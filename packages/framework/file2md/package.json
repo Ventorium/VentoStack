@@ -18,7 +18,8 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {
+  "dependencies": {},
+  "optionalDependencies": {
     "@ventostack/file-parser": "^0.2.0"
   },
   "devDependencies": {
