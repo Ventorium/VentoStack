@@ -479,7 +479,7 @@ const AgentsPage = () => {
                   onChange={setAgentType}
                   options={AGENT_TYPES.map(t => ({
                     label: (
-                      <Space direction="vertical" size={0}>
+                      <Space orientation="vertical" size={0}>
                         <span>{t.label}</span>
                         <Text type="secondary" style={{ fontSize: 12 }}>{t.description}</Text>
                       </Space>
@@ -496,10 +496,10 @@ const AgentsPage = () => {
                     onChange={(e) => setResearchDepth(e.target.value)}
                     className="w-full"
                   >
-                    <Space direction="vertical" className="w-full">
+                    <Space orientation="vertical" className="w-full">
                       {RESEARCH_DEPTHS.map(d => (
                         <Radio key={d.value} value={d.value} className="flex items-center">
-                          <Space direction="vertical" size={0}>
+                          <Space orientation="vertical" size={0}>
                             <span>{d.label}</span>
                             <Text type="secondary" style={{ fontSize: 12 }}>{d.description}</Text>
                           </Space>
@@ -600,7 +600,7 @@ const AgentsPage = () => {
                   <InputNumber
                     size="small" min={1} max={100} disabled={!memoryEnabled}
                     value={memoryMaxHistory} onChange={(v) => setMemoryMaxHistory(v ?? 20)}
-                    className="w-[100px]" addonAfter="条"
+                    className="w-[100px]" suffix="条"
                   />
                 </div>
               </div>

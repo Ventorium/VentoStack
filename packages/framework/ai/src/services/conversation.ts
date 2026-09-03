@@ -75,8 +75,13 @@ export function createConversationService(deps: ConversationServiceDeps) {
     userId: string;
     agentId?: string;
     tenantId: string;
+    /** 每页数量（1-100，默认 50） */
+    limit?: number;
+    /** 游标分页：只返回 updated_at 早于该 ISO 时间的记录 */
+    before?: string;
   }): Promise<ConversationItem[]> {
     const { userId, agentId, tenantId } = params;
+    const limit = Math.min(Math.max(params.limit ?? 50, 1), 100);
 
     let sql = `SELECT id, agent_id as "agentId", user_id as "userId", title, status,
                message_count as "messageCount", agent_config_snapshot as "agentConfigSnapshot",
@@ -85,11 +90,17 @@ export function createConversationService(deps: ConversationServiceDeps) {
     const values: unknown[] = [userId, tenantId];
 
     if (agentId) {
-      sql += ` AND agent_id = $3`;
+      sql += ` AND agent_id = $${values.length + 1}`;
       values.push(agentId);
     }
 
-    sql += ` ORDER BY updated_at DESC LIMIT 50`;
+    if (params.before) {
+      sql += ` AND updated_at < $${values.length + 1}`;
+      values.push(params.before);
+    }
+
+    sql += ` ORDER BY updated_at DESC LIMIT $${values.length + 1}`;
+    values.push(limit);
 
     const rows = await db.raw(sql, values);
     return (rows as Array<Record<string, unknown>>).map((r) => ({

@@ -65,7 +65,6 @@ export default function KnowledgeBasesPage() {
   const [editForm] = Form.useForm();
   const [editLoading, setEditLoading] = useState(false);
   const [drawerKbId, setDrawerKbId] = useState<string | null>(null);
-  const [drawerKbName, setDrawerKbName] = useState<string>('');
   const [breadcrumb, setBreadcrumb] = useState<{ kbName: string; pathParts: string[] } | null>(null);
 
   const refresh = useCallback(
@@ -78,7 +77,7 @@ export default function KnowledgeBasesPage() {
           query: {
             page: currentPage,
             pageSize: currentPageSize,
-            name: searchText || undefined,
+            name: searchText || '',
           },
         })) as { error?: unknown; data?: { list: KnowledgeBaseItem[]; total: number } };
         if (!error && result) {
@@ -218,7 +217,6 @@ export default function KnowledgeBasesPage() {
                   hoverable
                   onClick={() => {
                     setDrawerKbId(kb.id);
-                    setDrawerKbName(kb.name);
                   }}
                   className="h-full"
                   style={{ borderColor: token.colorBorderSecondary }}
@@ -303,25 +301,22 @@ export default function KnowledgeBasesPage() {
       {/* 知识库文件浏览器 Drawer */}
       <Drawer
         title={
-          <div className="flex items-center gap-3">
-            <span className="font-semibold">{drawerKbName}</span>
-            {breadcrumb && (
-              <Breadcrumb
-                items={[
-                  {
-                    title: (
-                      <span>
-                        <HomeOutlined /> {breadcrumb.kbName}
-                      </span>
-                    ),
-                  },
-                  ...breadcrumb.pathParts.map((part) => ({
-                    title: <span>{part}</span>,
-                  })),
-                ]}
-              />
-            )}
-          </div>
+          breadcrumb && (
+            <Breadcrumb
+              items={[
+                {
+                  title: (
+                    <span>
+                      <HomeOutlined /> {breadcrumb.kbName}
+                    </span>
+                  ),
+                },
+                ...breadcrumb.pathParts.map((part) => ({
+                  title: <span>{part}</span>,
+                })),
+              ]}
+            />
+          )
         }
         open={!!drawerKbId}
         onClose={() => {
@@ -329,7 +324,7 @@ export default function KnowledgeBasesPage() {
           setBreadcrumb(null);
         }}
         placement="bottom"
-        size="large"
+        size="80vh"
         destroyOnClose
         styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' } }}
       >

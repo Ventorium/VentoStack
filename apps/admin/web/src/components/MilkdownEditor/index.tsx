@@ -5,8 +5,9 @@
 import { Crepe } from "@milkdown/crepe";
 import "@milkdown/crepe/theme/common/style.css";
 import "@milkdown/crepe/theme/frame.css";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { theme as antTheme, Spin } from "antd";
+import { editorCtx, parserCtx } from "@milkdown/core";
 
 export interface MilkdownEditorProps {
   value: string;
@@ -94,5 +95,3 @@ export default function MilkdownEditor({ value, onChange, readOnly = false }: Mi
     </div>
   );
 }
-
-import { editorCtx, parserCtx } from "@milkdown/core";

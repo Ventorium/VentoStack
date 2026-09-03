@@ -7,6 +7,7 @@ import { createRouter, success, paginated, fail, handleError, parseBody, pageOf 
 import type { Middleware, Router } from "@ventostack/core";
 import type { KnowledgeBaseService } from "../knowledge-base/types";
 import { createFileValidator } from "../knowledge-base/file-security";
+import { routeDoc } from "./schema";
 
 export function createKnowledgeBaseRoutes(
   kbService: KnowledgeBaseService,
@@ -108,7 +109,12 @@ export function createKnowledgeBaseRoutes(
 
   router.get(
     "/api/ai/knowledge-bases/:id/files",
-    perm("ai:knowledge-base", "list"),
+    routeDoc("浏览知识库文件", {
+      query: {
+        path: { type: "string", description: "目录路径（默认 .）" },
+        depth: { type: "int", description: "递归深度（默认 2）" },
+      },
+    }),
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
       const q = ctx.query as Record<string, unknown>;
@@ -118,6 +124,7 @@ export function createKnowledgeBaseRoutes(
       const files = await kbService.ls(id, path, depth, tenantId);
       return success(files);
     },
+    perm("ai:knowledge-base", "list"),
   );
 
   // 获取文件内容（cat 解析后 / raw 原始内容）
@@ -151,7 +158,11 @@ export function createKnowledgeBaseRoutes(
 
   router.put(
     "/api/ai/knowledge-bases/:id/files/*",
-    perm("ai:knowledge-base", "update"),
+    routeDoc("写入知识库文件", {
+      body: {
+        content: { type: "string", required: true, description: "文件内容" },
+      },
+    }),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
@@ -171,13 +182,19 @@ export function createKnowledgeBaseRoutes(
         return handleError(e);
       }
     },
+    perm("ai:knowledge-base", "update"),
   );
 
   // ── 文件重命名 ──
 
   router.post(
     "/api/ai/knowledge-bases/:id/rename",
-    perm("ai:knowledge-base", "update"),
+    routeDoc("重命名知识库文件", {
+      body: {
+        path: { type: "string", required: true, description: "原文件相对路径" },
+        name: { type: "string", required: true, description: "新文件名" },
+      },
+    }),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
@@ -192,13 +209,18 @@ export function createKnowledgeBaseRoutes(
         return handleError(e);
       }
     },
+    perm("ai:knowledge-base", "update"),
   );
 
   // ── 创建目录 ──
 
   router.post(
     "/api/ai/knowledge-bases/:id/mkdir",
-    perm("ai:knowledge-base", "update"),
+    routeDoc("创建知识库目录", {
+      body: {
+        path: { type: "string", required: true, description: "目录路径（相对知识库根目录）" },
+      },
+    }),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
@@ -212,6 +234,36 @@ export function createKnowledgeBaseRoutes(
         return handleError(e);
       }
     },
+    perm("ai:knowledge-base", "update"),
+  );
+
+  // ── 文件启用/禁用 ──
+
+  router.post(
+    "/api/ai/knowledge-bases/:id/files/enabled",
+    routeDoc("启用/禁用知识库文件", {
+      body: {
+        path: { type: "string", required: true, description: "文件相对路径" },
+        enabled: { type: "boolean", required: true, description: "true 启用 / false 禁用" },
+      },
+    }),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const body = await parseBody(ctx.request);
+        const filePath = body.path as string;
+        const enabled = body.enabled;
+        if (!filePath || typeof enabled !== "boolean") {
+          return fail("path 和 enabled 字段必填", 400, 400);
+        }
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
+        await kbService.setFileEnabled(id, filePath, enabled, tenantId);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm("ai:knowledge-base", "update"),
   );
 
   // ── 删除文件 ──

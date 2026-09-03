@@ -70,6 +70,8 @@ export const aiErrors = {
     new KnowledgeBaseError("知识库不存在", 404, "AI_KB_NOT_FOUND"),
   kbFileNotFound: () =>
     new KnowledgeBaseError("文件不存在", 404, "AI_KB_FILE_NOT_FOUND"),
+  kbFileNameInvalid: () =>
+    new KnowledgeBaseError("文件名非法：不能包含 / \\ : * ? \" < > | 等特殊字符", 400, "AI_KB_FILE_NAME_INVALID"),
   kbIndexFailed: () =>
     new KnowledgeBaseError("索引构建失败", 500, "AI_KB_INDEX_FAILED"),
   sandboxTimeout: () =>

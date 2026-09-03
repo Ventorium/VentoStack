@@ -11,7 +11,7 @@ import TopToolbar from "./components/TopToolbar";
 import ChatArea from "./components/ChatArea";
 import BottomInput from "./components/BottomInput";
 
-const { Text } = Typography;
+const { Text, Paragraph } = Typography;
 
 /** Fallback model when DB has no models configured */
 const FALLBACK_MODEL: ModelOption = {
@@ -227,22 +227,44 @@ export default function AIChatPage() {
     }
   }, [selectedAgent, fetchWorkspaceFiles]);
 
-  // 加载会话列表（选中 agent 后，用户级会话隔离）
-  useEffect(() => {
-    if (!selectedAgent) {
-      setThreads([]);
-      return;
-    }
-    client.get("/api/ai/conversations", { query: { agentId: selectedAgent.id } }).then(({ data }) => {
-      const list = data as Array<{ id: string; title: string | null; updatedAt: string }> | undefined;
-      setThreads((list ?? []).map((c) => ({
+  // 加载会话列表（选中 agent 后，用户级会话隔离；游标分页支持滚动加载更多）
+  const THREAD_PAGE_SIZE = 20;
+  const [hasMoreThreads, setHasMoreThreads] = useState(false);
+  const [loadingMoreThreads, setLoadingMoreThreads] = useState(false);
+
+  const fetchThreads = useCallback(async (before?: string) => {
+    if (!selectedAgent) return;
+    try {
+      const { data } = (await client.get("/api/ai/conversations", {
+        query: { agentId: selectedAgent.id, limit: THREAD_PAGE_SIZE, ...(before ? { before } : {}) },
+      })) as { data?: Array<{ id: string; title: string | null; updatedAt: string }> };
+      const items = (data ?? []).map((c) => ({
         id: c.id,
         title: c.title ?? "新对话",
         lastMessage: "",
         updatedAt: c.updatedAt,
-      })));
-    }).catch(() => setThreads([]));
+      }));
+      setThreads((prev) => (before ? [...prev, ...items] : items));
+      setHasMoreThreads(items.length === THREAD_PAGE_SIZE);
+    } catch {
+      if (!before) setThreads([]);
+    }
   }, [selectedAgent]);
+
+  useEffect(() => {
+    if (!selectedAgent) {
+      setThreads([]);
+      setHasMoreThreads(false);
+      return;
+    }
+    fetchThreads();
+  }, [selectedAgent, fetchThreads]);
+
+  const handleLoadMoreThreads = useCallback(() => {
+    if (loadingMoreThreads || !hasMoreThreads || threads.length === 0) return;
+    setLoadingMoreThreads(true);
+    fetchThreads(threads[threads.length - 1]!.updatedAt).finally(() => setLoadingMoreThreads(false));
+  }, [loadingMoreThreads, hasMoreThreads, threads, fetchThreads]);
 
   // 切换会话：绑定 sessionId 并回显历史消息
   const handleSelectThread = useCallback(async (threadId: string) => {
@@ -545,7 +567,7 @@ export default function AIChatPage() {
                 onClick={() => handleSelectAgent(agent)}
                 style={{ borderColor: token.colorBorderSecondary }}
               >
-                <Space direction="vertical" className="w-full">
+                <Space orientation="vertical" className="w-full">
                   <Space>
                     <div
                       className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: token.colorPrimaryBg }}
@@ -560,9 +582,9 @@ export default function AIChatPage() {
                     </div>
                   </Space>
                   {agent.description && (
-                    <Text type="secondary" className="text-xs" ellipsis={{ rows: 2 }}>
+                    <Paragraph type="secondary" className="text-xs mb-0" ellipsis={{ rows: 2 }}>
                       {agent.description}
-                    </Text>
+                    </Paragraph>
                   )}
                   <Space size={4} wrap>
                     {agent.tools.length > 0 && <Tag>{agent.tools.length} 工具</Tag>}
@@ -626,6 +648,9 @@ export default function AIChatPage() {
           activeId={activeThreadId ?? undefined}
           onSelect={handleSelectThread}
           onNew={handleNewChat}
+          onLoadMore={handleLoadMoreThreads}
+          hasMore={hasMoreThreads}
+          loadingMore={loadingMoreThreads}
         />
 
         {/* Chat Column */}

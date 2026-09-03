@@ -361,7 +361,7 @@ const DashboardPage = () => {
                         prefix={
                           <span className="text-base" style={{ color: card.color }}>{card.icon}</span>
                         }
-                        valueStyle={{ fontSize: 24 }}
+                        styles={{ content: { fontSize: 24 } }}
                       />
                     </Card>
                   </Col>
@@ -521,7 +521,7 @@ const DashboardPage = () => {
       <Drawer
         title="通知公告详情"
         placement="right"
-        width={520}
+        size={520}
         open={detailOpen}
         onClose={closeDetail}
         destroyOnHidden

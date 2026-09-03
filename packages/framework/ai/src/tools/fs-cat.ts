@@ -22,6 +22,10 @@ export function createFsCatTool(
     ],
     handler: async (params) => {
       const path = params.path as string;
+      // 禁用文件不参与知识库引用
+      if (await kbService.isFileDisabled(defaultKbId, path, "")) {
+        return { error: `文件已被禁用，无法读取: ${path}` };
+      }
       const content = await kbService.cat(defaultKbId, path, "");
       if (!content) {
         return { error: `文件 ${path} 不存在` };

@@ -463,6 +463,8 @@ export interface FileEntry {
   type: "file" | "directory";
   size: number;
   modifiedAt: string;
+  /** 文件是否被禁用（禁用后不参与 Agent 知识库检索与引用） */
+  disabled?: boolean;
   children?: FileEntry[];
 }
 

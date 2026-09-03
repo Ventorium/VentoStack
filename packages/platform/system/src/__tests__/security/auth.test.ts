@@ -5,6 +5,7 @@
  */
 
 import { describe, expect, test } from "bun:test";
+import { UnauthorizedError } from "@ventostack/core";
 import { createAuthService } from "../../services/auth";
 import {
   createMockAuditStore,
@@ -237,6 +238,7 @@ describe("Security: Auth", () => {
         });
         expect.unreachable("Should have thrown");
       } catch (e) {
+        expect(e).toBeInstanceOf(UnauthorizedError);
         const msg = e instanceof Error ? e.message : "";
         // 不应泄露密码哈希、内部状态等细节
         expect(msg).not.toContain("hash");
@@ -258,6 +260,7 @@ describe("Security: Auth", () => {
         });
         expect.unreachable("Should have thrown");
       } catch (e) {
+        expect(e).toBeInstanceOf(UnauthorizedError);
         const msg = e instanceof Error ? e.message : "";
         // 与密码错误返回相同消息，防止用户枚举
         expect(msg).toBe("用户名或密码错误");

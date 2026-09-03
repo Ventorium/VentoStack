@@ -20,6 +20,8 @@ export interface ConversationService {
     userId: string;
     agentId?: string;
     tenantId: string;
+    limit?: number;
+    before?: string;
   }): Promise<unknown[]>;
   delete(id: string, userId: string, tenantId: string): Promise<void>;
   /** 获取会话历史消息（供前端切换会话时回显） */
@@ -97,6 +99,8 @@ export function createChatRoutes(
     routeDoc('获取会话列表', {
       query: {
         agentId: { type: 'string', description: '按 Agent 过滤' },
+        limit: { type: 'int', description: '每页数量（默认 50，最大 100）' },
+        before: { type: 'string', description: '游标分页：只返回 updated_at 早于该 ISO 时间的记录' },
       },
     }),
     async (ctx) => {
@@ -107,6 +111,8 @@ export function createChatRoutes(
         userId,
         agentId: q.agentId as string | undefined,
         tenantId,
+        limit: q.limit != null ? Number(q.limit) : undefined,
+        before: q.before as string | undefined,
       });
       return success(conversations);
     },

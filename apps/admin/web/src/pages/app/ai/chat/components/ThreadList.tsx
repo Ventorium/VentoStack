@@ -1,6 +1,6 @@
 import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Badge, Dropdown, Empty, Input, Space, theme, Typography } from "antd";
-import { useState } from "react";
+import { Dropdown, Empty, Input, Spin, theme, Typography } from "antd";
+import { useState, type UIEvent } from "react";
 import type { Thread } from "../types";
 
 const { Text } = Typography;
@@ -12,6 +12,10 @@ interface ThreadListProps {
   onNew?: () => void;
   onDelete?: (id: string) => void;
   onRename?: (id: string) => void;
+  /** 滚动到底部时加载更多 */
+  onLoadMore?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
 }
 
 export default function ThreadList({
@@ -21,6 +25,9 @@ export default function ThreadList({
   onNew,
   onDelete,
   onRename,
+  onLoadMore,
+  hasMore,
+  loadingMore,
 }: ThreadListProps) {
   const [search, setSearch] = useState("");
   const { token } = theme.useToken();
@@ -31,9 +38,17 @@ export default function ThreadList({
       t.lastMessage.toLowerCase().includes(search.toLowerCase()),
   );
 
+  const handleScroll = (e: UIEvent<HTMLDivElement>) => {
+    if (!onLoadMore || !hasMore || loadingMore) return;
+    const el = e.currentTarget;
+    if (el.scrollHeight - el.scrollTop - el.clientHeight < 40) {
+      onLoadMore();
+    }
+  };
+
   return (
     <div
-      className="w-[260px] h-full flex flex-col shrink-0" style={{ borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
+      className="w-[200px] h-full flex flex-col shrink-0" style={{ borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
       {/* Header */}
       <div
@@ -61,7 +76,7 @@ export default function ThreadList({
       </div>
 
       {/* Thread List */}
-      <div className="flex-1 overflow-auto px-[4px]" >
+      <div className="flex-1 overflow-auto px-[4px]" onScroll={handleScroll} >
         {filtered.length === 0 ? (
           <Empty
             image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -69,58 +84,58 @@ export default function ThreadList({
             className="mt-12"
           />
         ) : (
-          filtered.map((thread) => {
-            const isActive = thread.id === activeId;
-            return (
-              <Dropdown
-                key={thread.id}
-                trigger={["contextMenu"]}
-                menu={{
-                  items: [
-                    { key: "rename", icon: <EditOutlined />, label: "重命名" },
-                    { key: "delete", icon: <DeleteOutlined />, label: "删除", danger: true },
-                  ],
-                  onClick: ({ key }) => {
-                    if (key === "delete") onDelete?.(thread.id);
-                    if (key === "rename") onRename?.(thread.id);
-                  },
-                }}
-              >
-                <div
-                  onClick={() => onSelect?.(thread.id)}
-                  className="cursor-pointer mb-0.5" style={{ padding: "10px 12px", borderRadius: token.borderRadiusLG, background: isActive ? token.controlItemBgActive : "transparent", borderLeft: isActive ? `3px solid ${token.colorPrimary}` : "3px solid transparent", transition: "all 0.15s ease" }}
-                  onMouseEnter={(e) => {
-                    if (!isActive) e.currentTarget.style.background = token.controlItemBgHover;
-                  }}
-                  onMouseLeave={(e) => {
-                    if (!isActive) e.currentTarget.style.background = "transparent";
+          <>
+            {filtered.map((thread) => {
+              const isActive = thread.id === activeId;
+              return (
+                <Dropdown
+                  key={thread.id}
+                  trigger={["contextMenu"]}
+                  menu={{
+                    items: [
+                      { key: "rename", icon: <EditOutlined />, label: "重命名" },
+                      { key: "delete", icon: <DeleteOutlined />, label: "删除", danger: true },
+                    ],
+                    onClick: ({ key }) => {
+                      if (key === "delete") onDelete?.(thread.id);
+                      if (key === "rename") onRename?.(thread.id);
+                    },
                   }}
                 >
                   <div
-                    className="flex items-center justify-between mb-1"
+                    onClick={() => onSelect?.(thread.id)}
+                    className="cursor-pointer mb-0.5" style={{ padding: "8px 10px", borderRadius: token.borderRadiusLG, background: isActive ? token.controlItemBgActive : "transparent", borderLeft: isActive ? `3px solid ${token.colorPrimary}` : "3px solid transparent", transition: "all 0.15s ease" }}
+                    onMouseEnter={(e) => {
+                      if (!isActive) e.currentTarget.style.background = token.controlItemBgHover;
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!isActive) e.currentTarget.style.background = "transparent";
+                    }}
                   >
                     <Text
                       strong={isActive}
                       ellipsis
-                      className="flex-1 mr-2 text-[13px]" style={{ color: isActive ? token.colorPrimary : token.colorText }}
+                      className="block text-[13px] mb-0.5" style={{ color: isActive ? token.colorPrimary : token.colorText }}
                     >
                       {thread.title}
                     </Text>
-                    <Text type="secondary" className="text-[11px] shrink-0">
-                      {thread.updatedAt}
+                    <Text
+                      type="secondary"
+                      ellipsis
+                      className="text-xs block"
+                    >
+                      {thread.lastMessage}
                     </Text>
                   </div>
-                  <Text
-                    type="secondary"
-                    ellipsis
-                    className="text-xs block"
-                  >
-                    {thread.lastMessage}
-                  </Text>
-                </div>
-              </Dropdown>
-            );
-          })
+                </Dropdown>
+              );
+            })}
+            {loadingMore && (
+              <div className="flex justify-center py-2">
+                <Spin size="small" />
+              </div>
+            )}
+          </>
         )}
       </div>
     </div>

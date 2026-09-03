@@ -530,6 +530,7 @@ const { error, data } = await client.get('/api/system/users', { query: cleanPara
 - 唯一例外：当值是动态的（运行时计算、主题 token、条件表达式）且无法用静态 class 表达时，才允许 `style={{}}`。
 - 动态值示例：`token.colorPrimary`、`token.borderRadiusLG`、模板字符串、条件表达式。
 - 禁止创建独立的 `.css` / `.scss` / `.less` 文件（全局 reset 除外）。
+- **禁止使用 Ant Design 已弃用的 props**；升级组件时使用当前推荐 API。例：`Statistic.valueStyle` 改为 `styles.content`，`Drawer.width` 改为 `size`。
 ### CRUD 页面模板
 使用 `useTable` hook + `ActionColumn` + `DictSelect` 组合。
 参考 `.claude/skills/admin-crud-page/SKILL.md`。

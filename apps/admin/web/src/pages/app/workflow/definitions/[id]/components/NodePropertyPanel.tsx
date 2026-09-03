@@ -257,7 +257,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                   {({ getFieldValue }) =>
                     getFieldValue("strategy") === "percentage" && (
                       <Form.Item name="percentage" label="通过百分比">
-                        <InputNumber min={1} max={100} addonAfter="%" className="w-full" />
+                        <InputNumber min={1} max={100} suffix="%" className="w-full" />
                       </Form.Item>
                     )
                   }
@@ -297,7 +297,7 @@ export default function NodePropertyPanel({ node, allNodes, onUpdate, onDelete, 
                 <>
                   {fields.map(({ key, name }) => (
                     <div key={key} className="rounded-md p-2 mb-2" style={{ border: "1px solid #f0f0f0" }}>
-                      <Space className="w-full" direction="vertical" size={4}>
+                      <Space className="w-full" orientation="vertical" size={4}>
                         <Space>
                           <Form.Item name={[name, "field"]} noStyle>
                             <Input placeholder="字段 如 formData.days" className="w-[140px]" />

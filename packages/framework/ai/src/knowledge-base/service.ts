@@ -64,6 +64,53 @@ export function createKnowledgeBaseService(
   }
 
   /**
+   * 读取 meta.json 中的禁用/启用覆盖列表（相对 content/ 的路径集合）
+   * disabled：显式禁用的文件或目录（禁用目录 = 其下所有文件禁用）
+   * enabled：显式启用的文件（覆盖祖先目录的禁用，禁用后仍可单独启用恢复检索）
+   */
+  async function getDisabledMeta(kbId: string): Promise<{ disabled: Set<string>; enabled: Set<string> }> {
+    const metaPath = join(getKBPath(kbId), "meta.json");
+    if (!existsSync(metaPath)) return { disabled: new Set(), enabled: new Set() };
+    try {
+      const meta = JSON.parse(await readFile(metaPath, "utf-8")) as {
+        disabledFiles?: string[];
+        enabledFiles?: string[];
+      };
+      return { disabled: new Set(meta.disabledFiles ?? []), enabled: new Set(meta.enabledFiles ?? []) };
+    } catch {
+      return { disabled: new Set(), enabled: new Set() };
+    }
+  }
+
+  /** 判断文件是否被有效禁用：显式启用 > 显式禁用 > 祖先目录禁用 */
+  function isEffectivelyDisabled(relPath: string, disabled: Set<string>, enabled: Set<string>): boolean {
+    if (enabled.has(relPath)) return false;
+    if (disabled.has(relPath)) return true;
+    let dir = dirname(relPath);
+    while (dir !== "." && dir !== sep && dir) {
+      if (disabled.has(dir)) return true;
+      const parent = dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    return false;
+  }
+
+  /** 更新 meta.json（读-改-写，保留其他字段） */
+  async function updateMetaJson(
+    kbId: string,
+    mutate: (meta: Record<string, unknown>) => void,
+  ): Promise<void> {
+    const metaPath = join(getKBPath(kbId), "meta.json");
+    let meta: Record<string, unknown> = {};
+    if (existsSync(metaPath)) {
+      try { meta = JSON.parse(await readFile(metaPath, "utf-8")) as Record<string, unknown>; } catch { /* ignore */ }
+    }
+    mutate(meta);
+    await writeFile(metaPath, JSON.stringify(meta, null, 2), "utf-8");
+  }
+
+  /**
    * 递归读取目录
    */
   async function readDirRecursive(
@@ -118,10 +165,13 @@ export function createKnowledgeBaseService(
 
   /**
    * 递归收集所有文件的相对路径（目录在前，文件在后）
+   * disabled 中的文件不列入（Agent 通过 README 索引导航知识库，禁用文件不应被引用）
    */
   async function buildReadmeTree(
     dirPath: string,
     basePath: string,
+    disabled: Set<string> = new Set(),
+    enabled: Set<string> = new Set(),
   ): Promise<string[]> {
     const results: string[] = [];
     const items = await readdir(dirPath, { withFileTypes: true }).catch(() => []);
@@ -130,13 +180,20 @@ export function createKnowledgeBaseService(
     const files = items.filter((i) => i.isFile()).sort((a, b) => a.name.localeCompare(b.name));
 
     for (const dir of dirs) {
-      const childFiles = await buildReadmeTree(join(dirPath, dir.name), basePath);
+      // 不整体跳过禁用目录：其中可能存在显式启用覆盖的文件，逐文件用有效禁用判断
+      const childFiles = await buildReadmeTree(join(dirPath, dir.name), basePath, disabled, enabled);
       results.push(...childFiles);
     }
 
     for (const file of files) {
       if (file.name.toUpperCase() === "README.MD") continue;
       const relPath = relative(basePath, join(dirPath, file.name));
+      if (isEffectivelyDisabled(relPath, disabled, enabled)) continue;
+      // 跳过 0 字节的无扩展名文件（多为历史遗留的空文件，对 Agent 无意义）
+      if (!extname(file.name)) {
+        const st = await stat(join(dirPath, file.name)).catch(() => null);
+        if (!st || st.size === 0) continue;
+      }
       const encodedPath = relPath.split("/").map(encodeURIComponent).join("/");
       results.push(`- [${relPath}](${encodedPath})`);
     }
@@ -317,7 +374,20 @@ export function createKnowledgeBaseService(
       const targetPath = safePath(contentDir, path || ".");
       if (!existsSync(targetPath)) return [];
 
-      return readDirRecursive(targetPath, contentDir, depth);
+      const { disabled, enabled } = await getDisabledMeta(kbId);
+      const entries = await readDirRecursive(targetPath, contentDir, depth);
+
+      // 标注禁用状态（供管理端展示）
+      // 文件用有效禁用判断（含祖先目录禁用）；目录仅标注显式禁用（用于按钮状态）
+      function markDisabled(items: FileEntry[]): void {
+        for (const item of items) {
+          if (item.type === "file" && isEffectivelyDisabled(item.path, disabled, enabled)) item.disabled = true;
+          if (item.type === "directory" && disabled.has(item.path)) item.disabled = true;
+          if (item.children) markDisabled(item.children);
+        }
+      }
+      markDisabled(entries);
+      return entries;
     },
 
     async cat(kbId, path, tenantId) {
@@ -370,6 +440,7 @@ export function createKnowledgeBaseService(
     async grep(kbId, query, path, tenantId, limit) {
       const contentDir = getContentPath(kbId);
       const searchPath = path ? safePath(contentDir, path) : contentDir;
+      const { disabled, enabled } = await getDisabledMeta(kbId);
 
       const results: SearchResult[] = [];
       const queryLower = query.toLowerCase();
@@ -390,6 +461,8 @@ export function createKnowledgeBaseService(
             item.name.endsWith(".md") ||
             item.name.endsWith(".txt")
           ) {
+            // 禁用文件（含目录禁用继承）不参与检索
+            if (isEffectivelyDisabled(relative(contentDir, fullPath), disabled, enabled)) continue;
             const content = await readFile(fullPath, "utf-8").catch(() => "");
             const lines = content.split("\n");
 
@@ -420,6 +493,7 @@ export function createKnowledgeBaseService(
     async find(kbId, name, ext, path, tenantId) {
       const contentDir = getContentPath(kbId);
       const searchPath = path ? safePath(contentDir, path) : contentDir;
+      const { disabled, enabled } = await getDisabledMeta(kbId);
 
       const results: FileEntry[] = [];
 
@@ -442,7 +516,8 @@ export function createKnowledgeBaseService(
               modifiedAt: stats?.mtime ?? new Date(),
             });
             await searchDir(fullPath);
-          } else {
+          } else if (!isEffectivelyDisabled(relativePath, disabled, enabled)) {
+            // 禁用文件（含目录禁用继承）不参与检索
             const matchesName = !name || item.name.includes(name);
             const matchesExt = !ext || item.name.endsWith(ext);
             if (matchesName && matchesExt) {
@@ -500,9 +575,15 @@ export function createKnowledgeBaseService(
       const oldFilePath = safePath(contentDir, oldPath);
       if (!existsSync(oldFilePath)) throw aiErrors.kbFileNotFound();
 
-      // newName 只允许普通文件名（不含路径分隔符），防止穿越
-      if (!newName || newName.includes("/") || newName.includes("\\") || newName === "." || newName === "..") {
-        throw aiErrors.kbFileNotFound();
+      // newName 只允许普通文件名：禁止路径分隔符与 Windows 保留字符，防止穿越与非法命名
+      if (
+        !newName ||
+        newName === "." || newName === ".." ||
+        /[/\\:*?"<>|]/.test(newName) ||
+        // eslint-disable-next-line no-control-regex
+        /[\x00-\x1f]/.test(newName)
+      ) {
+        throw aiErrors.kbFileNameInvalid();
       }
       const newFilePath = resolve(join(dirname(oldFilePath), newName));
       // 确保新路径仍在 contentDir 内（resolve 后 + 分隔符边界）
@@ -511,6 +592,19 @@ export function createKnowledgeBaseService(
       }
 
       await rename(oldFilePath, newFilePath);
+
+      // 同步禁用/启用列表中的路径（文件或其所在目录被重命名时）
+      const newRelPath = relative(contentDir, newFilePath);
+      const oldRelPath = relative(contentDir, oldFilePath);
+      await updateMetaJson(kbId, (meta) => {
+        const remap = (p: string): string => {
+          if (p === oldRelPath) return newRelPath;
+          if (p.startsWith(oldRelPath + sep)) return newRelPath + p.slice(oldRelPath.length);
+          return p;
+        };
+        meta.disabledFiles = (((meta.disabledFiles as string[] | undefined) ?? []).map(remap));
+        meta.enabledFiles = (((meta.enabledFiles as string[] | undefined) ?? []).map(remap));
+      });
 
       // 自动刷新 README
       await this.generateReadme(kbId, tenantId);
@@ -536,8 +630,69 @@ export function createKnowledgeBaseService(
         await unlink(targetPath);
       }
 
+      // 清理禁用/启用列表中已删除的路径
+      const relPath = relative(contentDir, targetPath);
+      await updateMetaJson(kbId, (meta) => {
+        const keep = (p: string): boolean => p !== relPath && !p.startsWith(relPath + sep);
+        meta.disabledFiles = (((meta.disabledFiles as string[] | undefined) ?? []).filter(keep));
+        meta.enabledFiles = (((meta.enabledFiles as string[] | undefined) ?? []).filter(keep));
+      });
+
       // 自动刷新 README
       await this.generateReadme(kbId, tenantId);
+    },
+
+    // ── 文件/目录启用/禁用 ──
+    // 禁用目录 = 其下所有文件禁用（目录本身不入索引判断，靠祖先继承）
+    // 显式启用优先级最高：disabled 目录下的文件可单独启用恢复检索
+    async setFileEnabled(kbId, path, enabled, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const filePath = safePath(contentDir, path);
+      if (!existsSync(filePath)) throw aiErrors.kbFileNotFound();
+
+      const relPath = relative(contentDir, filePath);
+      const isDir = (await stat(filePath)).isDirectory();
+      const underPrefix = relPath + sep;
+
+      await updateMetaJson(kbId, (meta) => {
+        const disabled = new Set((meta.disabledFiles as string[] | undefined) ?? []);
+        const enabledSet = new Set((meta.enabledFiles as string[] | undefined) ?? []);
+
+        if (enabled) {
+          disabled.delete(relPath);
+          if (isDir) {
+            // 启用目录：清理目录内遗留的 enabled 覆盖（已无意义）
+            for (const p of enabledSet) {
+              if (p.startsWith(underPrefix)) enabledSet.delete(p);
+            }
+          }
+          // 启用文件/目录后，均需要显式启用覆盖才不受祖先禁用影响；
+          // 若无任何祖先目录被禁用，则该覆盖记录是冗余的，仍保留无副作用。
+          enabledSet.add(relPath);
+        } else {
+          enabledSet.delete(relPath);
+          if (isDir) {
+            // 禁用目录：目录内的 enabled 覆盖一并移除（子项恢复默认继承禁用）
+            for (const p of enabledSet) {
+              if (p.startsWith(underPrefix)) enabledSet.delete(p);
+            }
+          }
+          disabled.add(relPath);
+        }
+
+        meta.disabledFiles = [...disabled];
+        meta.enabledFiles = [...enabledSet];
+      });
+
+      // 禁用文件/目录不再出现在 Agent 可见的 README 索引中
+      await this.generateReadme(kbId, tenantId);
+    },
+
+    async isFileDisabled(kbId, path, tenantId) {
+      const contentDir = getContentPath(kbId);
+      const filePath = safePath(contentDir, path);
+      const { disabled, enabled } = await getDisabledMeta(kbId);
+      return isEffectivelyDisabled(relative(contentDir, filePath), disabled, enabled);
     },
 
     // ── 文件上传（含解析）──
@@ -631,7 +786,8 @@ export function createKnowledgeBaseService(
           kbName = meta.name ?? kbName;
         } catch { /* ignore */ }
       }
-      const fileList = await buildReadmeTree(contentDir, contentDir);
+      const { disabled, enabled } = await getDisabledMeta(kbId);
+      const fileList = await buildReadmeTree(contentDir, contentDir, disabled, enabled);
 
       const readmeContent = [
         `# ${kbName}`,

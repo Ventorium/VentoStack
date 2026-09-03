@@ -33,6 +33,11 @@ export function createKBReadTool(deps: KBReadToolDeps) {
       const kbId = params.kbId as string;
       const path = params.path as string;
 
+      // 禁用文件不参与知识库引用
+      if (await kbService.isFileDisabled(kbId, path, tenantId)) {
+        return { error: `文件已被禁用，无法读取: ${path}` };
+      }
+
       const result = await kbService.cat(kbId, path, tenantId);
       if (!result) {
         return { error: `文件不存在: ${path}` };

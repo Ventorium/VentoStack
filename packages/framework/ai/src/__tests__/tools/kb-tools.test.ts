@@ -44,6 +44,8 @@ function createMockKBService(overrides?: Partial<KnowledgeBaseService>): Knowled
     renameFile: mock(async () => {}),
     mkdir: mock(async () => {}),
     deleteFile: mock(async () => {}),
+    setFileEnabled: mock(async () => {}),
+    isFileDisabled: mock(async () => false),
     uploadFile: mock(async () => ({} as any)),
     getSourceFile: mock(async () => ({ buffer: Buffer.from(""), mimeType: "text/plain", fileName: "" })),
     generateReadme: mock(async () => ""),

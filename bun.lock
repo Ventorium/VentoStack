@@ -191,11 +191,11 @@
     "packages/framework/file2md": {
       "name": "@ventostack/file2md",
       "version": "0.1.1",
+      "dependencies": {
+        "@ventostack/file-parser": "^0.3.0",
+      },
       "devDependencies": {
         "@types/bun": "latest",
-      },
-      "optionalDependencies": {
-        "@ventostack/file-parser": "^0.2.0",
       },
     },
     "packages/framework/observability": {
@@ -1398,6 +1398,22 @@
     "@ventostack/docs": ["@ventostack/docs@workspace:apps/docs"],
 
     "@ventostack/events": ["@ventostack/events@workspace:packages/framework/events"],
+
+    "@ventostack/file-parser": ["@ventostack/file-parser@0.3.0", "", { "optionalDependencies": { "@ventostack/file-parser-darwin-arm64": "0.3.0", "@ventostack/file-parser-darwin-x64": "0.3.0", "@ventostack/file-parser-linux-arm64-gnu": "0.3.0", "@ventostack/file-parser-linux-arm64-musl": "0.3.0", "@ventostack/file-parser-linux-x64-gnu": "0.3.0", "@ventostack/file-parser-linux-x64-musl": "0.3.0", "@ventostack/file-parser-win32-x64-msvc": "0.3.0" } }, "sha512-UH+Hq12t9ATvsBXPvJ4pek9EwHFgIgxR4wFCdUdMTj+knraINCPCj2kFUVn9mpIKlXQ2GhDljCWdwXV6Mb5IeQ=="],
+
+    "@ventostack/file-parser-darwin-arm64": ["@ventostack/file-parser-darwin-arm64@0.3.0", "", { "os": "darwin", "cpu": "arm64" }, "sha512-eU2U+OdSTb7O/D85Pv/1j031+wBuB4Z6ITTqG4Ybdwp0Vi4fIyiDv2y+A9IFXi4Xu1mN8HzH0M8HSm4WumJFxQ=="],
+
+    "@ventostack/file-parser-darwin-x64": ["@ventostack/file-parser-darwin-x64@0.3.0", "", { "os": "darwin", "cpu": "x64" }, "sha512-HqKPhIeD5bkKV3DKNfvA8f9wL2fgqgIcOnF9z1d8VLRU3lpBdUyV3b2WlcWI7d1qbcPkP59ybyZIQDV9R2tMcg=="],
+
+    "@ventostack/file-parser-linux-arm64-gnu": ["@ventostack/file-parser-linux-arm64-gnu@0.3.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-KWKOrJO41JWVoJ9HttK8wtb+/Bfse0Gj/IA5CEl/t5HD6R5yl150rnBbSqyyCiWb0h3AJWD4ft3kTUahxM7hZg=="],
+
+    "@ventostack/file-parser-linux-arm64-musl": ["@ventostack/file-parser-linux-arm64-musl@0.3.0", "", { "os": "linux", "cpu": "arm64" }, "sha512-VlUAKJVWP8bHIOgwQiTEGnTP2yhjxIPIacV3xCWZIvPY9OIXWA9aOhg96qjiUSNjM25XNjCm+/YuW2IiEXvc5A=="],
+
+    "@ventostack/file-parser-linux-x64-gnu": ["@ventostack/file-parser-linux-x64-gnu@0.3.0", "", { "os": "linux", "cpu": "x64" }, "sha512-1R2REG12VflTrLxcLK3gwhkCZPhzVvLE4NpIQSExQ8vcPzxr4XcV/8jwausk3YZ1/p6AumsKHpT95jquXmZN4Q=="],
+
+    "@ventostack/file-parser-linux-x64-musl": ["@ventostack/file-parser-linux-x64-musl@0.3.0", "", { "os": "linux", "cpu": "x64" }, "sha512-CC274DShmvvPeWf5Y7B2gnCaOovrl3pnltd0JP0hNRKydLJRLkQUP4hAEarCco5YaDe3AQlr86Cy+NYyG0At+g=="],
+
+    "@ventostack/file-parser-win32-x64-msvc": ["@ventostack/file-parser-win32-x64-msvc@0.3.0", "", { "os": "win32", "cpu": "x64" }, "sha512-QXOqVAq6uWvXQjOOnwBOb5yuSylClUypq6y2qfZDZaXBJSed3cRJMkcP9uSWsnzcIMfp7y3tVNhHy7dOmFYJ9w=="],
 
     "@ventostack/file2md": ["@ventostack/file2md@workspace:packages/framework/file2md"],
 

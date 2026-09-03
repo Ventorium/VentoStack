@@ -48,6 +48,8 @@ export function createKBFollowLinkTool(deps: KBFollowLinkToolDeps) {
       ];
 
       for (const path of possiblePaths) {
+        // 禁用文件不参与知识库引用
+        if (await kbService.isFileDisabled(kbId, path, tenantId)) continue;
         const result = await kbService.cat(kbId, path, tenantId);
         if (result) return result;
       }

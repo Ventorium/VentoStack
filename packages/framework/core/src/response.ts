@@ -3,6 +3,9 @@
 // 所有平台模块必须从 @ventostack/core 引用，禁止在 routes/common.ts 中重复实现。
 
 import { VentoStackError } from "./errors";
+import { createTagLogger } from "./tag-log";
+
+const log = createTagLogger("core");
 
 /** 统一 JSON 响应头 */
 export const JSON_HEADERS = { "Content-Type": "application/json" } as const;
@@ -148,8 +151,14 @@ export function handleError(e: unknown): Response {
     const status = e.code >= 400 && e.code < 600 ? e.code : 400;
     return fail(e.message, status, status);
   }
-  // 非框架异常：返回固定脱敏文案，避免 SQL 细节 / 内部路径 / 供应商响应泄露。
-  // 完整错误信息应由调用方记录到服务端日志（如 logger.error(e)）。
+  // 非框架异常：服务端记录完整错误（含堆栈），对外返回固定脱敏文案，
+  // 避免 SQL 细节 / 内部路径 / 供应商响应泄露。
+  const error = e instanceof Error ? e : new Error(String(e));
+  log.error("未处理异常", {
+    name: error.name,
+    message: error.message,
+    stack: error.stack?.slice(0, 4096),
+  });
   return fail("服务器内部错误", 500, 500);
 }
 

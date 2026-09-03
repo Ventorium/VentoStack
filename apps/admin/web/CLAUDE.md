@@ -34,6 +34,7 @@ client.get(`/api/system/users/${id}`)
 - 下拉选择用 `DictSelect` + `typeCode`，不要硬编码 options
 - 分页表格用 `useTable<T>(fetcher)`，不要手写分页逻辑
 - 字典数据用 `useDict(typeCode)`，不要直接调 dict API
+- **禁止使用 Ant Design 已弃用的 props**；升级组件时使用当前推荐 API。例：`Statistic.valueStyle` 改为 `styles.content`，`Drawer.width` 改为 `size`。
 
 ## 样式
 

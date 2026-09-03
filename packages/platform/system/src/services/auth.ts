@@ -9,6 +9,7 @@ import type { PasswordHasher } from "@ventostack/auth";
 import type { TOTPManager } from "@ventostack/auth";
 import type { AuthSessionManager } from "@ventostack/auth";
 import type { Cache } from "@ventostack/cache";
+import { UnauthorizedError } from "@ventostack/core";
 import type { Database } from "@ventostack/database";
 import type { EventBus } from "@ventostack/events";
 import type { AuditStore } from "@ventostack/observability";
@@ -280,7 +281,7 @@ export function createAuthService(deps: {
           metadata: { ip, reason: "user_not_found" },
         });
         await recordLoginLog({ username, ip, userAgent, status: 0, message: "用户不存在" });
-        throw new Error("用户名或密码错误");
+        throw new UnauthorizedError("用户名或密码错误");
       }
 
       // 4. 检查用户状态
@@ -383,7 +384,7 @@ export function createAuthService(deps: {
           message: "密码错误",
         });
 
-        throw new Error("用户名或密码错误");
+        throw new UnauthorizedError("用户名或密码错误");
       }
 
       // 10. 登录成功：清除失败计数（缓存 + DB）

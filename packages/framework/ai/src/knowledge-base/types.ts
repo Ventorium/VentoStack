@@ -21,6 +21,8 @@ export interface FileEntry {
   type: "file" | "directory";
   size: number;
   modifiedAt: Date;
+  /** 文件是否被禁用（禁用后不参与 Agent 知识库检索与引用） */
+  disabled?: boolean;
   children?: FileEntry[];
 }
 
@@ -144,6 +146,23 @@ export interface KnowledgeBaseService {
     path: string,
     tenantId: string,
   ): Promise<void>;
+
+  /**
+   * 启用/禁用文件。禁用后：Agent 工具（read/search/follow-link）不可读、
+   * grep/find 检索不到、README 索引不再列出；管理端预览不受影响。
+   */
+  setFileEnabled(
+    kbId: string,
+    path: string,
+    enabled: boolean,
+    tenantId: string,
+  ): Promise<void>;
+  /** 查询文件是否被禁用（供 Agent 工具在读取前校验） */
+  isFileDisabled(
+    kbId: string,
+    path: string,
+    tenantId: string,
+  ): Promise<boolean>;
 
   // 文件上传（含解析）
   uploadFile(

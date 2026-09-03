@@ -1098,7 +1098,7 @@ export default function AISettingsPage() {
         title={`编辑供应商 — ${editProvider?.displayName || editProvider?.name}`}
         open={editOpen}
         onClose={() => setEditOpen(false)}
-        width={520}
+        size={520}
         extra={
           <Button
             type="primary"

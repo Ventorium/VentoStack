@@ -1351,7 +1351,8 @@ export type OpenAPIs = {
         page?: number,
         pageSize?: number,
         bucket?: string,
-        uploaderId?: string
+        uploaderId?: string,
+        filename?: string
       },
       params: never,
       headers: never,
@@ -1507,6 +1508,31 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    '/api/system/gen/tables': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/system/gen/tables/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/system/gen/tables/:id/preview': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/ai/knowledge-bases': {
       query: never,
       params: never,
@@ -1523,8 +1549,14 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 浏览知识库文件
+     */
     '/api/ai/knowledge-bases/:id/files': {
-      query: never,
+      query: {
+        path?: string,
+        depth?: number
+      },
       params: {
         id: string
       },
@@ -1609,7 +1641,9 @@ export type OpenAPIs = {
      */
     '/api/ai/conversations': {
       query: {
-        agentId?: string
+        agentId?: string,
+        limit?: number,
+        before?: string
       },
       params: never,
       headers: never,
@@ -2140,11 +2174,11 @@ export type OpenAPIs = {
         /**
          * @description 二维码数据 URL
          */
-        qrCode?: string,
+        qrCodeUri?: string,
         /**
          * @description 备用恢复码
          */
-        backupCodes?: any[]
+        recoveryCodes?: any[]
       }
     },
     /**
@@ -3129,6 +3163,22 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    '/api/system/gen/tables/import': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/system/gen/tables/:id/generate': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/ai/knowledge-bases': {
       query: never,
       params: never,
@@ -3136,22 +3186,63 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 重命名知识库文件
+     */
     '/api/ai/knowledge-bases/:id/rename': {
       query: never,
       params: {
         id: string
       },
       headers: never,
-      body: never,
+      body: {
+        /**
+         * @description 原文件相对路径
+         */
+        path: string,
+        /**
+         * @description 新文件名
+         */
+        name: string
+      },
       response: any
     },
+    /**
+     * 创建知识库目录
+     */
     '/api/ai/knowledge-bases/:id/mkdir': {
       query: never,
       params: {
         id: string
       },
       headers: never,
-      body: never,
+      body: {
+        /**
+         * @description 目录路径（相对知识库根目录）
+         */
+        path: string
+      },
+      response: any
+    },
+    /**
+     * 启用/禁用知识库文件
+     */
+    '/api/ai/knowledge-bases/:id/files/enabled': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 文件相对路径
+         */
+        path: string,
+        /**
+         * @description true 启用 / false 禁用
+         */
+        enabled: boolean
+      },
       response: any
     },
     '/api/ai/knowledge-bases/:id/upload': {
@@ -3226,7 +3317,11 @@ export type OpenAPIs = {
         /**
          * @description 是否公开
          */
-        isPublic?: boolean
+        isPublic?: boolean,
+        /**
+         * @description 是否为 Agent 创建独占虚拟环境（创建后不可修改）
+         */
+        requiresVirtualEnvironment?: boolean
       },
       response: {
         /**
@@ -3750,6 +3845,15 @@ export type OpenAPIs = {
       },
       params: {
         sessionId: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/system/notification/messages/:id': {
+      query: never,
+      params: {
+        id: string
       },
       headers: never,
       body: never,
@@ -4504,6 +4608,24 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    '/api/system/gen/tables/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/system/gen/columns/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/ai/knowledge-bases/:id': {
       query: never,
       params: {
@@ -4513,13 +4635,21 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 写入知识库文件
+     */
     '/api/ai/knowledge-bases/:id/files/*': {
       query: never,
       params: {
         id: string
       },
       headers: never,
-      body: never,
+      body: {
+        /**
+         * @description 文件内容
+         */
+        content: string
+      },
       response: any
     },
     /**

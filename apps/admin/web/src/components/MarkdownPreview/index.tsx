@@ -5,6 +5,7 @@
  * 提供完整的 GFM 支持、XSS 防护和流式渲染能力。
  */
 import { XMarkdown } from "@ant-design/x-markdown";
+import './index.css'
 
 export default function MarkdownPreview({ content }: { content: string }) {
   return <XMarkdown content={content} />;
