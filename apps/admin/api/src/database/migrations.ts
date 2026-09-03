@@ -7,7 +7,7 @@ import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
 import { createI18nTables } from "@ventostack/i18n";
 import { addDirectorySupport, addTenantIdToOssFile, createOssTables } from "@ventostack/oss";
 import { createSchedulerTables } from "@ventostack/scheduler";
-import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables, addModelCapabilities, addReasoningOptions, addProviderModelsDevSlug, dropAgentType, createAiMcpTables, addKbDocumentCount } from "@ventostack/ai";
+import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables, addModelCapabilities, addReasoningOptions, addProviderModelsDevSlug, dropAgentType, createAiMcpTables, addKbDocumentCount, addAgentRuntime } from "@ventostack/ai";
 import { createTraceTables } from "@ventostack/ai-trace";
 import { createNotifyTables } from "@ventostack/notification";
 import { createWorkflowTables, enhanceWorkflowTables, addBusinessType, addWorkflowHistoryTenant } from "@ventostack/workflow";
@@ -77,6 +77,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(dropAgentType);
   runner.addMigration(createAiMcpTables);
   runner.addMigration(addKbDocumentCount);
+  runner.addMigration(addAgentRuntime);
 
   // AI 链路追踪
   runner.addMigration(createTraceTables);

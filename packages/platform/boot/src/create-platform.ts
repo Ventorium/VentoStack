@@ -124,6 +124,7 @@ export interface PlatformConfig {
     storagePath?: string;
     /** 恰好 32 字节的 Provider 凭据加密密钥 */
     credentialEncryptionKey: string;
+    agentRuntime?: { baseUrl: string; token: string; timeoutMs: number };
   };
 
   /** 是否启用多租户隔离（默认 false，向后兼容） */
@@ -331,6 +332,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         llmProviders: config.aiConfig?.llmProviders ?? [],
         defaultModel: config.aiConfig?.defaultModel ?? 'gpt-4o-mini',
         storagePath: config.aiConfig?.storagePath ?? './data/knowledge-bases',
+        ...(config.aiConfig?.agentRuntime ? { agentRuntime: config.aiConfig.agentRuntime } : {}),
       })
     : undefined;
 

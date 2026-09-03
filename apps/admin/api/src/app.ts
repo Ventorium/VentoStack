@@ -169,6 +169,13 @@ export async function buildApp(opts?: {
             defaultModel: env.AI_DEFAULT_MODEL,
             storagePath: env.AI_STORAGE_PATH,
             credentialEncryptionKey: env.AI_CREDENTIAL_ENCRYPTION_KEY!,
+            ...(env.VENTO_RUNTIME_URL && env.VENTO_RUNTIME_TOKEN
+              ? { agentRuntime: {
+                  baseUrl: env.VENTO_RUNTIME_URL,
+                  token: env.VENTO_RUNTIME_TOKEN,
+                  timeoutMs: env.VENTO_RUNTIME_TIMEOUT_MS,
+                } }
+              : {}),
           },
         }
       : {}),

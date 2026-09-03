@@ -3,6 +3,7 @@
  */
 
 import type { Database } from "@ventostack/database";
+import type { AgentRuntimeClient, SandboxStatus } from '../agent-runtime/types';
 
 export interface CreateAgentParams {
   name: string;
@@ -19,6 +20,7 @@ export interface CreateAgentParams {
   maxIterations?: number;
   maxTokensPerTurn?: number;
   isPublic?: boolean;
+  requiresVirtualEnvironment?: boolean;
   tenantId: string;
   createdBy: string;
 }
@@ -61,6 +63,10 @@ export interface AgentItem {
   createdBy: string;
   createdAt: string;
   updatedAt: string;
+  requiresVirtualEnvironment: boolean;
+  sandboxStatus?: SandboxStatus;
+  /** Internal runtime binding; routes must not expose this value. */
+  sandboxId?: string;
 }
 
 export interface AgentListParams {
@@ -85,15 +91,23 @@ export interface AgentRefsValidator {
   }, tenantId: string): Promise<void>;
 }
 
-export function createAgentService(deps: { db: Database; validateRefs?: AgentRefsValidator }) {
+export function createAgentService(deps: { db: Database; validateRefs?: AgentRefsValidator; runtime?: AgentRuntimeClient }) {
   const { db } = deps;
 
   async function create(params: CreateAgentParams): Promise<{ id: string }> {
     await deps.validateRefs?.(params, params.tenantId);
     const id = crypto.randomUUID();
-    await db.raw(
-      `INSERT INTO ai_agent (id, name, description, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft')`,
+    const requiresVirtualEnvironment = params.requiresVirtualEnvironment ?? false;
+    if (requiresVirtualEnvironment && !deps.runtime) {
+      throw Object.assign(new Error('Agent Runtime 未配置或不可用'), { code: 'AGENT_RUNTIME_UNAVAILABLE', status: 503 });
+    }
+    const sandbox = requiresVirtualEnvironment
+      ? await deps.runtime!.createSandbox({ sessionId: id })
+      : undefined;
+    try {
+      await db.raw(
+      `INSERT INTO ai_agent (id, name, description, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft', $18, $19)`,
       [
         id,
         params.name,
@@ -112,8 +126,14 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
         params.isPublic ?? false,
         params.tenantId,
         params.createdBy,
+        requiresVirtualEnvironment,
+        sandbox?.sandboxId ?? null,
       ],
     );
+    } catch (error) {
+      if (sandbox) await deps.runtime!.destroySandbox(sandbox.sandboxId).catch(() => undefined);
+      throw error;
+    }
     return { id };
   }
 
@@ -176,6 +196,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
               memory_config as "memoryConfig", config,
               max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
+              requires_virtual_environment as "requiresVirtualEnvironment", sandbox_id as "sandboxId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
@@ -183,6 +204,12 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     if (rows.length === 0) return null;
     const r = rows[0] as Record<string, unknown>;
     const parseJSON = (v: unknown) => typeof v === "string" ? JSON.parse(v) : v;
+    let sandboxStatus: SandboxStatus | undefined;
+    const sandboxId = (r.sandboxId as string | null) ?? undefined;
+    if (sandboxId) {
+      try { sandboxStatus = deps.runtime ? (await deps.runtime.getSandbox(sandboxId)).state : 'unavailable'; }
+      catch { sandboxStatus = 'unavailable'; }
+    }
     return {
       id: r.id as string,
       name: r.name as string,
@@ -203,6 +230,9 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       createdBy: r.createdBy as string,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
       updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
+      requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+      ...(sandboxStatus ? { sandboxStatus } : {}),
+      ...(sandboxId ? { sandboxId } : {}),
     };
   }
 
@@ -251,6 +281,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
               memory_config as "memoryConfig", config,
               max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
+              requires_virtual_environment as "requiresVirtualEnvironment", sandbox_id as "sandboxId",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent ${whereClause}
        ORDER BY updated_at DESC
@@ -258,8 +289,14 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       [...queryParams, pageSize, offset],
     );
 
-    const list = (rows as Array<Record<string, unknown>>).map((r) => {
+    const list = await Promise.all((rows as Array<Record<string, unknown>>).map(async (r) => {
       const pj = (v: unknown) => typeof v === "string" ? JSON.parse(v) : v;
+      const sandboxId = (r.sandboxId as string | null) ?? undefined;
+      let sandboxStatus: SandboxStatus | undefined;
+      if (sandboxId) {
+        try { sandboxStatus = deps.runtime ? (await deps.runtime.getSandbox(sandboxId)).state : 'unavailable'; }
+        catch { sandboxStatus = 'unavailable'; }
+      }
       return {
       id: r.id as string,
       name: r.name as string,
@@ -280,7 +317,10 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       createdBy: r.createdBy as string,
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
       updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
-    }; });
+      requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+      ...(sandboxStatus ? { sandboxStatus } : {}),
+      ...(sandboxId ? { sandboxId } : {}),
+    }; }));
 
     return { list, total };
   }
@@ -296,6 +336,18 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     if (!opts?.isAdmin && opts?.userId) {
       whereClauses.push(`created_by = $3`);
       values.push(opts.userId);
+    }
+    const rows = await db.raw(
+      `SELECT sandbox_id as "sandboxId" FROM ai_agent WHERE ${whereClauses.join(" AND ")}`,
+      values,
+    ) as Array<{ sandboxId?: string | null }>;
+    if (rows.length === 0) return;
+    const sandboxId = rows[0]?.sandboxId;
+    if (sandboxId) {
+      if (!deps.runtime) {
+        throw Object.assign(new Error('Agent Runtime 未配置或不可用'), { code: 'AGENT_RUNTIME_UNAVAILABLE', status: 503 });
+      }
+      await deps.runtime.destroySandbox(sandboxId);
     }
     await db.raw(`DELETE FROM ai_agent WHERE ${whereClauses.join(" AND ")}`, values);
   }

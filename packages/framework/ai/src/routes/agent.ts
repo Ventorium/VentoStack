@@ -45,7 +45,7 @@ const AGENT_BODY_FIELDS = [
   'name', 'description', 'model', 'systemPrompt', 'tools',
   'knowledgeBaseIds', 'skillIds', 'mcpServerIds',
   'modelOverrides', 'memoryConfig', 'config',
-  'maxIterations', 'maxTokensPerTurn', 'isPublic',
+  'maxIterations', 'maxTokensPerTurn', 'isPublic', 'requiresVirtualEnvironment',
 ] as const;
 
 /** 迭代轮数 / 单轮 Token / 能力清单长度的硬上限（防止单条消息放大成天文数字的 LLM 成本） */
@@ -127,6 +127,10 @@ export function createAgentRoutes(
         maxIterations: { type: 'int', description: '最大迭代轮数' },
         maxTokensPerTurn: { type: 'int', description: '每轮 Token 上限' },
         isPublic: { type: 'bool', description: '是否公开' },
+        requiresVirtualEnvironment: {
+          type: 'bool',
+          description: '是否为 Agent 创建独占虚拟环境（创建后不可修改）',
+        },
       },
       responses: { 200: { id: { type: 'string', description: 'Agent ID' } } },
     }),
@@ -232,6 +236,9 @@ export function createAgentRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
+        if (body.requiresVirtualEnvironment !== undefined) {
+          return fail('requiresVirtualEnvironment 创建后不可修改', 400, 400);
+        }
         // status 只能通过 publish 接口变更，防止普通 update 直接绕过发布校验
         const { status: _ignored, ...rest } = body;
         const validationError = validateAgentBody(rest);

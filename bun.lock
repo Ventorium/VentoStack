@@ -129,6 +129,7 @@
         "@ventostack/events": "workspace:*",
         "@ventostack/file2md": "workspace:*",
         "@ventostack/observability": "workspace:*",
+        "@ventostack/vm-runtime": "0.1.1",
         "ajv": "^8.18.0",
       },
       "devDependencies": {
@@ -1423,6 +1424,8 @@
     "@ventostack/testing": ["@ventostack/testing@workspace:packages/framework/testing"],
 
     "@ventostack/vite-bridge": ["@ventostack/vite-bridge@workspace:packages/framework/vite-bridge"],
+
+    "@ventostack/vm-runtime": ["@ventostack/vm-runtime@0.1.1", "", {}, "sha512-tsmdMwedaD+X9zsLvVpkUF81letmaVmezdag3aX8Bm54y1ZcbQcgZTlhpQIXzpJFytPkmOEcnbVWb6Gvk2Sbag=="],
 
     "@ventostack/webhook": ["@ventostack/webhook@workspace:packages/framework/webhook"],
 

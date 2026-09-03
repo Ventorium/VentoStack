@@ -1,5 +1,18 @@
 # @ventostack/ai
 
+## Agent 虚拟环境
+
+配置独立的 Vento Agent Runtime 后，创建 Agent 时可设置
+`requiresVirtualEnvironment: true`。该 Agent 会获得独占的持久 sandbox；该开关创建后不可修改。
+
+```dotenv
+VENTO_RUNTIME_URL=http://192.168.8.210:8088
+VENTO_RUNTIME_TOKEN=<runtime bearer token>
+VENTO_RUNTIME_TIMEOUT_MS=30000
+```
+
+地址和 Token 必须同时配置。runtime 不可用不会阻止 Fullstack 启动；普通 Agent 继续工作，需要虚拟环境的创建请求返回 503。Agent 可按工具白名单启用 `terminal`、`file_read` 和 `file_write`，文件工具被限制在 `/workspace`。
+
 AI 集成：LLM 接入、RAG、Tool Registry、权限沙箱。
 
 ## 模块定位

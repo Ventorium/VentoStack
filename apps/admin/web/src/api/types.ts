@@ -400,6 +400,8 @@ export interface AgentItem {
   maxTokensPerTurn: number | null;
   status: string;
   isPublic: boolean;
+  requiresVirtualEnvironment: boolean;
+  sandboxStatus?: string;
   tenantId: string;
   createdBy: string;
   createdAt: string;

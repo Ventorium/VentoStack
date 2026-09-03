@@ -9,6 +9,7 @@ import { client } from "@/api";
 import type { AgentItem, PaginatedData } from "@/api/types";
 import ActionColumn from "@/components/ActionColumn";
 import { fmtDate } from "@/utils/fmtDate";
+import { agentMutationValues } from "./mutation";
 
 const { TextArea } = Input;
 const { Text } = Typography;
@@ -263,6 +264,7 @@ const AgentsPage = () => {
       isPublic: record.isPublic,
       maxIterations: record.maxIterations ?? 10,
       maxTokensPerTurn: record.maxTokensPerTurn ?? 4096,
+      requiresVirtualEnvironment: record.requiresVirtualEnvironment,
     });
 
     // 设置记忆配置
@@ -304,7 +306,7 @@ const AgentsPage = () => {
       const values = await form.validateFields();
       setModalLoading(true);
       const body = {
-        ...values,
+        ...agentMutationValues(values, "create"),
         memoryConfig: {
           enabled: memoryEnabled,
           longTerm: memoryLongTerm,
@@ -336,7 +338,7 @@ const AgentsPage = () => {
       const values = await form.validateFields();
       setModalLoading(true);
       const body = {
-        ...values,
+        ...agentMutationValues(values, "edit"),
         memoryConfig: {
           enabled: memoryEnabled,
           longTerm: memoryLongTerm,
@@ -401,6 +403,15 @@ const AgentsPage = () => {
     {
       title: "状态", dataIndex: "status", key: "status", width: 100,
       render: (status: string) => { const s = statusMap[status] || { label: status, color: "default" }; return <Tag color={s.color}>{s.label}</Tag>; },
+    },
+    {
+      title: "运行环境", key: "sandboxStatus", width: 120,
+      render: (_, record) => {
+        if (!record.requiresVirtualEnvironment) return <Tag>本机</Tag>;
+        if (record.sandboxStatus === "RUNNING") return <Tag color="green">虚拟环境可用</Tag>;
+        if (record.sandboxStatus === "unavailable") return <Tag color="red">虚拟环境不可用</Tag>;
+        return <Tag color="orange">{record.sandboxStatus ?? "状态未知"}</Tag>;
+      },
     },
     {
       title: "公开", dataIndex: "isPublic", key: "isPublic", width: 80,
@@ -546,6 +557,19 @@ const AgentsPage = () => {
               </Form.Item>
               <Form.Item label="公开" name="isPublic" valuePropName="checked">
                 <Switch checkedChildren="公开" unCheckedChildren="私有" />
+              </Form.Item>
+              <Form.Item
+                label="虚拟环境"
+                name="requiresVirtualEnvironment"
+                valuePropName="checked"
+                initialValue={false}
+                tooltip="创建独占 Linux 虚拟环境；创建后不可修改"
+              >
+                <Switch
+                  disabled={modalMode === "edit"}
+                  checkedChildren="启用"
+                  unCheckedChildren="关闭"
+                />
               </Form.Item>
               <Form.Item label="最大迭代轮数" name="maxIterations" tooltip="Agent 单次对话中允许的最多工具调用轮次（默认 10）">
                 <InputNumber min={1} max={100} className="w-full" placeholder="默认 10" />

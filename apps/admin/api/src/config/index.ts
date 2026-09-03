@@ -161,6 +161,9 @@ const rawConfig = createConfig(
       env: 'AI_STORAGE_PATH',
       default: './data/ai',
     },
+    VENTO_RUNTIME_URL: { type: 'string', env: 'VENTO_RUNTIME_URL' },
+    VENTO_RUNTIME_TOKEN: { type: 'string', env: 'VENTO_RUNTIME_TOKEN', sensitive: true },
+    VENTO_RUNTIME_TIMEOUT_MS: { type: 'number', env: 'VENTO_RUNTIME_TIMEOUT_MS', default: 30_000 },
   },
   process.env,
 );
@@ -217,6 +220,9 @@ if (rawConfig.AI_ENABLED) {
   if (encryptionKeyBytes !== 32) {
     throw new Error('AI_CREDENTIAL_ENCRYPTION_KEY must be exactly 32 bytes when AI_ENABLED=true');
   }
+}
+if (Boolean(rawConfig.VENTO_RUNTIME_URL) !== Boolean(rawConfig.VENTO_RUNTIME_TOKEN)) {
+  throw new Error('VENTO_RUNTIME_URL and VENTO_RUNTIME_TOKEN must be configured together');
 }
 
 // JWT_SECRET 密钥长度校验（256-bit = 32 字节）

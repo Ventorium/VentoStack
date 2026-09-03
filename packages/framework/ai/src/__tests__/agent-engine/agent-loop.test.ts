@@ -56,6 +56,27 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
 }
 
 describe("Agent loop conformance", () => {
+  test("describes only environment, workspace, and terminal for virtual-environment agents", async () => {
+    const requests: ChatParams[] = [];
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
+      agentService: {
+        async getById() {
+          return {
+            id: "agent", name: "coder", model: "default", systemPrompt: "base",
+            tenantId: "tenant", requiresVirtualEnvironment: true,
+          };
+        },
+      },
+    });
+
+    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    const prompt = requests[0]?.messages.find((message) => message.role === 'system')?.content;
+    expect(prompt).toContain("环境：隔离的 Linux 虚拟环境");
+    expect(prompt).toContain("工作目录：/workspace");
+    expect(prompt).toContain("终端：terminal");
+    expect(prompt).not.toContain("sandboxId");
+  });
   test("executes directly supplied AgentTools without a ToolRegistry", async () => {
     const calls: unknown[] = [];
     const gateway = createGateway([

@@ -82,6 +82,10 @@ import { createSkillService } from './services/skill';
 import { createSkillStoreService } from './services/skill-store';
 import type { SkillStoreService } from './services/skill-store';
 import { createToolRegistry } from './tool-registry';
+import { createRequire } from 'node:module';
+import { createAgentRuntimeClient } from './agent-runtime/client';
+import type { AgentRuntimeConfig } from './agent-runtime/client';
+import { createAgentRuntimeTools } from './agent-runtime/tools';
 import {
   createBase64Tool,
   createCalculatorTool,
@@ -228,6 +232,8 @@ export interface AIModuleDeps {
   tracer?: import("@ventostack/observability").Tracer;
   /** 父 span 上下文 */
   parentSpanContext?: { traceId: string; spanId: string };
+  /** 独立 Firecracker runtime；未配置时普通 Agent 仍可工作。 */
+  agentRuntime?: AgentRuntimeConfig;
 }
 
 // ---- Provider 创建 ----
@@ -285,6 +291,17 @@ export function createConfiguredProvider(
 
 export function createAIModule(deps: AIModuleDeps): AIModule {
   const { db, authMiddleware, permMiddleware, eventBus, storagePath, cache } = deps;
+  let agentRuntime: import('./agent-runtime/types').AgentRuntimeClient | undefined;
+  if (deps.agentRuntime) {
+    const bindings = createRequire(import.meta.url)('@ventostack/vm-runtime') as {
+      requestRuntime: import('./agent-runtime/client').RuntimePackageBindings['request'];
+      requestRuntimeBinary: import('./agent-runtime/client').RuntimePackageBindings['requestBinary'];
+    };
+    agentRuntime = createAgentRuntimeClient(deps.agentRuntime, {
+      request: bindings.requestRuntime,
+      requestBinary: bindings.requestRuntimeBinary,
+    });
+  }
 
   const providerService = createProviderService({
     db: db as import('@ventostack/database').Database,
@@ -411,6 +428,16 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     registry.register(createUuidTool());
     registry.register(createBase64Tool());
     registry.register(createHashTool());
+    if (agentRuntime) {
+      registry.register({
+        name: 'terminal',
+        description: '在 Agent 的隔离 Linux 虚拟环境中执行命令。',
+        parameters: [{ name: 'command', type: 'array', description: '命令及参数', required: true }],
+        riskLevel: 'high',
+        requiresApproval: true,
+        async handler() { return { error: '当前 Agent 未绑定虚拟环境' }; },
+      });
+    }
 
     // 知识库工具（tenantId 为请求级租户标识：memory 隔离、skill/KB 归属、审计）
     registry.register(createKBBrowseTool({ kbService: knowledgeBase, tenantId }));
@@ -441,6 +468,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // Agent CRUD 服务（先创建，供 AgentLoop 使用）
   const agentDbService = createAgentService({
     db: db as import('@ventostack/database').Database,
+    ...(agentRuntime ? { runtime: agentRuntime } : {}),
     // 依赖引用校验：model / 知识库 / Skill / MCP 引用必须有效且归属当前租户
     validateRefs: async (params, tenantId) => {
       const tid = tenantId || 'default';
@@ -492,9 +520,17 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           ...(item.memoryConfig ? { memoryConfig: item.memoryConfig } : {}),
           ...(extractResearch(item.config)),
           tenantId: item.tenantId,
+          requiresVirtualEnvironment: item.requiresVirtualEnvironment,
+          ...(item.sandboxStatus ? { sandboxStatus: item.sandboxStatus } : {}),
         };
       }),
-    list: (params) => agentDbService.list(params),
+    list: async (params) => {
+      const result = await agentDbService.list(params);
+      return {
+        total: result.total,
+        list: result.list.map(({ sandboxId: _sandboxId, ...item }) => item),
+      };
+    },
     update: (id, params, tenantId, opts) =>
       agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId, opts),
     delete: (id, tenantId, opts) => agentDbService.delete(id, tenantId, opts),
@@ -595,6 +631,13 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           filePath: `${storagePath}/skills/${skill.slug}/${skill.installedVersion ?? 'current'}/SKILL.md`,
         }];
       });
+    },
+    async resolveAgentTools(agentId, tenantId, toolNames) {
+      if (!agentRuntime) return [];
+      const item = await agentDbService.getById(agentId, tenantId);
+      if (!item?.requiresVirtualEnvironment || !item.sandboxId) return [];
+      const selected = new Set(toolNames);
+      return createAgentRuntimeTools(agentRuntime, item.sandboxId).filter((tool) => selected.has(tool.name));
     },
   });
 

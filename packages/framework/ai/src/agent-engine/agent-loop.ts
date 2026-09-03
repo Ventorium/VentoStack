@@ -310,6 +310,8 @@ export interface AgentConfig {
   /** 深度研究模式配置（来自 ai_agent.config.research）；存在时启用多轮研究方法论 */
   research?: ResearchConfig;
   tenantId: string;
+  requiresVirtualEnvironment?: boolean;
+  sandboxStatus?: string;
 }
 
 export interface AgentCrudService {
@@ -337,6 +339,7 @@ export interface AgentLoopDeps {
   shouldStopAfterTurn?: AgentLoopConfig['shouldStopAfterTurn'];
   mcpToolSource?: McpToolSource;
   resolveSkills?: (skillIds: string[], tenantId: string) => Promise<Skill[]>;
+  resolveAgentTools?: (agentId: string, tenantId: string, toolNames: string[]) => Promise<AgentTool[]>;
   authorizeToolCall?: ToolCallAuthorizer;
   /**
    * 工具调用审计回调：每次工具执行完成后调用（含参数/结果/耗时/状态）。
@@ -796,6 +799,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       }
 
       let systemPrompt = params.systemPrompt ?? agentConfig?.systemPrompt ?? '你是一个智能助手。';
+      if (agentConfig?.requiresVirtualEnvironment) {
+        systemPrompt = `${systemPrompt}\n\n## 执行环境\n环境：隔离的 Linux 虚拟环境\n工作目录：/workspace\n终端：terminal`;
+      }
       let model = params.model ?? agentConfig?.model ?? 'default';
       // 硬封顶：Agent 配置的迭代/Token 预算不能超过平台上限（防成本放大）
       let maxIterations = Math.min(agentConfig?.maxIterations ?? 10, AGENT_MAX_ITERATIONS_LIMIT);
@@ -866,6 +872,12 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           ...agentTools,
           ...(await deps.mcpToolSource.loadTools(mcpServerIds, tenantId)),
         ];
+      }
+      if (agentConfig?.requiresVirtualEnvironment && deps.resolveAgentTools) {
+        const selected = agentConfig.tools ?? [];
+        const virtualNames = new Set(['terminal', 'file_read', 'file_write']);
+        agentTools = agentTools.filter((tool) => !virtualNames.has(tool.name));
+        agentTools.push(...await deps.resolveAgentTools(agentId, tenantId, selected));
       }
 
       // 运行时工具集：后续轮次可通过工具结果的 addedToolNames 动态扩充

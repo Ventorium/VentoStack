@@ -23,6 +23,8 @@ export const AiAgentModel = defineModel(
     created_by: column.varchar({ length: 36 }),
     status: column.varchar({ length: 16, default: "draft" }),
     is_public: column.boolean({ default: false }),
+    requires_virtual_environment: column.boolean({ default: false }),
+    sandbox_id: column.varchar({ length: 128, nullable: true }),
   },
   { timestamps: true },
 );

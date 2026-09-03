@@ -115,6 +115,12 @@ describe('AI 路由 OpenAPI 契约', () => {
     expect(paths['/api/ai/approvals']?.get).toBeDefined();
     expect(paths['/api/ai/audit']?.get).toBeDefined();
     expect(paths['/api/ai/agents/:id/publish']?.post).toBeDefined();
+    const createSchema = createOp.requestBody?.content?.['application/json']?.schema as {
+      properties?: Record<string, unknown>;
+    };
+    expect(createSchema.properties?.requiresVirtualEnvironment).toMatchObject({
+      type: 'boolean',
+    });
     expect(paths['/api/ai/conversations/:id/fork']?.post).toBeDefined();
   });
 });
