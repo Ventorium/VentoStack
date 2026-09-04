@@ -164,6 +164,15 @@ export const column = {
     return createColumnDef<T, Opts>("enum", opts);
   },
   /**
+   * 文本数组列（PG text[]）。
+   * 仅 PostgreSQL 方言支持；Bun.sql 会将 JS string[] 序列化为数组字面量。
+   */
+  textArray<Opts extends ColumnOptions = ColumnOptions>(
+    opts?: Opts,
+  ): ColumnDef<string[]> & { options: Opts } {
+    return createColumnDef<string[], Opts>("text[]", opts);
+  },
+  /**
    * 定点数（以字符串存储，避免浮点精度问题）。
    * @param opts — 可包含 precision（精度）与 scale（小数位）
    */

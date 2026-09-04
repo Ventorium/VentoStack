@@ -30,7 +30,7 @@ describe("createAICache", () => {
       id: "agent1",
       name: "Test Agent",
       systemPrompt: "You are helpful.",
-      model: "gpt-4o",
+      models: ["gpt-4o"],
       tenantId: "t1",
     };
 
@@ -47,7 +47,7 @@ describe("createAICache", () => {
       id: "agent1",
       name: "Test",
       systemPrompt: "prompt",
-      model: "model",
+      models: ["model"],
       tenantId: "t1",
     };
 

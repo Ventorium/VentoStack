@@ -86,7 +86,7 @@ const baseAgent: AgentConfig = {
   id: 'agent',
   name: 'test',
   systemPrompt: '你是助手',
-  model: 'default',
+  models: ['default'],
   tenantId: 'tenant',
 };
 

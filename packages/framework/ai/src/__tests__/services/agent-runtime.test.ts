@@ -4,7 +4,7 @@ import { createMockDatabase } from '../helpers';
 
 const baseAgent = {
   name: 'coder',
-  model: 'default',
+  model: ['default'],
   systemPrompt: 'help',
   tenantId: 'tenant-1',
   createdBy: 'user-1',

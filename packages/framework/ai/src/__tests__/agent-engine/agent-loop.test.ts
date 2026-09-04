@@ -63,7 +63,7 @@ describe("Agent loop conformance", () => {
       agentService: {
         async getById() {
           return {
-            id: "agent", name: "coder", model: "default", systemPrompt: "base",
+            id: "agent", name: "coder", models: ["default"], systemPrompt: "base",
             tenantId: "tenant", requiresVirtualEnvironment: true,
           };
         },
@@ -507,7 +507,7 @@ describe("Agent loop tool policy（默认拒绝）", () => {
           id: "agent",
           name: "agent",
           systemPrompt: "",
-          model: "test/model",
+          models: ["test/model"],
           tenantId: "tenant",
           tools: ["calculator"],
         }),
@@ -526,5 +526,63 @@ describe("Agent loop tool policy（默认拒绝）", () => {
     expect(requests.length).toBeGreaterThanOrEqual(1);
     const offered = (requests[0]!.tools ?? []).map((t) => t.name);
     expect(offered).toEqual(["calculator"]);
+  });
+
+  describe("model whitelist", () => {
+    function createLoopWithModels(models: string[], requests: ChatParams[]) {
+      return createAgentLoop({
+        llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
+        agentService: {
+          async getById() {
+            return {
+              id: "agent", name: "agent", systemPrompt: "base", models,
+              tenantId: "tenant",
+            };
+          },
+        },
+      });
+    }
+
+    test("params.model within whitelist is used", async () => {
+      const requests: ChatParams[] = [];
+      const loop = createLoopWithModels(["m/a", "m/b"], requests);
+      const chunks = await collect(loop.runStream({
+        agentId: "agent", userId: "user", tenantId: "tenant", message: "run", model: "m/b",
+      }));
+      expect(chunks.some((c) => c.type === "error")).toBe(false);
+      expect(requests[0]?.model).toBe("m/b");
+    });
+
+    test("params.model outside whitelist is rejected with MODEL_NOT_ALLOWED", async () => {
+      const requests: ChatParams[] = [];
+      const loop = createLoopWithModels(["m/a", "m/b"], requests);
+      const chunks = await collect(loop.runStream({
+        agentId: "agent", userId: "user", tenantId: "tenant", message: "run", model: "m/other",
+      }));
+      const errors = chunks.filter((c) => c.type === "error");
+      expect(errors.length).toBe(1);
+      expect((errors[0] as { error: { code: string } }).error.code).toBe("MODEL_NOT_ALLOWED");
+      expect(requests.length).toBe(0);
+    });
+
+    test("without params.model defaults to the first whitelisted model", async () => {
+      const requests: ChatParams[] = [];
+      const loop = createLoopWithModels(["m/first", "m/second"], requests);
+      const chunks = await collect(loop.runStream({
+        agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
+      }));
+      expect(chunks.some((c) => c.type === "error")).toBe(false);
+      expect(requests[0]?.model).toBe("m/first");
+    });
+
+    test("'default' in whitelist is allowed as an explicit model", async () => {
+      const requests: ChatParams[] = [];
+      const loop = createLoopWithModels(["default", "m/a"], requests);
+      const chunks = await collect(loop.runStream({
+        agentId: "agent", userId: "user", tenantId: "tenant", message: "run", model: "default",
+      }));
+      expect(chunks.some((c) => c.type === "error")).toBe(false);
+      expect(requests[0]?.model).toBe("default");
+    });
   });
 });

@@ -26,6 +26,8 @@ export interface ChatStreamParams {
   agentId: string;
   message: string;
   sessionId?: string;
+  /** 用户选择的模型 ID（须在 Agent 可用模型白名单内，缺省用 Agent 默认模型） */
+  model?: string;
   tools?: string[];
   skillIds?: string[];
   mcpServerIds?: string[];

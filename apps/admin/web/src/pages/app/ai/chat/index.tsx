@@ -22,7 +22,8 @@ interface AgentInfo {
   id: string;
   name: string;
   description: string | null;
-  model: string;
+  /** 可用模型 ID 白名单（第一项为默认模型） */
+  models: string[];
   systemPrompt: string;
   tools: string[];
   skills: Array<{ id: string; name: string; description: string | null }>;
@@ -109,13 +110,13 @@ export default function AIChatPage() {
     setLoadingAgents(true);
     client.get("/api/ai/agents", { query: { pageSize: 100, status: "active" } })
       .then(({ data }) => {
-        const list = (data as { list?: Array<{ id: string; name: string; description: string | null; model: string; systemPrompt: string; tools: string[] | null; skillIds: string[] | null; mcpServerIds: string[] | null; knowledgeBaseIds: string[] | null }> })?.list;
+        const list = (data as { list?: Array<{ id: string; name: string; description: string | null; model: string[]; systemPrompt: string; tools: string[] | null; skillIds: string[] | null; mcpServerIds: string[] | null; knowledgeBaseIds: string[] | null }> })?.list;
         if (list?.length) {
           const agentInfos: AgentInfo[] = list.map(a => ({
             id: a.id,
             name: a.name,
             description: a.description,
-            model: a.model,
+            models: a.model ?? [],
             systemPrompt: a.systemPrompt,
             tools: a.tools ?? [],
             skills: [], // Will be populated after matching
@@ -145,6 +146,15 @@ export default function AIChatPage() {
     }).catch(() => {});
   }, []);
 
+  // 模型白名单同步：当前模型不在所选 Agent 白名单内时，回退到白名单内第一个模型
+  useEffect(() => {
+    if (!selectedAgent || selectedAgent.models.length === 0 || dbModels.length === 0) return;
+    if (!selectedAgent.models.includes(currentModel.id)) {
+      const found = dbModels.find(m => selectedAgent.models.includes(m.id));
+      if (found) setCurrentModel(found);
+    }
+  }, [selectedAgent, dbModels, currentModel.id]);
+
   // Select agent and fetch its full details
   const handleSelectAgent = useCallback(async (agent: AgentInfo) => {
     setSelectedAgent(agent);
@@ -156,8 +166,8 @@ export default function AIChatPage() {
     navigate(`/app/ai/chat/${agent.id}`, { replace: true });
 
     // Set default model based on agent config
-    if (agent.model && dbModels.length > 0) {
-      const found = dbModels.find(m => m.id === agent.model);
+    if (agent.models.length > 0 && dbModels.length > 0) {
+      const found = dbModels.find(m => agent.models.includes(m.id));
       if (found) setCurrentModel(found);
     }
 
@@ -381,6 +391,10 @@ export default function AIChatPage() {
         mcpServerIds: enabledMcp,
         knowledgeBaseIds: enabledKbs,
       };
+      // 用户选择的模型：仅在真实模型且落在 Agent 白名单内时下发，否则由后端取默认模型
+      const isRealModel = dbModels.some(m => m.id === currentModel.id);
+      const modelAllowed = selectedAgent.models.length === 0 || selectedAgent.models.includes(currentModel.id);
+      if (isRealModel && modelAllowed) params.model = currentModel.id;
 
       const stepTimers = new Map<string, number>();
 
@@ -577,7 +591,7 @@ export default function AIChatPage() {
                     <div>
                       <Text strong>{agent.name}</Text>
                       <div>
-                        <Text type="secondary" className="text-xs">{agent.model}</Text>
+                        <Text type="secondary" className="text-xs">{agent.models[0] ?? ""}</Text>
                       </div>
                     </div>
                   </Space>
@@ -666,7 +680,13 @@ export default function AIChatPage() {
             onStop={handleStop}
             loading={loading}
             currentModel={currentModel}
-            models={dbModels.length > 0 ? dbModels : [FALLBACK_MODEL]}
+            models={(() => {
+              // 白名单限制：Agent 配置了可用模型时，选择器只展示白名单内的模型
+              const base = dbModels.length > 0 ? dbModels : [FALLBACK_MODEL];
+              if (!selectedAgent || selectedAgent.models.length === 0) return base;
+              const allowed = base.filter(m => selectedAgent.models.includes(m.id));
+              return allowed.length > 0 ? allowed : [FALLBACK_MODEL];
+            })()}
             onModelChange={setCurrentModel}
             contextUsage={contextUsage}
             workspaceFiles={workspaceFiles}

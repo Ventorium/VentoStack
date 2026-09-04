@@ -9,7 +9,7 @@ export const AiAgentModel = defineModel(
     avatar: column.varchar({ length: 512, nullable: true }),
     type: column.varchar({ length: 32, default: "chatbot" }),
     system_prompt: column.text(),
-    model: column.varchar({ length: 64 }),
+    model: column.textArray(),
     tools: column.json({ nullable: true }),
     knowledge_base_ids: column.json({ nullable: true }),
     skill_ids: column.json({ nullable: true }),

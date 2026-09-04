@@ -210,6 +210,7 @@ export function createChatRoutes(
         agentId: { type: 'string', required: true, description: 'Agent ID' },
         sessionId: { type: 'string', description: '会话 ID（缺省自动创建）' },
         message: { type: 'string', required: true, description: '用户消息' },
+        model: { type: 'string', description: '用户选择的模型 ID（须在 Agent 白名单内）' },
         tools: { type: 'array', items: { type: 'string' }, description: '工具过滤' },
         skillIds: { type: 'array', items: { type: 'string' }, description: '技能过滤' },
         mcpServerIds: { type: 'array', items: { type: 'string' }, description: 'MCP 过滤' },
@@ -261,6 +262,7 @@ export function createChatRoutes(
           skillIds: body.skillIds as string[] | undefined,
           mcpServerIds: body.mcpServerIds as string[] | undefined,
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
+          model: body.model as string | undefined,
         });
 
         // 收集流式结果
@@ -288,6 +290,7 @@ export function createChatRoutes(
         agentId: { type: 'string', required: true, description: 'Agent ID' },
         sessionId: { type: 'string', description: '会话 ID（缺省自动创建）' },
         message: { type: 'string', required: true, description: '用户消息' },
+        model: { type: 'string', description: '用户选择的模型 ID（须在 Agent 白名单内）' },
         tools: { type: 'array', items: { type: 'string' }, description: '工具过滤' },
         skillIds: { type: 'array', items: { type: 'string' }, description: '技能过滤' },
         mcpServerIds: { type: 'array', items: { type: 'string' }, description: 'MCP 过滤' },
@@ -342,6 +345,7 @@ export function createChatRoutes(
           skillIds: body.skillIds as string[] | undefined,
           mcpServerIds: body.mcpServerIds as string[] | undefined,
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
+          model: body.model as string | undefined,
         });
 
         // 在流开头下发 session 事件，前端据此绑定会话 ID（新建会话时前端无 sessionId）

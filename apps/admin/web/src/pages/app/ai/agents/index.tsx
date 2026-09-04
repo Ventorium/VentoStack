@@ -393,7 +393,15 @@ const AgentsPage = () => {
       ),
     },
     { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
-    { title: "模型", dataIndex: "model", key: "model", width: 120 },
+    {
+      title: "模型", dataIndex: "model", key: "model", width: 200,
+      render: (models: string[]) => (
+        <span className="flex flex-wrap gap-1">
+          {(models ?? []).slice(0, 2).map((m) => <Tag key={m} className="mr-0">{m}</Tag>)}
+          {(models?.length ?? 0) > 2 && <Tag className="mr-0">+{models!.length - 2}</Tag>}
+        </span>
+      ),
+    },
     {
       title: "类型", key: "type", width: 100,
       render: (_, record) => (record.config?.research as { depth?: string } | undefined)?.depth
@@ -545,8 +553,9 @@ const AgentsPage = () => {
                 </Form.Item>
                 </>
               )}
-              <Form.Item label="模型" name="model" rules={[{ required: true }]}>
-                <Select options={modelOptions} placeholder="选择模型" showSearch
+              <Form.Item label="模型" name="model" rules={[{ required: true, message: "请选择至少一个模型" }]}>
+                <Select options={modelOptions} placeholder="选择模型（可多选，第一个为默认模型）" mode="multiple"
+                  maxTagCount="responsive" showSearch
                   filterOption={(input, option) => (option?.label as string)?.toLowerCase().includes(input.toLowerCase())} />
               </Form.Item>
               <Form.Item label="描述" name="description">

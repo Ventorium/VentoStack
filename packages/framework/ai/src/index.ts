@@ -335,5 +335,6 @@ export { dropAgentType } from './migrations/010_drop_agent_type';
 export { createAiMcpTables } from './migrations/011_create_ai_mcp_tables';
 export { addKbDocumentCount } from './migrations/012_add_kb_document_count';
 export { addAgentRuntime } from './migrations/013_add_agent_runtime';
+export { agentModelsArray } from './migrations/014_agent_models_array';
 export { createAgentRuntimeClient } from './agent-runtime/client';
 export type { AgentRuntimeClient, RuntimeSandbox, SandboxStatus } from './agent-runtime/types';

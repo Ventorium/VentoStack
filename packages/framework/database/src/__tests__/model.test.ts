@@ -34,6 +34,12 @@ describe("column", () => {
     expect(col.options.comment).toBe("description field");
   });
 
+  test("textArray creates correct column def", () => {
+    const col = column.textArray({ nullable: true });
+    expect(col.type).toBe("text[]");
+    expect(col.options.nullable).toBe(true);
+  });
+
   test("boolean creates correct column def", () => {
     const col = column.boolean({ default: false });
     expect(col.type).toBe("boolean");

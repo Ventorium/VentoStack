@@ -8,7 +8,8 @@ import type { AgentRuntimeClient, SandboxStatus } from '../agent-runtime/types';
 export interface CreateAgentParams {
   name: string;
   description?: string;
-  model: string;
+  /** 可用模型 ID 列表（PG text[]），至少 1 个 */
+  model: string[];
   systemPrompt: string;
   tools?: unknown[];
   knowledgeBaseIds?: string[];
@@ -28,7 +29,7 @@ export interface CreateAgentParams {
 export interface UpdateAgentParams {
   name?: string;
   description?: string;
-  model?: string;
+  model?: string[];
   systemPrompt?: string;
   tools?: unknown[];
   knowledgeBaseIds?: string[];
@@ -47,7 +48,7 @@ export interface AgentItem {
   id: string;
   name: string;
   description: string | null;
-  model: string;
+  model: string[];
   systemPrompt: string;
   tools: unknown;
   knowledgeBaseIds: unknown;
@@ -84,11 +85,32 @@ export interface AgentListParams {
 /** 依赖引用校验：由装配层注入，用于校验 model / 知识库 / Skill / MCP 引用是否存在且归属当前租户 */
 export interface AgentRefsValidator {
   (params: {
-    model?: string;
+    model?: string[];
     knowledgeBaseIds?: string[];
     skillIds?: string[];
     mcpServerIds?: string[];
   }, tenantId: string): Promise<void>;
+}
+
+/**
+ * 防御性归一化：PG text[] 经驱动读出应为 string[]，
+ * 兼容 '{a,b}' 字面量字符串形态（部分 mock/驱动差异）
+ */
+function toModelArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v as string[];
+  if (typeof v === "string") {
+    const inner = v.replace(/^\{|\}$/g, "");
+    return inner === "" ? [] : inner.split(",");
+  }
+  return [];
+}
+
+/**
+ * JS string[] → PG 数组字面量（text[] 参数绑定）。
+ * Bun.sql 会把 JS 数组序列化为逗号拼接字符串，无法直接写入 text[] 列，需显式构造字面量。
+ */
+function toPgTextArray(items: string[]): string {
+  return `{${items.map((s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
 }
 
 export function createAgentService(deps: { db: Database; validateRefs?: AgentRefsValidator; runtime?: AgentRuntimeClient }) {
@@ -107,13 +129,13 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     try {
       await db.raw(
       `INSERT INTO ai_agent (id, name, description, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft', $18, $19)`,
+       VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft', $18, $19)`,
       [
         id,
         params.name,
         params.description ?? null,
         params.systemPrompt,
-        params.model,
+        toPgTextArray(params.model),
         params.tools ? JSON.stringify(params.tools) : null,
         params.knowledgeBaseIds ? JSON.stringify(params.knowledgeBaseIds) : null,
         params.skillIds ? JSON.stringify(params.skillIds) : null,
@@ -150,7 +172,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
 
     if (params.name !== undefined) { sets.push(`name = $${idx++}`); values.push(params.name); }
     if (params.description !== undefined) { sets.push(`description = $${idx++}`); values.push(params.description); }
-    if (params.model !== undefined) { sets.push(`model = $${idx++}`); values.push(params.model); }
+    if (params.model !== undefined) { sets.push(`model = $${idx++}::text[]`); values.push(toPgTextArray(params.model)); }
     if (params.systemPrompt !== undefined) { sets.push(`system_prompt = $${idx++}`); values.push(params.systemPrompt); }
     if (params.tools !== undefined) { sets.push(`tools = $${idx++}`); values.push(JSON.stringify(params.tools)); }
     if (params.knowledgeBaseIds !== undefined) { sets.push(`knowledge_base_ids = $${idx++}`); values.push(JSON.stringify(params.knowledgeBaseIds)); }
@@ -214,7 +236,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
-      model: r.model as string,
+      model: toModelArray(r.model),
       systemPrompt: r.systemPrompt as string,
       tools: parseJSON(r.tools) ?? null,
       knowledgeBaseIds: parseJSON(r.knowledgeBaseIds) ?? null,
@@ -301,7 +323,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
-      model: r.model as string,
+      model: toModelArray(r.model),
       systemPrompt: r.systemPrompt as string,
       tools: pj(r.tools) ?? null,
       knowledgeBaseIds: pj(r.knowledgeBaseIds) ?? null,

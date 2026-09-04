@@ -298,7 +298,8 @@ export interface AgentConfig {
   id: string;
   name: string;
   systemPrompt: string;
-  model: string;
+  /** 可用模型 ID 白名单（运行时默认取第一项；用户传入 model 必须在白名单内） */
+  models: string[];
   tools?: string[];
   knowledgeBaseIds?: string[];
   skillIds?: string[];
@@ -802,7 +803,24 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       if (agentConfig?.requiresVirtualEnvironment) {
         systemPrompt = `${systemPrompt}\n\n## 执行环境\n环境：隔离的 Linux 虚拟环境\n工作目录：/workspace\n终端：terminal`;
       }
-      let model = params.model ?? agentConfig?.model ?? 'default';
+      // 模型白名单：用户显式传入 model 时必须在 Agent 可用列表内；未传时默认取第一项
+      const allowedModels = agentConfig?.models ?? [];
+      let model: string;
+      if (params.model) {
+        if (allowedModels.length > 0 && !allowedModels.includes(params.model)) {
+          const denied = {
+            code: 'MODEL_NOT_ALLOWED' as const,
+            message: `模型 ${params.model} 不在该 Agent 的可用模型列表中（可用：${allowedModels.join('、')}）`,
+            recoverable: false,
+          };
+          await emit({ type: 'error', error: denied }, signal);
+          yield { type: 'error', error: denied };
+          return;
+        }
+        model = params.model;
+      } else {
+        model = allowedModels[0] ?? 'default';
+      }
       // 硬封顶：Agent 配置的迭代/Token 预算不能超过平台上限（防成本放大）
       let maxIterations = Math.min(agentConfig?.maxIterations ?? 10, AGENT_MAX_ITERATIONS_LIMIT);
       let maxTokensPerTurn = agentConfig?.maxTokensPerTurn === undefined

@@ -384,7 +384,8 @@ export interface AgentItem {
   name: string;
   description: string | null;
   avatar: string | null;
-  model: string;
+  /** 可用模型 ID 列表（第一项为默认模型） */
+  model: string[];
   systemPrompt: string;
   tools: string[] | null;
   knowledgeBaseIds: string[] | null;

@@ -3271,9 +3271,9 @@ export type OpenAPIs = {
          */
         description?: string,
         /**
-         * @description 模型 ID
+         * @description 可用模型 ID 列表（至少 1 个）
          */
-        model: string,
+        model: string[],
         /**
          * @description 系统提示词
          */
@@ -3415,6 +3415,10 @@ export type OpenAPIs = {
          */
         message: string,
         /**
+         * @description 用户选择的模型 ID（须在 Agent 白名单内）
+         */
+        model?: string,
+        /**
          * @description 工具过滤
          */
         tools?: string[],
@@ -3462,6 +3466,10 @@ export type OpenAPIs = {
          * @description 用户消息
          */
         message: string,
+        /**
+         * @description 用户选择的模型 ID（须在 Agent 白名单内）
+         */
+        model?: string,
         /**
          * @description 工具过滤
          */
@@ -4671,9 +4679,9 @@ export type OpenAPIs = {
          */
         description?: string,
         /**
-         * @description 模型 ID
+         * @description 可用模型 ID 列表（至少 1 个）
          */
-        model?: string,
+        model?: string[],
         /**
          * @description 系统提示词
          */

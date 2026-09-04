@@ -15,7 +15,7 @@ export interface AgentConfig {
   id: string;
   name: string;
   systemPrompt: string;
-  model: string;
+  models: string[];
   tools?: string[];
   knowledgeBaseIds?: string[];
   maxIterations?: number;

@@ -15,6 +15,7 @@ import type { Middleware, Router } from '@ventostack/core';
 import type { EventBus } from '@ventostack/events';
 import { join } from 'node:path';
 import { sanitize } from '@ventostack/observability';
+import { AIGatewayError } from './errors';
 
 import type { ConfigEncryptor } from '@ventostack/core';
 // LLM Gateway
@@ -472,18 +473,19 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     // 依赖引用校验：model / 知识库 / Skill / MCP 引用必须有效且归属当前租户
     validateRefs: async (params, tenantId) => {
       const tid = tenantId || 'default';
-      if (params.model && params.model !== 'default') {
-        const inRegistry = modelRegistry.has(params.model);
+      for (const modelRef of params.model ?? []) {
+        if (modelRef === 'default') continue;
+        const inRegistry = modelRegistry.has(modelRef);
         let runtime = null;
         if (!inRegistry) {
           try {
-            runtime = await providerService.resolveRuntimeModel(params.model, tid);
+            runtime = await providerService.resolveRuntimeModel(modelRef, tid);
           } catch {
             runtime = null;
           }
         }
         if (!inRegistry && !runtime) {
-          throw new Error(`模型 ${params.model} 未配置或不可用`);
+          throw new AIGatewayError(`模型 ${modelRef} 未配置或不可用`, 400, 'AI_MODEL_NOT_FOUND');
         }
       }
       for (const kbId of params.knowledgeBaseIds ?? []) {
@@ -510,7 +512,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           id: item.id,
           name: item.name,
           systemPrompt: item.systemPrompt,
-          model: item.model,
+          models: item.model,
           ...(Array.isArray(item.tools) ? { tools: item.tools as string[] } : {}),
           ...(Array.isArray(item.knowledgeBaseIds) ? { knowledgeBaseIds: item.knowledgeBaseIds as string[] } : {}),
           ...(Array.isArray(item.skillIds) ? { skillIds: item.skillIds as string[] } : {}),

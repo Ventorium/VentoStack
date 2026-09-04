@@ -67,6 +67,19 @@ function validateAgentBody(body: Record<string, unknown>): string | null {
       return `maxTokensPerTurn 必须是 1-${MAX_TOKENS_PER_TURN_LIMIT} 之间的整数`;
     }
   }
+  if (body.model !== undefined && body.model !== null) {
+    if (!Array.isArray(body.model) || body.model.length === 0) {
+      return `model 必须是非空数组`;
+    }
+    if (body.model.length > MAX_LIST_LENGTH) {
+      return `model 最多 ${MAX_LIST_LENGTH} 项`;
+    }
+    for (const m of body.model) {
+      if (typeof m !== 'string' || m.length === 0 || m.length > 64) {
+        return 'model 每一项必须是 1-64 字符的字符串';
+      }
+    }
+  }
   for (const field of ['tools', 'knowledgeBaseIds', 'skillIds', 'mcpServerIds'] as const) {
     const list = body[field];
     // null 表示清空该能力列表（前端清空时发送 null），undefined 表示不修改
@@ -101,7 +114,7 @@ export function createAgentRoutes(
       body: {
         name: { type: 'string', required: true, max: 128, description: 'Agent 名称' },
         description: { type: 'string', description: '描述' },
-        model: { type: 'string', required: true, description: '模型 ID' },
+        model: { type: 'array', items: { type: 'string' }, required: true, description: '可用模型 ID 列表（至少 1 个）' },
         systemPrompt: { type: 'string', required: true, description: '系统提示词' },
         tools: { type: 'array', items: { type: 'string' }, description: '启用的工具名' },
         knowledgeBaseIds: {
@@ -142,6 +155,9 @@ export function createAgentRoutes(
         // 字段白名单 + 数值上限校验：status 不在白名单内，只能通过 publish 接口变更
         const validationError = validateAgentBody(body);
         if (validationError) return fail(validationError, 400, 400);
+        if (!Array.isArray(body.model) || body.model.length === 0) {
+          return fail('model 必须是非空数组', 400, 400);
+        }
         const params = pickAgentFields(body);
         const result = await agentService.create({
           ...params,
@@ -206,7 +222,7 @@ export function createAgentRoutes(
       body: {
         name: { type: 'string', max: 128, description: 'Agent 名称' },
         description: { type: 'string', description: '描述' },
-        model: { type: 'string', description: '模型 ID' },
+        model: { type: 'array', items: { type: 'string' }, description: '可用模型 ID 列表（至少 1 个）' },
         systemPrompt: { type: 'string', description: '系统提示词' },
         tools: { type: 'array', items: { type: 'string' }, description: '启用的工具名' },
         knowledgeBaseIds: {

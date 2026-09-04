@@ -677,7 +677,7 @@ export default function AISettingsPage() {
       title: '模型 ID',
       dataIndex: 'modelId',
       key: 'modelId',
-      width: 'min-content',
+      // width: 'min-content',
       fixed: 'left',
       sorter: (a, b) => {
         const aDefault = isDefaultModel(modelsProvider?.name ?? '', a.modelId) ? 0 : 1;
