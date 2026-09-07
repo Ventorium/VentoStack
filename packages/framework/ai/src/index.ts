@@ -283,12 +283,13 @@ export { createConversationService } from './services/conversation';
 export type { ConversationItem } from './services/conversation';
 
 // ---- Approval Service ----
-export { createApprovalService } from './services/approval';
-export type { ApprovalRequest as ApprovalRequestItem } from './services/approval';
+export { createApprovalService, createApprovalWaiter, IN_CHAT_APPROVAL_WAIT_MS } from './services/approval';
+export type { ApprovalRequest as ApprovalRequestItem, ApprovalWaiterDeps } from './services/approval';
+export type { ChatApprovalService } from './routes/chat';
 
 // ---- Routes ----
-export { createConversationRoutes, createApprovalRoutes, createHealthRoutes } from './routes';
-export type { ConversationCrudService, ApprovalCrudService, HealthCheckDeps } from './routes';
+export { createConversationRoutes, createHealthRoutes } from './routes';
+export type { ConversationCrudService, HealthCheckDeps } from './routes';
 
 // ---- Document Model ----
 export { AiDocumentModel } from './models/document';
@@ -336,5 +337,6 @@ export { createAiMcpTables } from './migrations/011_create_ai_mcp_tables';
 export { addKbDocumentCount } from './migrations/012_add_kb_document_count';
 export { addAgentRuntime } from './migrations/013_add_agent_runtime';
 export { agentModelsArray } from './migrations/014_agent_models_array';
+export { dropAiToolLog } from './migrations/015_drop_ai_tool_log';
 export { createAgentRuntimeClient } from './agent-runtime/client';
 export type { AgentRuntimeClient, RuntimeSandbox, SandboxStatus } from './agent-runtime/types';

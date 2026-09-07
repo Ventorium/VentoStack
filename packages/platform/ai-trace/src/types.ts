@@ -82,7 +82,11 @@ export interface TraceConversationItem {
   id: string;
   title: string | null;
   agentId: string | null;
+  /** 智能体名称（LEFT JOIN ai_agent，查不到时为 null） */
+  agentName: string | null;
   userId: string | null;
+  /** 用户显示名（nickname 回退 username，LEFT JOIN sys_user，查不到时为 null） */
+  userName: string | null;
   tenantId: string;
   messageCount: number;
   traceCount: number;

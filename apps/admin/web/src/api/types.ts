@@ -569,7 +569,9 @@ export interface TraceConversationItem {
   id: string;
   title: string | null;
   agentId: string | null;
+  agentName: string | null;
   userId: string | null;
+  userName: string | null;
   tenantId: string;
   messageCount: number;
   traceCount: number;

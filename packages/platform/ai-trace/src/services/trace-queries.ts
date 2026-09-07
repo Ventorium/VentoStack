@@ -77,13 +77,18 @@ export function createTraceQueries(db: Database) {
     const rows = (await db.raw(
       `SELECT t.conversation_id AS id,
               MAX(t.agent_id) AS agent_id,
+              MAX(a.name) AS agent_name,
               MAX(t.user_id) AS user_id,
+              MAX(COALESCE(u.nickname, u.username)) AS user_name,
               MAX(t.tenant_id) AS tenant_id,
               COUNT(*) AS trace_count,
               MAX(t.turn_count) AS max_turns,
               SUM(COALESCE((t.usage->>'totalTokens')::int, 0)) AS total_tokens,
               MAX(t.started_at) AS last_trace_at
-       FROM ai_trace t ${where}
+       FROM ai_trace t
+       LEFT JOIN ai_agent a ON a.id = t.agent_id
+       LEFT JOIN sys_user u ON u.id = t.user_id
+       ${where}
        GROUP BY t.conversation_id
        ORDER BY last_trace_at DESC
        LIMIT $${idx++} OFFSET $${idx++}`,
@@ -114,7 +119,9 @@ export function createTraceQueries(db: Database) {
         id: String(row.id),
         title: conv?.title ?? null,
         agentId: (row.agent_id as string) ?? null,
+        agentName: (row.agent_name as string) ?? null,
         userId: (row.user_id as string) ?? null,
+        userName: (row.user_name as string) ?? null,
         tenantId: String(row.tenant_id ?? params.tenantId),
         messageCount: conv?.messageCount ?? 0,
         traceCount: Number(row.trace_count ?? 0),

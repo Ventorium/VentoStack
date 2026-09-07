@@ -1828,44 +1828,6 @@ export type OpenAPIs = {
       response: any
     },
     /**
-     * 获取 AI 工具审计日志
-     */
-    '/api/ai/audit': {
-      query: {
-        page?: number,
-        pageSize?: number,
-        toolName?: string,
-        status?: string,
-        userId?: string
-      },
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * 获取审批请求详情
-     */
-    '/api/ai/approvals/:id': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * 获取待审批列表
-     */
-    '/api/ai/approvals': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
      * 获取追踪会话列表
      */
     '/api/ai/trace/conversations': {
@@ -3343,6 +3305,28 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * 聊天内确认工具审批
+     */
+    '/api/ai/chat/approvals/:id/confirm': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 审批决定
+         * @enum approved,rejected
+         */
+        decision: string,
+        /**
+         * @description 备注原因（可选）
+         */
+        reason?: string
+      },
+      response: any
+    },
+    /**
      * 创建会话
      */
     '/api/ai/conversations': {
@@ -3664,40 +3648,6 @@ export type OpenAPIs = {
       },
       headers: never,
       body: never,
-      response: any
-    },
-    /**
-     * 审批通过
-     */
-    '/api/ai/approvals/:id/approve': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: {
-        /**
-         * @description 审批备注
-         */
-        reason?: string
-      },
-      response: any
-    },
-    /**
-     * 审批拒绝
-     */
-    '/api/ai/approvals/:id/reject': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: {
-        /**
-         * @description 拒绝原因
-         */
-        reason?: string
-      },
       response: any
     }
   },

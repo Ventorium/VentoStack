@@ -1,14 +1,17 @@
 import {
+  CheckOutlined,
+  CloseOutlined,
   CopyOutlined,
   DislikeOutlined,
   LikeOutlined,
   ReloadOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Space, Tooltip, Typography, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useRef } from 'react';
-import type { ChatMessage } from '../types';
+import type { ChatApproval, ChatMessage } from '../types';
 import AgentSteps from './AgentSteps';
 import { ResearchSources, ResearchStatus } from './ResearchStatus';
 
@@ -19,6 +22,76 @@ interface ChatAreaProps {
   agentName?: string;
   onCopy?: (content: string) => void;
   onRegenerate?: (messageId: string) => void;
+  /** 聊天内嵌审批决定：返回是否提交成功（成功后由后端唤醒流继续执行） */
+  onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
+}
+
+/** 工具审批卡片：高风险工具需要用户在聊天内确认后才能继续执行 */
+function ApprovalCard({
+  approval,
+  onDecision,
+}: {
+  approval: ChatApproval;
+  onDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
+}) {
+  const { token } = theme.useToken();
+  const expired = approval.status === 'pending' && Date.now() > Date.parse(approval.expiresAt);
+  const effectiveStatus = expired ? ('expired' as const) : approval.status;
+
+  const statusText =
+    effectiveStatus === 'pending'
+      ? '需要你的确认后才能继续执行'
+      : effectiveStatus === 'approved'
+        ? '已允许'
+        : effectiveStatus === 'rejected'
+          ? '已拒绝'
+          : '已过期';
+
+  const handleDecision = async (decision: 'approved' | 'rejected') => {
+    const ok = await onDecision?.(approval.id, decision);
+    if (ok) {
+      msg.success(decision === 'approved' ? '已允许执行' : '已拒绝执行');
+    }
+  };
+
+  return (
+    <div
+      className="mb-2 p-3 rounded-md"
+      style={{ background: token.colorWarningBg, border: `1px solid ${token.colorWarningBorder}` }}
+    >
+      <Space size={6} className="mb-1">
+        <SafetyCertificateOutlined style={{ color: token.colorWarning }} />
+        <Text strong className="text-[13px]">
+          工具执行审批：{approval.toolName}
+        </Text>
+        <Text type="secondary" className="text-xs">
+          {statusText}
+        </Text>
+      </Space>
+      <Paragraph
+        code
+        className="text-xs mb-2!"
+        ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
+      >
+        {JSON.stringify(approval.input ?? {})}
+      </Paragraph>
+      {effectiveStatus === 'pending' && (
+        <Space size={8}>
+          <Button
+            type="primary"
+            size="small"
+            icon={<CheckOutlined />}
+            onClick={() => handleDecision('approved')}
+          >
+            允许
+          </Button>
+          <Button size="small" danger icon={<CloseOutlined />} onClick={() => handleDecision('rejected')}>
+            拒绝
+          </Button>
+        </Space>
+      )}
+    </div>
+  );
 }
 
 /** 行内渲染：加粗 */
@@ -184,6 +257,7 @@ export default function ChatArea({
   agentName = '新助手',
   onCopy,
   onRegenerate,
+  onApprovalDecision,
 }: ChatAreaProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
@@ -266,6 +340,10 @@ export default function ChatArea({
                   }}
                 >
                   {!isUser && msg.steps && msg.steps.length > 0 && <AgentSteps steps={msg.steps} />}
+
+                  {!isUser && msg.approval && (
+                    <ApprovalCard approval={msg.approval} onDecision={onApprovalDecision} />
+                  )}
 
                   {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
                     <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />

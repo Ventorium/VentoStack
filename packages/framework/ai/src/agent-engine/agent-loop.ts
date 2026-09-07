@@ -16,6 +16,8 @@ import type {
   AgentLoopConfig,
   AgentTool,
   AgentToolResult,
+  ApprovalRequestInfo,
+  ApprovalWaiter,
   ToolExecutionMode,
   ToolCallAuthorizer,
 } from './types';
@@ -212,7 +214,7 @@ async function runResearchSubtask(
     for (const tc of toolCalls) {
       if (signal?.aborted) break;
       // 与主循环一致的准备阶段：参数校验、beforeToolCall、requiresApproval 审批
-      const prepared = await prepareToolCall(
+      let prepared = await prepareToolCall(
         subtaskContext,
         assistantEventMsg,
         { id: tc.id, name: tc.name, arguments: (tc.arguments ?? {}) as Record<string, unknown> },
@@ -221,12 +223,13 @@ async function runResearchSubtask(
         deps.authorizeToolCall,
         signal,
       );
+      // 非流式子任务路径：无流可下发审批卡片，内联等待 decision（不可等待则按 deny 处理）
+      if (prepared.kind === 'pending_approval') {
+        prepared = await resolvePendingApproval(prepared, deps.waitForApproval, signal);
+      }
 
       let text = '';
-      let status: 'success' | 'error' = 'success';
-      let duration = 0;
       if (prepared.kind === 'immediate') {
-        status = prepared.isError ? 'error' : 'success';
         text = prepared.result.content
           .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
           .map((c) => c.text)
@@ -241,30 +244,10 @@ async function runResearchSubtask(
           signal,
           deps.tracer,
         );
-        duration = finalized.durationMs;
-        status = finalized.isError ? 'error' : 'success';
         text = finalized.result.content
           .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
           .map((c) => c.text)
           .join('\n');
-      }
-
-      // 子任务工具调用同样写入审计（与主循环一致）
-      if (deps.auditToolCall) {
-        try {
-          await deps.auditToolCall({
-            toolCallId: tc.id,
-            toolName: tc.name,
-            input: tc.arguments,
-            output: { content: text.slice(0, 4000), isError: status === 'error' },
-            status,
-            duration,
-            userId,
-            tenantId,
-          });
-        } catch {
-          /* 审计失败不影响研究 */
-        }
       }
 
       messages.push({ role: 'tool', tool_call_id: tc.id, content: text.slice(0, 4000) });
@@ -279,19 +262,6 @@ async function runResearchSubtask(
   }
 
   return { question, summary: fullContent.trim(), sources };
-}
-
-/** 工具调用审计日志（写入 ai_tool_log 表） */
-export interface AgentToolAuditLog {
-  toolCallId: string;
-  toolName: string;
-  input: unknown;
-  output: unknown;
-  status: 'success' | 'error';
-  duration: number;
-  userId: string;
-  tenantId: string;
-  sessionId?: string;
 }
 
 export interface AgentConfig {
@@ -342,11 +312,8 @@ export interface AgentLoopDeps {
   resolveSkills?: (skillIds: string[], tenantId: string) => Promise<Skill[]>;
   resolveAgentTools?: (agentId: string, tenantId: string, toolNames: string[]) => Promise<AgentTool[]>;
   authorizeToolCall?: ToolCallAuthorizer;
-  /**
-   * 工具调用审计回调：每次工具执行完成后调用（含参数/结果/耗时/状态）。
-   * 用于写入 ai_tool_log 审计表；回调抛错不会阻断主流程。
-   */
-  auditToolCall?: (log: AgentToolAuditLog) => Promise<void>;
+  /** 等待工具审批 decision（与 authorizeToolCall 返回的 approvalRequest 配对） */
+  waitForApproval?: ApprovalWaiter;
   /**
    * 在每次 LLM 请求前对消息做上下文变换（对齐参考实现 transformContext）。
    */
@@ -478,7 +445,42 @@ interface ImmediateResult {
   isError: boolean;
 }
 
-type PrepareResult = PreparedToolCall | ImmediateResult;
+interface PendingToolCall {
+  kind: 'pending_approval';
+  toolCall: { id: string; name: string; arguments: Record<string, unknown> };
+  tool: AgentTool;
+  args: Record<string, unknown>;
+  request: ApprovalRequestInfo;
+}
+
+type PrepareResult = PreparedToolCall | ImmediateResult | PendingToolCall;
+
+/**
+ * 解析待审批项：等待人工 decision，通过则转为 prepared 继续执行，否则转为 deny 的 immediate error。
+ * waitForApproval 缺省时视为审批等待不可用（维持 deny 行为）。
+ */
+async function resolvePendingApproval(
+  pending: PendingToolCall,
+  waitForApproval: ApprovalWaiter | undefined,
+  signal?: AbortSignal,
+): Promise<PreparedToolCall | ImmediateResult> {
+  if (!waitForApproval) {
+    return {
+      kind: 'immediate',
+      result: createErrorToolResult(`工具 ${pending.toolCall.name} 需要人工审批，但审批等待器未配置`),
+      isError: true,
+    };
+  }
+  const decision = await waitForApproval(pending.request, signal);
+  if (decision.approved) {
+    return { kind: 'prepared', toolCall: pending.toolCall, tool: pending.tool, args: pending.args };
+  }
+  return {
+    kind: 'immediate',
+    result: createErrorToolResult(decision.reason ?? `Tool ${pending.toolCall.name} was not approved`),
+    isError: true,
+  };
+}
 
 async function prepareToolCall(
   context: AgentContext,
@@ -550,6 +552,16 @@ async function prepareToolCall(
         signal,
       );
       if (!authorization.approved) {
+        // 已创建审批请求：返回 pending 项，由调用方（generator 作用域）完成审批握手
+        if (authorization.approvalRequest) {
+          return {
+            kind: 'pending_approval',
+            toolCall,
+            tool,
+            args: validatedArgs,
+            request: authorization.approvalRequest,
+          };
+        }
         return {
           kind: 'immediate',
           result: createErrorToolResult(
@@ -681,9 +693,7 @@ async function executeToolCallsSequential(
   context: AgentContext,
   assistantMessage: AgentEventMessage,
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>,
-  agentTools: AgentTool[],
-  beforeToolCall: AgentLoopConfig['beforeToolCall'],
-  authorizeToolCall: ToolCallAuthorizer | undefined,
+  preparedList: PrepareResult[],
   afterToolCall: AgentLoopConfig['afterToolCall'],
   emit: (event: Parameters<AgentEventEmitter['emit']>[0], signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
@@ -691,17 +701,10 @@ async function executeToolCallsSequential(
   parentSpanContext?: { traceId: string; spanId: string },
 ): Promise<FinalizedToolCall[]> {
   const results: FinalizedToolCall[] = [];
-  for (const tc of toolCalls) {
+  for (const [index, tc] of toolCalls.entries()) {
     if (signal?.aborted) break;
-    const prepared = await prepareToolCall(
-      context,
-      assistantMessage,
-      tc,
-      agentTools,
-      beforeToolCall,
-      authorizeToolCall,
-      signal,
-    );
+    const prepared = preparedList[index];
+    if (!prepared) break;
     if (prepared.kind === 'immediate') {
       await emit({ type: 'tool_execution_start', toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
       await emit({ type: 'tool_execution_end', toolCallId: tc.id, toolName: tc.name, result: prepared.result, isError: prepared.isError }, signal);
@@ -717,31 +720,15 @@ async function executeToolCallsParallel(
   context: AgentContext,
   assistantMessage: AgentEventMessage,
   toolCalls: Array<{ id: string; name: string; arguments: Record<string, unknown> }>,
-  agentTools: AgentTool[],
-  beforeToolCall: AgentLoopConfig['beforeToolCall'],
-  authorizeToolCall: ToolCallAuthorizer | undefined,
+  preparedList: PrepareResult[],
   afterToolCall: AgentLoopConfig['afterToolCall'],
   emit: (event: Parameters<AgentEventEmitter['emit']>[0], signal?: AbortSignal) => Promise<void>,
   signal?: AbortSignal,
   tracer?: Tracer,
   parentSpanContext?: { traceId: string; spanId: string },
 ): Promise<FinalizedToolCall[]> {
-  const preparedCalls: Array<{ index: number; prepared: PrepareResult; toolCall: PreparedToolCall['toolCall'] }> = [];
-  for (const [index, tc] of toolCalls.entries()) {
-    if (signal?.aborted) break;
-    const prepared = await prepareToolCall(
-      context,
-      assistantMessage,
-      tc,
-      agentTools,
-      beforeToolCall,
-      authorizeToolCall,
-      signal,
-    );
-    preparedCalls.push({ index, prepared, toolCall: tc });
-  }
-
-  const results = await Promise.all(preparedCalls.map(async ({ index, prepared, toolCall }) => {
+  const results = await Promise.all(preparedList.map(async (prepared, index) => {
+    const toolCall = toolCalls[index]!;
     if (prepared.kind === 'immediate') {
       await emit({ type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments }, signal);
       await emit({ type: 'tool_execution_end', toolCallId: toolCall.id, toolName: toolCall.name, result: prepared.result, isError: prepared.isError }, signal);
@@ -1328,6 +1315,26 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }));
 
         // 执行工具（使用运行时工具集，动态引入的工具可被调用）
+        // prepare 阶段：参数校验 / beforeToolCall / 审批请求创建
+        const preparedList: PrepareResult[] = [];
+        for (const tc of validToolCalls) {
+          let prepared = await prepareToolCall(
+            context,
+            assistantEventMsg,
+            tc,
+            runtimeTools,
+            deps.beforeToolCall,
+            deps.authorizeToolCall,
+            signal,
+          );
+          // 审批握手：在 generator 作用域内 yield 审批卡片并等待 decision（通过则同轮继续执行）
+          if (prepared.kind === 'pending_approval') {
+            yield { type: 'approval_required', approval: prepared.request };
+            prepared = await resolvePendingApproval(prepared, deps.waitForApproval, signal);
+          }
+          preparedList.push(prepared);
+        }
+
         let finalized: FinalizedToolCall[];
         const hasSequentialTool = validToolCalls.some((call) =>
           runtimeTools.find((tool) => tool.name === call.name)?.executionMode === 'sequential',
@@ -1337,9 +1344,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             context,
             assistantEventMsg,
             validToolCalls,
-            runtimeTools,
-            deps.beforeToolCall,
-            deps.authorizeToolCall,
+            preparedList,
             deps.afterToolCall,
             (ev, s) => emit(ev, s),
             signal,
@@ -1351,9 +1356,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             context,
             assistantEventMsg,
             validToolCalls,
-            runtimeTools,
-            deps.beforeToolCall,
-            deps.authorizeToolCall,
+            preparedList,
             deps.afterToolCall,
             (ev, s) => emit(ev, s),
             signal,
@@ -1369,25 +1372,6 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
             .map((c) => c.text)
             .join('\n');
-
-          // 工具审计（写入 ai_tool_log；失败不阻断主流程）
-          if (deps.auditToolCall) {
-            try {
-              await deps.auditToolCall({
-                toolCallId: fin.toolCall.id,
-                toolName: fin.toolCall.name,
-                input: fin.toolCall.arguments,
-                output: { content: resultStr.slice(0, 4000), isError: fin.isError },
-                status: fin.isError ? 'error' : 'success',
-                duration: fin.durationMs,
-                userId,
-                tenantId,
-                ...(params.sessionId ? { sessionId: params.sessionId } : {}),
-              });
-            } catch {
-              /* 审计失败不影响对话 */
-            }
-          }
 
           // 输出安全检查（覆盖全部工具结果：web/MCP 等外部内容是间接注入与提示词泄露的主要通道）
           const outputCheck = guard.checkOutput(resultStr, context.systemPrompt);
@@ -1410,7 +1394,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             content: truncated,
           });
 
-          // 增量持久化工具结果（与 ai_tool_log 审计互补，保证会话内可追溯）
+          // 增量持久化工具结果（保证会话内可追溯）
           await persistMemoryMessage({ role: 'tool', content: `[${fin.toolCall.name}] ${truncated}` });
 
           const toolMessage: AgentEventMessage = {

@@ -1119,29 +1119,34 @@ function ToolsTab() {
 
 export default function AICapabilitiesPage() {
   return (
-    <div className="p-6">
-      <Card styles={{ body: { paddingTop: 12 } }}>
-        <Tabs
-          defaultActiveKey="skills"
-          items={[
-            {
-              key: "skills",
-              label: <span><BlockOutlined /> 技能 Skills</span>,
-              children: <SkillsTab />,
-            },
-            {
-              key: "mcp",
-              label: <span><ApiOutlined /> MCP 服务</span>,
-              children: <McpTab />,
-            },
-            {
-              key: "tools",
-              label: <span><ToolOutlined /> 工具 Tools</span>,
-              children: <ToolsTab />,
-            },
-          ]}
-        />
-      </Card>
-    </div>
+    <Card
+      title={
+        <Space>
+          <ThunderboltOutlined />
+          <span>AI 智能能力</span>
+        </Space>
+      }
+    >
+      <Tabs
+        defaultActiveKey="skills"
+        items={[
+          {
+            key: "skills",
+            label: <span><BlockOutlined /> 技能 Skills</span>,
+            children: <SkillsTab />,
+          },
+          {
+            key: "mcp",
+            label: <span><ApiOutlined /> MCP 服务</span>,
+            children: <McpTab />,
+          },
+          {
+            key: "tools",
+            label: <span><ToolOutlined /> 工具 Tools</span>,
+            children: <ToolsTab />,
+          },
+        ]}
+      />
+    </Card>
   );
 }

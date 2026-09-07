@@ -91,7 +91,11 @@ export type StreamChunk =
   | { type: 'tool_call_start'; toolCall?: ToolCall }
   | ResearchStageChunk
   | ResearchSourcesChunk
-  | { type: 'session'; sessionId: string };
+  | { type: 'session'; sessionId: string }
+  | {
+      type: 'approval_required';
+      approval: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
+    };
 
 export interface TokenUsage {
   promptTokens: number;

@@ -37,13 +37,13 @@ const TraceListPage = () => {
     },
     {
       title: "Agent",
-      dataIndex: "agentId",
-      key: "agentId",
+      dataIndex: "agentName",
+      key: "agentName",
       width: 200,
       render: (_: unknown, r: TraceConversationItem) =>
-        r.agentId ? (
-          <Typography.Text code className="text-xs" ellipsis={{ tooltip: r.agentId }}>
-            {r.agentId}
+        r.agentName ? (
+          <Typography.Text ellipsis={{ tooltip: r.agentId ?? r.agentName }} className="w-44">
+            {r.agentName}
           </Typography.Text>
         ) : (
           <Typography.Text type="secondary">默认助手</Typography.Text>
@@ -51,12 +51,12 @@ const TraceListPage = () => {
     },
     {
       title: "用户",
-      dataIndex: "userId",
-      key: "userId",
+      dataIndex: "userName",
+      key: "userName",
       width: 160,
       render: (_: unknown, r: TraceConversationItem) => (
-        <Typography.Text code className="text-xs" ellipsis={{ tooltip: r.userId ?? "" }}>
-          {r.userId ?? "-"}
+        <Typography.Text ellipsis={{ tooltip: r.userId ?? "" }} className="w-36">
+          {r.userName ?? "-"}
         </Typography.Text>
       ),
     },

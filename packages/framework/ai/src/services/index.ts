@@ -10,8 +10,8 @@ export type { KnowledgeBaseItem, DocumentItem, KnowledgeBaseCrudDeps } from "./k
 export { createConversationService } from "./conversation";
 export type { ConversationItem, ConversationServiceDeps } from "./conversation";
 
-export { createApprovalService } from "./approval";
-export type { ApprovalRequest, ApprovalServiceDeps } from "./approval";
+export { createApprovalService, createApprovalWaiter, IN_CHAT_APPROVAL_WAIT_MS } from "./approval";
+export type { ApprovalRequest, ApprovalServiceDeps, ApprovalWaiterDeps } from "./approval";
 
 export { createProviderService } from "./provider";
 

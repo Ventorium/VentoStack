@@ -104,9 +104,27 @@ export interface BeforeToolCallResult {
   reason?: string;
 }
 
-/** External authorization seam for tools that require human approval. */
+/** 待人工审批的工具调用请求（由 authorizer 创建，等待 decision） */
+export interface ApprovalRequestInfo {
+  /** 审批请求 ID（ai_approval_request.id） */
+  id: string;
+  toolName: string;
+  input: Record<string, unknown>;
+  /** 过期时间（ISO 字符串） */
+  expiresAt: string;
+}
+
+/** External authorization seam for tools that require human approval.
+ *  返回 approved: false 且携带 approvalRequest 时，表示已创建审批请求、等待人工 decision（由 waitForApproval hook 完成）。 */
 export type ToolCallAuthorizer = (
   context: BeforeToolCallContext & { tool: AgentTool },
+  signal?: AbortSignal,
+) => Promise<{ approved: boolean; reason?: string; approvalRequest?: ApprovalRequestInfo }>;
+
+/** 等待审批 decision 的 hook：在流式主循环内于 generator 作用域调用，可长时间挂起。
+ *  resolved 时 approved 决定工具是否继续执行；请求未被 decision 时应返回 approved: false + 原因。 */
+export type ApprovalWaiter = (
+  request: ApprovalRequestInfo,
   signal?: AbortSignal,
 ) => Promise<{ approved: boolean; reason?: string }>;
 
@@ -213,6 +231,8 @@ export interface AgentLoopConfig {
     toolResults: ChatMessage[],
     context: AgentContext,
   ) => boolean;
+  /** 等待工具审批 decision（与 authorizeToolCall 返回的 approvalRequest 配对使用） */
+  waitForApproval?: ApprovalWaiter;
 }
 
 /** Agent 运行参数 */

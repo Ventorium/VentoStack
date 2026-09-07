@@ -462,6 +462,16 @@ export default function AIChatPage() {
             // 新建会话时后端下发 sessionId，绑定以便后续消息延续同一会话
             setSessionId(sid);
           },
+          onApprovalRequired: (approval) => {
+            // 高风险工具审批：在当前消息上挂审批卡片，等待用户在聊天内确认
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id
+                  ? { ...msg, approval: { ...approval, status: "pending" as const } }
+                  : msg,
+              ),
+            );
+          },
           onError: (error) => {
             // 标记所有 running 步骤为 error
             setMessages((prev) =>
@@ -505,6 +515,29 @@ export default function AIChatPage() {
       );
     },
     [loading, selectedAgent, currentModel, sessionId, enabledTools, enabledSkills, enabledMcp, enabledKbs],
+  );
+
+  // 聊天内嵌审批：用户对高风险工具调用做出决定，成功后本地更新卡片状态，后端唤醒流继续执行
+  const handleApprovalDecision = useCallback(
+    async (approvalId: string, decision: 'approved' | 'rejected') => {
+      const { error } = await client.post('/api/ai/chat/approvals/:id/confirm', {
+        params: { id: approvalId },
+        body: { decision },
+      });
+      if (error) {
+        msg.error('操作失败，请重试');
+        return false;
+      }
+      setMessages((prev) =>
+        prev.map((msg) =>
+          msg.approval?.id === approvalId
+            ? { ...msg, approval: { ...msg.approval, status: decision } }
+            : msg,
+        ),
+      );
+      return true;
+    },
+    [],
   );
 
   // Stop generation
@@ -672,7 +705,12 @@ export default function AIChatPage() {
           className="flex-1 flex flex-col min-w-0"
         >
           {/* Chat Area */}
-          <ChatArea messages={messages} agentName={selectedAgent.name} onRegenerate={handleRegenerate} />
+          <ChatArea
+            messages={messages}
+            agentName={selectedAgent.name}
+            onRegenerate={handleRegenerate}
+            onApprovalDecision={handleApprovalDecision}
+          />
 
           {/* Bottom Input */}
           <BottomInput

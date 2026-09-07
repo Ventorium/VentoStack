@@ -26,7 +26,7 @@ export const addAITraceSeed: Seed = {
         const menuId = generateUUID();
         await executor(
           `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, NULL, NULL, 2, $5, $6, 8, TRUE, 1, NOW(), NOW())`,
+           VALUES ($1, $2, $3, $4, NULL, NULL, 2, $5, $6, 6, TRUE, 1, NOW(), NOW())`,
           [menuId, aiDirId, "链路追踪", "/app/ai/trace", "ai:trace:list", "NodeIndexOutlined"],
         );
         if (adminRoleId) {

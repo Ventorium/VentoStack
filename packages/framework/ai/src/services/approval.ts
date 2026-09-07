@@ -97,7 +97,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
       [id, toolName, canonicalJson(input), requestedBy, expiresAt, tenantId],
     );
 
-    await eventBus?.emit("ai.approval.requested", { id, toolName, tenantId });
+    await eventBus?.emit({ name: "ai.approval.requested" }, { id, toolName, tenantId });
     void opportunisticCleanup();
 
     return {
@@ -145,7 +145,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     const updated = await getStatus(id);
     // 读回兜底：RETURNING 生效但读回异常时仍视为不可批准
     if (updated?.status !== "approved") return null;
-    await eventBus?.emit("ai.approval.approved", { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
+    await eventBus?.emit({ name: "ai.approval.approved" }, { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
     return updated;
   }
 
@@ -173,7 +173,49 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
 
     const updated = await getStatus(id);
     if (updated?.status !== "rejected") return null;
-    await eventBus?.emit("ai.approval.rejected", { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
+    await eventBus?.emit({ name: "ai.approval.rejected" }, { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
+    return updated;
+  }
+
+  /**
+   * 请求者自确认（聊天内嵌审批）：仅发起者本人可对自己的 pending 请求做出 decision。
+   * 与 approve/reject 的管理员路径互不影响（那两条路径仍禁止自批）。
+   */
+  async function confirmByRequester(
+    id: string,
+    userId: string,
+    tenantId: string,
+    approved: boolean,
+    reason?: string,
+  ): Promise<ApprovalRequest | null> {
+    const request = await getStatus(id);
+    if (!request) return null;
+    // 租户校验：只能确认本租户的请求
+    if (tenantId && request.tenantId !== tenantId) return null;
+    // 仅请求者本人可自确认
+    if (request.requestedBy !== userId) return null;
+
+    const comment = `[chat-self-confirm]${reason ? ` ${reason}` : ""}`;
+    let updatedRows: unknown[];
+    if (approved) {
+      // 批准后的使用窗口从确认时刻起算（与 approve 语义一致）
+      const approvedUntil = new Date(Date.now() + APPROVED_VALIDITY_MS);
+      updatedRows = await db.raw(
+        `UPDATE ai_approval_request SET status = 'approved', approved_by = $1, comment = $2, expires_at = $3, updated_at = NOW() WHERE id = $4 AND status = 'pending' AND expires_at > NOW() RETURNING id`,
+        [userId, comment, approvedUntil, id],
+      ) as unknown[];
+    } else {
+      updatedRows = await db.raw(
+        `UPDATE ai_approval_request SET status = 'rejected', approved_by = $1, comment = $2, updated_at = NOW() WHERE id = $3 AND status = 'pending' AND expires_at > NOW() RETURNING id`,
+        [userId, comment, id],
+      ) as unknown[];
+    }
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) return null;
+
+    const updated = await getStatus(id);
+    const expectedStatus = approved ? "approved" : "rejected";
+    if (updated?.status !== expectedStatus) return null;
+    await eventBus?.emit({ name: approved ? "ai.approval.approved" : "ai.approval.rejected" }, { id, toolName: updated.toolName, reviewedBy: userId, tenantId: updated.tenantId });
     return updated;
   }
 
@@ -236,5 +278,95 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     return Array.isArray(result) ? result.length : 0;
   }
 
-  return { request, approve, reject, getStatus, findRecentApproved, listPending, cleanup };
+  return { request, approve, reject, confirmByRequester, getStatus, findRecentApproved, listPending, cleanup };
+}
+
+/** 聊天内嵌审批的单次等待上限：10 分钟（超时后请求保留，用户可重新发起该操作） */
+export const IN_CHAT_APPROVAL_WAIT_MS = 10 * 60 * 1000;
+
+/** 审批 decision 事件载荷 */
+interface ApprovalEventPayload {
+  id: string;
+  toolName: string;
+  reviewedBy: string;
+  tenantId: string;
+}
+
+export interface ApprovalWaiterDeps {
+  getStatus: (id: string) => Promise<ApprovalRequest | null>;
+  eventBus?: EventBus;
+}
+
+/**
+ * 创建审批等待器：在 SSE 流内挂起等待人工 decision（聊天内自确认，含其他已登录标签页发起的确认）。
+ * 基于同进程事件总线感知 decision；客户端断开或超时返回 deny，pending 请求保留至过期，过期后由 cleanup 清理。
+ * 注意：事件总线为进程内存实现，多实例部署时审批请求需与 SSE 流同进程处理。
+ */
+export function createApprovalWaiter(deps: ApprovalWaiterDeps): (
+  request: { id: string; expiresAt: string },
+  signal?: AbortSignal,
+) => Promise<{ approved: boolean; reason?: string }> {
+  const { eventBus } = deps;
+  return async (request, signal) => {
+    if (signal?.aborted) {
+      return { approved: false, reason: "连接已断开，请重新发起该操作" };
+    }
+
+    return new Promise((resolve) => {
+      let settled = false;
+      const cleanups: Array<() => void> = [];
+      const finish = (result: { approved: boolean; reason?: string }): void => {
+        if (settled) return;
+        settled = true;
+        for (const fn of cleanups) fn();
+        resolve(result);
+      };
+
+      // 先订阅 decision 事件再查状态，避免「先查后订」窗口内事件丢失导致挂到超时
+      if (eventBus) {
+        const offApproved = eventBus.on({ name: "ai.approval.approved" }, (payload) => {
+          if ((payload as ApprovalEventPayload)?.id === request.id) {
+            finish({ approved: true, reason: "该工具调用已获确认" });
+          }
+        });
+        const offRejected = eventBus.on({ name: "ai.approval.rejected" }, (payload) => {
+          if ((payload as ApprovalEventPayload)?.id === request.id) {
+            finish({ approved: false, reason: "该工具调用已被拒绝" });
+          }
+        });
+        cleanups.push(offApproved, offRejected);
+      }
+
+      // 客户端断开：立即结束等待（请求保留至过期，过期后由 cleanup 清理）
+      const onAbort = (): void => finish({ approved: false, reason: "连接已断开，请重新发起该操作" });
+      signal?.addEventListener("abort", onAbort, { once: true });
+      cleanups.push(() => signal?.removeEventListener("abort", onAbort));
+
+      // 超时：等待上限与请求自身过期时间取较小值
+      const expiresMs = Date.parse(request.expiresAt);
+      const waitMs = Number.isFinite(expiresMs)
+        ? Math.max(0, Math.min(IN_CHAT_APPROVAL_WAIT_MS, expiresMs - Date.now()))
+        : IN_CHAT_APPROVAL_WAIT_MS;
+      const timer = setTimeout(() => finish({ approved: false, reason: "审批等待超时，请重新发起该操作" }), waitMs);
+      cleanups.push(() => clearTimeout(timer));
+
+      // 竞态兜底：订阅就绪后查一次状态（审批卡片下发后用户可能已秒点通过）
+      void deps
+        .getStatus(request.id)
+        .then((current) => {
+          if (settled) return;
+          if (current?.status === "approved") {
+            finish({ approved: true, reason: "该工具调用已获确认" });
+          } else if (current != null && current.status !== "pending") {
+            finish({
+              approved: false,
+              reason: current.status === "rejected" ? "该工具调用已被拒绝" : "审批请求已过期",
+            });
+          }
+        })
+        .catch(() => {
+          // 状态查询失败不结束等待：仍有事件订阅、断开与超时三重兜底
+        });
+    });
+  };
 }

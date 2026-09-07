@@ -4,8 +4,6 @@ import { createOpenAPIGenerator, syncRouterToOpenAPI } from '@ventostack/openapi
 import type { AgentLoop } from '../../agent-engine/agent-loop';
 import type { MemoryService } from '../../memory/types';
 import { createAgentRoutes } from '../../routes/agent';
-import { createApprovalRoutes } from '../../routes/approval';
-import { createAuditRoutes } from '../../routes/audit';
 import { createChatRoutes } from '../../routes/chat';
 
 const passMiddleware = async (_ctx: unknown, next: () => Promise<Response>) => next();
@@ -54,33 +52,6 @@ function buildAIRouter() {
       {} as MemoryService,
     ),
   );
-  router.merge(
-    createAuditRoutes(
-      { raw: async () => [] } as never,
-      passMiddleware as never,
-      () => passMiddleware as never,
-    ),
-  );
-  router.merge(
-    createApprovalRoutes(
-      {
-        async getStatus() {
-          return null;
-        },
-        async approve() {
-          return null;
-        },
-        async reject() {
-          return null;
-        },
-        async listPending() {
-          return [];
-        },
-      },
-      passMiddleware as never,
-      () => passMiddleware as never,
-    ),
-  );
   return router;
 }
 
@@ -111,9 +82,8 @@ describe('AI 路由 OpenAPI 契约', () => {
     const streamOp = paths['/api/ai/chat/stream']?.post as { summary?: string };
     expect(streamOp.summary).toBe('发送消息（SSE 流式）');
 
-    // 审批与审计
-    expect(paths['/api/ai/approvals']?.get).toBeDefined();
-    expect(paths['/api/ai/audit']?.get).toBeDefined();
+    // 聊天内确认
+    expect(paths['/api/ai/chat/approvals/:id/confirm']?.post).toBeDefined();
     expect(paths['/api/ai/agents/:id/publish']?.post).toBeDefined();
     const createSchema = createOp.requestBody?.content?.['application/json']?.schema as {
       properties?: Record<string, unknown>;

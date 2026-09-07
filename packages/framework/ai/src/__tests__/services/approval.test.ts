@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { createApprovalService } from "../../services/approval";
+import { createApprovalService, createApprovalWaiter } from "../../services/approval";
 import { createMockDatabase, createMockEventBus } from "../helpers";
 
 describe("createApprovalService", () => {
@@ -252,5 +252,131 @@ describe("createApprovalService", () => {
     expect(newExpiresAt).toBeInstanceOf(Date);
     expect(newExpiresAt.getTime()).toBeGreaterThanOrEqual(before);
     expect(newExpiresAt.getTime()).toBeLessThanOrEqual(Date.now() + 11 * 60 * 1000);
+  });
+});
+
+describe("confirmByRequester（聊天内自确认）", () => {
+  const pendingRow = {
+    id: "a1",
+    toolName: "terminal",
+    input: { command: "ls" },
+    requestedBy: "user1",
+    status: "pending",
+    approvedBy: null,
+    comment: null,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    tenantId: "t1",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  test("requester can confirm own pending request", async () => {
+    const approvedRow = { ...pendingRow, status: "approved", approvedBy: "user1", comment: "[chat-self-confirm]" };
+    // 第一次 SELECT（确认前）返回 pending，UPDATE 后的读回返回 approved
+    let selects = 0;
+    const raw = async (sql: string) => {
+      if (sql.includes("UPDATE")) return [{ id: "a1" }];
+      selects += 1;
+      return selects === 1 ? [pendingRow] : [approvedRow];
+    };
+    const service = createApprovalService({ db: { raw } as never });
+
+    const result = await service.confirmByRequester("a1", "user1", "t1", true);
+    expect(result).not.toBeNull();
+  });
+
+  test("non-requester gets null（非本人不可确认）", async () => {
+    const { db } = createMockDatabase({
+      "SELECT id": [pendingRow],
+    });
+    const service = createApprovalService({ db });
+
+    const result = await service.confirmByRequester("a1", "user2", "t1", true);
+    expect(result).toBeNull();
+  });
+
+  test("returns null when update affects no rows（过期/已处理不可确认）", async () => {
+    const { db } = createMockDatabase({
+      "UPDATE ai_approval_request SET status = 'approved'": [],
+      "SELECT id": [pendingRow],
+    });
+    const service = createApprovalService({ db });
+
+    const result = await service.confirmByRequester("a1", "user1", "t1", true);
+    expect(result).toBeNull();
+  });
+
+  test("requester can reject own pending request", async () => {
+    const rejectedRow = { ...pendingRow, status: "rejected", approvedBy: "user1" };
+    const { db } = createMockDatabase({
+      "UPDATE ai_approval_request SET status = 'rejected'": [{ id: "a1" }],
+      "SELECT id": [rejectedRow],
+    });
+    const service = createApprovalService({ db });
+
+    const result = await service.confirmByRequester("a1", "user1", "t1", false, "不需要");
+    expect(result).not.toBeNull();
+  });
+});
+
+describe("createApprovalWaiter（审批等待器）", () => {
+  function createFakeEventBus() {
+    const handlers = new Map<string, Array<(payload: unknown) => void>>();
+    return {
+      on(event: { name: string }, handler: (payload: unknown) => void) {
+        const list = handlers.get(event.name) ?? [];
+        list.push(handler);
+        handlers.set(event.name, list);
+        return () => {
+          const list = handlers.get(event.name) ?? [];
+          const idx = list.indexOf(handler);
+          if (idx >= 0) list.splice(idx, 1);
+        };
+      },
+      emitSync(event: { name: string }, payload: unknown) {
+        for (const handler of [...(handlers.get(event.name) ?? [])]) handler(payload);
+      },
+    };
+  }
+
+  test("resolves immediately when status is already approved（竞态兜底）", async () => {
+    const waiter = createApprovalWaiter({
+      getStatus: async () => ({ id: "a1", toolName: "terminal", input: {}, requestedBy: "u1", status: "approved", approvedBy: "u1", comment: null, expiresAt: new Date(Date.now() + 60_000).toISOString(), tenantId: "t1", createdAt: "", updatedAt: "" }),
+    });
+    const result = await waiter({ id: "a1", expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    expect(result.approved).toBe(true);
+  });
+
+  test("wakes on matching approval event and ignores other ids", async () => {
+    const bus = createFakeEventBus();
+    let call = 0;
+    const waiter = createApprovalWaiter({
+      getStatus: async () => {
+        call += 1;
+        return call === 1
+          ? { id: "a1", toolName: "terminal", input: {}, requestedBy: "u1", status: "pending", approvedBy: null, comment: null, expiresAt: new Date(Date.now() + 60_000).toISOString(), tenantId: "t1", createdAt: "", updatedAt: "" }
+          : null;
+      },
+      eventBus: bus as never,
+    });
+
+    const pending = waiter({ id: "a1", expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    // 先广播一条不相关 id（不应唤醒），再广播匹配 id
+    bus.emitSync({ name: "ai.approval.approved" }, { id: "other", toolName: "x" });
+    await new Promise((r) => setTimeout(r, 5));
+    bus.emitSync({ name: "ai.approval.approved" }, { id: "a1", toolName: "terminal", reviewedBy: "u1", tenantId: "t1" });
+    const result = await pending;
+    expect(result.approved).toBe(true);
+  });
+
+  test("returns deny on abort（断开连接不挂死）", async () => {
+    const waiter = createApprovalWaiter({
+      getStatus: async () => ({ id: "a1", toolName: "terminal", input: {}, requestedBy: "u1", status: "pending", approvedBy: null, comment: null, expiresAt: new Date(Date.now() + 60_000).toISOString(), tenantId: "t1", createdAt: "", updatedAt: "" }),
+    });
+    const controller = new AbortController();
+    const pending = waiter({ id: "a1", expiresAt: new Date(Date.now() + 60_000).toISOString() }, controller.signal);
+    controller.abort();
+    const result = await pending;
+    expect(result.approved).toBe(false);
   });
 });

@@ -14,7 +14,6 @@ import { createRouter } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { EventBus } from '@ventostack/events';
 import { join } from 'node:path';
-import { sanitize } from '@ventostack/observability';
 import { AIGatewayError } from './errors';
 
 import type { ConfigEncryptor } from '@ventostack/core';
@@ -63,8 +62,6 @@ import type { CompactionSettings } from './compaction/compaction';
 import { createLazyJsonlSessionStorage, createSession } from './session';
 
 import { type AgentCrudService, createAgentRoutes } from './routes/agent';
-import { createApprovalRoutes } from './routes/approval';
-import { createAuditRoutes } from './routes/audit';
 import { type ConversationService, createChatRoutes } from './routes/chat';
 // Routes
 import { createKnowledgeBaseRoutes } from './routes/knowledge-base';
@@ -73,7 +70,7 @@ import { createProviderRoutes } from './routes/provider';
 import { createSkillRoutes } from './routes/skill';
 import { createToolRegistryRoutes } from './routes/tool-registry';
 import { createAgentService } from './services/agent';
-import { createApprovalService } from './services/approval';
+import { createApprovalService, createApprovalWaiter } from './services/approval';
 import { createScopedKBService } from './services/kb-scope';
 import { createMcpServerService } from './services/mcp-server';
 import type { McpServerService } from './services/mcp-server';
@@ -327,6 +324,11 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     db: db as import('@ventostack/database').Database,
     eventBus,
   });
+  // 审批等待器：在 SSE 流内挂起等待 decision（聊天内自确认，含其他已登录标签页发起的确认）
+  const waitForApproval = createApprovalWaiter({
+    getStatus: (id) => approvalService.getStatus(id),
+    eventBus,
+  });
 
   // 创建 LLM providers
   const providers: LLMProvider[] = deps.llmProviders.map((config) =>
@@ -569,7 +571,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     prepareNextTurn: deps.hooks?.prepareNextTurn,
     getApiKey: deps.hooks?.getApiKey,
     dynamicToolResolver: deps.hooks?.dynamicToolResolver,
-    // 高风险工具审批：已批准（未过期且参数一致）直接放行；否则创建审批请求并拒绝本次执行
+    // 高风险工具审批：已批准（未过期且参数一致）直接放行；否则创建审批请求，
+    // 由 agent-loop 在流内下发 approval_required 并通过 waitForApproval 等待 decision
     authorizeToolCall: async ({ toolCall, args, context }) => {
       const recent = await approvalService.findRecentApproved(
         toolCall.name,
@@ -587,7 +590,12 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         );
         return {
           approved: false,
-          reason: `工具 ${toolCall.name} 需要人工审批：已创建审批请求 ${request.id}，请管理员审批后重试`,
+          approvalRequest: {
+            id: request.id,
+            toolName: request.toolName,
+            input: request.input,
+            expiresAt: request.expiresAt,
+          },
         };
       } catch (err) {
         return {
@@ -596,28 +604,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         };
       }
     },
-    // 工具审计：每次工具执行写入 ai_tool_log（入参/出参先经 sanitize 递归脱敏；失败仅告警，不阻断对话）
-    auditToolCall: async (log) => {
-      try {
-        await (db as import('@ventostack/database').Database).raw(
-          `INSERT INTO ai_tool_log (id, conversation_id, tool_name, input, output, status, duration, user_id, tenant_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-          [
-            crypto.randomUUID(),
-            log.sessionId ?? null,
-            log.toolName,
-            JSON.stringify(sanitize(log.input)),
-            JSON.stringify(sanitize(log.output)),
-            log.status,
-            log.duration,
-            log.userId,
-            log.tenantId,
-          ],
-        );
-      } catch (err) {
-        console.error('[ai] 写入工具审计日志失败:', err);
-      }
-    },
+    waitForApproval,
     tracer: deps.tracer,
     parentSpanContext: deps.parentSpanContext,
     mcpToolSource,
@@ -705,6 +692,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm, memory, {
     // 对话/流式请求按 ctx.user.tenantId 构建请求级工具注册表（KB 工具绑定请求租户）
     createTenantToolRegistry: buildToolRegistry,
+    // 聊天内嵌审批：请求者自确认
+    approvalService,
   });
 
   // Skill 服务
@@ -732,18 +721,6 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(skillRouter);
   router.merge(mcpRouter);
   router.merge(toolRegistryRouter);
-
-  // 审计日志路由
-  const auditRouter = createAuditRoutes(
-    db as { raw: (sql: string, params?: unknown[]) => Promise<unknown[]> },
-    authMiddleware,
-    perm,
-  );
-  router.merge(auditRouter);
-
-  // 审批路由
-  const approvalRouter = createApprovalRoutes(approvalService, authMiddleware, perm);
-  router.merge(approvalRouter);
 
   // 创建 Harness 工厂
   function createHarness(partialOptions: Partial<AgentHarnessOptions>): AgentHarness {

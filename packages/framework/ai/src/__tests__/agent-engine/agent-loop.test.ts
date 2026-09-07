@@ -586,3 +586,88 @@ describe("Agent loop tool policy（默认拒绝）", () => {
     });
   });
 });
+
+describe("in-stream tool approval handshake", () => {
+  function createApprovalTool(execute: AgentTool["execute"]): AgentTool {
+    return { ...createTool(execute), requiresApproval: true };
+  }
+
+  test("emits approval_required and executes the tool after waitForApproval approves", async () => {
+    let executed = 0;
+    const gateway = createGateway([
+      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
+      [{ type: "content", delta: "finished" }, { type: "done" }],
+    ]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createApprovalTool(async () => {
+        executed += 1;
+        return { content: [{ type: "text", text: "ok" }], details: {} };
+      })],
+      authorizeToolCall: async () => ({
+        approved: false,
+        approvalRequest: { id: "req-1", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      }),
+      waitForApproval: async () => ({ approved: true, reason: "用户已确认" }),
+    });
+
+    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+
+    const approvalChunk = chunks.find((c) => c.type === "approval_required") as
+      | { type: "approval_required"; approval: { id: string } }
+      | undefined;
+    expect(approvalChunk?.approval.id).toBe("req-1");
+    expect(executed).toBe(1);
+    expect(chunks.some((c) => c.type === "content" && c.delta === "finished")).toBe(true);
+  });
+
+  test("feeds the deny reason back as an error tool result when waitForApproval rejects", async () => {
+    let executed = 0;
+    const gateway = createGateway([
+      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
+      [{ type: "content", delta: "denied-turn" }, { type: "done" }],
+    ]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createApprovalTool(async () => {
+        executed += 1;
+        return { content: [{ type: "text", text: "ok" }], details: {} };
+      })],
+      authorizeToolCall: async () => ({
+        approved: false,
+        approvalRequest: { id: "req-2", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      }),
+      waitForApproval: async () => ({ approved: false, reason: "用户已拒绝" }),
+    });
+
+    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+
+    expect(executed).toBe(0);
+    // 拒绝后流不终止：LLM 收到 deny 的 tool result 并继续产出内容
+    expect(chunks.some((c) => c.type === "content" && c.delta === "denied-turn")).toBe(true);
+  });
+
+  test("denies immediately when waitForApproval is not configured", async () => {
+    let executed = 0;
+    const gateway = createGateway([
+      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
+      [{ type: "done" }],
+    ]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createApprovalTool(async () => {
+        executed += 1;
+        return { content: [{ type: "text", text: "ok" }], details: {} };
+      })],
+      authorizeToolCall: async () => ({
+        approved: false,
+        approvalRequest: { id: "req-3", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      }),
+    });
+
+    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+
+    expect(executed).toBe(0);
+    expect(chunks.some((c) => c.type === "approval_required")).toBe(true);
+  });
+});

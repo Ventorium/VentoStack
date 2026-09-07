@@ -47,7 +47,7 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 
-const { Title, Text } = Typography;
+const { Text } = Typography;
 
 interface ProviderPreset {
   id: string;
@@ -213,10 +213,9 @@ export default function AISettingsPage() {
   const [addModelLoading, setAddModelLoading] = useState(false);
 
   // OCR config
-  const [ocrEnabled, setOcrEnabled] = useState(true);
-  const [ocrLanguage, setOcrLanguage] = useState('chi_sim+eng');
   const [ocrServerUrl, setOcrServerUrl] = useState('');
-  const [_ocrLoading, _setOcrLoading] = useState(false);
+  const [ocrToken, setOcrToken] = useState('');
+  const [ocrSaving, setOcrSaving] = useState(false);
 
   // Edit model modal
   const [editModelOpen, setEditModelOpen] = useState(false);
@@ -249,35 +248,45 @@ export default function AISettingsPage() {
 
   const fetchOcrConfig = useCallback(async () => {
     try {
-      const [enabledRes, langRes, serverUrlRes] = await Promise.all([
-        client.get('/api/ai/config/:key', { params: { key: 'ocr_enabled' } }) as Promise<{
-          error?: unknown;
-          data?: { value: string | null };
-        }>,
-        client.get('/api/ai/config/:key', { params: { key: 'ocr_language' } }) as Promise<{
-          error?: unknown;
-          data?: { value: string | null };
-        }>,
+      const [serverUrlRes, tokenRes] = await Promise.all([
         client.get('/api/ai/config/:key', { params: { key: 'ocr_server_url' } }) as Promise<{
           error?: unknown;
           data?: { value: string | null };
         }>,
+        client.get('/api/ai/config/:key', { params: { key: 'ocr_token' } }) as Promise<{
+          error?: unknown;
+          data?: { value: string | null };
+        }>,
       ]);
-      if (!enabledRes.error && enabledRes.data?.value !== undefined) {
-        setOcrEnabled(enabledRes.data.value !== 'false');
-      }
-      if (!langRes.error && langRes.data?.value) {
-        setOcrLanguage(langRes.data.value);
-      }
       if (!serverUrlRes.error && serverUrlRes.data?.value) {
         setOcrServerUrl(serverUrlRes.data.value);
+      }
+      if (!tokenRes.error && tokenRes.data?.value) {
+        setOcrToken(tokenRes.data.value);
       }
     } catch {}
   }, []);
 
-  const saveOcrConfig = useCallback(async (key: string, value: string) => {
-    await client.put('/api/ai/config/:key', { params: { key }, body: { value } });
-  }, []);
+  const saveOcrConfig = useCallback(async () => {
+    setOcrSaving(true);
+    try {
+      const [urlRes, tokenRes] = await Promise.all([
+        client.put('/api/ai/config/:key', {
+          params: { key: 'ocr_server_url' },
+          body: { value: ocrServerUrl },
+        }),
+        client.put('/api/ai/config/:key', {
+          params: { key: 'ocr_token' },
+          body: { value: ocrToken },
+        }),
+      ]);
+      if (!urlRes.error && !tokenRes.error) {
+        msg.success('OCR 配置已保存');
+      }
+    } finally {
+      setOcrSaving(false);
+    }
+  }, [ocrServerUrl, ocrToken]);
 
   const fetchDefaultModel = useCallback(async () => {
     try {
@@ -869,12 +878,14 @@ export default function AISettingsPage() {
   ];
 
   return (
-    <div>
-      <Title level={3}>
-        <SettingOutlined className="mr-2" />
-        AI 配置
-      </Title>
-
+    <Card
+      title={
+        <Space>
+          <SettingOutlined />
+          <span>供应商配置</span>
+        </Space>
+      }
+    >
       <Tabs
         defaultActiveKey="providers"
         items={[
@@ -917,76 +928,34 @@ export default function AISettingsPage() {
               </Space>
             ),
             children: (
-              <Card title="OCR 设置" className="mt-0">
+              <div className="max-w-[560px]">
                 <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]">
-                  💡 OCR（光学字符识别）用于解析扫描版 PDF 文件。开启后，上传 PDF 时会自动调用内置
-                  Tesseract 引擎识别文字。也可配置远程 PaddleOCR 服务以获得更好的中文识别效果。
+                  💡 OCR（光学字符识别）用于解析扫描版 PDF
+                  与图片文件，由文件解析服务（file-parser）完成识别。配置服务地址和
+                  Token 后即可启用。
                 </div>
-                <Row gutter={24}>
-                  <Col span={12}>
-                    <div className="mb-4">
-                      <div className="mb-2 font-medium">启用 OCR</div>
-                      <Switch
-                        checked={ocrEnabled}
-                        onChange={async (checked) => {
-                          setOcrEnabled(checked);
-                          await saveOcrConfig('ocr_enabled', String(checked));
-                          msg.success(checked ? 'OCR 已启用' : 'OCR 已禁用');
-                        }}
-                      />
-                      <Text type="secondary" className="ml-3">
-                        解析扫描版 PDF 时自动调用 OCR 引擎
-                      </Text>
-                    </div>
-                  </Col>
-                  <Col span={12}>
-                    <div className="mb-4">
-                      <div className="mb-2 font-medium">OCR 语言</div>
-                      <Select
-                        value={ocrLanguage}
-                        className="w-[240px]"
-                        onChange={async (val) => {
-                          setOcrLanguage(val);
-                          await saveOcrConfig('ocr_language', val);
-                          msg.success('OCR 语言已更新');
-                        }}
-                        options={[
-                          { value: 'chi_sim+eng', label: '简体中文 + 英文' },
-                          { value: 'chi_tra+eng', label: '繁体中文 + 英文' },
-                          { value: 'eng', label: '仅英文' },
-                          { value: 'jpn+eng', label: '日文 + 英文' },
-                          { value: 'kor+eng', label: '韩文 + 英文' },
-                        ]}
-                      />
-                    </div>
-                  </Col>
-                </Row>
-                <Divider className="mt-[8px] mb-[16px]" />
-                <div className="mb-2 font-medium">远程 PaddleOCR 服务</div>
-                <div className="mb-3 bg-[#fff7e6] rounded-md text-[13px] py-[8px] px-[12px]">
-                  💡 配置远程 PaddleOCR 服务地址后，将优先使用该服务进行 OCR
-                  识别，适用于需要更高中文识别精度的场景。留空则使用本地 Tesseract 引擎。
-                </div>
-                <div className="mb-4">
-                  <div className="mb-2">PaddleOCR 服务地址</div>
-                  <Input
-                    value={ocrServerUrl}
-                    placeholder="http://paddleocr:8866/predict/ocr_system"
-                    className="max-w-[480px]"
-                    onChange={(e) => setOcrServerUrl(e.target.value)}
-                    onBlur={async () => {
-                      await saveOcrConfig('ocr_server_url', ocrServerUrl);
-                      msg.success(
-                        ocrServerUrl ? 'PaddleOCR 服务地址已更新' : '已清除 PaddleOCR 服务地址',
-                      );
-                    }}
-                    allowClear
-                  />
-                  <Text type="secondary" className="block mt-1 text-xs">
-                    留空表示使用本地 Tesseract 引擎。填写后将通过远程 PaddleOCR 服务识别。
-                  </Text>
-                </div>
-              </Card>
+                <Form layout="vertical">
+                  <Form.Item label="服务地址">
+                    <Input
+                      value={ocrServerUrl}
+                      placeholder="http://file-parser:8866"
+                      onChange={(e) => setOcrServerUrl(e.target.value)}
+                      allowClear
+                    />
+                  </Form.Item>
+                  <Form.Item label="Token">
+                    <Input.Password
+                      value={ocrToken}
+                      placeholder="识别服务访问 Token"
+                      onChange={(e) => setOcrToken(e.target.value)}
+                      allowClear
+                    />
+                  </Form.Item>
+                  <Button type="primary" icon={<SaveOutlined />} loading={ocrSaving} onClick={saveOcrConfig}>
+                    保存
+                  </Button>
+                </Form>
+              </div>
             ),
           },
         ]}
@@ -1619,6 +1588,6 @@ export default function AISettingsPage() {
           </Row>
         </Form>
       </Modal>
-    </div>
+    </Card>
   );
 }

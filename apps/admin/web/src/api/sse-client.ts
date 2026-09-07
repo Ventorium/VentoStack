@@ -18,6 +18,8 @@ export interface StreamCallbacks {
   onSources?: (sources: Array<{ title: string; url: string }>) => void;
   /** 会话 ID 事件（新建会话时后端下发，前端据此绑定 sessionId） */
   onSession?: (sessionId: string) => void;
+  /** 工具审批请求事件（高风险工具需要用户在聊天内确认后才能继续执行） */
+  onApprovalRequired?: (approval: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string }) => void;
   onError: (error: { code: string; message: string; recoverable: boolean }) => void;
   onDone: () => void;
 }
@@ -38,13 +40,14 @@ export interface ChatStreamParams {
  * 后端 AI 流式 chunk（与 packages/framework/ai 的 StreamChunk 对齐）
  */
 export interface AIStreamChunk {
-  type: "content" | "tool_call_start" | "usage" | "stage" | "sources" | "session" | "error" | "done";
+  type: "content" | "tool_call_start" | "usage" | "stage" | "sources" | "session" | "approval_required" | "error" | "done";
   delta?: string;
   toolCall?: { id: string; name: string };
   usage?: { promptTokens: number; completionTokens: number };
   stage?: "planning" | "researching" | "synthesizing";
   sources?: Array<{ title: string; url: string }>;
   sessionId?: string;
+  approval?: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
   error?: { code: string; message: string; recoverable: boolean };
 }
 
@@ -121,6 +124,9 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       break;
     case "session":
       if (chunk.sessionId) callbacks.onSession?.(chunk.sessionId);
+      break;
+    case "approval_required":
+      if (chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);
       break;
     case "error":
       if (chunk.error) callbacks.onError(chunk.error);

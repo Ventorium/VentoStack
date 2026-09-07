@@ -4,7 +4,7 @@ import type { Seed } from "@ventostack/database";
 /**
  * AI 智能菜单 + 权限种子数据
  * 顶级目录：AI 智能（/app/ai）
- * 子菜单：知识库管理、Agent 管理、AI 对话、智能能力、AI 配置、审计日志
+ * 子菜单：AI 对话、供应商配置、知识库管理、智能能力、Agent 管理
  * 幂等：如果已存在 path='/app/ai' 的目录菜单则跳过。
  */
 export const addAIMenusSeed: Seed = {
@@ -70,12 +70,11 @@ export const addAIMenusSeed: Seed = {
     const aiDirId = await insertMenu("AI 智能", "/app/ai", "RobotOutlined", 4, null, null, 1);
 
     // ── 子菜单 ──
-    const kbMenuId = await insertMenu("知识库管理", "/app/ai/knowledge-bases", "BookOutlined", 1, aiDirId, "ai:knowledge-base:list", 2);
-    const agentMenuId = await insertMenu("Agent 管理", "/app/ai/agents", "ApartmentOutlined", 2, aiDirId, "ai:agent:list", 2);
-    await insertMenu("AI 对话", "/app/ai/chat", "CommentOutlined", 3, aiDirId, "ai:chat:use", 2);
+    await insertMenu("AI 对话", "/app/ai/chat", "CommentOutlined", 1, aiDirId, "ai:chat:use", 2);
+    const providerMenuId = await insertMenu("供应商配置", "/app/ai/settings", "SettingOutlined", 2, aiDirId, "ai:provider:list", 2);
+    const kbMenuId = await insertMenu("知识库管理", "/app/ai/knowledge-bases", "BookOutlined", 3, aiDirId, "ai:knowledge-base:list", 2);
     const skillMenuId = await insertMenu("智能能力", "/app/ai/capabilities", "ThunderboltOutlined", 4, aiDirId, "ai:skill:list", 2);
-    const providerMenuId = await insertMenu("AI 配置", "/app/ai/settings", "SettingOutlined", 5, aiDirId, "ai:provider:list", 2);
-    await insertMenu("审计日志", "/app/ai/audit", "AuditOutlined", 6, aiDirId, "ai:audit:list", 2);
+    const agentMenuId = await insertMenu("Agent 管理", "/app/ai/agents", "ApartmentOutlined", 5, aiDirId, "ai:agent:list", 2);
 
     // 知识库按钮权限
     await insertButton(kbMenuId, "知识库新增", "ai:knowledge-base:create", 1);
@@ -92,7 +91,7 @@ export const addAIMenusSeed: Seed = {
     await insertButton(skillMenuId, "能力修改", "ai:skill:update", 2);
     await insertButton(skillMenuId, "能力删除", "ai:skill:delete", 3);
 
-    // AI 配置按钮权限
+    // 供应商配置按钮权限
     await insertButton(providerMenuId, "Provider 新增", "ai:provider:create", 1);
     await insertButton(providerMenuId, "Provider 修改", "ai:provider:update", 2);
     await insertButton(providerMenuId, "Provider 删除", "ai:provider:delete", 3);

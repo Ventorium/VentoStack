@@ -33,6 +33,17 @@ export interface ConversationService {
   ): Promise<Array<{ role: string; content: string }>>;
 }
 
+/** 聊天内嵌审批所需的最小服务接口（请求者自确认） */
+export interface ChatApprovalService {
+  confirmByRequester(
+    id: string,
+    userId: string,
+    tenantId: string,
+    approved: boolean,
+    reason?: string,
+  ): Promise<unknown | null>;
+}
+
 export function createChatRoutes(
   agentLoop: AgentLoop,
   conversationService: ConversationService,
@@ -42,6 +53,8 @@ export function createChatRoutes(
   options?: {
     /** 按请求 tenantId 构建请求级工具注册表（KB 等租户相关工具绑定请求租户） */
     createTenantToolRegistry?: (tenantId: string) => ToolRegistry;
+    /** 审批服务：聊天内嵌审批的请求者自确认 */
+    approvalService?: ChatApprovalService;
   },
 ): Router {
   const router = createRouter();
@@ -65,6 +78,43 @@ export function createChatRoutes(
     if (!tenantId || !options?.createTenantToolRegistry) return undefined;
     return options.createTenantToolRegistry(tenantId);
   }
+
+  // 聊天内嵌审批：请求者对自己的 pending 审批请求做出 decision（允许/拒绝）
+  // decision 通过事件总线唤醒等待中的 SSE 流，工具在同轮内继续执行或按拒绝处理
+  router.post(
+    '/api/ai/chat/approvals/:id/confirm',
+    routeDoc('聊天内确认工具审批', {
+      body: {
+        decision: { type: 'string', enum: ['approved', 'rejected'], required: true, description: '审批决定' },
+        reason: { type: 'string', description: '备注原因（可选）' },
+      },
+    }),
+    async (ctx) => {
+      try {
+        if (!options?.approvalService) return fail('审批服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const body = await parseBody(ctx.request);
+        const decision = body.decision as string | undefined;
+        if (decision !== 'approved' && decision !== 'rejected') {
+          return fail('decision 必须是 approved 或 rejected', 400, 400);
+        }
+        const result = await options.approvalService.confirmByRequester(
+          id,
+          userId,
+          tenantId,
+          decision === 'approved',
+          body.reason as string | undefined,
+        );
+        if (!result) return fail('审批请求不存在、已处理或非本人请求', 404, 404);
+        return success(result);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
 
   // 创建会话
   router.post(
