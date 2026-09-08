@@ -4,7 +4,9 @@ import {
   DatabaseOutlined,
   FileOutlined,
   FolderOutlined,
-  SendOutlined,
+  ArrowUpOutlined,
+  PlusOutlined,
+  StopOutlined,
   SoundOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
@@ -69,7 +71,7 @@ export default function BottomInput({
   isSkillCreator = false,
   onExportSkill,
   onPreviewFile,
-}: BottomInputProps) {
+}: BottomInputProps): React.ReactElement {
   const [input, setInput] = useState("");
   const [activeTab, setActiveTab] = useState("chat");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -85,7 +87,7 @@ export default function BottomInput({
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-      if (e.key === "Enter" && !e.shiftKey) {
+      if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing && e.keyCode !== 229) {
         e.preventDefault();
         handleSend();
       }
@@ -102,10 +104,10 @@ export default function BottomInput({
 
   return (
     <div
-      className="shrink-0" style={{ borderTop: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
+      className="shrink-0 px-3 pb-4 sm:px-6" style={{ background: token.colorBgContainer }}
     >
       {/* Function Tabs */}
-      <div style={{ padding: "8px 16px 0", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
+      <div className="mx-auto max-w-[960px] pt-2">
         <Tabs
           activeKey={activeTab}
           onChange={setActiveTab}
@@ -117,14 +119,14 @@ export default function BottomInput({
                 {tab.icon}
                 <span>{tab.label}</span>
                 {tab.key === "files" && workspaceFiles.length > 0 && (
-                  <Tag className="text-[10px] m-0" style={{ lineHeight: "14px", padding: "0 4px" }}>
+                  <Tag className="text-[10px] m-0 leading-[14px] px-1 py-0">
                     {workspaceFiles.length}
                   </Tag>
                 )}
               </Space>
             ),
           }))}
-          className="mb-0"
+          className="mb-0 [&_.ant-tabs-nav]:mb-2 [&_.ant-tabs-nav]:before:border-none"
         />
       </div>
 
@@ -158,89 +160,95 @@ export default function BottomInput({
             </div>
           )}
         </div>
-      ) : (
-      /* Input Area */
-      <div style={{ padding: "10px 16px 12px" }}>
+      ) : null}
+      {/* Input Area */}
+      <div className="mx-auto max-w-[960px]">
         <div
-          className="flex items-end gap-2.5" style={{ border: `1px solid ${token.colorBorder}`, borderRadius: token.borderRadiusLG, padding: "8px 12px", background: token.colorBgContainer, transition: "border-color 0.2s" }}
-          onFocus={(e) => {
-            (e.currentTarget as HTMLDivElement).style.borderColor = token.colorPrimary;
-          }}
+          className="flex flex-col gap-3 rounded-[24px] border border-solid px-4 pt-4 pb-3 transition-colors sm:px-5"
+          style={{ borderColor: token.colorBorder, background: token.colorBgContainer }}
+          onFocus={(e) => { e.currentTarget.style.borderColor = token.colorPrimary; }}
           onBlur={(e) => {
-            (e.currentTarget as HTMLDivElement).style.borderColor = token.colorBorder;
+            if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.style.borderColor = token.colorBorder;
           }}
         >
-          {/* Model Selector */}
-          <Select
-            size="small"
-            variant="borderless"
-            className="min-w-[120px] max-w-[160px]"
-            placeholder="选择模型"
-            value={currentModel?.id}
-            onChange={(value) => {
-              const model = models.find((m) => m.id === value);
-              if (model) onModelChange?.(model);
-            }}
-            showSearch
-            popupMatchSelectWidth={240}
-            options={(() => {
-              const groups = new Map<string, Array<{ label: string; value: string }>>();
-              for (const m of models) {
-                if (!groups.has(m.provider)) groups.set(m.provider, []);
-                groups.get(m.provider)!.push({ label: m.name, value: m.id });
-              }
-              return [...groups.entries()].map(([provider, opts]) => ({ label: provider, options: opts }));
-            })()}
-          />
-
-          <div className="w-px h-5 shrink-0" style={{ background: token.colorBorderSecondary }} />
-
-          {/* Textarea */}
           <textarea
             ref={textareaRef}
             value={input}
             onChange={handleInput}
             onKeyDown={handleKeyDown}
-            placeholder="输入消息...（Enter 发送, Shift+Enter 换行）"
-            rows={1}
-            className="flex-1 border-none text-[13px] min-h-5 max-h-[120px]" style={{ background: "transparent", outline: "none", resize: "none", color: token.colorText, lineHeight: "20px", fontFamily: "inherit" }}
+            aria-label="聊天消息"
+            placeholder="今天想聊些什么？"
+            rows={3}
+            className="w-full box-border min-h-[72px] max-h-[120px] resize-none border-none bg-transparent p-0 text-sm leading-6 outline-none font-inherit"
+            style={{ color: token.colorText }}
           />
+          <div className="flex items-end justify-between gap-2">
+            <Tooltip title="当前对话暂不支持附件上传">
+              <span><Button type="text" shape="circle" icon={<PlusOutlined />} aria-label="添加附件（暂不支持）" disabled /></span>
+            </Tooltip>
+            <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 sm:gap-2">
+              {/* Model Selector */}
+              <Select
+                size="small"
+                variant="borderless"
+                aria-label="选择模型"
+                className="min-w-[100px] max-w-[180px] sm:max-w-[240px]"
+                placeholder="选择模型"
+                value={currentModel?.id}
+                onChange={(value) => {
+                  const model = models.find((m) => m.id === value);
+                  if (model) onModelChange?.(model);
+                }}
+                showSearch
+                popupMatchSelectWidth={240}
+                options={(() => {
+                  const groups = new Map<string, Array<{ label: string; value: string }>>();
+                  for (const m of models) {
+                    if (!groups.has(m.provider)) groups.set(m.provider, []);
+                    groups.get(m.provider)!.push({ label: m.name, value: m.id });
+                  }
+                  return [...groups.entries()].map(([provider, opts]) => ({ label: provider, options: opts }));
+                })()}
+              />
 
-          {/* Right Actions */}
-          <Space size={6} className="shrink-0">
-            {contextUsage && (
-              <Tooltip title={`上下文：${formatTokens(contextUsage.used)} / ${formatTokens(contextUsage.total)}`}>
-                <Text type="secondary" className="text-[11px] whitespace-nowrap">
-                  {formatTokens(contextUsage.used)} / {formatTokens(contextUsage.total)}
-                </Text>
+              <Tooltip title="当前对话使用智能体默认思考设置，暂不支持按次调整">
+                <span><Select aria-label="思考强度" size="small" variant="borderless" disabled value="default" className="w-[112px]" options={[{ value: "default", label: "思考强度" }]} /></span>
               </Tooltip>
-            )}
 
-            {loading ? (
-              <Button
-                type="primary"
-                danger
-                size="small"
-                icon={<SendOutlined />}
-                onClick={onStop}
-              >
-                停止
-              </Button>
-            ) : (
-              <Button
-                type="primary"
-                size="small"
-                icon={<SendOutlined />}
-                onClick={handleSend}
-                disabled={!input.trim()}
-              >
-                发送
-              </Button>
-            )}
-          </Space>
+              {/* Right Actions */}
+              <Space size={6} className="shrink-0">
+                {contextUsage && (
+                  <Tooltip title={`上下文：${formatTokens(contextUsage.used)} / ${formatTokens(contextUsage.total)}`}>
+                    <Text type="secondary" className="text-[11px] whitespace-nowrap">
+                      {formatTokens(contextUsage.used)} / {formatTokens(contextUsage.total)}
+                    </Text>
+                  </Tooltip>
+                )}
+
+                {loading ? (
+                  <Button
+                    type="primary"
+                    shape="circle"
+                    aria-label="停止生成"
+                    icon={<StopOutlined />}
+                    onClick={onStop}
+                  />
+                ) : (
+                  <Button
+                    type="primary"
+                    shape="circle"
+                    aria-label="发送消息"
+                    icon={<ArrowUpOutlined />}
+                    onClick={handleSend}
+                    disabled={!input.trim()}
+                  />
+                )}
+              </Space>
+            </div>
+          </div>
         </div>
       </div>
-      )}
+      <div className="mt-2 text-center text-[11px]" style={{ color: token.colorTextQuaternary }}>Enter 发送 · Shift + Enter 换行</div>
     </div>
   );
 }
