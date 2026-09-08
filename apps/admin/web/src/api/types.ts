@@ -54,11 +54,11 @@ export interface MenuItem {
   path: string;
   component: string;
   redirect: string;
-  type: string;
+  type: number;
   permission: string;
   icon: string;
   sort: number;
-  visible: number;
+  visible: boolean;
   status: number;
   createdAt: string;
   children: MenuItem[];

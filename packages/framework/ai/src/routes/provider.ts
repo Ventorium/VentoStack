@@ -444,5 +444,34 @@ export function createProviderRoutes(
     perm("ai:provider", "update"),
   );
 
+  // === OCR 服务连通性测试 ===
+  router.post(
+    "/api/ai/ocr/test",
+    routeDoc("测试 OCR 服务连通性", {
+      body: {
+        serverUrl: { type: "string", required: true, description: "OCR 服务地址" },
+        token: { type: "string", description: "访问 Token" },
+        model: { type: "string", description: "模型名（默认 PaddleOCR-VL-1.6）" },
+      },
+    }),
+    async (ctx) => {
+      try {
+        const body = await parseBody(ctx.request);
+        const serverUrl = String(body.serverUrl ?? "").trim();
+        if (!serverUrl) return fail("请填写 OCR 服务地址", 400, 400);
+        const { testOcrService } = await import("@ventostack/file2md");
+        const result = await testOcrService({
+          serverUrl,
+          token: body.token ? String(body.token) : undefined,
+          model: body.model ? String(body.model) : undefined,
+        });
+        return success(result);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm("ai:provider", "query"),
+  );
+
   return router;
 }

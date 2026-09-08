@@ -45,6 +45,7 @@ export type {
 
 // OCR 配置工厂
 export { createRemoteOCRService, type RemoteOCRConfig } from './ocr/remote';
+export { testOcrService, type OcrTestResult } from './ocr/test';
 
 // 解析器（单独导出供自定义组合）
 export {

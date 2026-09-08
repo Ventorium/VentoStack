@@ -213,9 +213,11 @@ export default function AISettingsPage() {
   const [addModelLoading, setAddModelLoading] = useState(false);
 
   // OCR config
-  const [ocrServerUrl, setOcrServerUrl] = useState('');
+  const [ocrServerUrl, setOcrServerUrl] = useState('https://paddleocr.aistudio-app.com/api/v2/ocr/jobs');
   const [ocrToken, setOcrToken] = useState('');
+  const [ocrModel, setOcrModel] = useState('PaddleOCR-VL-1.6');
   const [ocrSaving, setOcrSaving] = useState(false);
+  const [ocrTesting, setOcrTesting] = useState(false);
 
   // Edit model modal
   const [editModelOpen, setEditModelOpen] = useState(false);
@@ -248,12 +250,16 @@ export default function AISettingsPage() {
 
   const fetchOcrConfig = useCallback(async () => {
     try {
-      const [serverUrlRes, tokenRes] = await Promise.all([
+      const [serverUrlRes, tokenRes, modelRes] = await Promise.all([
         client.get('/api/ai/config/:key', { params: { key: 'ocr_server_url' } }) as Promise<{
           error?: unknown;
           data?: { value: string | null };
         }>,
         client.get('/api/ai/config/:key', { params: { key: 'ocr_token' } }) as Promise<{
+          error?: unknown;
+          data?: { value: string | null };
+        }>,
+        client.get('/api/ai/config/:key', { params: { key: 'ocr_model' } }) as Promise<{
           error?: unknown;
           data?: { value: string | null };
         }>,
@@ -264,13 +270,16 @@ export default function AISettingsPage() {
       if (!tokenRes.error && tokenRes.data?.value) {
         setOcrToken(tokenRes.data.value);
       }
+      if (!modelRes.error && modelRes.data?.value) {
+        setOcrModel(modelRes.data.value);
+      }
     } catch {}
   }, []);
 
   const saveOcrConfig = useCallback(async () => {
     setOcrSaving(true);
     try {
-      const [urlRes, tokenRes] = await Promise.all([
+      const [urlRes, tokenRes, modelRes] = await Promise.all([
         client.put('/api/ai/config/:key', {
           params: { key: 'ocr_server_url' },
           body: { value: ocrServerUrl },
@@ -279,14 +288,40 @@ export default function AISettingsPage() {
           params: { key: 'ocr_token' },
           body: { value: ocrToken },
         }),
+        client.put('/api/ai/config/:key', {
+          params: { key: 'ocr_model' },
+          body: { value: ocrModel },
+        }),
       ]);
-      if (!urlRes.error && !tokenRes.error) {
+      if (!urlRes.error && !tokenRes.error && !modelRes.error) {
         msg.success('OCR 配置已保存');
       }
     } finally {
       setOcrSaving(false);
     }
-  }, [ocrServerUrl, ocrToken]);
+  }, [ocrServerUrl, ocrToken, ocrModel]);
+
+  const testOcrConfig = useCallback(async () => {
+    if (!ocrServerUrl.trim()) {
+      msg.warning('请先填写 OCR 服务地址');
+      return;
+    }
+    setOcrTesting(true);
+    try {
+      const { error, data } = (await client.post('/api/ai/ocr/test', {
+        body: { serverUrl: ocrServerUrl.trim(), token: ocrToken || undefined, model: ocrModel || undefined },
+      })) as { error?: unknown; data?: { ok: boolean; text?: string; elapsedMs: number; error?: string } };
+      if (!error && data) {
+        if (data.ok) {
+          msg.success(`OCR 服务连通正常（${data.elapsedMs}ms${data.text ? `，识别: ${data.text}` : ''}）`);
+        } else {
+          msg.error(`OCR 服务测试失败：${data.error ?? '未知错误'}`);
+        }
+      }
+    } finally {
+      setOcrTesting(false);
+    }
+  }, [ocrServerUrl, ocrToken, ocrModel]);
 
   const fetchDefaultModel = useCallback(async () => {
     try {
@@ -930,15 +965,13 @@ export default function AISettingsPage() {
             children: (
               <div className="max-w-[560px]">
                 <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]">
-                  💡 OCR（光学字符识别）用于解析扫描版 PDF
-                  与图片文件，由文件解析服务（file-parser）完成识别。配置服务地址和
-                  Token 后即可启用。
+                  💡 OCR（光学字符识别）用于解析扫描版 PDF与图片文件。配置服务地址和Token 后即可启用。
                 </div>
                 <Form layout="vertical">
                   <Form.Item label="服务地址">
                     <Input
                       value={ocrServerUrl}
-                      placeholder="http://file-parser:8866"
+                      placeholder="https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
                       onChange={(e) => setOcrServerUrl(e.target.value)}
                       allowClear
                     />
@@ -951,9 +984,22 @@ export default function AISettingsPage() {
                       allowClear
                     />
                   </Form.Item>
-                  <Button type="primary" icon={<SaveOutlined />} loading={ocrSaving} onClick={saveOcrConfig}>
-                    保存
-                  </Button>
+                  <Form.Item label="模型">
+                    <Input
+                      value={ocrModel}
+                      placeholder="PaddleOCR-VL-1.6"
+                      onChange={(e) => setOcrModel(e.target.value)}
+                      allowClear
+                    />
+                  </Form.Item>
+                  <Space>
+                    <Button type="primary" icon={<SaveOutlined />} loading={ocrSaving} onClick={saveOcrConfig}>
+                      保存
+                    </Button>
+                    <Button icon={<ApiOutlined />} loading={ocrTesting} onClick={testOcrConfig}>
+                      测试连接
+                    </Button>
+                  </Space>
                 </Form>
               </div>
             ),

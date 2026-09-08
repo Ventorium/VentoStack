@@ -10,9 +10,9 @@ import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Table,
 import type { ColumnsType } from "antd/es/table";
 import { useCallback, useEffect, useState } from "react";
 
-/** 菜单类型映射：前端显示值 ↔ API 字符串 */
-const MENU_TYPE_TO_API: Record<number, string> = { 1: "D", 2: "M", 3: "B" };
-const MENU_TYPE_FROM_API: Record<string, number> = { D: 1, M: 2, B: 3 };
+/** 菜单类型：后端 int（1=目录 2=菜单 3=按钮），字典 sys_menu_type 的值为字符串 "1"/"2"/"3" */
+const MENU_TYPE_LABEL: Record<string, string> = { 1: "目录", 2: "菜单", 3: "按钮" };
+const MENU_TYPE_COLOR: Record<string, string> = { 1: "blue", 2: "green", 3: "orange" };
 
 /** 常用图标列表（使用 @ant-design/icons 完整名称） */
 const iconOptions = [
@@ -120,7 +120,7 @@ const MenuPage = () => {
     setEditingMenu(null);
     form.resetFields();
     form.setFieldsValue({
-      type: parent ? 2 : 1,
+      type: parent ? "2" : "1",
       sort: 0,
       visible: true,
       status: 1,
@@ -137,11 +137,11 @@ const MenuPage = () => {
       path: r.path,
       component: r.component,
       redirect: r.redirect,
-      type: MENU_TYPE_FROM_API[r.type] ?? r.type,
+      type: String(r.type),
       permission: r.permission,
       icon: r.icon,
       sort: r.sort,
-      visible: r.visible === 1,
+      visible: !!r.visible,
       status: r.status,
     });
     setModalOpen(true);
@@ -152,8 +152,8 @@ const MenuPage = () => {
     setModalLoading(true);
     const body = {
       ...values,
-      type: MENU_TYPE_TO_API[values.type] ?? values.type,
-      visible: values.visible ? 1 : 0,
+      type: Number(values.type),
+      visible: !!values.visible,
     };
     try {
       if (editingMenu) {
@@ -187,9 +187,6 @@ const MenuPage = () => {
     }
   };
 
-  const typeMap: Record<string, string> = { D: "目录", M: "菜单", B: "按钮" };
-  const typeColor: Record<string, string> = { D: "blue", M: "green", B: "orange" };
-
   const columns: ColumnsType<MenuItem> = [
     { title: "菜单名称", dataIndex: "name", key: "name" },
     {
@@ -214,7 +211,9 @@ const MenuPage = () => {
       dataIndex: "type",
       key: "type",
       width: 80,
-      render: (_: unknown, r: MenuItem) => <Tag color={typeColor[r.type]}>{typeMap[r.type]}</Tag>,
+      render: (_: unknown, r: MenuItem) => (
+        <Tag color={MENU_TYPE_COLOR[String(r.type)]}>{MENU_TYPE_LABEL[String(r.type)] ?? r.type}</Tag>
+      ),
     },
     { title: "路由地址", dataIndex: "path", key: "path", width: 200 },
     { title: "权限标识", dataIndex: "permission", key: "permission", width: 180 },
@@ -224,7 +223,7 @@ const MenuPage = () => {
       key: "visible",
       width: 60,
       render: (_: unknown, r: MenuItem) =>
-        r.visible === 1 ? <Tag color="green">显示</Tag> : <Tag color="red">隐藏</Tag>,
+        r.visible ? <Tag color="green">显示</Tag> : <Tag color="red">隐藏</Tag>,
     },
     {
       title: "状态",
@@ -284,7 +283,7 @@ const MenuPage = () => {
           pagination={false}
           scroll={{ x: 1200 }}
           defaultExpandAllRows
-          expandable={{ rowExpandable: (r) => r.type !== "B" }}
+          expandable={{ rowExpandable: (r) => r.type !== 3 }}
           size="small"
         />
       </Card>

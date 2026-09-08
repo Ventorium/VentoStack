@@ -345,13 +345,13 @@ export type OpenAPIs = {
            */
           sort?: number,
           /**
-           * @description 菜单类型
+           * @description 菜单类型 1=目录 2=菜单 3=按钮
            */
-          type?: string,
+          type?: number,
           /**
            * @description 是否可见
            */
-          visible?: number,
+          visible?: boolean,
           /**
            * @description 状态
            */
@@ -2452,14 +2452,14 @@ export type OpenAPIs = {
          */
         sort?: number,
         /**
-         * @description 类型 D=目录 M=菜单 B=按钮
-         * @enum D,M,B
+         * @description 类型 1=目录 2=菜单 3=按钮
+         * @enum 1,2,3
          */
-        type: string,
+        type: number,
         /**
          * @description 是否可见
          */
-        visible?: number,
+        visible?: boolean,
         /**
          * @description 状态
          */
@@ -3577,6 +3577,29 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 测试 OCR 服务连通性
+     */
+    '/api/ai/ocr/test': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description OCR 服务地址
+         */
+        serverUrl: string,
+        /**
+         * @description 访问 Token
+         */
+        token?: string,
+        /**
+         * @description 模型名（默认 PaddleOCR-VL-1.6）
+         */
+        model?: string
+      },
+      response: any
+    },
     '/api/ai/skills/store/:slug/install': {
       query: never,
       params: {
@@ -4136,14 +4159,14 @@ export type OpenAPIs = {
          */
         sort?: number,
         /**
-         * @description 类型
-         * @enum D,M,B
+         * @description 类型 1=目录 2=菜单 3=按钮
+         * @enum 1,2,3
          */
-        type?: string,
+        type?: number,
         /**
          * @description 是否可见
          */
-        visible?: number,
+        visible?: boolean,
         /**
          * @description 状态
          */
