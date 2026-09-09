@@ -294,6 +294,7 @@ export interface AgentLoopDeps {
   toolRegistry?: ToolRegistry;
   knowledgeBase?: KnowledgeBaseService;
   memory?: MemoryService;
+  scheduleMemoryConsolidation?: (params: { sessionId: string; tenantId: string; userId: string; model: string }) => Promise<void>;
   promptGuard?: PromptGuard;
   eventEmitter?: AgentEventEmitter;
   agentService?: AgentCrudService;
@@ -310,7 +311,7 @@ export interface AgentLoopDeps {
   shouldStopAfterTurn?: AgentLoopConfig['shouldStopAfterTurn'];
   mcpToolSource?: McpToolSource;
   resolveSkills?: (skillIds: string[], tenantId: string) => Promise<Skill[]>;
-  resolveAgentTools?: (agentId: string, tenantId: string, toolNames: string[]) => Promise<AgentTool[]>;
+  resolveAgentTools?: (agentId: string, tenantId: string, toolNames: string[], userId?: string, sessionId?: string) => Promise<AgentTool[]>;
   authorizeToolCall?: ToolCallAuthorizer;
   /** 等待工具审批 decision（与 authorizeToolCall 返回的 approvalRequest 配对） */
   waitForApproval?: ApprovalWaiter;
@@ -787,6 +788,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       }
 
       let systemPrompt = params.systemPrompt ?? agentConfig?.systemPrompt ?? '你是一个智能助手。';
+      const memoryEnabled = agentConfig?.memoryConfig?.enabled !== false;
+      if (params.sessionId && agentConfig?.tools?.some((name) => name === 'file-read' || name === 'file-write')) {
+        systemPrompt = `${systemPrompt}\n\n## 会话产物\nfile-read 和 file-write 的 path 必须使用当前会话内的相对路径。需要交付给用户的文件必须通过 file-write 写入；禁止使用绝对路径或 ..。`;
+      }
       if (agentConfig?.requiresVirtualEnvironment) {
         systemPrompt = `${systemPrompt}\n\n## 执行环境\n环境：隔离的 Linux 虚拟环境\n工作目录：/workspace\n终端：terminal`;
       }
@@ -868,6 +873,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             if (!allowedTools.includes(name)) allowedTools.push(name);
           }
         }
+        if (params.sessionId && memoryEnabled && registry.get('memory-candidate') && !allowedTools.includes('memory-candidate')) {
+          allowedTools.push('memory-candidate');
+        }
 
         agentTools = wrapRegistryTools(registry, allowedTools);
       }
@@ -882,7 +890,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         const selected = agentConfig.tools ?? [];
         const virtualNames = new Set(['terminal', 'file_read', 'file_write']);
         agentTools = agentTools.filter((tool) => !virtualNames.has(tool.name));
-        agentTools.push(...await deps.resolveAgentTools(agentId, tenantId, selected));
+        agentTools.push(...await deps.resolveAgentTools(agentId, tenantId, selected, userId, params.sessionId));
       }
 
       // 运行时工具集：后续轮次可通过工具结果的 addedToolNames 动态扩充
@@ -916,7 +924,6 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       // 4. 加载对话历史（tool 轨迹已持久化但不回放：tool 消息缺少 tool_call_id，回放会被 provider 拒绝；
       // 工具使用痕迹由 assistant 消息中的调用摘要保留）
       let history: ChatMessage[] = params.history ? [...params.history] : [];
-      const memoryEnabled = agentConfig?.memoryConfig?.enabled !== false;
       if (!params.history && deps.memory && params.sessionId && memoryEnabled) {
         try {
           history = (await deps.memory.getHistory(
@@ -1018,7 +1025,6 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         },
         signal,
       );
-
       // ---- Telemetry spans ----
       const tracer = deps.tracer;
       const runSpan: SpanHandle | null = tracer
@@ -1478,6 +1484,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         },
         signal,
       );
+      if (params.sessionId && memoryEnabled && deps.scheduleMemoryConsolidation) {
+        await deps.scheduleMemoryConsolidation({ sessionId: params.sessionId, tenantId, userId, model });
+      }
 
       runSpan?.setAttribute('iterations', iteration);
       runSpan?.setAttribute('output_chars', fullContent.length);

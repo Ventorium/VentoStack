@@ -29,12 +29,17 @@ describe('Agent virtual environment lifecycle', () => {
       },
     });
 
-    const result = await service.create({ ...baseAgent, requiresVirtualEnvironment: true });
+    const result = await service.create({
+      ...baseAgent,
+      welcomeMessage: '欢迎使用代码助手',
+      requiresVirtualEnvironment: true,
+    });
 
     expect(events).toHaveLength(1);
     expect(result.id).toBeString();
     const insert = exec.calls.find((call) => String(call[0]).includes('INSERT INTO ai_agent'));
     expect(insert).toBeDefined();
+    expect(insert?.[1]).toContain('欢迎使用代码助手');
     expect(insert?.[1]).toContain('sbx-1');
   });
 

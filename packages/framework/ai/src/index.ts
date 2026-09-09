@@ -220,6 +220,7 @@ export { createProviderService } from './services/provider';
 // ---- Migration ----
 export { createAiKnowledgeTables } from './migrations/003_create_ai_knowledge_tables';
 export { createAiAgentTables } from './migrations/004_create_ai_agent_tables';
+export { addAgentWelcomeMessage } from './migrations/016_add_agent_welcome_message';
 export { createAiProviderTables } from './migrations/005_create_ai_provider_tables';
 
 // ---- Tool Policy (renamed from Sandbox) ----
@@ -283,8 +284,15 @@ export { createConversationService } from './services/conversation';
 export type { ConversationItem } from './services/conversation';
 
 // ---- Approval Service ----
-export { createApprovalService, createApprovalWaiter, IN_CHAT_APPROVAL_WAIT_MS } from './services/approval';
-export type { ApprovalRequest as ApprovalRequestItem, ApprovalWaiterDeps } from './services/approval';
+export {
+  createApprovalService,
+  createApprovalWaiter,
+  IN_CHAT_APPROVAL_WAIT_MS,
+} from './services/approval';
+export type {
+  ApprovalRequest as ApprovalRequestItem,
+  ApprovalWaiterDeps,
+} from './services/approval';
 export type { ChatApprovalService } from './routes/chat';
 
 // ---- Routes ----
@@ -339,4 +347,5 @@ export { addAgentRuntime } from './migrations/013_add_agent_runtime';
 export { agentModelsArray } from './migrations/014_agent_models_array';
 export { dropAiToolLog } from './migrations/015_drop_ai_tool_log';
 export { createAgentRuntimeClient } from './agent-runtime/client';
+export { createMemoryConsolidator } from './memory/consolidator';
 export type { AgentRuntimeClient, RuntimeSandbox, SandboxStatus } from './agent-runtime/types';

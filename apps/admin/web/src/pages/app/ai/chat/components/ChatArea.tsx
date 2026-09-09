@@ -20,6 +20,7 @@ const { Text, Paragraph } = Typography;
 interface ChatAreaProps {
   messages: ChatMessage[];
   agentName?: string;
+  welcomeMessage?: string | null;
   onCopy?: (content: string) => void;
   onRegenerate?: (messageId: string) => void;
   /** 聊天内嵌审批决定：返回是否提交成功（成功后由后端唤醒流继续执行） */
@@ -85,7 +86,12 @@ function ApprovalCard({
           >
             允许
           </Button>
-          <Button size="small" danger icon={<CloseOutlined />} onClick={() => handleDecision('rejected')}>
+          <Button
+            size="small"
+            danger
+            icon={<CloseOutlined />}
+            onClick={() => handleDecision('rejected')}
+          >
             拒绝
           </Button>
         </Space>
@@ -255,6 +261,7 @@ function MessageActions({
 export default function ChatArea({
   messages,
   agentName = '新助手',
+  welcomeMessage,
   onCopy,
   onRegenerate,
   onApprovalDecision,
@@ -286,7 +293,7 @@ export default function ChatArea({
           {agentName}
         </Text>
         <Text type="secondary" className="text-sm max-w-[400px] text-center">
-          有什么可以帮助你的？可以问我任何问题，或者让我帮你执行任务。
+          {welcomeMessage?.trim() || '有什么可以帮助你的？'}
         </Text>
       </div>
     );

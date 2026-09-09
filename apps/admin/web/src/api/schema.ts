@@ -1664,6 +1664,33 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    '/api/ai/conversations/:id/artifacts': {
+      query: never,
+      params: { id: string },
+      headers: never,
+      body: never,
+      response: Array<{ path: string, size: number, modifiedAt: string }>
+    },
+    '/api/ai/conversations/:id/artifact': {
+      query: { path: string },
+      params: { id: string },
+      headers: never,
+      body: never,
+      response: { path: string, content: string }
+    },
+    '/api/ai/conversations/:id/memory': {
+      query: never,
+      params: { id: string },
+      headers: never,
+      body: never,
+      response: {
+        content: string,
+        events: Array<{ id: string, type: string, content: string, sourceMessageIds: string[], createdAt: string }>,
+        status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed',
+        error?: string,
+        processedEventIds: string[]
+      }
+    },
     '/api/ai/providers/presets': {
       query: never,
       params: never,
@@ -3377,6 +3404,13 @@ export type OpenAPIs = {
          */
         sessionId?: string
       }
+    },
+    '/api/ai/conversations/:id/memory/consolidate': {
+      query: never,
+      params: { id: string },
+      headers: never,
+      body: never,
+      response: { status: 'pending' }
     },
     /**
      * 发送消息（非流式）

@@ -1,6 +1,6 @@
 /* 业务类型定义 — 纯类型，不含 API 调用 */
 
-export type { PaginatedData, PaginatedParams } from "../hooks/useTable";
+export type { PaginatedData, PaginatedParams } from '../hooks/useTable';
 
 export type CreateNoticeBody = { title: string; content: string; type: string };
 export type UpdateNoticeBody = { title?: string; content?: string; type?: string };
@@ -383,6 +383,7 @@ export interface AgentItem {
   id: string;
   name: string;
   description: string | null;
+  welcomeMessage: string | null;
   avatar: string | null;
   /** 可用模型 ID 列表（第一项为默认模型） */
   model: string[];
@@ -415,7 +416,7 @@ export interface ApprovalRequestItem {
   toolName: string;
   input: Record<string, unknown>;
   requestedBy: string;
-  status: "pending" | "approved" | "rejected" | "expired";
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
   approvedBy: string | null;
   comment: string | null;
   expiresAt: string;
@@ -461,7 +462,7 @@ export interface AIToolLogItem {
 export interface FileEntry {
   name: string;
   path: string;
-  type: "file" | "directory";
+  type: 'file' | 'directory';
   size: number;
   modifiedAt: string;
   /** 文件是否被禁用（禁用后不参与 Agent 知识库检索与引用） */
@@ -474,14 +475,14 @@ export interface McpServerItem {
   id: string;
   name: string;
   description: string | null;
-  transportType: "stdio" | "sse";
+  transportType: 'stdio' | 'sse';
   command: string | null;
   args: string[] | null;
   env: Record<string, string> | null;
   url: string | null;
   headers: Record<string, string> | null;
   enabled: boolean;
-  status: "pending" | "connected" | "error";
+  status: 'pending' | 'connected' | 'error';
   lastError: string | null;
   toolCount: number;
   toolsSnapshot: McpToolInfo[] | null;
@@ -535,7 +536,7 @@ export interface AIToolItem {
     description: string;
     required?: boolean;
   }>;
-  riskLevel: "low" | "medium" | "high" | "critical";
+  riskLevel: 'low' | 'medium' | 'high' | 'critical';
   requiresApproval: boolean;
   timeout: number;
 }
@@ -555,9 +556,9 @@ export interface StoreSkillItem {
 }
 
 // ===== AI Trace（链路追踪） =====
-export type TraceStatus = "running" | "success" | "error" | "aborted" | "interrupted";
-export type TraceSpanType = "llm" | "tool";
-export type TraceSpanCategory = "llm" | "knowledge_base" | "mcp" | "builtin";
+export type TraceStatus = 'running' | 'success' | 'error' | 'aborted' | 'interrupted';
+export type TraceSpanType = 'llm' | 'tool';
+export type TraceSpanCategory = 'llm' | 'knowledge_base' | 'mcp' | 'builtin';
 
 export interface TraceTokenUsage {
   promptTokens: number;

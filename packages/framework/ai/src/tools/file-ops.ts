@@ -3,11 +3,14 @@
  * 提供受控的文件读写能力
  * 安全措施：路径白名单、大小限制、权限检查
  */
-import { resolve, sep } from "node:path";
+import { lstat, mkdir, realpath } from "node:fs/promises";
+import { dirname, isAbsolute, resolve, sep } from "node:path";
 
 export interface FileOpsToolDeps {
   /** 允许访问的基础目录 */
   allowedPaths: string[];
+  /** 将工具传入的相对路径解析到该目录；启用后拒绝绝对路径。 */
+  rootPath?: string;
   /** 最大读取大小（字节） */
   maxReadSize?: number;
   /** 最大写入大小（字节） */
@@ -23,6 +26,31 @@ function isPathAllowed(resolvedPath: string, allowedPaths: string[]): boolean {
     const resolvedBase = resolve(base);
     return resolvedPath === resolvedBase || resolvedPath.startsWith(resolvedBase + sep);
   });
+}
+
+function resolveToolPath(path: string, deps: FileOpsToolDeps): string | null {
+  if (deps.rootPath && isAbsolute(path)) return null;
+  const resolved = resolve(deps.rootPath ?? '.', path);
+  return isPathAllowed(resolved, deps.allowedPaths) ? resolved : null;
+}
+
+function containingRoot(path: string, deps: FileOpsToolDeps): string {
+  return resolve(deps.rootPath ?? deps.allowedPaths.find((base) => isPathAllowed(path, [base])) ?? dirname(path));
+}
+
+async function hasSymlinkBetween(base: string, target: string): Promise<boolean> {
+  const resolvedBase = resolve(base);
+  const relative = target.slice(resolvedBase.length).split(sep).filter(Boolean);
+  let current = resolvedBase;
+  for (const part of relative) {
+    current = resolve(current, part);
+    try {
+      if ((await lstat(current)).isSymbolicLink()) return true;
+    } catch {
+      break;
+    }
+  }
+  return false;
 }
 
 export function createFileReadTool(deps: FileOpsToolDeps) {
@@ -41,13 +69,18 @@ export function createFileReadTool(deps: FileOpsToolDeps) {
     ],
     riskLevel: "medium" as const,
     async handler(params: Record<string, unknown>): Promise<{ content: string; path: string } | { error: string }> {
-      const filePath = params.path as string;
-      if (!filePath) return { error: "路径不能为空" };
+    const rawPath = params.path as string;
+    if (!rawPath) return { error: "路径不能为空" };
 
       // 路径安全检查：resolve + 分隔符边界，防止同前缀目录绕过
-      const resolved = resolve(filePath);
-      if (!isPathAllowed(resolved, deps.allowedPaths)) {
+      const filePath = resolveToolPath(rawPath, deps);
+      if (!filePath || await hasSymlinkBetween(containingRoot(filePath, deps), filePath)) {
         return { error: "不允许访问该路径" };
+      }
+      if (deps.rootPath) {
+        const root = await realpath(deps.rootPath).catch(() => null);
+        const actual = await realpath(filePath).catch(() => null);
+        if (!root || !actual || !isPathAllowed(actual, [root])) return { error: "不允许访问该路径" };
       }
 
       try {
@@ -90,20 +123,27 @@ export function createFileWriteTool(deps: FileOpsToolDeps) {
     riskLevel: "high" as const,
     requiresApproval: true,
     async handler(params: Record<string, unknown>): Promise<{ success: boolean; path: string } | { error: string }> {
-      const filePath = params.path as string;
+    const rawPath = params.path as string;
       const content = params.content as string;
 
-      if (!filePath) return { error: "路径不能为空" };
+    if (!rawPath) return { error: "路径不能为空" };
       if (!content) return { error: "内容不能为空" };
       if (content.length > maxWriteSize) {
         return { error: `内容过大 (${content.length} bytes)，最大允许 ${maxWriteSize} bytes` };
       }
 
       // 路径安全检查：resolve + 分隔符边界，防止同前缀目录绕过
-      const resolved = resolve(filePath);
-      if (!isPathAllowed(resolved, deps.allowedPaths)) {
+      const filePath = resolveToolPath(rawPath, deps);
+      if (!filePath) {
         return { error: "不允许写入该路径" };
       }
+      const root = containingRoot(filePath, deps);
+      await mkdir(root, { recursive: true });
+      if (await hasSymlinkBetween(root, filePath)) return { error: "不允许写入该路径" };
+      await mkdir(dirname(filePath), { recursive: true });
+      const actualParent = await realpath(dirname(filePath));
+      const actualRoot = await realpath(root);
+      if (!isPathAllowed(actualParent, [actualRoot])) return { error: "不允许写入该路径" };
 
       try {
         await Bun.write(filePath, content);

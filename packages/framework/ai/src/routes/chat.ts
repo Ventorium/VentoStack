@@ -52,9 +52,10 @@ export function createChatRoutes(
   memoryService?: MemoryService,
   options?: {
     /** 按请求 tenantId 构建请求级工具注册表（KB 等租户相关工具绑定请求租户） */
-    createTenantToolRegistry?: (tenantId: string) => ToolRegistry;
+    createTenantToolRegistry?: (tenantId: string, userId?: string, sessionId?: string) => ToolRegistry;
     /** 审批服务：聊天内嵌审批的请求者自确认 */
     approvalService?: ChatApprovalService;
+    scheduleMemoryConsolidation?: (params: { sessionId: string; tenantId: string; userId: string }) => Promise<void>;
   },
 ): Router {
   const router = createRouter();
@@ -73,10 +74,11 @@ export function createChatRoutes(
   });
 
   /** 请求级工具注册表：有租户标识且配置了工厂时构建，否则使用 agentLoop 的默认注册表 */
-  function buildRequestToolRegistry(ctx: { user?: unknown }): ToolRegistry | undefined {
+  function buildRequestToolRegistry(ctx: { user?: unknown }, sessionId?: string): ToolRegistry | undefined {
     const tenantId = (ctx.user as { tenantId?: string } | undefined)?.tenantId ?? '';
+    const userId = (ctx.user as { id?: string } | undefined)?.id ?? '';
     if (!tenantId || !options?.createTenantToolRegistry) return undefined;
-    return options.createTenantToolRegistry(tenantId);
+    return options.createTenantToolRegistry(tenantId, userId, sessionId);
   }
 
   // 聊天内嵌审批：请求者对自己的 pending 审批请求做出 decision（允许/拒绝）
@@ -212,6 +214,81 @@ export function createChatRoutes(
     perm('ai:chat', 'use'),
   );
 
+  router.get(
+    '/api/ai/conversations/:id/artifacts',
+    routeDoc('获取会话产物文件列表'),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        return success(await memoryService.listArtifacts(id, { tenantId, userId }));
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  router.get(
+    '/api/ai/conversations/:id/memory',
+    routeDoc('获取会话记忆'),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const state = await memoryService.getSessionMemory(id, { tenantId, userId });
+        return state ? success(state) : fail('会话不存在', 404, 404);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  router.post(
+    '/api/ai/conversations/:id/memory/consolidate',
+    routeDoc('异步整理会话记忆'),
+    async (ctx) => {
+      try {
+        if (!options?.scheduleMemoryConsolidation) return fail('Memory Agent 未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        if (!memoryService || !(await memoryService.getSession(id, { tenantId, userId }))) return fail('会话不存在', 404, 404);
+        await options.scheduleMemoryConsolidation({ sessionId: id, tenantId, userId });
+        return success({ status: 'pending' });
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  router.get(
+    '/api/ai/conversations/:id/artifact',
+    routeDoc('预览会话产物文件', {
+      query: { path: { type: 'string', required: true, description: '会话产物相对路径' } },
+    }),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const path = String((ctx.query as Record<string, unknown>).path ?? '');
+        const artifact = await memoryService.readArtifact(id, { tenantId, userId }, path);
+        return artifact ? success(artifact) : fail('文件不存在或路径不合法', 404, 404);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
   // 分叉会话：从历史消息开启新的独立对话分支
   router.post(
     '/api/ai/conversations/:id/fork',
@@ -278,7 +355,6 @@ export function createChatRoutes(
         const body = await parseBody(ctx.request);
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        const toolRegistry = buildRequestToolRegistry(ctx);
 
         // 输入校验：message 必填 + 长度上限（防超大输入拖垮 LLM 与内存）
         const rawMessage = body.message as string | undefined;
@@ -299,6 +375,7 @@ export function createChatRoutes(
           });
           returnedSessionId = conv.id;
         }
+        const toolRegistry = buildRequestToolRegistry(ctx, returnedSessionId);
 
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
@@ -360,7 +437,6 @@ export function createChatRoutes(
         const body = await parseBody(ctx.request);
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        const toolRegistry = buildRequestToolRegistry(ctx);
 
         // 输入校验：message 必填 + 长度上限（与 /api/ai/chat 保持一致）
         const rawMessage = body.message as string | undefined;
@@ -381,6 +457,7 @@ export function createChatRoutes(
           });
           sessionId = conv.id;
         }
+        const toolRegistry = buildRequestToolRegistry(ctx, sessionId);
 
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,

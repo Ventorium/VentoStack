@@ -23,6 +23,17 @@ describe('sandbox-bound Agent tools', () => {
 
   test('file tools reject traversal outside /workspace', async () => {
     const tool = createAgentRuntimeTools(runtime(), 'sbx-1').find((item) => item.name === 'file_read')!;
-    await expect(tool.execute('call-1', { path: '../etc/passwd' })).rejects.toThrow('必须位于 /workspace');
+    await expect(tool.execute('call-1', { path: '../etc/passwd' })).rejects.toThrow('必须位于当前会话工作区');
+  });
+
+  test('isolates a session workspace and reports written artifacts', async () => {
+    const written: string[] = [];
+    const tools = createAgentRuntimeTools(runtime(), 'sbx-1', {
+      workspace: '/workspace/sessions/session-1',
+      async onFileWritten(path) { written.push(path); },
+    });
+    const write = tools.find((item) => item.name === 'file_write')!;
+    await write.execute('call-1', { path: 'reports/today.md', content: 'done' });
+    expect(written).toEqual(['reports/today.md']);
   });
 });

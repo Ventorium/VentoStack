@@ -4,7 +4,7 @@
  */
 import { describe, expect, test, beforeEach, afterEach } from "bun:test";
 import { createFileReadTool, createFileWriteTool } from "../../tools/file-ops";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, readFile, symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -90,6 +90,17 @@ describe("file-read tool", () => {
       const tool = createFileReadTool({ allowedPaths: [tempDir] });
       const result = await tool.handler({ path: join(tempDir, "../../../etc/passwd") });
       expect(result).toEqual({ error: "不允许访问该路径" });
+    });
+
+    test("会话根目录拒绝绝对路径和符号链接逃逸", async () => {
+      const outside = join(tempDir, "..", `outside-${crypto.randomUUID()}`);
+      await writeFile(outside, "secret");
+      await symlink(outside, join(tempDir, "escape"));
+      const tool = createFileWriteTool({ allowedPaths: [tempDir], rootPath: tempDir });
+
+      expect(await tool.handler({ path: outside, content: "hack" })).toEqual({ error: "不允许写入该路径" });
+      expect(await tool.handler({ path: "escape", content: "hack" })).toEqual({ error: "不允许写入该路径" });
+      await rm(outside, { force: true });
     });
 
     test("文件不存在", async () => {

@@ -1,13 +1,14 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const AiAgentModel = defineModel(
-  "ai_agent",
+  'ai_agent',
   {
     id: column.varchar({ primary: true, length: 36 }),
     name: column.varchar({ length: 128 }),
     description: column.text({ nullable: true }),
+    welcome_message: column.varchar({ length: 500, nullable: true }),
     avatar: column.varchar({ length: 512, nullable: true }),
-    type: column.varchar({ length: 32, default: "chatbot" }),
+    type: column.varchar({ length: 32, default: 'chatbot' }),
     system_prompt: column.text(),
     model: column.textArray(),
     tools: column.json({ nullable: true }),
@@ -21,7 +22,7 @@ export const AiAgentModel = defineModel(
     max_tokens_per_turn: column.int({ default: 4096 }),
     tenant_id: column.varchar({ length: 36 }),
     created_by: column.varchar({ length: 36 }),
-    status: column.varchar({ length: 16, default: "draft" }),
+    status: column.varchar({ length: 16, default: 'draft' }),
     is_public: column.boolean({ default: false }),
     requires_virtual_environment: column.boolean({ default: false }),
     sandbox_id: column.varchar({ length: 128, nullable: true }),

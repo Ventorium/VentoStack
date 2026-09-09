@@ -26,6 +26,27 @@ export interface LongTermMemory {
   updatedAt: Date;
 }
 
+export type SessionMemoryEventType = "concern" | "hypothesis" | "correction" | "decision" | "constraint" | "preference" | "observation";
+export interface SessionMemoryEvent {
+  id: string;
+  type: SessionMemoryEventType;
+  content: string;
+  sourceMessageIds: string[];
+  createdAt: string;
+}
+export type MemoryOperation =
+  | { op: "ADD"; id: string; content: string; confidence: number; sourceEventIds: string[] }
+  | { op: "UPDATE"; id: string; content: string; confidence: number; sourceEventIds: string[] }
+  | { op: "SUPERSEDE"; id: string; supersededBy: string; content: string; confidence: number; sourceEventIds: string[] }
+  | { op: "DELETE"; id: string; sourceEventIds: string[] };
+export interface SessionMemoryState {
+  content: string;
+  events: SessionMemoryEvent[];
+  status: "idle" | "pending" | "processing" | "completed" | "failed";
+  error?: string;
+  processedEventIds: string[];
+}
+
 export interface MemoryService {
   // 对话记忆
   createSession(params: {
@@ -58,6 +79,17 @@ export interface MemoryService {
     scope: MemoryScope,
     limit?: number,
   ): Promise<Array<{ role: string; content: string }>>;
+  getArtifactRoot(sessionId: string, scope: MemoryScope): Promise<string | null>;
+  listArtifacts(sessionId: string, scope: MemoryScope): Promise<Array<{ path: string; size: number; modifiedAt: string }>>;
+  readArtifact(sessionId: string, scope: MemoryScope, path: string): Promise<{ path: string; content: string } | null>;
+  getSessionRuntimeSandbox(sessionId: string, scope: MemoryScope): Promise<string | null>;
+  setSessionRuntimeSandbox(sessionId: string, scope: MemoryScope, sandboxId: string): Promise<void>;
+  withSessionMemoryLock<T>(sessionId: string, scope: MemoryScope, task: () => Promise<T>): Promise<{ acquired: boolean; result?: T }>;
+  listPendingMemoryConsolidations(): Promise<Array<{ sessionId: string; scope: MemoryScope }>>;
+  appendMemoryEvent(sessionId: string, scope: MemoryScope, event: Omit<SessionMemoryEvent, "id" | "createdAt">): Promise<SessionMemoryEvent>;
+  getSessionMemory(sessionId: string, scope: MemoryScope): Promise<SessionMemoryState | null>;
+  setMemoryConsolidationStatus(sessionId: string, scope: MemoryScope, status: SessionMemoryState["status"], error?: string, processedEventIds?: string[]): Promise<void>;
+  applyMemoryOperations(sessionId: string, scope: MemoryScope, operations: MemoryOperation[]): Promise<void>;
 
   // 长期记忆
   createLongTermMemory(

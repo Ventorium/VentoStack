@@ -26,13 +26,29 @@ export interface AgentCrudService {
     page?: number;
     pageSize?: number;
   }): Promise<{ list: unknown[]; total: number }>;
-  update(id: string, params: Record<string, unknown>, tenantId: string, opts?: { userId?: string; isAdmin?: boolean }): Promise<void>;
-  delete(id: string, tenantId: string, opts?: { userId?: string; isAdmin?: boolean }): Promise<void>;
-  publish(id: string, tenantId: string, opts?: { userId?: string; isAdmin?: boolean }): Promise<void>;
+  update(
+    id: string,
+    params: Record<string, unknown>,
+    tenantId: string,
+    opts?: { userId?: string; isAdmin?: boolean },
+  ): Promise<void>;
+  delete(
+    id: string,
+    tenantId: string,
+    opts?: { userId?: string; isAdmin?: boolean },
+  ): Promise<void>;
+  publish(
+    id: string,
+    tenantId: string,
+    opts?: { userId?: string; isAdmin?: boolean },
+  ): Promise<void>;
 }
 
 /** 从 ctx.user 提取当前用户信息（id + 是否超管） */
-function currentUser(ctx: { user?: { id?: string; roles?: string[] } }): { userId: string; isAdmin: boolean } {
+function currentUser(ctx: { user?: { id?: string; roles?: string[] } }): {
+  userId: string;
+  isAdmin: boolean;
+} {
   const user = ctx.user;
   return {
     userId: user?.id ?? '',
@@ -42,10 +58,22 @@ function currentUser(ctx: { user?: { id?: string; roles?: string[] } }): { userI
 
 /** Agent 路由请求体字段白名单（status 不在其中：只能通过 publish 接口变更） */
 const AGENT_BODY_FIELDS = [
-  'name', 'description', 'model', 'systemPrompt', 'tools',
-  'knowledgeBaseIds', 'skillIds', 'mcpServerIds',
-  'modelOverrides', 'memoryConfig', 'config',
-  'maxIterations', 'maxTokensPerTurn', 'isPublic', 'requiresVirtualEnvironment',
+  'name',
+  'description',
+  'welcomeMessage',
+  'model',
+  'systemPrompt',
+  'tools',
+  'knowledgeBaseIds',
+  'skillIds',
+  'mcpServerIds',
+  'modelOverrides',
+  'memoryConfig',
+  'config',
+  'maxIterations',
+  'maxTokensPerTurn',
+  'isPublic',
+  'requiresVirtualEnvironment',
 ] as const;
 
 /** 迭代轮数 / 单轮 Token / 能力清单长度的硬上限（防止单条消息放大成天文数字的 LLM 成本） */
@@ -55,6 +83,12 @@ const MAX_LIST_LENGTH = 20;
 
 /** 校验 Agent 请求体的数值上限与数组规模；返回错误信息或 null */
 function validateAgentBody(body: Record<string, unknown>): string | null {
+  if (
+    body.welcomeMessage !== undefined &&
+    (typeof body.welcomeMessage !== 'string' || body.welcomeMessage.length > 500)
+  ) {
+    return 'welcomeMessage 必须是最多 500 字符的字符串';
+  }
   if (body.maxIterations !== undefined) {
     const v = Number(body.maxIterations);
     if (!Number.isInteger(v) || v < 1 || v > MAX_ITERATIONS_LIMIT) {
@@ -83,7 +117,11 @@ function validateAgentBody(body: Record<string, unknown>): string | null {
   for (const field of ['tools', 'knowledgeBaseIds', 'skillIds', 'mcpServerIds'] as const) {
     const list = body[field];
     // null 表示清空该能力列表（前端清空时发送 null），undefined 表示不修改
-    if (list !== undefined && list !== null && (!Array.isArray(list) || list.length > MAX_LIST_LENGTH)) {
+    if (
+      list !== undefined &&
+      list !== null &&
+      (!Array.isArray(list) || list.length > MAX_LIST_LENGTH)
+    ) {
       return `${field} 必须是数组且最多 ${MAX_LIST_LENGTH} 项`;
     }
   }
@@ -114,7 +152,17 @@ export function createAgentRoutes(
       body: {
         name: { type: 'string', required: true, max: 128, description: 'Agent 名称' },
         description: { type: 'string', description: '描述' },
-        model: { type: 'array', items: { type: 'string' }, required: true, description: '可用模型 ID 列表（至少 1 个）' },
+        welcomeMessage: {
+          type: 'string',
+          max: 500,
+          description: '新会话欢迎词，为空时使用默认文案',
+        },
+        model: {
+          type: 'array',
+          items: { type: 'string' },
+          required: true,
+          description: '可用模型 ID 列表（至少 1 个）',
+        },
         systemPrompt: { type: 'string', required: true, description: '系统提示词' },
         tools: { type: 'array', items: { type: 'string' }, description: '启用的工具名' },
         knowledgeBaseIds: {
@@ -222,7 +270,11 @@ export function createAgentRoutes(
       body: {
         name: { type: 'string', max: 128, description: 'Agent 名称' },
         description: { type: 'string', description: '描述' },
-        model: { type: 'array', items: { type: 'string' }, description: '可用模型 ID 列表（至少 1 个）' },
+        model: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '可用模型 ID 列表（至少 1 个）',
+        },
         systemPrompt: { type: 'string', description: '系统提示词' },
         tools: { type: 'array', items: { type: 'string' }, description: '启用的工具名' },
         knowledgeBaseIds: {

@@ -13,7 +13,8 @@
 import { createRouter } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { EventBus } from '@ventostack/events';
-import { join } from 'node:path';
+import { mkdir } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 import { AIGatewayError } from './errors';
 
 import type { ConfigEncryptor } from '@ventostack/core';
@@ -49,6 +50,7 @@ import type { KnowledgeBaseService } from './knowledge-base/types';
 
 // Memory
 import { createMemoryService } from './memory/service';
+import { createMemoryConsolidator } from './memory/consolidator';
 import type { MemoryService } from './memory/types';
 
 // Skills
@@ -80,6 +82,7 @@ import { createSkillService } from './services/skill';
 import { createSkillStoreService } from './services/skill-store';
 import type { SkillStoreService } from './services/skill-store';
 import { createToolRegistry } from './tool-registry';
+import type { ToolRegistry } from './tool-registry';
 import { createRequire } from 'node:module';
 import { createAgentRuntimeClient } from './agent-runtime/client';
 import type { AgentRuntimeConfig } from './agent-runtime/client';
@@ -414,11 +417,16 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // 创建工具注册表并注册所有内置工具
   // KB 等租户相关工具按租户绑定：对话路由按请求 tenantId 构建请求级注册表（见 createChatRoutes options），
   // 此处的默认注册表供工具发现/管理路由使用。
-  function buildToolRegistry(tenantId: string): ToolRegistry {
+  function buildToolRegistry(tenantId: string, userId?: string, sessionId?: string): ToolRegistry {
     // 防御性校验：tenantId 会拼进文件工具的 allowedPaths，
     // 含路径分隔符或 ../ 的异常值会移动基准目录造成跨租户读写（fail-closed）
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(tenantId)) {
       throw new Error(`Invalid tenantId for tool registry: ${tenantId}`);
+    }
+    for (const [field, value] of [['userId', userId], ['sessionId', sessionId]] as const) {
+      if (value !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)) {
+        throw new Error(`Invalid ${field} for tool registry`);
+      }
     }
     const registry = createToolRegistry();
 
@@ -431,6 +439,28 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     registry.register(createUuidTool());
     registry.register(createBase64Tool());
     registry.register(createHashTool());
+    if (userId && sessionId) {
+      registry.register({
+        name: 'memory-candidate',
+        description: '记录会影响当前会话后续回答或执行的候选记忆。不要记录普通对话摘要。',
+        parameters: [
+          { name: 'type', type: 'string', description: 'concern/hypothesis/correction/decision/constraint/preference/observation', required: true },
+          { name: 'content', type: 'string', description: '有明确证据的简洁记忆内容', required: true },
+          { name: 'sourceMessageIds', type: 'array', description: '来源消息 ID，可为空', required: false, schema: { items: { type: 'string' }, maxItems: 20 } },
+        ],
+        riskLevel: 'low',
+        async handler(params) {
+          const type = String(params.type);
+          const allowed = ['concern', 'hypothesis', 'correction', 'decision', 'constraint', 'preference', 'observation'] as const;
+          if (!allowed.includes(type as typeof allowed[number])) return { error: '不支持的记忆事件类型' };
+          return memory.appendMemoryEvent(sessionId, { tenantId, userId }, {
+            type: type as typeof allowed[number],
+            content: String(params.content ?? ''),
+            sourceMessageIds: Array.isArray(params.sourceMessageIds) ? params.sourceMessageIds.filter((id): id is string => typeof id === 'string') : [],
+          });
+        },
+      });
+    }
     if (agentRuntime) {
       registry.register({
         name: 'terminal',
@@ -458,9 +488,11 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     registry.register(createFsTailTool(knowledgeBase, ''));
 
     // 文件读写工具（租户作用域：仅允许访问本租户目录，防止跨租户文件读取/写入）
-    const tenantRoot = join(storagePath, 'tenants', tenantId);
-    registry.register(createFileReadTool({ allowedPaths: [tenantRoot] }));
-    registry.register(createFileWriteTool({ allowedPaths: [tenantRoot] }));
+    const artifactRoot = userId && sessionId
+      ? join(storagePath, 'memories', tenantId, 'users', userId, 'sessions', sessionId, 'artifacts')
+      : join(storagePath, 'memories', tenantId);
+    registry.register(createFileReadTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }));
+    registry.register(createFileWriteTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }));
 
     return registry;
   }
@@ -558,10 +590,42 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const mcpToolSource = createMcpToolSource(mcpServerService);
 
   // 创建 Agent Loop
+  const consolidateMemory = createMemoryConsolidator({ memory, llmGateway });
+  const activeMemoryJobs = new Set<string>();
+  const rerunMemoryJobs = new Set<string>();
+  const sessionSandboxJobs = new Map<string, Promise<string>>();
+  const scheduleMemoryConsolidation = async (params: { sessionId: string; tenantId: string; userId: string; model?: string }): Promise<void> => {
+    const scope = { tenantId: params.tenantId, userId: params.userId };
+    await memory.setMemoryConsolidationStatus(params.sessionId, scope, 'pending');
+    if (activeMemoryJobs.has(params.sessionId)) {
+      rerunMemoryJobs.add(params.sessionId);
+      return;
+    }
+    activeMemoryJobs.add(params.sessionId);
+    queueMicrotask(async () => {
+      try {
+        do {
+          rerunMemoryJobs.delete(params.sessionId);
+          await consolidateMemory({ sessionId: params.sessionId, scope, model: params.model ?? deps.defaultModel });
+        } while (rerunMemoryJobs.has(params.sessionId));
+      } finally {
+        activeMemoryJobs.delete(params.sessionId);
+      }
+    });
+  };
+  queueMicrotask(async () => {
+    const pending = await memory.listPendingMemoryConsolidations().catch(() => []);
+    for (const item of pending) {
+      await scheduleMemoryConsolidation({ sessionId: item.sessionId, ...item.scope }).catch(() => undefined);
+    }
+  });
   const agentLoop = createAgentLoop({
     llmGateway,
     knowledgeBase,
     memory,
+    async scheduleMemoryConsolidation(params) {
+      await scheduleMemoryConsolidation(params);
+    },
     eventEmitter,
     toolRegistry,
     agentService: agentCrudService,
@@ -621,12 +685,60 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         }];
       });
     },
-    async resolveAgentTools(agentId, tenantId, toolNames) {
+    async resolveAgentTools(agentId, tenantId, toolNames, userId, sessionId) {
       if (!agentRuntime) return [];
       const item = await agentDbService.getById(agentId, tenantId);
-      if (!item?.requiresVirtualEnvironment || !item.sandboxId) return [];
+      if (!item?.requiresVirtualEnvironment || !userId || !sessionId) return [];
       const selected = new Set(toolNames);
-      return createAgentRuntimeTools(agentRuntime, item.sandboxId).filter((tool) => selected.has(tool.name));
+      const scope = { tenantId, userId };
+      let sandboxId = await memory.getSessionRuntimeSandbox(sessionId, scope);
+      if (!sandboxId) {
+        const jobKey = `${tenantId}:${userId}:${sessionId}`;
+        let job = sessionSandboxJobs.get(jobKey);
+        if (!job) {
+          job = agentRuntime.createSandbox({ sessionId: `${agentId}-${sessionId}` }).then(async (sandbox) => {
+            try {
+              await memory.setSessionRuntimeSandbox(sessionId, scope, sandbox.sandboxId);
+              return sandbox.sandboxId;
+            } catch (error) {
+              await agentRuntime.destroySandbox(sandbox.sandboxId).catch(() => undefined);
+              throw error;
+            }
+          }).finally(() => sessionSandboxJobs.delete(jobKey));
+          sessionSandboxJobs.set(jobKey, job);
+        }
+        sandboxId = await job;
+      }
+      const artifactRoot = userId && sessionId
+        ? await memory.getArtifactRoot(sessionId, scope)
+        : null;
+      const workspace = '/workspace';
+      const persistArtifact = async (path: string, content: Uint8Array): Promise<void> => {
+        if (!artifactRoot) return;
+        const target = resolve(join(artifactRoot, path));
+        if (target !== artifactRoot && !target.startsWith(artifactRoot + sep)) throw new Error('产物路径不合法');
+        await mkdir(dirname(target), { recursive: true });
+        await Bun.write(target, content);
+      };
+      return createAgentRuntimeTools(agentRuntime, sandboxId, {
+        workspace,
+        ...(artifactRoot ? {
+          onFileWritten: persistArtifact,
+          async onWorkspaceChanged() {
+            const result = await agentRuntime.runCommand(
+              item.sandboxId!,
+              ['find', '.', '-type', 'f', '-size', '-2097153c', '-print0'],
+              workspace,
+            );
+            const paths = result.stdout.split('\0').filter(Boolean).slice(0, 1000);
+            for (const path of paths) {
+              const relative = path.replace(/^\.\//, '');
+              if (!relative || relative.includes('\0') || relative.split('/').includes('..')) continue;
+              await persistArtifact(relative, await agentRuntime.readFile(item.sandboxId!, `${workspace}/${relative}`));
+            }
+          },
+        } : {}),
+      }).filter((tool) => selected.has(tool.name));
     },
   });
 
@@ -682,6 +794,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       }));
     },
     async delete(id, userId, tenantId) {
+      const sandboxId = await memory.getSessionRuntimeSandbox(id, { tenantId, userId });
+      if (sandboxId && agentRuntime) await agentRuntime.destroySandbox(sandboxId);
       await memory.deleteSession(id, { tenantId, userId });
     },
     async getMessages(id, userId, tenantId, limit) {
@@ -694,6 +808,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     createTenantToolRegistry: buildToolRegistry,
     // 聊天内嵌审批：请求者自确认
     approvalService,
+    scheduleMemoryConsolidation,
   });
 
   // Skill 服务

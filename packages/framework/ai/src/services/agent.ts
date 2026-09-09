@@ -2,12 +2,13 @@
  * Agent CRUD 服务 — 基于 ai_agent 表的完整实现
  */
 
-import type { Database } from "@ventostack/database";
+import type { Database } from '@ventostack/database';
 import type { AgentRuntimeClient, SandboxStatus } from '../agent-runtime/types';
 
 export interface CreateAgentParams {
   name: string;
   description?: string;
+  welcomeMessage?: string;
   /** 可用模型 ID 列表（PG text[]），至少 1 个 */
   model: string[];
   systemPrompt: string;
@@ -29,6 +30,7 @@ export interface CreateAgentParams {
 export interface UpdateAgentParams {
   name?: string;
   description?: string;
+  welcomeMessage?: string;
   model?: string[];
   systemPrompt?: string;
   tools?: unknown[];
@@ -48,6 +50,7 @@ export interface AgentItem {
   id: string;
   name: string;
   description: string | null;
+  welcomeMessage: string | null;
   model: string[];
   systemPrompt: string;
   tools: unknown;
@@ -83,14 +86,15 @@ export interface AgentListParams {
 }
 
 /** 依赖引用校验：由装配层注入，用于校验 model / 知识库 / Skill / MCP 引用是否存在且归属当前租户 */
-export interface AgentRefsValidator {
-  (params: {
+export type AgentRefsValidator = (
+  params: {
     model?: string[];
     knowledgeBaseIds?: string[];
     skillIds?: string[];
     mcpServerIds?: string[];
-  }, tenantId: string): Promise<void>;
-}
+  },
+  tenantId: string,
+) => Promise<void>;
 
 /**
  * 防御性归一化：PG text[] 经驱动读出应为 string[]，
@@ -98,9 +102,9 @@ export interface AgentRefsValidator {
  */
 function toModelArray(v: unknown): string[] {
   if (Array.isArray(v)) return v as string[];
-  if (typeof v === "string") {
-    const inner = v.replace(/^\{|\}$/g, "");
-    return inner === "" ? [] : inner.split(",");
+  if (typeof v === 'string') {
+    const inner = v.replace(/^\{|\}$/g, '');
+    return inner === '' ? [] : inner.split(',');
   }
   return [];
 }
@@ -110,10 +114,14 @@ function toModelArray(v: unknown): string[] {
  * Bun.sql 会把 JS 数组序列化为逗号拼接字符串，无法直接写入 text[] 列，需显式构造字面量。
  */
 function toPgTextArray(items: string[]): string {
-  return `{${items.map((s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+  return `{${items.map((s) => `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`).join(',')}}`;
 }
 
-export function createAgentService(deps: { db: Database; validateRefs?: AgentRefsValidator; runtime?: AgentRuntimeClient }) {
+export function createAgentService(deps: {
+  db: Database;
+  validateRefs?: AgentRefsValidator;
+  runtime?: AgentRuntimeClient;
+}) {
   const { db } = deps;
 
   async function create(params: CreateAgentParams): Promise<{ id: string }> {
@@ -121,37 +129,41 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     const id = crypto.randomUUID();
     const requiresVirtualEnvironment = params.requiresVirtualEnvironment ?? false;
     if (requiresVirtualEnvironment && !deps.runtime) {
-      throw Object.assign(new Error('Agent Runtime 未配置或不可用'), { code: 'AGENT_RUNTIME_UNAVAILABLE', status: 503 });
+      throw Object.assign(new Error('Agent Runtime 未配置或不可用'), {
+        code: 'AGENT_RUNTIME_UNAVAILABLE',
+        status: 503,
+      });
     }
     const sandbox = requiresVirtualEnvironment
       ? await deps.runtime!.createSandbox({ sessionId: id })
       : undefined;
     try {
       await db.raw(
-      `INSERT INTO ai_agent (id, name, description, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id)
-       VALUES ($1, $2, $3, $4, $5::text[], $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, 'draft', $18, $19)`,
-      [
-        id,
-        params.name,
-        params.description ?? null,
-        params.systemPrompt,
-        toPgTextArray(params.model),
-        params.tools ? JSON.stringify(params.tools) : null,
-        params.knowledgeBaseIds ? JSON.stringify(params.knowledgeBaseIds) : null,
-        params.skillIds ? JSON.stringify(params.skillIds) : null,
-        params.mcpServerIds ? JSON.stringify(params.mcpServerIds) : null,
-        params.modelOverrides ? JSON.stringify(params.modelOverrides) : null,
-        params.memoryConfig ? JSON.stringify(params.memoryConfig) : null,
-        params.config ? JSON.stringify(params.config) : null,
-        params.maxIterations ?? 10,
-        params.maxTokensPerTurn ?? 4096,
-        params.isPublic ?? false,
-        params.tenantId,
-        params.createdBy,
-        requiresVirtualEnvironment,
-        sandbox?.sandboxId ?? null,
-      ],
-    );
+        `INSERT INTO ai_agent (id, name, description, welcome_message, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id)
+       VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', $19, $20)`,
+        [
+          id,
+          params.name,
+          params.description ?? null,
+          params.welcomeMessage?.trim() || null,
+          params.systemPrompt,
+          toPgTextArray(params.model),
+          params.tools ? JSON.stringify(params.tools) : null,
+          params.knowledgeBaseIds ? JSON.stringify(params.knowledgeBaseIds) : null,
+          params.skillIds ? JSON.stringify(params.skillIds) : null,
+          params.mcpServerIds ? JSON.stringify(params.mcpServerIds) : null,
+          params.modelOverrides ? JSON.stringify(params.modelOverrides) : null,
+          params.memoryConfig ? JSON.stringify(params.memoryConfig) : null,
+          params.config ? JSON.stringify(params.config) : null,
+          params.maxIterations ?? 10,
+          params.maxTokensPerTurn ?? 4096,
+          params.isPublic ?? false,
+          params.tenantId,
+          params.createdBy,
+          requiresVirtualEnvironment,
+          sandbox?.sandboxId ?? null,
+        ],
+      );
     } catch (error) {
       if (sandbox) await deps.runtime!.destroySandbox(sandbox.sandboxId).catch(() => undefined);
       throw error;
@@ -170,21 +182,70 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     const values: unknown[] = [];
     let idx = 1;
 
-    if (params.name !== undefined) { sets.push(`name = $${idx++}`); values.push(params.name); }
-    if (params.description !== undefined) { sets.push(`description = $${idx++}`); values.push(params.description); }
-    if (params.model !== undefined) { sets.push(`model = $${idx++}::text[]`); values.push(toPgTextArray(params.model)); }
-    if (params.systemPrompt !== undefined) { sets.push(`system_prompt = $${idx++}`); values.push(params.systemPrompt); }
-    if (params.tools !== undefined) { sets.push(`tools = $${idx++}`); values.push(JSON.stringify(params.tools)); }
-    if (params.knowledgeBaseIds !== undefined) { sets.push(`knowledge_base_ids = $${idx++}`); values.push(JSON.stringify(params.knowledgeBaseIds)); }
-    if (params.skillIds !== undefined) { sets.push(`skill_ids = $${idx++}`); values.push(JSON.stringify(params.skillIds)); }
-    if (params.mcpServerIds !== undefined) { sets.push(`mcp_server_ids = $${idx++}`); values.push(JSON.stringify(params.mcpServerIds)); }
-    if (params.modelOverrides !== undefined) { sets.push(`model_overrides = $${idx++}`); values.push(JSON.stringify(params.modelOverrides)); }
-    if (params.memoryConfig !== undefined) { sets.push(`memory_config = $${idx++}`); values.push(JSON.stringify(params.memoryConfig)); }
-    if (params.config !== undefined) { sets.push(`config = $${idx++}`); values.push(JSON.stringify(params.config)); }
-    if (params.maxIterations !== undefined) { sets.push(`max_iterations = $${idx++}`); values.push(params.maxIterations); }
-    if (params.maxTokensPerTurn !== undefined) { sets.push(`max_tokens_per_turn = $${idx++}`); values.push(params.maxTokensPerTurn); }
-    if (params.isPublic !== undefined) { sets.push(`is_public = $${idx++}`); values.push(params.isPublic); }
-    if (params.status !== undefined) { sets.push(`status = $${idx++}`); values.push(params.status); }
+    if (params.name !== undefined) {
+      sets.push(`name = $${idx++}`);
+      values.push(params.name);
+    }
+    if (params.description !== undefined) {
+      sets.push(`description = $${idx++}`);
+      values.push(params.description);
+    }
+    if (params.welcomeMessage !== undefined) {
+      sets.push(`welcome_message = $${idx++}`);
+      values.push(params.welcomeMessage.trim() || null);
+    }
+    if (params.model !== undefined) {
+      sets.push(`model = $${idx++}::text[]`);
+      values.push(toPgTextArray(params.model));
+    }
+    if (params.systemPrompt !== undefined) {
+      sets.push(`system_prompt = $${idx++}`);
+      values.push(params.systemPrompt);
+    }
+    if (params.tools !== undefined) {
+      sets.push(`tools = $${idx++}`);
+      values.push(JSON.stringify(params.tools));
+    }
+    if (params.knowledgeBaseIds !== undefined) {
+      sets.push(`knowledge_base_ids = $${idx++}`);
+      values.push(JSON.stringify(params.knowledgeBaseIds));
+    }
+    if (params.skillIds !== undefined) {
+      sets.push(`skill_ids = $${idx++}`);
+      values.push(JSON.stringify(params.skillIds));
+    }
+    if (params.mcpServerIds !== undefined) {
+      sets.push(`mcp_server_ids = $${idx++}`);
+      values.push(JSON.stringify(params.mcpServerIds));
+    }
+    if (params.modelOverrides !== undefined) {
+      sets.push(`model_overrides = $${idx++}`);
+      values.push(JSON.stringify(params.modelOverrides));
+    }
+    if (params.memoryConfig !== undefined) {
+      sets.push(`memory_config = $${idx++}`);
+      values.push(JSON.stringify(params.memoryConfig));
+    }
+    if (params.config !== undefined) {
+      sets.push(`config = $${idx++}`);
+      values.push(JSON.stringify(params.config));
+    }
+    if (params.maxIterations !== undefined) {
+      sets.push(`max_iterations = $${idx++}`);
+      values.push(params.maxIterations);
+    }
+    if (params.maxTokensPerTurn !== undefined) {
+      sets.push(`max_tokens_per_turn = $${idx++}`);
+      values.push(params.maxTokensPerTurn);
+    }
+    if (params.isPublic !== undefined) {
+      sets.push(`is_public = $${idx++}`);
+      values.push(params.isPublic);
+    }
+    if (params.status !== undefined) {
+      sets.push(`status = $${idx++}`);
+      values.push(params.status);
+    }
 
     if (sets.length === 0) return;
 
@@ -205,14 +266,14 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     }
 
     await db.raw(
-      `UPDATE ai_agent SET ${sets.join(", ")} WHERE ${whereClauses.join(" AND ")}`,
+      `UPDATE ai_agent SET ${sets.join(', ')} WHERE ${whereClauses.join(' AND ')}`,
       values,
     );
   }
 
   async function getById(id: string, tenantId: string): Promise<AgentItem | null> {
     const rows = await db.raw(
-      `SELECT id, name, description, model, system_prompt as "systemPrompt",
+      `SELECT id, name, description, welcome_message as "welcomeMessage", model, system_prompt as "systemPrompt",
               tools, knowledge_base_ids as "knowledgeBaseIds",
               skill_ids as "skillIds", mcp_server_ids as "mcpServerIds",
               memory_config as "memoryConfig", config,
@@ -225,17 +286,23 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     );
     if (rows.length === 0) return null;
     const r = rows[0] as Record<string, unknown>;
-    const parseJSON = (v: unknown) => typeof v === "string" ? JSON.parse(v) : v;
+    const parseJSON = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v);
     let sandboxStatus: SandboxStatus | undefined;
     const sandboxId = (r.sandboxId as string | null) ?? undefined;
     if (sandboxId) {
-      try { sandboxStatus = deps.runtime ? (await deps.runtime.getSandbox(sandboxId)).state : 'unavailable'; }
-      catch { sandboxStatus = 'unavailable'; }
+      try {
+        sandboxStatus = deps.runtime
+          ? (await deps.runtime.getSandbox(sandboxId)).state
+          : 'unavailable';
+      } catch {
+        sandboxStatus = 'unavailable';
+      }
     }
     return {
       id: r.id as string,
       name: r.name as string,
       description: (r.description as string) ?? null,
+      welcomeMessage: (r.welcomeMessage as string) ?? null,
       model: toModelArray(r.model),
       systemPrompt: r.systemPrompt as string,
       tools: parseJSON(r.tools) ?? null,
@@ -250,8 +317,10 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       isPublic: r.isPublic as boolean,
       tenantId: r.tenantId as string,
       createdBy: r.createdBy as string,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
-      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
+      createdAt:
+        r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ''),
+      updatedAt:
+        r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ''),
       requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
       ...(sandboxStatus ? { sandboxStatus } : {}),
       ...(sandboxId ? { sandboxId } : {}),
@@ -282,7 +351,9 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     }
 
     if (search) {
-      conditions.push(`(name ILIKE $${queryParams.length + 1} OR description ILIKE $${queryParams.length + 1})`);
+      conditions.push(
+        `(name ILIKE $${queryParams.length + 1} OR description ILIKE $${queryParams.length + 1})`,
+      );
       queryParams.push(`%${search}%`);
     }
 
@@ -297,7 +368,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
     const limitIdx = queryParams.length + 1;
     const offsetIdx = queryParams.length + 2;
     const rows = await db.raw(
-      `SELECT id, name, description, model, system_prompt as "systemPrompt",
+      `SELECT id, name, description, welcome_message as "welcomeMessage", model, system_prompt as "systemPrompt",
               tools, knowledge_base_ids as "knowledgeBaseIds",
               skill_ids as "skillIds", mcp_server_ids as "mcpServerIds",
               memory_config as "memoryConfig", config,
@@ -311,38 +382,49 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       [...queryParams, pageSize, offset],
     );
 
-    const list = await Promise.all((rows as Array<Record<string, unknown>>).map(async (r) => {
-      const pj = (v: unknown) => typeof v === "string" ? JSON.parse(v) : v;
-      const sandboxId = (r.sandboxId as string | null) ?? undefined;
-      let sandboxStatus: SandboxStatus | undefined;
-      if (sandboxId) {
-        try { sandboxStatus = deps.runtime ? (await deps.runtime.getSandbox(sandboxId)).state : 'unavailable'; }
-        catch { sandboxStatus = 'unavailable'; }
-      }
-      return {
-      id: r.id as string,
-      name: r.name as string,
-      description: (r.description as string) ?? null,
-      model: toModelArray(r.model),
-      systemPrompt: r.systemPrompt as string,
-      tools: pj(r.tools) ?? null,
-      knowledgeBaseIds: pj(r.knowledgeBaseIds) ?? null,
-      skillIds: pj(r.skillIds) ?? null,
-      mcpServerIds: pj(r.mcpServerIds) ?? null,
-      memoryConfig: (pj(r.memoryConfig) as Record<string, unknown> | null) ?? null,
-      config: (pj(r.config) as Record<string, unknown> | null) ?? null,
-      maxIterations: r.maxIterations == null ? null : Number(r.maxIterations),
-      maxTokensPerTurn: r.maxTokensPerTurn == null ? null : Number(r.maxTokensPerTurn),
-      status: r.status as string,
-      isPublic: r.isPublic as boolean,
-      tenantId: r.tenantId as string,
-      createdBy: r.createdBy as string,
-      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
-      updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
-      requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
-      ...(sandboxStatus ? { sandboxStatus } : {}),
-      ...(sandboxId ? { sandboxId } : {}),
-    }; }));
+    const list = await Promise.all(
+      (rows as Array<Record<string, unknown>>).map(async (r) => {
+        const pj = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v);
+        const sandboxId = (r.sandboxId as string | null) ?? undefined;
+        let sandboxStatus: SandboxStatus | undefined;
+        if (sandboxId) {
+          try {
+            sandboxStatus = deps.runtime
+              ? (await deps.runtime.getSandbox(sandboxId)).state
+              : 'unavailable';
+          } catch {
+            sandboxStatus = 'unavailable';
+          }
+        }
+        return {
+          id: r.id as string,
+          name: r.name as string,
+          description: (r.description as string) ?? null,
+          welcomeMessage: (r.welcomeMessage as string) ?? null,
+          model: toModelArray(r.model),
+          systemPrompt: r.systemPrompt as string,
+          tools: pj(r.tools) ?? null,
+          knowledgeBaseIds: pj(r.knowledgeBaseIds) ?? null,
+          skillIds: pj(r.skillIds) ?? null,
+          mcpServerIds: pj(r.mcpServerIds) ?? null,
+          memoryConfig: (pj(r.memoryConfig) as Record<string, unknown> | null) ?? null,
+          config: (pj(r.config) as Record<string, unknown> | null) ?? null,
+          maxIterations: r.maxIterations == null ? null : Number(r.maxIterations),
+          maxTokensPerTurn: r.maxTokensPerTurn == null ? null : Number(r.maxTokensPerTurn),
+          status: r.status as string,
+          isPublic: r.isPublic as boolean,
+          tenantId: r.tenantId as string,
+          createdBy: r.createdBy as string,
+          createdAt:
+            r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ''),
+          updatedAt:
+            r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ''),
+          requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+          ...(sandboxStatus ? { sandboxStatus } : {}),
+          ...(sandboxId ? { sandboxId } : {}),
+        };
+      }),
+    );
 
     return { list, total };
   }
@@ -359,19 +441,22 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       whereClauses.push(`created_by = $3`);
       values.push(opts.userId);
     }
-    const rows = await db.raw(
-      `SELECT sandbox_id as "sandboxId" FROM ai_agent WHERE ${whereClauses.join(" AND ")}`,
+    const rows = (await db.raw(
+      `SELECT sandbox_id as "sandboxId" FROM ai_agent WHERE ${whereClauses.join(' AND ')}`,
       values,
-    ) as Array<{ sandboxId?: string | null }>;
+    )) as Array<{ sandboxId?: string | null }>;
     if (rows.length === 0) return;
     const sandboxId = rows[0]?.sandboxId;
     if (sandboxId) {
       if (!deps.runtime) {
-        throw Object.assign(new Error('Agent Runtime 未配置或不可用'), { code: 'AGENT_RUNTIME_UNAVAILABLE', status: 503 });
+        throw Object.assign(new Error('Agent Runtime 未配置或不可用'), {
+          code: 'AGENT_RUNTIME_UNAVAILABLE',
+          status: 503,
+        });
       }
       await deps.runtime.destroySandbox(sandboxId);
     }
-    await db.raw(`DELETE FROM ai_agent WHERE ${whereClauses.join(" AND ")}`, values);
+    await db.raw(`DELETE FROM ai_agent WHERE ${whereClauses.join(' AND ')}`, values);
   }
 
   async function publish(
@@ -387,7 +472,7 @@ export function createAgentService(deps: { db: Database; validateRefs?: AgentRef
       values.push(opts.userId);
     }
     await db.raw(
-      `UPDATE ai_agent SET status = 'active', updated_at = NOW() WHERE ${whereClauses.join(" AND ")}`,
+      `UPDATE ai_agent SET status = 'active', updated_at = NOW() WHERE ${whereClauses.join(' AND ')}`,
       values,
     );
   }

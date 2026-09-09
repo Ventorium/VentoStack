@@ -2,29 +2,49 @@
  * 数据库迁移注册与执行
  */
 
-import { createTagLogger } from "@ventostack/core";
-import { type SqlExecutor, createMigrationRunner } from "@ventostack/database";
-import { createI18nTables } from "@ventostack/i18n";
-import { addDirectorySupport, addTenantIdToOssFile, createOssTables } from "@ventostack/oss";
-import { createSchedulerTables } from "@ventostack/scheduler";
-import { createAiKnowledgeTables, createAiAgentTables, createAiProviderTables, createAiSkillTables, addModelCapabilities, addReasoningOptions, addProviderModelsDevSlug, dropAgentType, createAiMcpTables, addKbDocumentCount, addAgentRuntime, agentModelsArray, dropAiToolLog } from "@ventostack/ai";
-import { createTraceTables } from "@ventostack/ai-trace";
-import { createNotifyTables } from "@ventostack/notification";
-import { createWorkflowTables, enhanceWorkflowTables, addBusinessType, addWorkflowHistoryTenant } from "@ventostack/workflow";
-import { createSysTables } from "./migrations/001_create_sys_tables";
-import { addPasswordChangedAt } from "./migrations/003_password_changed_at";
-import { addPasskeySupport } from "./migrations/004_passkey_support";
-import { addLoginMethodColumn } from "./migrations/005_login_method_column";
-import { addDictDataUnique } from "./migrations/006_dict_data_unique";
-import { createRoleDeptTable } from "./migrations/007_create_role_dept_table";
-import { removeSysTheme } from "./migrations/008_remove_sys_theme";
-import { addDictIsSystem } from "./migrations/009_dict_is_system";
-import { addSortRemark } from "./migrations/010_add_sort_remark";
-import { createTagTables } from "./migrations/011_create_tag_tables";
-import { addDeptLeaderUserId } from "./migrations/012_add_dept_leader_user_id";
-import { dropDeptPhoneEmail } from "./migrations/013_drop_dept_phone_email";
+import {
+  addAgentRuntime,
+  addAgentWelcomeMessage,
+  addKbDocumentCount,
+  addModelCapabilities,
+  addProviderModelsDevSlug,
+  addReasoningOptions,
+  agentModelsArray,
+  createAiAgentTables,
+  createAiKnowledgeTables,
+  createAiMcpTables,
+  createAiProviderTables,
+  createAiSkillTables,
+  dropAgentType,
+  dropAiToolLog,
+} from '@ventostack/ai';
+import { createTraceTables } from '@ventostack/ai-trace';
+import { createTagLogger } from '@ventostack/core';
+import { type SqlExecutor, createMigrationRunner } from '@ventostack/database';
+import { createI18nTables } from '@ventostack/i18n';
+import { createNotifyTables } from '@ventostack/notification';
+import { addDirectorySupport, addTenantIdToOssFile, createOssTables } from '@ventostack/oss';
+import { createSchedulerTables } from '@ventostack/scheduler';
+import {
+  addBusinessType,
+  addWorkflowHistoryTenant,
+  createWorkflowTables,
+  enhanceWorkflowTables,
+} from '@ventostack/workflow';
+import { createSysTables } from './migrations/001_create_sys_tables';
+import { addPasswordChangedAt } from './migrations/003_password_changed_at';
+import { addPasskeySupport } from './migrations/004_passkey_support';
+import { addLoginMethodColumn } from './migrations/005_login_method_column';
+import { addDictDataUnique } from './migrations/006_dict_data_unique';
+import { createRoleDeptTable } from './migrations/007_create_role_dept_table';
+import { removeSysTheme } from './migrations/008_remove_sys_theme';
+import { addDictIsSystem } from './migrations/009_dict_is_system';
+import { addSortRemark } from './migrations/010_add_sort_remark';
+import { createTagTables } from './migrations/011_create_tag_tables';
+import { addDeptLeaderUserId } from './migrations/012_add_dept_leader_user_id';
+import { dropDeptPhoneEmail } from './migrations/013_drop_dept_phone_email';
 
-const logger = createTagLogger("migrations");
+const logger = createTagLogger('migrations');
 
 /**
  * 注册并执行所有迁移
@@ -80,6 +100,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addAgentRuntime);
   runner.addMigration(agentModelsArray);
   runner.addMigration(dropAiToolLog);
+  runner.addMigration(addAgentWelcomeMessage);
 
   // AI 链路追踪
   runner.addMigration(createTraceTables);
@@ -87,8 +108,8 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   const executed = await runner.up();
 
   if (executed.length > 0) {
-    logger.info(`Executed: ${executed.join(", ")}`);
+    logger.info(`Executed: ${executed.join(', ')}`);
   } else {
-    logger.info("All up to date");
+    logger.info('All up to date');
   }
 }
