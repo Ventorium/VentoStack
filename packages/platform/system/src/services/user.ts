@@ -7,10 +7,13 @@ import type { PasswordHasher } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import type { Database } from '@ventostack/database';
 import { DeptModel } from '../models/dept';
+import { PostModel, UserPostModel } from '../models/post';
+import { RoleModel, UserRoleModel } from '../models/role';
 import { UserModel } from '../models/user';
 import { createCacheKeyNamespace } from './cache-key';
 import type { CacheKeyNamespace } from './cache-key';
 import type { ConfigService } from './config';
+import type { ResolvedDataScope } from './data-scope';
 import { validatePassword } from './password-policy';
 
 /** 创建用户参数 */
@@ -90,6 +93,8 @@ export interface UserListParams {
   username?: string;
   status?: number;
   deptId?: string;
+  /** 由路由层统一解析的数据访问范围；内部任务可省略 */
+  dataScope?: ResolvedDataScope;
 }
 
 /** 分页结果 */
@@ -160,19 +165,20 @@ export function createUserService(deps: {
   /** 校验岗位 ID 均存在且启用，返回无效的岗位 ID */
   async function findInvalidPostIds(postIds: string[]): Promise<string[]> {
     if (postIds.length === 0) return [];
-    const placeholders = postIds.map((_, i) => `$${i + 1}`);
-    const rows = await db.raw(
-      `SELECT id FROM sys_post WHERE id IN (${placeholders.join(', ')}) AND status = 1 AND deleted_at IS NULL`,
-      postIds,
-    );
-    const valid = new Set((rows as Array<{ id: string }>).map((r) => r.id));
+    const rows = await db
+      .query(PostModel)
+      .where('id', 'IN', postIds)
+      .where('status', '=', 1)
+      .select('id')
+      .list();
+    const valid = new Set(rows.map((row) => row.id));
     return postIds.filter((id) => !valid.has(id));
   }
 
   /** 覆盖用户的岗位关联（单条 CTE：DELETE+INSERT+ON CONFLICT，避免 Bun.sql 多连接池禁止 BEGIN/COMMIT 的限制） */
   async function assignUserPosts(userId: string, postIds: string[]): Promise<void> {
     if (postIds.length === 0) {
-      await db.raw('DELETE FROM sys_user_post WHERE user_id = $1', [userId]);
+      await db.query(UserPostModel).where('user_id', '=', userId).hardDelete();
       return;
     }
     const placeholders = postIds.map((_, i) => `$${i * 2 + 2}`).join(', ');
@@ -191,19 +197,20 @@ export function createUserService(deps: {
   /** 校验角色 ID 均存在且启用，返回无效的角色 ID */
   async function findInvalidRoleIds(roleIds: string[]): Promise<string[]> {
     if (roleIds.length === 0) return [];
-    const placeholders = roleIds.map((_, i) => `$${i + 1}`);
-    const rows = await db.raw(
-      `SELECT id FROM sys_role WHERE id IN (${placeholders.join(', ')}) AND status = 1 AND deleted_at IS NULL`,
-      roleIds,
-    );
-    const valid = new Set((rows as Array<{ id: string }>).map((r) => r.id));
+    const rows = await db
+      .query(RoleModel)
+      .where('id', 'IN', roleIds)
+      .where('status', '=', 1)
+      .select('id')
+      .list();
+    const valid = new Set(rows.map((row) => row.id));
     return roleIds.filter((id) => !valid.has(id));
   }
 
   /** 覆盖用户的角色关联（单条 CTE：DELETE+INSERT+ON CONFLICT，避免 BEGIN/COMMIT 限制） */
   async function assignUserRoles(userId: string, roleIds: string[]): Promise<void> {
     if (roleIds.length === 0) {
-      await db.raw('DELETE FROM sys_user_role WHERE user_id = $1', [userId]);
+      await db.query(UserRoleModel).where('user_id', '=', userId).hardDelete();
       return;
     }
     const placeholders = roleIds.map((_, i) => `$${i * 2 + 2}`).join(', ');
@@ -354,7 +361,12 @@ export function createUserService(deps: {
       if (params.remark !== undefined) updates.remark = params.remark;
 
       // 当既无字段需要更新、也不调整岗位/角色时，直接返回
-      if (Object.keys(updates).length === 0 && dedupPostIds === undefined && dedupRoleIds === undefined) return;
+      if (
+        Object.keys(updates).length === 0 &&
+        dedupPostIds === undefined &&
+        dedupRoleIds === undefined
+      )
+        return;
 
       // 注：Bun.sql 多连接池禁止事务里 BEGIN/COMMIT，sys_user update + sys_user_post
       // 覆盖写拆为两条串行 SQL；DELETE+INSERT 合并到 assignUserPosts 内部单条 CTE 保证原子。
@@ -438,7 +450,7 @@ export function createUserService(deps: {
     },
 
     async list(params) {
-      const { page = 1, pageSize = 10, username, status, deptId } = params;
+      const { page = 1, pageSize = 10, username, status, deptId, dataScope } = params;
 
       let query = db.query(UserModel);
 
@@ -453,6 +465,16 @@ export function createUserService(deps: {
       } else if (deptId) {
         const deptIds = await collectDescendantDeptIds(db, deptId);
         query = query.where('dept_id', 'IN', deptIds);
+      }
+      if (dataScope && !dataScope.all) {
+        if (dataScope.departmentIds.length > 0) {
+          query = query.where('dept_id', 'IN', dataScope.departmentIds);
+          if (dataScope.self) query = query.orWhere('id', '=', dataScope.userId);
+        } else if (dataScope.self) {
+          query = query.where('id', '=', dataScope.userId);
+        } else {
+          query = query.where('id', '=', '__data_scope_denied__');
+        }
       }
 
       const total = await query.count();
@@ -492,7 +514,7 @@ export function createUserService(deps: {
       }));
 
       // 批量获取用户标签、岗位与角色
-      let tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
+      const tagMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       let postMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       let roleMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       if (list.length > 0) {
@@ -502,7 +524,7 @@ export function createUserService(deps: {
           `SELECT ut.user_id, t.id, t.name, t.code
            FROM sys_user_tag ut
            JOIN sys_tag t ON t.id = ut.tag_id
-           WHERE ut.user_id IN (${placeholders.join(", ")}) AND t.status = 1 AND t.deleted_at IS NULL`,
+           WHERE ut.user_id IN (${placeholders.join(', ')}) AND t.status = 1 AND t.deleted_at IS NULL`,
           userIds,
         );
         for (const tr of tagRows as Array<{
@@ -564,7 +586,7 @@ export function createUserService(deps: {
     },
 
     async export(params) {
-      const { username, status, deptId } = params ?? {};
+      const { username, status, deptId, dataScope } = params ?? {};
 
       let query = db.query(UserModel);
 
@@ -578,6 +600,13 @@ export function createUserService(deps: {
         query = query.where('dept_id', 'IS NULL');
       } else if (deptId) {
         query = query.where('dept_id', '=', deptId);
+      }
+      if (dataScope && !dataScope.all) {
+        if (dataScope.departmentIds.length > 0) {
+          query = query.where('dept_id', 'IN', dataScope.departmentIds);
+          if (dataScope.self) query = query.orWhere('id', '=', dataScope.userId);
+        } else if (dataScope.self) query = query.where('id', '=', dataScope.userId);
+        else query = query.where('id', '=', '__data_scope_denied__');
       }
 
       const rows = await query

@@ -1,11 +1,12 @@
-import { MoreOutlined } from "@ant-design/icons";
-import { Button, Dropdown, Popconfirm, Space } from "antd";
+import { MoreOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Popconfirm, Space } from 'antd';
 
 export interface ActionItem {
   label: string;
   onClick: () => void;
   danger?: boolean;
   confirm?: string;
+  disabled?: boolean;
 }
 
 interface ActionColumnProps {
@@ -24,6 +25,7 @@ const ActionColumn = ({ items, maxInline = 2 }: ActionColumnProps) => {
         type="link"
         size="small"
         danger={item.danger}
+        disabled={item.disabled}
         onClick={item.confirm ? undefined : item.onClick}
       >
         {item.label}
@@ -47,6 +49,9 @@ const ActionColumn = ({ items, maxInline = 2 }: ActionColumnProps) => {
           menu={{
             items: overflow.map((item, i) => ({
               key: `overflow-${i}`,
+              disabled: item.disabled,
+              danger: item.danger,
+              onClick: item.confirm ? undefined : item.onClick,
               label: item.confirm ? (
                 <Popconfirm
                   title={item.confirm}
@@ -54,22 +59,14 @@ const ActionColumn = ({ items, maxInline = 2 }: ActionColumnProps) => {
                   okText="确定"
                   cancelText="取消"
                 >
-                  <span style={item.danger ? { color: "#ff4d4f" } : undefined}>{item.label}</span>
+                  <span>{item.label}</span>
                 </Popconfirm>
               ) : (
-                <span
-                  style={item.danger ? { color: "#ff4d4f" } : undefined}
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    item.onClick();
-                  }}
-                >
-                  {item.label}
-                </span>
+                item.label
               ),
             })),
           }}
-          trigger={["click"]}
+          trigger={['click']}
         >
           <Button type="link" size="small" icon={<MoreOutlined />} />
         </Dropdown>

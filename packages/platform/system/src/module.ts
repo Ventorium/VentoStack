@@ -5,6 +5,7 @@
 
 import type {
   AuthSessionManager,
+  AuthUser,
   JWTManager,
   MultiDeviceManager,
   PasswordHasher,
@@ -24,10 +25,12 @@ import { createCacheKeyNamespace } from './services/cache-key';
 import type { CacheKeyNamespace } from './services/cache-key';
 
 import { OperationLogModel } from './models/log';
+import { UserRoleModel } from './models/role';
 import { UserModel } from './models/user';
 import { createAuthService } from './services/auth';
 import { createConfigService } from './services/config';
 import type { CreateConfigParams } from './services/config';
+import { createDataScopeResolver } from './services/data-scope';
 import { createDeptService } from './services/dept';
 import type { CreateDeptParams, UpdateDeptParams } from './services/dept';
 import { createDictService } from './services/dict';
@@ -125,7 +128,6 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     passwordHasher,
     totp,
     rbac,
-    rowFilter,
     auditLog,
     authSessionManager,
     eventBus,
@@ -159,7 +161,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const postService = createPostService({ db });
   const dictService = createDictService({ db, cache, tenantId });
   const noticeService = createNoticeService({ db });
-  const permissionLoader = createPermissionLoader({ db, rbac, rowFilter });
+  const permissionLoader = createPermissionLoader({ db, rbac });
+  const dataScopeResolver = createDataScopeResolver(db);
   const menuTreeBuilder = createMenuTreeBuilder({ db });
   const passkeyService = createPasskeyService({
     db,
@@ -256,7 +259,15 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
   );
 
-  router.merge(createAuthRoutes(authService, authMiddleware, perm, deps.trustedProxies ?? [], deps.secureCookies ?? false));
+  router.merge(
+    createAuthRoutes(
+      authService,
+      authMiddleware,
+      perm,
+      deps.trustedProxies ?? [],
+      deps.secureCookies ?? false,
+    ),
+  );
   router.merge(
     createPasskeyRoutes(
       passkeyService,
@@ -267,7 +278,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       deps.trustedProxies ?? [],
     ),
   );
-  router.merge(createUserRoutes(userService, authMiddleware, perm, opLogMiddleware));
+  router.merge(
+    createUserRoutes(userService, authMiddleware, perm, dataScopeResolver, opLogMiddleware),
+  );
 
   // CRUD routes for other entities
   router.merge(
@@ -365,6 +378,28 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           },
           perm('system:role', 'update'),
         );
+        r.get(
+          '/api/system/roles/:id/data-scope',
+          {
+            responses: {
+              200: {
+                scope: { type: 'int' as const, description: '数据范围' },
+                deptIds: { type: 'array' as const, description: '自定义部门 ID 列表' },
+              },
+            },
+            openapi: {
+              summary: '获取角色数据范围',
+              tags: ['role'],
+              operationId: 'getRoleDataScope',
+            },
+          },
+          async (ctx) => {
+            const id = (ctx.params as Record<string, string>).id!;
+            const dataScope = await roleService.getDataScope(id);
+            return dataScope ? success(dataScope) : fail('角色不存在', 404);
+          },
+          perm('system:role', 'list'),
+        );
         r.put(
           '/api/system/roles/:id/data-scope',
           {
@@ -381,12 +416,35 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const id = (ctx.params as Record<string, string>).id!;
             const body = await parseBody(ctx.request);
-            await roleService.assignDataScope(
-              id,
-              body.scope as number,
-              body.deptIds as string[] | undefined,
-            );
-            return success(null);
+            const role = await roleService.getById(id);
+            if (!role) return fail('角色不存在', 404);
+            if (role.code === 'admin' && body.scope !== 1) {
+              return fail('超级管理员必须拥有全部数据权限', 400);
+            }
+
+            const actor = ctx.user as AuthUser | undefined;
+            if (!actor) return fail('未登录或登录已过期', 401);
+            const actorScope = await dataScopeResolver.resolve(actor);
+            const requestedDeptIds = (body.deptIds as string[] | undefined) ?? [];
+            if (!actorScope.all) {
+              if (body.scope === 1) return fail('不能授予超出自身范围的数据权限', 403);
+              if (
+                body.scope === 5 &&
+                requestedDeptIds.some((deptId) => !actorScope.departmentIds.includes(deptId))
+              ) {
+                return fail('不能选择自身数据权限范围外的部门', 403);
+              }
+            }
+
+            try {
+              await roleService.assignDataScope(id, body.scope as number, requestedDeptIds, {
+                all: actorScope.all,
+                departmentIds: actorScope.departmentIds,
+              });
+              return success(null);
+            } catch (error) {
+              return fail(safeErrorMessage(error, '数据权限设置失败'), 400);
+            }
           },
           perm('system:role', 'update'),
         );
@@ -406,11 +464,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             for (const id of ids) {
               try {
                 // Check if role has users assigned
-                const cnt = (await db.raw(
-                  'SELECT COUNT(*) as cnt FROM sys_user_role WHERE role_id = $1',
-                  [id],
-                )) as Array<{ cnt: number }>;
-                if (Number(cnt[0]?.cnt ?? 0) > 0) {
+                const count = await db.query(UserRoleModel).where('role_id', '=', id).count();
+                if (count > 0) {
                   skipped++;
                   continue;
                 }
@@ -1375,6 +1430,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+        return fail('用户不存在', 404, 404);
+      }
       await db
         .query(UserModel)
         .where('id', '=', id)
@@ -1395,6 +1453,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+        return fail('用户不存在', 404, 404);
+      }
       const body = await parseBody(ctx.request);
       const blacklisted = body.blacklisted as boolean;
       await db.query(UserModel).where('id', '=', id).update({ blacklisted });
@@ -1420,6 +1481,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       let skipped = 0;
       for (const id of ids) {
         if (id === user.id) {
+          skipped++;
+          continue;
+        }
+        if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
           skipped++;
           continue;
         }
@@ -1458,6 +1523,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
           continue;
         }
+        if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+          skipped++;
+          continue;
+        }
         const row = await db.query(UserModel).where('id', '=', id).select('status').get();
         if (!row || row.status === targetStatus) {
           skipped++;
@@ -1486,6 +1555,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       let successCount = 0;
       let skipped = 0;
       for (const id of ids) {
+        if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+          skipped++;
+          continue;
+        }
         try {
           await userService.resetPassword(id, defaultPwd);
           successCount++;
@@ -1507,6 +1580,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canAccessUser(ctx.user as AuthUser, id))) {
+        return fail('用户不存在', 404, 404);
+      }
       const tags = await tagService.getUserTags(id);
       return success(tags);
     },
@@ -1523,6 +1599,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+        return fail('用户不存在', 404, 404);
+      }
       const body = await parseBody(ctx.request);
       const tagIds = (body.tagIds as string[]) ?? [];
       await tagService.assignUserTags(id, tagIds);

@@ -5,34 +5,49 @@
  * 避免 get/post 等快捷方法将 authMiddleware 误识别为 handler。
  */
 
-import { createRouter, fail, pageOf, paginated, parseBody, safeErrorMessage, success } from "@ventostack/core";
-import type { Middleware, Router } from "@ventostack/core";
-import type { UserService } from "../services/user";
+import type { AuthUser } from '@ventostack/auth';
+import {
+  createRouter,
+  fail,
+  pageOf,
+  paginated,
+  parseBody,
+  safeErrorMessage,
+  success,
+} from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
+import { DataScopeResolutionError, type DataScopeResolver } from '../services/data-scope';
+import type { CreateUserParams, UpdateUserParams, UserService } from '../services/user';
 
 const userItemSchema = {
-  id: { type: "uuid" as const, description: "用户 ID" },
-  username: { type: "string" as const, description: "用户名" },
-  nickname: { type: "string" as const, description: "昵称" },
-  email: { type: "string" as const, format: "email", description: "邮箱" },
-  phone: { type: "string" as const, format: "phone", description: "手机号" },
-  avatar: { type: "string" as const, description: "头像 URL" },
-  status: { type: "int" as const, description: "状态 0=停用 1=正常" },
-  deptId: { type: "uuid" as const, description: "部门 ID" },
-  createdAt: { type: "date" as const, description: "创建时间" },
+  id: { type: 'uuid' as const, description: '用户 ID' },
+  username: { type: 'string' as const, description: '用户名' },
+  nickname: { type: 'string' as const, description: '昵称' },
+  email: { type: 'string' as const, format: 'email', description: '邮箱' },
+  phone: { type: 'string' as const, format: 'phone', description: '手机号' },
+  avatar: { type: 'string' as const, description: '头像 URL' },
+  status: { type: 'int' as const, description: '状态 0=停用 1=正常' },
+  deptId: { type: 'uuid' as const, description: '部门 ID' },
+  createdAt: { type: 'date' as const, description: '创建时间' },
 };
 
 const paginatedUserSchema = {
-  list: { type: "array" as const, items: { type: "object" as const, properties: userItemSchema }, description: "用户列表" },
-  total: { type: "int" as const, description: "总数" },
-  page: { type: "int" as const, description: "当前页" },
-  pageSize: { type: "int" as const, description: "每页数量" },
-  totalPages: { type: "int" as const, description: "总页数" },
+  list: {
+    type: 'array' as const,
+    items: { type: 'object' as const, properties: userItemSchema },
+    description: '用户列表',
+  },
+  total: { type: 'int' as const, description: '总数' },
+  page: { type: 'int' as const, description: '当前页' },
+  pageSize: { type: 'int' as const, description: '每页数量' },
+  totalPages: { type: 'int' as const, description: '总页数' },
 };
 
 export function createUserRoutes(
   userService: UserService,
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
+  dataScopeResolver: DataScopeResolver,
   operationLogMiddleware?: Middleware,
 ): Router {
   const router = createRouter();
@@ -42,188 +57,218 @@ export function createUserRoutes(
   }
 
   router.get(
-    "/api/system/users",
+    '/api/system/users',
     {
       query: {
-        page: { type: "int" as const, default: 1, description: "页码" },
-        pageSize: { type: "int" as const, default: 10, description: "每页数量" },
-        username: { type: "string" as const, description: "用户名筛选" },
-        status: { type: "int" as const, description: "状态筛选" },
-        deptId: { type: "string" as const, description: "部门 ID 筛选，__none__ 表示无部门" },
+        page: { type: 'int' as const, default: 1, description: '页码' },
+        pageSize: { type: 'int' as const, default: 10, description: '每页数量' },
+        username: { type: 'string' as const, description: '用户名筛选' },
+        status: { type: 'int' as const, description: '状态筛选' },
+        deptId: { type: 'string' as const, description: '部门 ID 筛选，__none__ 表示无部门' },
       },
       responses: { 200: paginatedUserSchema },
-      openapi: { summary: "获取用户列表", tags: ["user"], operationId: "listUsers" },
+      openapi: { summary: '获取用户列表', tags: ['user'], operationId: 'listUsers' },
     },
     async (ctx) => {
+      const currentUser = ctx.user as AuthUser;
+      const dataScope = await dataScopeResolver.resolve(currentUser);
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
+      const query = ctx.query as Record<string, unknown>;
       const result = await userService.list({
         page,
         pageSize,
-        username: (ctx.query as Record<string, unknown>).username as string | undefined,
-        status: (ctx.query as Record<string, unknown>).status as number | undefined,
-        deptId: (ctx.query as Record<string, unknown>).deptId as string | undefined,
+        ...(typeof query.username === 'string' ? { username: query.username } : {}),
+        ...(typeof query.status === 'number' ? { status: query.status } : {}),
+        ...(typeof query.deptId === 'string' ? { deptId: query.deptId } : {}),
+        dataScope,
       });
       return paginated(result.items, result.total, result.page, result.pageSize);
     },
-    perm("system:user", "list"),
+    perm('system:user', 'list'),
   );
 
   router.get(
-    "/api/system/users/:id",
+    '/api/system/users/:id',
     {
       responses: { 200: userItemSchema },
-      openapi: { summary: "获取用户详情", tags: ["user"], operationId: "getUser" },
+      openapi: { summary: '获取用户详情', tags: ['user'], operationId: 'getUser' },
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canAccessUser(ctx.user as AuthUser, id)))
+        return fail('用户不存在', 404, 404);
       const user = await userService.getById(id);
-      if (!user) return fail("用户不存在", 404, 404);
+      if (!user) return fail('用户不存在', 404, 404);
       return success(user);
     },
-    perm("system:user", "query"),
+    perm('system:user', 'query'),
   );
 
   router.post(
-    "/api/system/users",
+    '/api/system/users',
     {
       body: {
         username: {
-          type: "string" as const,
+          type: 'string' as const,
           required: true,
           min: 3,
           max: 50,
-          description: "用户名",
+          description: '用户名',
         },
-        password: { type: "string" as const, required: true, min: 6, description: "密码" },
-        nickname: { type: "string" as const, description: "昵称" },
-        email: { type: "string" as const, format: "email", description: "邮箱" },
-        phone: { type: "string" as const, format: "phone", description: "手机号" },
-        deptId: { type: "uuid" as const, description: "部门 ID" },
-        roleIds: { type: "array" as const, description: "角色 ID 列表" },
-        postIds: { type: "array" as const, description: "岗位 ID 列表" },
-        status: { type: "int" as const, default: 1, description: "状态" },
+        password: { type: 'string' as const, required: true, min: 6, description: '密码' },
+        nickname: { type: 'string' as const, description: '昵称' },
+        email: { type: 'string' as const, format: 'email', description: '邮箱' },
+        phone: { type: 'string' as const, format: 'phone', description: '手机号' },
+        deptId: { type: 'uuid' as const, description: '部门 ID' },
+        roleIds: { type: 'array' as const, description: '角色 ID 列表' },
+        postIds: { type: 'array' as const, description: '岗位 ID 列表' },
+        status: { type: 'int' as const, default: 1, description: '状态' },
       },
-      responses: { 200: { id: { type: "uuid" as const, description: "用户 ID" } } },
-      openapi: { summary: "创建用户", tags: ["user"], operationId: "createUser" },
+      responses: { 200: { id: { type: 'uuid' as const, description: '用户 ID' } } },
+      openapi: { summary: '创建用户', tags: ['user'], operationId: 'createUser' },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const result = await userService.create(body as any);
+        if (
+          !(await dataScopeResolver.canAssignDepartment(
+            ctx.user as AuthUser,
+            body.deptId as string | undefined,
+          ))
+        )
+          return fail('无权在该部门创建用户', 403, 403);
+        const result = await userService.create(body as unknown as CreateUserParams);
         return success(result);
       } catch (e) {
-        return fail(safeErrorMessage(e, "创建失败"), 400);
+        if (e instanceof DataScopeResolutionError) throw e;
+        return fail(safeErrorMessage(e, '创建失败'), 400);
       }
     },
-    perm("system:user", "create"),
+    perm('system:user', 'create'),
   );
 
   router.put(
-    "/api/system/users/:id",
+    '/api/system/users/:id',
     {
       body: {
-        nickname: { type: "string" as const, description: "昵称" },
-        email: { type: "string" as const, format: "email", description: "邮箱" },
-        phone: { type: "string" as const, format: "phone", description: "手机号" },
-        deptId: { type: "uuid" as const, description: "部门 ID" },
-        roleIds: { type: "array" as const, description: "角色 ID 列表" },
-        postIds: { type: "array" as const, description: "岗位 ID 列表" },
-        status: { type: "int" as const, description: "状态" },
+        nickname: { type: 'string' as const, description: '昵称' },
+        email: { type: 'string' as const, format: 'email', description: '邮箱' },
+        phone: { type: 'string' as const, format: 'phone', description: '手机号' },
+        deptId: { type: 'uuid' as const, description: '部门 ID' },
+        roleIds: { type: 'array' as const, description: '角色 ID 列表' },
+        postIds: { type: 'array' as const, description: '岗位 ID 列表' },
+        status: { type: 'int' as const, description: '状态' },
       },
-      openapi: { summary: "更新用户", tags: ["user"], operationId: "updateUser" },
+      openapi: { summary: '更新用户', tags: ['user'], operationId: 'updateUser' },
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id)))
+        return fail('用户不存在', 404, 404);
       const body = await parseBody(ctx.request);
-      await userService.update(id, body as any);
+      if (
+        body.deptId !== undefined &&
+        !(await dataScopeResolver.canAssignDepartment(ctx.user as AuthUser, body.deptId as string))
+      )
+        return fail('无权将用户分配到该部门', 403, 403);
+      await userService.update(id, body as unknown as UpdateUserParams);
       return success(null);
     },
-    perm("system:user", "update"),
+    perm('system:user', 'update'),
   );
 
   router.delete(
-    "/api/system/users/:id",
+    '/api/system/users/:id',
     {
-      openapi: { summary: "删除用户", tags: ["user"], operationId: "deleteUser" },
+      openapi: { summary: '删除用户', tags: ['user'], operationId: 'deleteUser' },
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id)))
+        return fail('用户不存在', 404, 404);
       await userService.delete(id);
       return success(null);
     },
-    perm("system:user", "delete"),
+    perm('system:user', 'delete'),
   );
 
   router.put(
-    "/api/system/users/:id/reset-pwd",
+    '/api/system/users/:id/reset-pwd',
     {
       body: {
-        newPassword: { type: "string" as const, required: true, min: 6, description: "新密码" },
+        newPassword: { type: 'string' as const, required: true, min: 6, description: '新密码' },
       },
-      openapi: { summary: "重置用户密码", tags: ["user"], operationId: "resetUserPassword" },
+      openapi: { summary: '重置用户密码', tags: ['user'], operationId: 'resetUserPassword' },
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id)))
+        return fail('用户不存在', 404, 404);
       const body = await parseBody(ctx.request);
       await userService.resetPassword(id, body.newPassword as string);
       return success(null);
     },
-    perm("system:user", "resetPwd"),
+    perm('system:user', 'resetPwd'),
   );
 
   router.put(
-    "/api/system/users/:id/status",
+    '/api/system/users/:id/status',
     {
       body: {
         status: {
-          type: "int" as const,
+          type: 'int' as const,
           required: true,
           enum: [0, 1],
-          description: "状态 0=停用 1=正常",
+          description: '状态 0=停用 1=正常',
         },
       },
-      openapi: { summary: "修改用户状态", tags: ["user"], operationId: "updateUserStatus" },
+      openapi: { summary: '修改用户状态', tags: ['user'], operationId: 'updateUserStatus' },
     },
     async (ctx) => {
       const id = (ctx.params as Record<string, string>).id!;
+      if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id)))
+        return fail('用户不存在', 404, 404);
       const body = await parseBody(ctx.request);
       await userService.updateStatus(id, body.status as number);
       return success(null);
     },
-    perm("system:user", "update"),
+    perm('system:user', 'update'),
   );
 
   router.post(
-    "/api/system/users/export",
+    '/api/system/users/export',
     {
       body: {
-        username: { type: "string" as const, description: "用户名筛选" },
-        status: { type: "int" as const, description: "状态筛选" },
-        deptId: { type: "string" as const, description: "部门 ID 筛选，__none__ 表示无部门" },
+        username: { type: 'string' as const, description: '用户名筛选' },
+        status: { type: 'int' as const, description: '状态筛选' },
+        deptId: { type: 'string' as const, description: '部门 ID 筛选，__none__ 表示无部门' },
       },
-      openapi: { summary: "导出用户 CSV", tags: ["user"], operationId: "exportUsers" },
+      openapi: { summary: '导出用户 CSV', tags: ['user'], operationId: 'exportUsers' },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
+        const dataScope = await dataScopeResolver.resolve(ctx.user as AuthUser);
         const csv = await userService.export({
-          username: body.username as string | undefined,
-          status: body.status as number | undefined,
-          deptId: body.deptId as string | undefined,
+          ...(typeof body.username === 'string' ? { username: body.username } : {}),
+          ...(typeof body.status === 'number' ? { status: body.status } : {}),
+          ...(typeof body.deptId === 'string' ? { deptId: body.deptId } : {}),
+          dataScope,
         });
         return new Response(csv, {
           status: 200,
           headers: {
-            "Content-Type": "text/csv; charset=utf-8",
-            "Content-Disposition": "attachment; filename=users.csv",
+            'Content-Type': 'text/csv; charset=utf-8',
+            'Content-Disposition': 'attachment; filename=users.csv',
           },
         });
       } catch (e) {
-        return fail(safeErrorMessage(e, "导出失败"), 400);
+        if (e instanceof DataScopeResolutionError) throw e;
+        return fail(safeErrorMessage(e, '导出失败'), 400);
       }
     },
     // 导出包含全量用户数据，需独立导出权限
-    perm("system:user", "export"),
+    perm('system:user', 'export'),
   );
 
   return router;

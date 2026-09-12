@@ -3,8 +3,9 @@
  * 提供部门的 CRUD 与树形结构查询
  */
 
-import type { Database } from "@ventostack/database";
-import { DeptModel } from "../models/dept";
+import type { Database } from '@ventostack/database';
+import { DeptModel } from '../models/dept';
+import { UserModel } from '../models/user';
 
 /** 部门创建参数 */
 export interface CreateDeptParams {
@@ -61,12 +62,9 @@ export function createDeptService(deps: { db: Database }): DeptService {
 
   /** 校验负责人用户 ID 有效（存在且未删除且启用） */
   async function assertLeaderValid(userId: string): Promise<void> {
-    const rows = await db.raw("SELECT status FROM sys_user WHERE id = $1 AND deleted_at IS NULL", [
-      userId,
-    ]);
-    const user = rows[0] as { status: number } | undefined;
+    const user = await db.query(UserModel).where('id', '=', userId).select('status').get();
     if (!user || user.status !== 1) {
-      throw new Error("负责人用户不存在或已停用");
+      throw new Error('负责人用户不存在或已停用');
     }
   }
 
@@ -95,28 +93,19 @@ export function createDeptService(deps: { db: Database }): DeptService {
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(DeptModel).where("id", "=", id).update(updates);
+    await db.query(DeptModel).where('id', '=', id).update(updates);
   }
 
   async function deleteDept(id: string): Promise<void> {
-    await db.query(DeptModel).where("id", "=", id).delete();
+    await db.query(DeptModel).where('id', '=', id).delete();
   }
 
   async function getTree(): Promise<DeptTreeNode[]> {
     const rows = await db
       .query(DeptModel)
-      .select(
-        "id",
-        "parent_id",
-        "name",
-        "sort",
-        "leader_user_id",
-        "status",
-        "remark",
-        "created_at",
-      )
-      .orderBy("sort", "asc")
-      .orderBy("id", "asc")
+      .select('id', 'parent_id', 'name', 'sort', 'leader_user_id', 'status', 'remark', 'created_at')
+      .orderBy('sort', 'asc')
+      .orderBy('id', 'asc')
       .list();
 
     // 批量解析负责人昵称
@@ -125,13 +114,12 @@ export function createDeptService(deps: { db: Database }): DeptService {
     ];
     const leaderNames = new Map<string, string>();
     if (leaderIds.length > 0) {
-      const placeholders = leaderIds.map((_, i) => `$${i + 1}`);
-      const userRows = await db.raw(
-        `SELECT id, nickname, username FROM sys_user
-         WHERE id IN (${placeholders.join(", ")}) AND deleted_at IS NULL`,
-        leaderIds,
-      );
-      for (const u of userRows as Array<{ id: string; nickname: string | null; username: string }>) {
+      const userRows = await db
+        .query(UserModel)
+        .where('id', 'IN', leaderIds)
+        .select('id', 'nickname', 'username')
+        .list();
+      for (const u of userRows) {
         leaderNames.set(u.id, u.nickname || u.username);
       }
     }
@@ -142,14 +130,13 @@ export function createDeptService(deps: { db: Database }): DeptService {
       name: row.name,
       sort: row.sort ?? 0,
       leaderUserId: row.leader_user_id ?? null,
-      leaderName:
-        (row.leader_user_id && leaderNames.get(row.leader_user_id)) || "",
+      leaderName: (row.leader_user_id && leaderNames.get(row.leader_user_id)) || '',
       status: row.status ?? 1,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
       children: [],
     }));
 

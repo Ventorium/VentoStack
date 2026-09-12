@@ -1,29 +1,64 @@
-import { client } from "@/api";
-import type { MenuItem, PaginatedData, RoleItem } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, Modal, Row, Space, Table, Tag, Tree } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { client } from '@/api';
+import type { DeptItem, MenuItem, PaginatedData, RoleItem } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Form, Input, Modal, Radio, Row, Space, Table, Tag, Tree } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import type { DataNode, TreeProps } from 'antd/es/tree';
+import { useState } from 'react';
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get("/api/system/roles", { query: cleanParams(params) }) as Promise<{
+  client.get('/api/system/roles', { query: cleanParams(params) }) as Promise<{
     error?: unknown;
     data?: PaginatedData<RoleItem>;
   }>;
 
+// schema.ts 由运行中的 admin API 通过 o2t 生成；新增 GET 路由在下次生成后会自动纳入。
+const getRoleDataScope = (id: string) =>
+  (
+    client.get as unknown as (
+      path: string,
+      options: { params: { id: string } },
+    ) => Promise<{ error?: unknown; data?: { scope: number; deptIds: string[] } }>
+  )('/api/system/roles/:id/data-scope', { params: { id } });
+
 /** 将 MenuItem[] 转为 Ant Design TreeData */
-function toTreeData(items: MenuItem[]): any[] {
+function toTreeData(items: MenuItem[]): DataNode[] {
   return items.map((item) => ({
     key: item.id,
     title: item.name,
     children: item.children?.length ? toTreeData(item.children) : undefined,
   }));
+}
+
+function toDeptTreeData(items: DeptItem[]): DataNode[] {
+  return items.map((item) => ({
+    key: item.id,
+    title: item.name,
+    children: item.children?.length ? toDeptTreeData(item.children) : undefined,
+  }));
+}
+
+const DATA_SCOPE_LABELS: Record<number, string> = {
+  1: '全部数据',
+  2: '本部门',
+  3: '本部门及以下',
+  4: '仅本人',
+  5: '自定义部门',
+};
+
+function normalizeCheckedKeys(value: unknown): string[] {
+  const keys = Array.isArray(value)
+    ? value
+    : value && typeof value === 'object' && 'checked' in value && Array.isArray(value.checked)
+      ? value.checked
+      : [];
+  return keys.map(String);
 }
 
 /** 收集所有节点 key（含子级） */
@@ -75,8 +110,14 @@ const RolePage = () => {
   const [menuModalOpen, setMenuModalOpen] = useState(false);
   const [menuTree, setMenuTree] = useState<MenuItem[]>([]);
   const [checkedKeys, setCheckedKeys] = useState<string[]>([]);
-  const [assignRoleId, setAssignRoleId] = useState("");
-  const [assignRoleCode, setAssignRoleCode] = useState("");
+  const [assignRoleId, setAssignRoleId] = useState('');
+  const [assignRoleCode, setAssignRoleCode] = useState('');
+  const [scopeModalOpen, setScopeModalOpen] = useState(false);
+  const [scopeLoading, setScopeLoading] = useState(false);
+  const [scopeRole, setScopeRole] = useState<RoleItem | null>(null);
+  const [dataScope, setDataScope] = useState(1);
+  const [scopeDeptIds, setScopeDeptIds] = useState<string[]>([]);
+  const [deptTree, setDeptTree] = useState<DeptItem[]>([]);
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
@@ -110,7 +151,7 @@ const RolePage = () => {
     setModalLoading(true);
     try {
       if (editingRole) {
-        const { error } = await client.put("/api/system/roles/:id", {
+        const { error } = await client.put('/api/system/roles/:id', {
           params: { id: editingRole.id },
           body: {
             name: values.name,
@@ -120,12 +161,12 @@ const RolePage = () => {
           },
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setModalOpen(false);
           refresh();
         }
       } else {
-        const { error } = await client.post("/api/system/roles", {
+        const { error } = await client.post('/api/system/roles', {
           body: {
             name: values.name,
             code: values.code,
@@ -135,7 +176,7 @@ const RolePage = () => {
           },
         });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           refresh();
         }
@@ -146,9 +187,9 @@ const RolePage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete("/api/system/roles/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/roles/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
@@ -158,13 +199,13 @@ const RolePage = () => {
     setAssignRoleCode(r.code);
     // 并行加载菜单树和角色已有菜单
     const [menuRes, roleMenuRes] = await Promise.all([
-      client.get("/api/system/menus/tree") as Promise<{
+      client.get('/api/system/menus/tree') as Promise<{
         error?: unknown;
         data?: MenuItem[];
       }>,
       isBuiltInRole(r.code)
         ? Promise.resolve({ data: { menuIds: [] as string[] } })
-        : (client.get("/api/system/roles/:id/menus", {
+        : (client.get('/api/system/roles/:id/menus', {
             params: { id: r.id },
           }) as Promise<{ error?: unknown; data?: { menuIds?: string[] } }>),
     ]);
@@ -178,9 +219,9 @@ const RolePage = () => {
     setMenuModalOpen(true);
   };
 
-  const handleCheck = (checked: any, info: any) => {
-    const keys = (checked as string[]) ?? [];
-    const currentKey = info.node?.key as string;
+  const handleCheck: NonNullable<TreeProps['onCheck']> = (checked, info) => {
+    const keys = normalizeCheckedKeys(checked);
+    const currentKey = typeof info.node?.key === 'string' ? info.node.key : '';
     if (info.checked && currentKey) {
       // 勾选父级时自动勾选所有子级
       const descKeys = getDescendantKeys(menuTree, currentKey);
@@ -194,27 +235,67 @@ const RolePage = () => {
   };
 
   const handleAssignMenus = async () => {
-    const { error } = await client.put("/api/system/roles/:id/menus", {
+    const { error } = await client.put('/api/system/roles/:id/menus', {
       params: { id: assignRoleId },
       body: { menuIds: checkedKeys },
     });
     if (!error) {
-      msg.success("菜单权限分配成功");
+      msg.success('菜单权限分配成功');
       setMenuModalOpen(false);
     }
   };
 
-  const isBuiltInRole = (code: string) => code === "admin";
+  const isBuiltInRole = (code: string) => code === 'admin';
+
+  const openDataScope = async (role: RoleItem) => {
+    setScopeRole(role);
+    setScopeLoading(true);
+    try {
+      const [scopeRes, deptRes] = await Promise.all([
+        getRoleDataScope(role.id),
+        client.get('/api/system/depts/tree') as Promise<{ error?: unknown; data?: DeptItem[] }>,
+      ]);
+      if (scopeRes.error || deptRes.error) return;
+      setDataScope(scopeRes.data?.scope ?? 1);
+      setScopeDeptIds(scopeRes.data?.deptIds ?? []);
+      setDeptTree(deptRes.data ?? []);
+      setScopeModalOpen(true);
+    } finally {
+      setScopeLoading(false);
+    }
+  };
+
+  const saveDataScope = async () => {
+    if (!scopeRole) return;
+    if (dataScope === 5 && scopeDeptIds.length === 0) {
+      msg.error('自定义数据权限至少选择一个部门');
+      return;
+    }
+    setScopeLoading(true);
+    try {
+      const { error } = await client.put('/api/system/roles/:id/data-scope', {
+        params: { id: scopeRole.id },
+        body: dataScope === 5 ? { scope: dataScope, deptIds: scopeDeptIds } : { scope: dataScope },
+      });
+      if (!error) {
+        msg.success('数据权限设置成功');
+        setScopeModalOpen(false);
+        refresh();
+      }
+    } finally {
+      setScopeLoading(false);
+    }
+  };
 
   const handleBatchDelete = () => {
-    const names = selectedRows.map((r) => r.name).join("、");
+    const names = selectedRows.map((r) => r.name).join('、');
     Modal.confirm({
-      title: "批量删除",
+      title: '批量删除',
       content: `确定要删除以下 ${selectedRowKeys.length} 个角色吗？此操作不可恢复。\n${names}`,
-      okType: "danger",
-      okText: "确定删除",
+      okType: 'danger',
+      okText: '确定删除',
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/roles/batch-delete", {
+        const { error, data } = await client.post('/api/system/roles/batch-delete', {
           body: { ids: selectedRowKeys as string[] },
         });
         if (!error) {
@@ -232,43 +313,51 @@ const RolePage = () => {
   };
 
   const columns: ColumnsType<RoleItem> = [
-    { title: "角色名称", dataIndex: "name", key: "name", width: 160 },
-    { title: "角色标识", dataIndex: "code", key: "code", width: 160 },
+    { title: '角色名称', dataIndex: 'name', key: 'name', width: 160 },
+    { title: '角色标识', dataIndex: 'code', key: 'code', width: 160 },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: RoleItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
-    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
-    { title: "备注", dataIndex: "remark", key: "remark", ellipsis: true },
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '数据权限',
+      dataIndex: 'dataScope',
+      key: 'dataScope',
+      width: 140,
+      render: (value: number) => DATA_SCOPE_LABELS[value] ?? '未配置',
+    },
+    { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
+    {
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: RoleItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 160,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: RoleItem) => {
         const builtIn = isBuiltInRole(r.code);
         return (
           <ActionColumn
             items={[
-              { label: "编辑", onClick: () => openEdit(r), disabled: builtIn },
-              { label: "分配菜单", onClick: () => openAssignMenus(r) },
+              { label: '编辑', onClick: () => openEdit(r), disabled: builtIn },
+              { label: '分配菜单', onClick: () => openAssignMenus(r) },
+              { label: '数据权限', onClick: () => openDataScope(r), disabled: builtIn },
               {
-                label: "删除",
+                label: '删除',
                 onClick: () => handleDelete(r.id),
                 danger: true,
-                confirm: "确定删除该角色？",
+                confirm: '确定删除该角色？',
                 disabled: builtIn,
               },
             ]}
@@ -287,12 +376,7 @@ const RolePage = () => {
             <Input placeholder="角色名称" prefix={<SearchOutlined />} />
           </Form.Item>
           <Form.Item name="status">
-            <DictSelect
-              typeCode="sys_status"
-              placeholder="状态"
-              allowClear
-              className="w-[100px]"
-            />
+            <DictSelect typeCode="sys_status" placeholder="状态" allowClear className="w-[100px]" />
           </Form.Item>
           <Space>
             <Button type="primary" onClick={handleSearch}>
@@ -321,7 +405,7 @@ const RolePage = () => {
       >
         {hasSelected && (
           <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-            已选 {selectedRowKeys.length} 项{" "}
+            已选 {selectedRowKeys.length} 项{' '}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择
             </Button>
@@ -346,7 +430,7 @@ const RolePage = () => {
         />
       </Card>
       <Modal
-        title={editingRole ? "编辑角色" : "新增角色"}
+        title={editingRole ? '编辑角色' : '新增角色'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}
@@ -385,11 +469,44 @@ const RolePage = () => {
         </Form>
       </Modal>
       <Modal
+        title={`设置数据权限${scopeRole ? ` - ${scopeRole.name}` : ''}`}
+        open={scopeModalOpen}
+        onOk={saveDataScope}
+        onCancel={() => setScopeModalOpen(false)}
+        confirmLoading={scopeLoading}
+        destroyOnHidden
+        width={560}
+      >
+        <Radio.Group
+          value={dataScope}
+          onChange={(event) => setDataScope(event.target.value as number)}
+          className="flex flex-col gap-3"
+        >
+          {Object.entries(DATA_SCOPE_LABELS).map(([value, label]) => (
+            <Radio key={value} value={Number(value)}>
+              {label}
+            </Radio>
+          ))}
+        </Radio.Group>
+        {dataScope === 5 && (
+          <div className="mt-4 max-h-[360px] overflow-y-auto rounded border border-gray-200 p-3 dark:border-gray-700">
+            <Tree
+              checkable
+              defaultExpandAll
+              selectable={false}
+              checkedKeys={scopeDeptIds}
+              onCheck={(keys) => setScopeDeptIds(normalizeCheckedKeys(keys))}
+              treeData={toDeptTreeData(deptTree)}
+            />
+          </div>
+        )}
+      </Modal>
+      <Modal
         title="分配菜单权限"
         open={menuModalOpen}
         onOk={isBuiltInRole(assignRoleCode) ? () => setMenuModalOpen(false) : handleAssignMenus}
         onCancel={() => setMenuModalOpen(false)}
-        okText={isBuiltInRole(assignRoleCode) ? "关闭" : "确定"}
+        okText={isBuiltInRole(assignRoleCode) ? '关闭' : '确定'}
         destroyOnHidden
         width={480}
       >
@@ -397,15 +514,15 @@ const RolePage = () => {
           <p className="text-gray-500 dark:text-gray-400 mb-2">内置超级管理员角色拥有所有权限</p>
         )}
         {menuTree.length > 0 && (
-          <div className="overflow-y-auto" style={{ maxHeight: "60vh" }}>
-          <Tree
-            checkable
-            defaultExpandAll
-            checkedKeys={checkedKeys}
-            onCheck={isBuiltInRole(assignRoleCode) ? () => {} : handleCheck}
-            selectable={false}
-            treeData={toTreeData(menuTree)}
-          />
+          <div className="overflow-y-auto" style={{ maxHeight: '60vh' }}>
+            <Tree
+              checkable
+              defaultExpandAll
+              checkedKeys={checkedKeys}
+              onCheck={isBuiltInRole(assignRoleCode) ? () => {} : handleCheck}
+              selectable={false}
+              treeData={toTreeData(menuTree)}
+            />
           </div>
         )}
       </Modal>

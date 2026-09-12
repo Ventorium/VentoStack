@@ -2,9 +2,9 @@
  * @ventostack/system - 测试辅助工具
  */
 
-import { mock } from "bun:test";
-import { createCache, createMemoryAdapter } from "@ventostack/cache";
-import type { Database } from "@ventostack/database";
+import { mock } from 'bun:test';
+import { createCache, createMemoryAdapter } from '@ventostack/cache';
+import type { Database } from '@ventostack/database';
 
 /** 创建 Mock SqlExecutor */
 export function createMockExecutor() {
@@ -22,11 +22,11 @@ export function createMockExecutor() {
     if (fromMatch) {
       const tableName = fromMatch[1];
       for (const [pattern, result] of results) {
-        if (pattern.includes(tableName) && !pattern.includes("WHERE")) {
+        if (pattern.includes(tableName) && !pattern.includes('WHERE')) {
           // Table-level match (no WHERE clause in pattern) - return result for COUNT/list queries
           if (
-            text.startsWith("SELECT COUNT") ||
-            (!text.includes("WHERE") && !text.includes("LIMIT"))
+            text.startsWith('SELECT COUNT') ||
+            (!text.includes('WHERE') && !text.includes('LIMIT'))
           ) {
             return result;
           }
@@ -34,12 +34,12 @@ export function createMockExecutor() {
       }
       // WHERE-level match: strip params for flexible matching
       const stripped = text
-        .replace(/\$\d+/g, "?")
-        .replace(/\s+LIMIT\s+\d+/gi, "")
-        .replace(/\s+OFFSET\s+\d+/gi, "")
+        .replace(/\$\d+/g, '?')
+        .replace(/\s+LIMIT\s+\d+/gi, '')
+        .replace(/\s+OFFSET\s+\d+/gi, '')
         .trim();
       for (const [pattern, result] of results) {
-        const patternStripped = pattern.replace(/\$\d+/g, "?");
+        const patternStripped = pattern.replace(/\$\d+/g, '?');
         if (stripped.includes(patternStripped) || patternStripped.includes(stripped)) {
           return result;
         }
@@ -64,7 +64,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
 
   function createBuilder() {
     const state: {
-      wheres: Array<{ field: string; op: string; value: unknown }>;
+      wheres: Array<{ field: string; op: string; value: unknown; connector: 'AND' | 'OR' }>;
       selects: string[];
       tableName: string;
       orderByField: string | null;
@@ -76,9 +76,9 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     } = {
       wheres: [],
       selects: [],
-      tableName: "",
+      tableName: '',
       orderByField: null,
-      orderByDir: "ASC",
+      orderByDir: 'ASC',
       limitVal: null,
       offsetVal: null,
       isDeleted: false,
@@ -88,19 +88,23 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     function buildConditions(params: unknown[]): string[] {
       const conditions: string[] = [];
       for (const w of state.wheres) {
-        if (w.op === "IN" && Array.isArray(w.value)) {
+        if (w.op === 'IN' && Array.isArray(w.value)) {
           const placeholders = w.value.map((v) => {
             params.push(v);
             return `$${params.length}`;
           });
-          conditions.push(`${w.field} IN (${placeholders.join(", ")})`);
+          conditions.push(
+            `${conditions.length > 0 ? `${w.connector} ` : ''}${w.field} IN (${placeholders.join(', ')})`,
+          );
         } else {
           params.push(w.value);
-          conditions.push(`${w.field} ${w.op} $${params.length}`);
+          conditions.push(
+            `${conditions.length > 0 ? `${w.connector} ` : ''}${w.field} ${w.op} $${params.length}`,
+          );
         }
       }
       if (state.softDelete && !state.isDeleted) {
-        conditions.push("deleted_at IS NULL");
+        conditions.push(`${conditions.length > 0 ? 'AND ' : ''}deleted_at IS NULL`);
       }
       return conditions;
     }
@@ -112,7 +116,11 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         return builder;
       },
       where(field: string, op: string, value?: unknown) {
-        state.wheres.push({ field, op, value });
+        state.wheres.push({ field, op, value, connector: 'AND' });
+        return builder;
+      },
+      orWhere(field: string, op: string, value?: unknown) {
+        state.wheres.push({ field, op, value, connector: 'OR' });
         return builder;
       },
       select(...fields: string[]) {
@@ -137,22 +145,22 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         return builder;
       },
       async get() {
-        const cols = state.selects.length > 0 ? state.selects.join(", ") : "*";
+        const cols = state.selects.length > 0 ? state.selects.join(', ') : '*';
         let sql = `SELECT ${cols} FROM ${state.tableName}`;
         const params: unknown[] = [];
         const conditions = buildConditions(params);
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
-        sql += " LIMIT 1";
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
+        sql += ' LIMIT 1';
 
         const rows = await executor(sql, params);
         return rows.length > 0 ? rows[0] : null;
       },
       async list() {
-        const cols = state.selects.length > 0 ? state.selects.join(", ") : "*";
+        const cols = state.selects.length > 0 ? state.selects.join(', ') : '*';
         let sql = `SELECT ${cols} FROM ${state.tableName}`;
         const params: unknown[] = [];
         const conditions = buildConditions(params);
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
         if (state.orderByField) sql += ` ORDER BY ${state.orderByField} ${state.orderByDir}`;
         if (state.limitVal !== null) sql += ` LIMIT ${state.limitVal}`;
         if (state.offsetVal !== null) sql += ` OFFSET ${state.offsetVal}`;
@@ -163,7 +171,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         let sql = `SELECT COUNT(*) as count FROM ${state.tableName}`;
         const params: unknown[] = [];
         const conditions = buildConditions(params);
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
 
         const rows = (await executor(sql, params)) as any[];
         if (rows.length === 0) return 0;
@@ -178,8 +186,8 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
       async insert(data: Record<string, unknown>) {
         const cols = Object.keys(data);
         const vals = Object.values(data);
-        const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
-        const sql = `INSERT INTO ${state.tableName} (${cols.join(", ")}) VALUES (${placeholders})`;
+        const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+        const sql = `INSERT INTO ${state.tableName} (${cols.join(', ')}) VALUES (${placeholders})`;
         await executor(sql, vals);
       },
       async batchInsert(rows: Record<string, unknown>[]) {
@@ -190,10 +198,10 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         for (const data of rows) {
           const vals = cols.map((c) => data[c]);
           const start = allVals.length;
-          allPlaceholders.push(`(${vals.map((_, i) => `$${start + i + 1}`).join(", ")})`);
+          allPlaceholders.push(`(${vals.map((_, i) => `$${start + i + 1}`).join(', ')})`);
           allVals.push(...vals);
         }
-        const sql = `INSERT INTO ${state.tableName} (${cols.join(", ")}) VALUES ${allPlaceholders.join(", ")}`;
+        const sql = `INSERT INTO ${state.tableName} (${cols.join(', ')}) VALUES ${allPlaceholders.join(', ')}`;
         await executor(sql, allVals);
       },
       async update(data: Record<string, unknown>) {
@@ -205,22 +213,22 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
           setParts.push(`${key} = $${params.length}`);
         }
         const conditions = buildConditions(params);
-        let sql = `UPDATE ${state.tableName} SET ${setParts.join(", ")}`;
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        let sql = `UPDATE ${state.tableName} SET ${setParts.join(', ')}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
         await executor(sql, params);
       },
       async hardDelete() {
         const params: unknown[] = [];
         const conditions = buildConditions(params);
         let sql = `DELETE FROM ${state.tableName}`;
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
         await executor(sql, params);
       },
       async delete() {
         const params: unknown[] = [];
         const conditions = buildConditions(params);
         let sql = `UPDATE ${state.tableName} SET deleted_at = NOW()`;
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
         await executor(sql, params);
       },
     };
@@ -232,7 +240,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
 
   function registerModel(modelOrName: any, tableName?: string, softDelete = false) {
     // Support both registerModel(UserModel) and registerModel("UserModel", "sys_user")
-    if (typeof modelOrName === "string") {
+    if (typeof modelOrName === 'string') {
       modelMeta.set(modelOrName, { tableName: tableName ?? modelOrName, softDelete });
     } else if (modelOrName?.tableName) {
       modelMeta.set(modelOrName.tableName, {
@@ -245,7 +253,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
   const db = {
     query(model: any) {
       // Try to get table name from model object (defineModel returns { tableName, ... })
-      const tableName = model?.tableName ?? "unknown";
+      const tableName = model?.tableName ?? 'unknown';
       const meta = modelMeta.get(tableName) ?? {
         tableName,
         softDelete: model?.options?.softDelete ?? false,
@@ -274,15 +282,15 @@ export function createMockJWTManager() {
   return {
     sign: mock(
       async (payload: any) =>
-        Buffer.from(JSON.stringify(payload)).toString("base64url") + ".mocksig",
+        Buffer.from(JSON.stringify(payload)).toString('base64url') + '.mocksig',
     ),
     verify: mock(async (token: string) => {
-      const payload = JSON.parse(Buffer.from(token.split(".")[0]!, "base64url").toString());
+      const payload = JSON.parse(Buffer.from(token.split('.')[0]!, 'base64url').toString());
       return payload;
     }),
     decode: mock((token: string) => {
       try {
-        return JSON.parse(Buffer.from(token.split(".")[0]!, "base64url").toString());
+        return JSON.parse(Buffer.from(token.split('.')[0]!, 'base64url').toString());
       } catch {
         return null;
       }
@@ -301,12 +309,12 @@ export function createMockPasswordHasher() {
 /** 创建 Mock TOTPManager */
 export function createMockTOTPManager() {
   return {
-    generateSecret: mock(() => "JBSWY3DPEHPK3PXP"),
+    generateSecret: mock(() => 'JBSWY3DPEHPK3PXP'),
     generateURI: mock(
       (secret: string, issuer: string, account: string) =>
         `otpauth://totp/${issuer}:${account}?secret=${secret}&issuer=${issuer}`,
     ),
-    generate: mock(async () => "123456"),
+    generate: mock(async () => '123456'),
     verify: mock(async () => true),
     verifyAndConsume: mock(async () => true),
   };
@@ -316,17 +324,17 @@ export function createMockTOTPManager() {
 export function createMockAuthSessionManager() {
   return {
     login: mock(async () => ({
-      sessionId: "sess-1",
-      accessToken: "at-1",
-      refreshToken: "rt-1",
+      sessionId: 'sess-1',
+      accessToken: 'at-1',
+      refreshToken: 'rt-1',
       expiresIn: 900,
       refreshExpiresIn: 604800,
     })),
     logout: mock(async () => {}),
     forceLogout: mock(async () => ({ sessions: 1, devices: 1 })),
     refreshTokens: mock(async () => ({
-      accessToken: "at-2",
-      refreshToken: "rt-2",
+      accessToken: 'at-2',
+      refreshToken: 'rt-2',
       expiresIn: 900,
       refreshExpiresIn: 604800,
     })),
@@ -366,7 +374,7 @@ export function createMockRowFilter() {
     addRule: mock(() => {}),
     getFilters: mock(() => []),
     getRules: mock(() => []),
-    buildWhereClause: mock(() => ({ sql: "", params: [] })),
+    buildWhereClause: mock(() => ({ sql: '', params: [] })),
   };
 }
 
@@ -375,7 +383,7 @@ export function createMockAuditStore() {
   const entries: any[] = [];
   return {
     append: mock(async (entry: any) => {
-      const full = { id: `audit-${entries.length}`, timestamp: Date.now(), hash: "h", ...entry };
+      const full = { id: `audit-${entries.length}`, timestamp: Date.now(), hash: 'h', ...entry };
       entries.push(full);
       return full;
     }),
@@ -399,13 +407,13 @@ export function createMockEventBus() {
 /** 创建 Mock ConfigService */
 export function createMockConfigService(overrides: Record<string, string> = {}) {
   const defaults: Record<string, string> = {
-    sys_login_max_attempts: "5",
-    sys_login_lock_minutes: "15",
-    sys_password_expire_days: "-1",
-    sys_mfa_enabled: "false",
-    sys_mfa_force: "false",
-    sys_password_min_length: "6",
-    sys_password_complexity: "low",
+    sys_login_max_attempts: '5',
+    sys_login_lock_minutes: '15',
+    sys_password_expire_days: '-1',
+    sys_mfa_enabled: 'false',
+    sys_mfa_force: 'false',
+    sys_password_min_length: '6',
+    sys_password_complexity: 'low',
     ...overrides,
   };
   return {

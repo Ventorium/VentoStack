@@ -1,11 +1,10 @@
 /**
  * @ventostack/system - PermissionLoader
- * 权限加载器：从数据库加载角色与菜单权限到 RBAC 引擎和行过滤器
+ * 权限加载器：从数据库加载角色与菜单权限到 RBAC 引擎
  * 支持全量加载、按角色重新加载
  */
 
 import type { RBAC } from '@ventostack/auth';
-import type { RowFilter } from '@ventostack/auth';
 import type { Database } from '@ventostack/database';
 import { MenuModel, RoleMenuModel, RoleModel } from '../models';
 
@@ -53,9 +52,8 @@ function parsePermission(permission: string): ParsedPermission | null {
 export function createPermissionLoader(deps: {
   db: Database;
   rbac: RBAC;
-  rowFilter: RowFilter;
 }): PermissionLoader {
-  const { db, rbac, rowFilter } = deps;
+  const { db, rbac } = deps;
 
   /**
    * 加载指定角色的权限
@@ -100,73 +98,6 @@ export function createPermissionLoader(deps: {
     });
   }
 
-  /**
-   * 加载数据范围规则到行过滤器
-   *
-   * data_scope 含义：
-   * 1 = 全部数据：不加过滤
-   * 2 = 本部门及子部门：dept_id IN (本部门 + 子部门列表)
-   * 3 = 本部门：dept_id = 用户部门 ID
-   * 4 = 仅本人：created_by = userId
-   * 5 = 自定义部门：从角色-部门关联表查询
-   */
-  async function loadDataScopeRules(): Promise<void> {
-    // 查询有自定义数据范围的角色
-    const roles = await db
-      .query(RoleModel)
-      .where('status', '=', 1)
-      .where('data_scope', 'IS NOT NULL')
-      .select('code', 'data_scope')
-      .list();
-
-    for (const role of roles) {
-      switch (role.data_scope) {
-        case 1:
-          // 全部数据：不加过滤，无需添加规则
-          break;
-
-        case 2:
-          // 本部门及子部门：需要 dept_id IN (本部门 + 递归子部门列表)
-          // TODO: 需要在行过滤器中支持动态 IN 查询，当前添加基本规则骨架
-          rowFilter.addRule({
-            resource: '*',
-            field: 'dept_id',
-            operator: 'in',
-            valueFrom: 'user',
-            value: 'deptIds', // 需要在运行时解析为本部门及子部门 ID 列表
-          });
-          break;
-
-        case 3:
-          // 本部门：dept_id = 用户部门 ID
-          rowFilter.addRule({
-            resource: '*',
-            field: 'dept_id',
-            operator: 'eq',
-            valueFrom: 'user',
-            value: 'deptId',
-          });
-          break;
-
-        case 4:
-          // 仅本人：按创建者过滤
-          rowFilter.addRule({
-            resource: '*',
-            field: 'created_by',
-            operator: 'eq',
-            valueFrom: 'user',
-            value: 'userId',
-          });
-          break;
-
-        case 5:
-          // 自定义部门需要先查询 sys_role_dept；当前行过滤器不支持异步值解析，
-          // 因此不注册一个会被误当成字面量的无效规则。
-          break;
-      }
-    }
-  }
-
   return {
     async loadAll() {
       // 1. 查询所有启用角色
@@ -177,8 +108,7 @@ export function createPermissionLoader(deps: {
         await loadRolePermissions(role.id, role.code);
       }
 
-      // 3. 加载数据范围规则
-      await loadDataScopeRules();
+      // 数据范围由请求级 DataScopeResolver 解析，不能注册为跨用户的全局 RowFilter 规则。
     },
 
     async reloadRole(roleCode) {

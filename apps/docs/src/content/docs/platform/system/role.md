@@ -98,38 +98,40 @@ PUT /api/system/role/{id}/menus
 
 ## 数据范围
 
-数据范围控制用户能看到哪些数据，通过 `dataScope` 字段配置：
+数据范围控制用户能看到哪些用户数据。角色管理页的“数据权限”操作可以单独配置范围；选择自定义部门时可在部门树中多选。
 
 | dataScope | 含义 | SQL 条件示例 |
 |-----------|------|-------------|
-| `all` | 全部数据 | 无额外条件 |
-| `dept` | 本部门数据 | `WHERE dept_id = user.deptId` |
-| `dept_and_sub` | 本部门及以下 | `WHERE dept_id IN (子部门ID列表)` |
-| `self` | 仅本人数据 | `WHERE create_by = user.id` |
-| `dept_custom` | 自定义部门 | `WHERE dept_id IN (role.deptIds)` |
+| `1` | 全部数据 | 无额外条件 |
+| `2` | 本部门数据 | `dept_id = 当前部门` |
+| `3` | 本部门及以下 | `dept_id IN (当前部门及有效子部门)` |
+| `4` | 仅本人数据 | 用户资源按 `id = 当前用户` |
+| `5` | 自定义部门 | `dept_id IN (角色选择的部门)` |
+
+```http
+GET /api/system/roles/{id}/data-scope
+
+PUT /api/system/roles/{id}/data-scope
+Content-Type: application/json
+
+{
+  "scope": 5,
+  "deptIds": ["dept-001", "dept-002"]
+}
+```
+
+范围 1—4 禁止携带 `deptIds`；范围 5 必须至少选择一个有效部门。保存角色范围和角色部门关联在同一数据库事务中完成。
 
 ### 数据范围过滤
 
-数据范围在查询时自动注入，不需要业务代码手动处理：
+一个用户有多个角色时，各角色范围取并集。任一角色拥有全部数据权限时不增加范围条件；否则部门范围与本人范围使用 `OR` 合并。没有部门、自定义部门全部失效或没有有效角色时按无数据处理，不会退化为全部数据。
 
 ```typescript
-// 框架内部的数据权限过滤逻辑
-function applyDataScope(query: SelectQuery, user: User, role: Role): SelectQuery {
-  switch (role.dataScope) {
-    case 'all':
-      return query;
-    case 'dept':
-      return query.where('dept_id', '=', user.deptId);
-    case 'dept_and_sub':
-      const subDeptIds = getSubDeptIds(user.deptId);
-      return query.whereIn('dept_id', subDeptIds);
-    case 'self':
-      return query.where('create_by', '=', user.id);
-    case 'dept_custom':
-      return query.whereIn('dept_id', role.deptIds);
-  }
-}
+const scope = await dataScopeResolver.resolve(currentUser);
+await userService.list({ page: 1, pageSize: 20, dataScope: scope });
 ```
+
+用户管理的列表、详情、创建目标部门、修改、删除、重置密码、状态修改、解锁、黑名单、批量操作、用户标签和导出均执行数据范围检查。越权访问详情或写操作返回“用户不存在”，批量操作跳过越权目标。非数据库当前 admin 不能修改拥有有效 admin 角色的用户。其他业务资源接入时，需要在模块的组合根注册该资源的部门字段或创建人字段，不能假设框架会自动识别业务表结构。
 
 ## 权限加载器
 

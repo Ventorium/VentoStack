@@ -19,6 +19,7 @@ interface ActionItem {
   onClick: () => void
   danger?: boolean       // 红色文字
   confirm?: string       // 显示 Popconfirm 确认
+  disabled?: boolean     // 禁用内联按钮或下拉菜单项
 }
 
 interface ActionColumnProps {

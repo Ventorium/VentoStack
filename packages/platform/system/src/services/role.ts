@@ -5,8 +5,9 @@
 
 import type { Cache } from '@ventostack/cache';
 import type { Database } from '@ventostack/database';
+import { DeptModel } from '../models/dept';
 import { RoleMenuModel } from '../models/menu';
-import { RoleModel } from '../models/role';
+import { RoleDeptModel, RoleModel, UserRoleModel } from '../models/role';
 import { createCacheKeyNamespace } from './cache-key';
 import type { CacheKeyNamespace } from './cache-key';
 import type { PaginatedResult } from './user';
@@ -59,8 +60,29 @@ export interface RoleService {
   }): Promise<PaginatedResult<RoleListItem>>;
   assignMenus(roleId: string, menuIds: string[]): Promise<void>;
   getRoleMenuIds(roleId: string): Promise<string[]>;
-  assignDataScope(roleId: string, scope: number, deptIds?: string[]): Promise<void>;
+  assignDataScope(
+    roleId: string,
+    scope: number,
+    deptIds: string[] | undefined,
+    grant: DataScopeGrant,
+  ): Promise<void>;
+  getDataScope(roleId: string): Promise<{ scope: number; deptIds: string[] } | null>;
 }
+
+export interface DataScopeGrant {
+  all: boolean;
+  departmentIds: string[];
+}
+
+export const DataScope = {
+  ALL: 1,
+  DEPARTMENT: 2,
+  DEPARTMENT_AND_DESCENDANTS: 3,
+  SELF: 4,
+  CUSTOM_DEPARTMENTS: 5,
+} as const;
+
+const DATA_SCOPE_VALUES = new Set<number>(Object.values(DataScope));
 
 /**
  * 创建角色服务实例
@@ -86,7 +108,7 @@ export function createRoleService(deps: {
         name,
         code,
         sort: sort ?? 0,
-        data_scope: dataScope ?? null,
+        data_scope: dataScope ?? DataScope.SELF,
         status: status ?? 1,
         remark: remark ?? null,
       });
@@ -114,12 +136,12 @@ export function createRoleService(deps: {
     },
 
     async delete(id) {
-      // 先删除角色-菜单关联
-      await db.query(RoleMenuModel).where('role_id', '=', id).hardDelete();
-      // 先删除用户-角色关联
-      await db.raw('DELETE FROM sys_user_role WHERE role_id = $1', [id]);
-      // 软删除角色
-      await db.query(RoleModel).where('id', '=', id).delete();
+      await db.transaction(async (tx) => {
+        await tx.query(RoleMenuModel).where('role_id', '=', id).hardDelete();
+        await tx.query(UserRoleModel).where('role_id', '=', id).hardDelete();
+        await tx.query(RoleDeptModel).where('role_id', '=', id).hardDelete();
+        await tx.query(RoleModel).where('id', '=', id).delete();
+      });
 
       await cache.del(ns.detailKey('role', id));
       await cache.del(ns.listKey('role'));
@@ -233,22 +255,70 @@ export function createRoleService(deps: {
       return ids;
     },
 
-    async assignDataScope(roleId, scope, deptIds) {
-      await db.query(RoleModel).where('id', '=', roleId).update({ data_scope: scope });
+    async assignDataScope(roleId, scope, deptIds, grant) {
+      if (!Number.isInteger(scope) || !DATA_SCOPE_VALUES.has(scope)) {
+        throw new Error('无效的数据权限范围');
+      }
+      if (
+        deptIds &&
+        (!Array.isArray(deptIds) ||
+          deptIds.some((id) => typeof id !== 'string' || id.length === 0 || id.length > 36))
+      ) {
+        throw new Error('部门 ID 列表格式错误');
+      }
+      const normalizedDeptIds = [...new Set(deptIds ?? [])];
+      if (scope === DataScope.CUSTOM_DEPARTMENTS && normalizedDeptIds.length === 0) {
+        throw new Error('自定义数据权限至少选择一个部门');
+      }
+      if (scope !== DataScope.CUSTOM_DEPARTMENTS && normalizedDeptIds.length > 0) {
+        throw new Error('仅自定义数据权限可选择部门');
+      }
+      if (normalizedDeptIds.length > 500) throw new Error('自定义部门数量不能超过 500');
+      if (!grant.all && scope === DataScope.ALL) {
+        throw new Error('不能授予超出自身范围的数据权限');
+      }
+      if (
+        !grant.all &&
+        scope === DataScope.CUSTOM_DEPARTMENTS &&
+        normalizedDeptIds.some((deptId) => !grant.departmentIds.includes(deptId))
+      ) {
+        throw new Error('不能选择自身数据权限范围外的部门');
+      }
 
-      // 如果提供了部门 ID，更新角色-部门关联表
-      if (deptIds) {
-        await db.raw('DELETE FROM sys_role_dept WHERE role_id = $1', [roleId]);
-
-        if (deptIds.length > 0) {
-          await db.raw(
-            `INSERT INTO sys_role_dept (role_id, dept_id) VALUES ${deptIds.map((_, i) => `($1, $${i + 2})`).join(', ')}`,
-            [roleId, ...deptIds],
-          );
+      if (normalizedDeptIds.length > 0) {
+        const validDepartments = await db
+          .query(DeptModel)
+          .where('id', 'IN', normalizedDeptIds)
+          .where('status', '=', 1)
+          .select('id')
+          .list();
+        if (validDepartments.length !== normalizedDeptIds.length) {
+          throw new Error('包含不存在或已停用的部门');
         }
       }
 
+      await db.transaction(async (tx) => {
+        await tx.query(RoleModel).where('id', '=', roleId).update({ data_scope: scope });
+        await tx.query(RoleDeptModel).where('role_id', '=', roleId).hardDelete();
+        if (normalizedDeptIds.length > 0) {
+          await tx
+            .query(RoleDeptModel)
+            .batchInsert(normalizedDeptIds.map((deptId) => ({ role_id: roleId, dept_id: deptId })));
+        }
+      });
+
       await cache.del(ns.detailKey('role', roleId));
+    },
+
+    async getDataScope(roleId) {
+      const role = await db.query(RoleModel).where('id', '=', roleId).select('data_scope').get();
+      if (!role) return null;
+      const rows = await db
+        .query(RoleDeptModel)
+        .where('role_id', '=', roleId)
+        .select('dept_id')
+        .list();
+      return { scope: role.data_scope ?? DataScope.SELF, deptIds: rows.map((row) => row.dept_id) };
     },
   };
 }

@@ -1,7 +1,7 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const RoleModel = defineModel(
-  "sys_role",
+  'sys_role',
   {
     id: column.varchar({ primary: true, length: 36 }),
     name: column.varchar({ length: 64 }),
@@ -15,10 +15,19 @@ export const RoleModel = defineModel(
 );
 
 export const UserRoleModel = defineModel(
-  "sys_user_role",
+  'sys_user_role',
   {
     user_id: column.varchar({ length: 36 }),
     role_id: column.varchar({ length: 36 }),
+  },
+  { timestamps: false },
+);
+
+export const RoleDeptModel = defineModel(
+  'sys_role_dept',
+  {
+    role_id: column.varchar({ length: 36 }),
+    dept_id: column.varchar({ length: 36 }),
   },
   { timestamps: false },
 );

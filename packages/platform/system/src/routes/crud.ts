@@ -5,8 +5,16 @@
  * 使用 router.use(authMiddleware) 注册为组中间件。
  */
 
-import { createRouter, fail, pageOf, paginated, parseBody, safeErrorMessage, success } from "@ventostack/core";
-import type { Middleware, RouteSchemaConfig, Router } from "@ventostack/core";
+import {
+  createRouter,
+  fail,
+  pageOf,
+  paginated,
+  parseBody,
+  safeErrorMessage,
+  success,
+} from '@ventostack/core';
+import type { Middleware, RouteSchemaConfig, Router } from '@ventostack/core';
 
 interface CrudService {
   list: (
@@ -32,7 +40,7 @@ export interface CrudSchemas {
       min?: number;
       max?: number;
       format?: string;
-      enum?: string[];
+      enum?: Array<string | number>;
       default?: unknown;
     }
   >;
@@ -46,7 +54,7 @@ export interface CrudSchemas {
       min?: number;
       max?: number;
       format?: string;
-      enum?: string[];
+      enum?: Array<string | number>;
     }
   >;
   /** 额外的响应 Schema（按路由路径索引） */
@@ -80,7 +88,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     operationLogMiddleware,
   } = options;
   const router = createRouter();
-  const module = resource.split(":")[0]!;
+  const module = resource.split(':')[0]!;
 
   // Auth middleware applies to all CRUD routes
   router.use(authMiddleware);
@@ -97,16 +105,20 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         // 由各 service 自行消费，避免未知字段被 strict 校验拒绝导致搜索 400。
         strict: false,
         query: {
-          page: { type: "int" as const, default: 1, description: "页码" },
-          pageSize: { type: "int" as const, default: 10, description: "每页数量" },
+          page: { type: 'int' as const, default: 1, description: '页码' },
+          pageSize: { type: 'int' as const, default: 10, description: '每页数量' },
         },
         responses: {
           200: {
-            list: { type: "array" as const, items: { type: "object" as const, properties: schemas.item }, description: "列表数据" },
-            total: { type: "int" as const, description: "总数" },
-            page: { type: "int" as const, description: "当前页" },
-            pageSize: { type: "int" as const, description: "每页数量" },
-            totalPages: { type: "int" as const, description: "总页数" },
+            list: {
+              type: 'array' as const,
+              items: { type: 'object' as const, properties: schemas.item },
+              description: '列表数据',
+            },
+            total: { type: 'int' as const, description: '总数' },
+            page: { type: 'int' as const, description: '当前页' },
+            pageSize: { type: 'int' as const, description: '每页数量' },
+            totalPages: { type: 'int' as const, description: '总页数' },
           },
         },
         openapi: { summary: `获取${resource}列表`, tags: [module] },
@@ -125,7 +137,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       });
       return paginated(result.items, result.total, result.page, result.pageSize);
     },
-    perm(resource, "list"),
+    perm(resource, 'list'),
   );
 
   // Get by ID
@@ -142,10 +154,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
       async (ctx) => {
         const id = (ctx.params as Record<string, string>).id!;
         const item = await service.getById!(id);
-        if (!item) return fail("Not found", 404, 404);
+        if (!item) return fail('Not found', 404, 404);
         return success(item);
       },
-      perm(resource, "query"),
+      perm(resource, 'query'),
     );
   }
 
@@ -153,7 +165,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
   const createConfig = schemas?.createBody
     ? ({
         body: schemas.createBody,
-        responses: { 200: { id: { type: "uuid" as const, description: "创建的记录 ID" } } },
+        responses: { 200: { id: { type: 'uuid' as const, description: '创建的记录 ID' } } },
         openapi: { summary: `创建${resource}`, tags: [module] },
       } as RouteSchemaConfig)
     : undefined;
@@ -166,10 +178,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         const result = await service.create(body);
         return success(result);
       } catch (e) {
-        return fail(safeErrorMessage(e, "Create failed"), 400);
+        return fail(safeErrorMessage(e, 'Create failed'), 400);
       }
     },
-    perm(resource, "create"),
+    perm(resource, 'create'),
   );
 
   // Update
@@ -189,10 +201,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         await service.update(id, body);
         return success(null);
       } catch (e) {
-        return fail(safeErrorMessage(e, "Update failed"), 400);
+        return fail(safeErrorMessage(e, 'Update failed'), 400);
       }
     },
-    perm(resource, "update"),
+    perm(resource, 'update'),
   );
 
   // Delete
@@ -209,10 +221,10 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         await service.delete(id);
         return success(null);
       } catch (e) {
-        return fail(safeErrorMessage(e, "Delete failed"), 400);
+        return fail(safeErrorMessage(e, 'Delete failed'), 400);
       }
     },
-    perm(resource, "delete"),
+    perm(resource, 'delete'),
   );
 
   // Extra routes (also protected by authMiddleware via router.use above)

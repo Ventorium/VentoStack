@@ -16,15 +16,15 @@
  */
 
 // AuthService
-export { createAuthService } from "./auth";
+export { createAuthService } from './auth';
 export type {
   LoginResult,
   MFASetupResult,
   AuthService,
-} from "./auth";
+} from './auth';
 
 // UserService
-export { createUserService } from "./user";
+export { createUserService } from './user';
 export type {
   CreateUserParams,
   UpdateUserParams,
@@ -33,46 +33,46 @@ export type {
   UserListParams,
   PaginatedResult,
   UserService,
-} from "./user";
+} from './user';
 
 // RoleService
-export { createRoleService } from "./role";
+export { createRoleService } from './role';
 export type {
   CreateRoleParams,
   RoleDetail,
   RoleListItem,
   RoleService,
-} from "./role";
+} from './role';
 
 // MenuService
-export { createMenuService } from "./menu";
+export { createMenuService } from './menu';
 export type {
   CreateMenuParams,
   MenuTreeNode,
   MenuService,
-} from "./menu";
+} from './menu';
 
 // DeptService
-export { createDeptService } from "./dept";
+export { createDeptService } from './dept';
 export type {
   CreateDeptParams,
   UpdateDeptParams,
   DeptTreeNode,
   DeptService,
-} from "./dept";
+} from './dept';
 
 // PostService
-export { createPostService } from "./post";
+export { createPostService } from './post';
 export type {
   CreatePostParams,
   UpdatePostParams,
   PostItem,
   PostListParams,
   PostService,
-} from "./post";
+} from './post';
 
 // DictService
-export { createDictService } from "./dict";
+export { createDictService } from './dict';
 export type {
   CreateDictTypeParams,
   UpdateDictTypeParams,
@@ -81,58 +81,60 @@ export type {
   UpdateDictDataParams,
   DictDataItem,
   DictService,
-} from "./dict";
+} from './dict';
 
 // ConfigService
-export { createConfigService } from "./config";
+export { createConfigService } from './config';
 export type {
   CreateConfigParams,
   UpdateConfigParams,
   ConfigItem,
   ConfigListParams,
   ConfigService,
-} from "./config";
+} from './config';
 
 // NoticeService
-export { createNoticeService } from "./notice";
+export { createNoticeService } from './notice';
 export type {
   CreateNoticeParams,
   UpdateNoticeParams,
   NoticeItem,
   NoticeListParams,
   NoticeService,
-} from "./notice";
+} from './notice';
 
 // PermissionLoader
-export { createPermissionLoader } from "./permission-loader";
-export type { PermissionLoader } from "./permission-loader";
+export { createPermissionLoader } from './permission-loader';
+export type { PermissionLoader } from './permission-loader';
+export { createDataScopeResolver, mergeDataScopes } from './data-scope';
+export type { DataScopeResolver, ResolvedDataScope } from './data-scope';
 
 // MenuTreeBuilder
-export { createMenuTreeBuilder } from "./menu-tree-builder";
+export { createMenuTreeBuilder } from './menu-tree-builder';
 export type {
   FrontendRoute,
   RouteMeta,
   MenuTreeBuilder,
-} from "./menu-tree-builder";
+} from './menu-tree-builder';
 
 // PasskeyService
-export { createPasskeyService } from "./passkey";
-export type { PasskeyService } from "./passkey";
+export { createPasskeyService } from './passkey';
+export type { PasskeyService } from './passkey';
 
 // TagService (PaginatedResult already exported from UserService, omitted here to avoid conflict)
-export { createTagService } from "./tag";
+export { createTagService } from './tag';
 export type {
   CreateTagParams,
   UpdateTagParams,
   TagItem,
   TagListParams,
   TagService,
-} from "./tag";
+} from './tag';
 
 // PasswordPolicy
-export { validatePassword } from "./password-policy";
+export { validatePassword } from './password-policy';
 export type {
   PasswordComplexity,
   PasswordPolicyOptions,
   PasswordValidationResult,
-} from "./password-policy";
+} from './password-policy';
