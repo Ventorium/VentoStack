@@ -44,6 +44,7 @@ import { createTagTables } from './migrations/011_create_tag_tables';
 import { addDeptLeaderUserId } from './migrations/012_add_dept_leader_user_id';
 import { dropDeptPhoneEmail } from './migrations/013_drop_dept_phone_email';
 import { normalizeDataScope } from './migrations/014_normalize_data_scope';
+import { hardenIdentityIntegrity } from './migrations/015_harden_identity_integrity';
 
 const logger = createTagLogger('migrations');
 
@@ -75,6 +76,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   // 部门移除 phone/email 列
   runner.addMigration(dropDeptPhoneEmail);
   runner.addMigration(normalizeDataScope);
+  runner.addMigration(hardenIdentityIntegrity);
 
   // 平台模块表结构由 platform packages 提供，注册顺序由 admin 应用控制。
   runner.addMigration(createI18nTables);

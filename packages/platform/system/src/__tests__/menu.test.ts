@@ -2,100 +2,108 @@
  * @ventostack/system - MenuService 测试
  */
 
-import { describe, expect, test } from "bun:test";
-import { createMenuService } from "../services/menu";
-import { createMockDatabase, createMockExecutor } from "./helpers";
+import { describe, expect, test } from 'bun:test';
+import { createMenuService } from '../services/menu';
+import { createMockDatabase, createMockExecutor } from './helpers';
 
 function setup() {
   const mockExec = createMockExecutor();
   const { db, registerModel, calls } = createMockDatabase(mockExec);
-  registerModel("sys_menu", "sys_menu", true);
+  registerModel('sys_menu', 'sys_menu', true);
   const menuService = createMenuService({ db });
   return { menuService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
-describe("MenuService", () => {
-  test("create inserts menu with generated id", async () => {
+describe('MenuService', () => {
+  test('create inserts menu with generated id', async () => {
     const s = setup();
     const result = await s.menuService.create({
       parentId: null,
-      name: "系统管理",
-      path: "/system",
-      component: "Layout",
-      redirect: "",
+      name: '系统管理',
+      path: '/system',
+      component: 'Layout',
+      redirect: '',
       type: 1,
-      permission: "",
-      icon: "setting",
+      permission: '',
+      icon: 'setting',
       sort: 1,
       visible: true,
     });
     expect(result.id).toBeTruthy();
-    expect(s.calls.some((c) => c.text.includes("INSERT"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes('INSERT'))).toBe(true);
   });
 
-  test("update executes UPDATE with changed fields", async () => {
+  test('update executes UPDATE with changed fields', async () => {
     const s = setup();
-    await s.menuService.update("m1", { name: "新名称", sort: 3 });
-    expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
+    s.results.set('SELECT id FROM sys_menu', [{ id: 'm1' }]);
+    await s.menuService.update('m1', { name: '新名称', sort: 3 });
+    expect(s.calls.some((c) => c.text.includes('UPDATE'))).toBe(true);
   });
 
-  test("update with no fields does nothing", async () => {
+  test('update with no fields does nothing', async () => {
     const s = setup();
-    await s.menuService.update("m1", {});
+    await s.menuService.update('m1', {});
     expect(s.calls.length).toBe(0);
   });
 
-  test("delete removes children, associations and menu itself", async () => {
+  test('delete atomically removes associations and a leaf menu', async () => {
     const s = setup();
-    await s.menuService.delete("m1");
-    // 3 calls: DELETE children, DELETE role_menu, DELETE menu
+    await s.menuService.delete('m1');
+    // 先检查子菜单，再在事务中删除关联和叶子菜单
     expect(s.calls.length).toBe(3);
-    expect(s.calls[0]!.text).toContain("parent_id");
-    expect(s.calls[1]!.text).toContain("sys_role_menu");
-    expect(s.calls[2]!.text).toContain("DELETE");
+    expect(s.calls[0]!.text).toContain('parent_id');
+    expect(s.calls[1]!.text).toContain('sys_role_menu');
+    expect(s.calls[2]!.text).toContain('DELETE');
   });
 
-  test("getTree builds hierarchical structure", async () => {
+  test('delete rejects a menu that still has children', async () => {
     const s = setup();
-    s.results.set("SELECT", [
+    s.results.set('COUNT', [{ count: 1 }]);
+    await expect(s.menuService.delete('m1')).rejects.toThrow('菜单存在子菜单，不能删除');
+    expect(s.calls.some((call) => call.text.startsWith('DELETE'))).toBe(false);
+  });
+
+  test('getTree builds hierarchical structure', async () => {
+    const s = setup();
+    s.results.set('SELECT', [
       {
-        id: "m1",
+        id: 'm1',
         parent_id: null,
-        name: "系统管理",
-        path: "/system",
-        component: "Layout",
-        redirect: "",
+        name: '系统管理',
+        path: '/system',
+        component: 'Layout',
+        redirect: '',
         type: 1,
-        permission: "",
-        icon: "setting",
+        permission: '',
+        icon: 'setting',
         sort: 1,
         visible: true,
         status: 1,
       },
       {
-        id: "m2",
-        parent_id: "m1",
-        name: "用户管理",
-        path: "/system/user",
-        component: "UserList",
-        redirect: "",
+        id: 'm2',
+        parent_id: 'm1',
+        name: '用户管理',
+        path: '/system/user',
+        component: 'UserList',
+        redirect: '',
         type: 2,
-        permission: "system:user:list",
-        icon: "user",
+        permission: 'system:user:list',
+        icon: 'user',
         sort: 1,
         visible: true,
         status: 1,
       },
       {
-        id: "m3",
-        parent_id: "m1",
-        name: "角色管理",
-        path: "/system/role",
-        component: "RoleList",
-        redirect: "",
+        id: 'm3',
+        parent_id: 'm1',
+        name: '角色管理',
+        path: '/system/role',
+        component: 'RoleList',
+        redirect: '',
         type: 2,
-        permission: "system:role:list",
-        icon: "peoples",
+        permission: 'system:role:list',
+        icon: 'peoples',
         sort: 2,
         visible: true,
         status: 1,
@@ -103,82 +111,82 @@ describe("MenuService", () => {
     ]);
     const tree = await s.menuService.getTree();
     expect(tree.length).toBe(1);
-    expect(tree[0]!.name).toBe("系统管理");
+    expect(tree[0]!.name).toBe('系统管理');
     expect(tree[0]!.children.length).toBe(2);
-    expect(tree[0]!.children[0]!.name).toBe("用户管理");
-    expect(tree[0]!.children[1]!.name).toBe("角色管理");
+    expect(tree[0]!.children[0]!.name).toBe('用户管理');
+    expect(tree[0]!.children[1]!.name).toBe('角色管理');
   });
 
-  test("getTree with empty data returns empty array", async () => {
+  test('getTree with empty data returns empty array', async () => {
     const s = setup();
     const tree = await s.menuService.getTree();
     expect(tree).toEqual([]);
   });
 
-  test("getTree sorts by sort field", async () => {
+  test('getTree sorts by sort field', async () => {
     const s = setup();
-    s.results.set("SELECT", [
+    s.results.set('SELECT', [
       {
-        id: "m2",
+        id: 'm2',
         parent_id: null,
-        name: "第二",
-        path: "/two",
-        component: "",
-        redirect: "",
+        name: '第二',
+        path: '/two',
+        component: '',
+        redirect: '',
         type: 1,
-        permission: "",
-        icon: "",
+        permission: '',
+        icon: '',
         sort: 2,
         visible: true,
         status: 1,
       },
       {
-        id: "m1",
+        id: 'm1',
         parent_id: null,
-        name: "第一",
-        path: "/one",
-        component: "",
-        redirect: "",
+        name: '第一',
+        path: '/one',
+        component: '',
+        redirect: '',
         type: 1,
-        permission: "",
-        icon: "",
+        permission: '',
+        icon: '',
         sort: 1,
         visible: true,
         status: 1,
       },
     ]);
     const tree = await s.menuService.getTree();
-    expect(tree[0]!.name).toBe("第一");
-    expect(tree[1]!.name).toBe("第二");
+    expect(tree[0]!.name).toBe('第一');
+    expect(tree[1]!.name).toBe('第二');
   });
 
-  test("getTree handles orphaned nodes as roots", async () => {
+  test('getTree handles orphaned nodes as roots', async () => {
     const s = setup();
-    s.results.set("SELECT", [
+    s.results.set('SELECT', [
       {
-        id: "m1",
+        id: 'm1',
         parent_id: null,
-        name: "根",
-        path: "/",
-        component: "",
-        redirect: "",
+        name: '根',
+        path: '/',
+        component: '',
+        redirect: '',
         type: 1,
-        permission: "",
-        icon: "",
+        permission: '',
+        icon: '',
         sort: 1,
         visible: true,
         status: 1,
       },
       {
-        id: "m2",
-        parent_id: "nonexistent",
-        name: "孤儿",
-        path: "/orphan",
-        component: "",
-        redirect: "",
+        id: 'm2',
+        parent_id: 'nonexistent',
+        name: '孤儿',
+        path: '/orphan',
+        component: '',
+        redirect: '',
         type: 2,
-        permission: "",
-        icon: "",
+        permission: '',
+        icon: '',
         sort: 1,
         visible: true,
         status: 1,
@@ -189,33 +197,54 @@ describe("MenuService", () => {
     expect(tree.length).toBe(2);
   });
 
-  test("getById returns menu from tree", async () => {
+  test('getById returns menu from tree', async () => {
     const s = setup();
     // First call: check if menu exists; second call: get all menus for tree building
-    s.results.set("SELECT", [
+    s.results.set('SELECT', [
       {
-        id: "m1",
+        id: 'm1',
         parent_id: null,
-        name: "系统管理",
-        path: "/system",
-        component: "Layout",
-        redirect: "",
+        name: '系统管理',
+        path: '/system',
+        component: 'Layout',
+        redirect: '',
         type: 1,
-        permission: "",
-        icon: "setting",
+        permission: '',
+        icon: 'setting',
         sort: 1,
         visible: true,
         status: 1,
       },
     ]);
-    const menu = await s.menuService.getById("m1");
+    const menu = await s.menuService.getById('m1');
     expect(menu).not.toBeNull();
-    expect(menu!.name).toBe("系统管理");
+    expect(menu!.name).toBe('系统管理');
   });
 
-  test("getById returns null for non-existent menu", async () => {
+  test('getById returns null for non-existent menu', async () => {
     const s = setup();
-    const menu = await s.menuService.getById("nonexistent");
+    const menu = await s.menuService.getById('nonexistent');
     expect(menu).toBeNull();
+  });
+
+  test('update rejects moving a menu under its descendant', async () => {
+    const s = setup();
+    s.results.set('SELECT id FROM sys_menu', [{ id: 'm1' }]);
+    s.results.set('SELECT id, parent_id, status FROM sys_menu', [
+      { id: 'm1', parent_id: null, status: 1 },
+      { id: 'm2', parent_id: 'm1', status: 1 },
+    ]);
+    await expect(s.menuService.update('m1', { parentId: 'm2' })).rejects.toThrow(
+      '不能将菜单移动到自己的子菜单下',
+    );
+  });
+
+  test('getTree rejects cyclic dirty data', async () => {
+    const s = setup();
+    s.results.set('SELECT', [
+      { id: 'm1', parent_id: 'm2', name: 'A', sort: 1, status: 1 },
+      { id: 'm2', parent_id: 'm1', name: 'B', sort: 2, status: 1 },
+    ]);
+    await expect(s.menuService.getTree()).rejects.toThrow('菜单层级存在循环引用');
   });
 });

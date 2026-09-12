@@ -18,31 +18,28 @@ import {
   createRBAC,
   createRedisRevocationStore,
   createRedisSessionStore,
-  createRowFilter,
   createSessionManager,
   createTOTP,
   createTokenRefresh,
-} from "@ventostack/auth";
+} from '@ventostack/auth';
 import type {
   AuthSessionManager,
   JWTManager,
   MultiDeviceManager,
   PasswordHasher,
   RBAC,
-  RowFilter,
   SessionManager,
   TOTPManager,
   TokenRefreshManager,
-} from "@ventostack/auth";
-import type { RedisClientInstance } from "@ventostack/cache";
-import { env } from "../config";
+} from '@ventostack/auth';
+import type { RedisClientInstance } from '@ventostack/cache';
+import { env } from '../config';
 
 export interface AuthEngines {
   jwt: JWTManager;
   jwtSecret: string;
   passwordHasher: PasswordHasher;
   rbac: RBAC;
-  rowFilter: RowFilter;
   totp: TOTPManager;
   sessionManager: SessionManager;
   deviceManager: MultiDeviceManager;
@@ -61,10 +58,9 @@ export function assembleAuthEngines(redisClient?: RedisClientInstance): AuthEngi
   const jwt = createJWT({ secret: jwtSecret });
   const passwordHasher = createPasswordHasher();
   const rbac = createRBAC();
-  const rowFilter = createRowFilter();
 
   // ---- 双因素认证 ----
-  const totp = createTOTP({ algorithm: "SHA-256" });
+  const totp = createTOTP({ algorithm: 'SHA-256' });
 
   // ---- Session（Redis 优先，内存兜底） ----
   const sessionStore = redisClient
@@ -77,7 +73,7 @@ export function assembleAuthEngines(redisClient?: RedisClientInstance): AuthEngi
   // ---- 多设备管理 ----
   const deviceManager = createMultiDeviceManager({
     maxDevices: env.MAX_DEVICES_PER_USER,
-    overflowStrategy: "kick-oldest",
+    overflowStrategy: 'kick-oldest',
   });
 
   // ---- Token 刷新与吊销（Redis 优先，内存兜底） ----
@@ -100,7 +96,6 @@ export function assembleAuthEngines(redisClient?: RedisClientInstance): AuthEngi
     jwtSecret,
     passwordHasher,
     rbac,
-    rowFilter,
     totp,
     sessionManager,
     deviceManager,

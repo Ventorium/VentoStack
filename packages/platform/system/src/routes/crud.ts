@@ -14,7 +14,7 @@ import {
   safeErrorMessage,
   success,
 } from '@ventostack/core';
-import type { Middleware, RouteSchemaConfig, Router } from '@ventostack/core';
+import type { Middleware, RouteSchemaConfig, Router, SchemaField } from '@ventostack/core';
 
 interface CrudService {
   list: (
@@ -28,6 +28,8 @@ interface CrudService {
 
 /** CRUD 路由可选的 Schema 配置 */
 export interface CrudSchemas {
+  /** 列表允许的筛选字段；未声明时只接受 page/pageSize */
+  listQuery?: Record<string, SchemaField>;
   /** 列表项 Schema（会被 list 响应和 getById 响应复用） */
   item?: Record<string, { type: string; description?: string; format?: string; example?: unknown }>;
   /** 创建请求体 Schema */
@@ -74,6 +76,8 @@ interface CrudRouteOptions {
   schemas?: CrudSchemas;
   /** 操作日志中间件（可选，用于记录写操作到数据库） */
   operationLogMiddleware?: Middleware;
+  /** 授权控制面写操作的额外守卫（角色、菜单等高危实体使用） */
+  mutationGuard?: Middleware;
 }
 
 export function createCrudRoutes(options: CrudRouteOptions): Router {
@@ -86,6 +90,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     extraRoutes,
     schemas,
     operationLogMiddleware,
+    mutationGuard,
   } = options;
   const router = createRouter();
   const module = resource.split(':')[0]!;
@@ -101,12 +106,17 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
   // List
   const listConfig = schemas?.item
     ? ({
-        // strict: false — CRUD 列表允许任意搜索/筛选参数（name/status/type 等），
-        // 由各 service 自行消费，避免未知字段被 strict 校验拒绝导致搜索 400。
-        strict: false,
+        strict: true,
         query: {
-          page: { type: 'int' as const, default: 1, description: '页码' },
-          pageSize: { type: 'int' as const, default: 10, description: '每页数量' },
+          page: { type: 'int' as const, min: 1, default: 1, description: '页码' },
+          pageSize: {
+            type: 'int' as const,
+            min: 1,
+            max: 100,
+            default: 10,
+            description: '每页数量',
+          },
+          ...schemas.listQuery,
         },
         responses: {
           200: {
@@ -181,6 +191,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         return fail(safeErrorMessage(e, 'Create failed'), 400);
       }
     },
+    ...(mutationGuard ? [mutationGuard] : []),
     perm(resource, 'create'),
   );
 
@@ -204,6 +215,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         return fail(safeErrorMessage(e, 'Update failed'), 400);
       }
     },
+    ...(mutationGuard ? [mutationGuard] : []),
     perm(resource, 'update'),
   );
 
@@ -224,6 +236,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         return fail(safeErrorMessage(e, 'Delete failed'), 400);
       }
     },
+    ...(mutationGuard ? [mutationGuard] : []),
     perm(resource, 'delete'),
   );
 

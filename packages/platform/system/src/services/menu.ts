@@ -4,8 +4,8 @@
  * 菜单类型：1=目录 2=菜单 3=按钮
  */
 
-import type { Database } from "@ventostack/database";
-import { MenuModel, RoleMenuModel } from "../models/menu";
+import type { Database } from '@ventostack/database';
+import { MenuModel, RoleMenuModel } from '../models/menu';
 
 /** 创建菜单参数 */
 export interface CreateMenuParams {
@@ -66,17 +66,17 @@ function buildTree(rows: Array<Record<string, unknown>>): MenuTreeNode[] {
       id: row.id as string,
       parentId: (row.parent_id as string) ?? null,
       name: row.name as string,
-      path: (row.path as string) ?? "",
-      component: (row.component as string) ?? "",
-      redirect: (row.redirect as string) ?? "",
+      path: (row.path as string) ?? '',
+      component: (row.component as string) ?? '',
+      redirect: (row.redirect as string) ?? '',
       type: row.type as number,
-      permission: (row.permission as string) ?? "",
-      icon: (row.icon as string) ?? "",
+      permission: (row.permission as string) ?? '',
+      icon: (row.icon as string) ?? '',
       sort: row.sort as number,
       visible: (row.visible as boolean) ?? true,
       status: (row.status as number) ?? 1,
-      remark: (row.remark as string) ?? "",
-      createdAt: (row.created_at as string) ?? "",
+      remark: (row.remark as string) ?? '',
+      createdAt: (row.created_at as string) ?? '',
       children: [],
     };
     nodeMap.set(node.id, node);
@@ -88,6 +88,16 @@ function buildTree(rows: Array<Record<string, unknown>>): MenuTreeNode[] {
       nodeMap.get(node.parentId)!.children.push(node);
     } else {
       rootNodes.push(node);
+    }
+  }
+
+  for (const node of nodeMap.values()) {
+    const visited = new Set<string>();
+    let cursor: MenuTreeNode | undefined = node;
+    while (cursor?.parentId) {
+      if (visited.has(cursor.id)) throw new Error('菜单层级存在循环引用');
+      visited.add(cursor.id);
+      cursor = nodeMap.get(cursor.parentId);
     }
   }
 
@@ -150,6 +160,10 @@ export function createMenuService(deps: {
         status,
       } = params;
       const id = crypto.randomUUID();
+      if (parentId) {
+        const parent = await db.query(MenuModel).where('id', '=', parentId).select('status').get();
+        if (!parent || parent.status !== 1) throw new Error('父菜单不存在或已停用');
+      }
 
       await db.query(MenuModel).insert({
         id,
@@ -170,6 +184,24 @@ export function createMenuService(deps: {
     },
 
     async update(id, params) {
+      if (Object.keys(params).length === 0) return;
+      const current = await db.query(MenuModel).where('id', '=', id).select('id').get();
+      if (!current) throw new Error('菜单不存在');
+      if (params.parentId === id) throw new Error('菜单不能设置自己为父菜单');
+      if (params.parentId) {
+        const rows = await db.query(MenuModel).select('id', 'parent_id', 'status').list();
+        const byId = new Map(rows.map((row) => [row.id, row]));
+        const parent = byId.get(params.parentId);
+        if (!parent || parent.status !== 1) throw new Error('父菜单不存在或已停用');
+        const visited = new Set<string>();
+        let cursor: string | null = params.parentId;
+        while (cursor) {
+          if (cursor === id) throw new Error('不能将菜单移动到自己的子菜单下');
+          if (visited.has(cursor)) throw new Error('菜单层级存在循环引用');
+          visited.add(cursor);
+          cursor = byId.get(cursor)?.parent_id ?? null;
+        }
+      }
       const updates: Record<string, unknown> = {};
       if (params.parentId !== undefined) updates.parent_id = params.parentId;
       if (params.name !== undefined) updates.name = params.name;
@@ -183,42 +215,40 @@ export function createMenuService(deps: {
       if (params.visible !== undefined) updates.visible = params.visible;
       if (params.status !== undefined) updates.status = params.status;
 
-      if (Object.keys(updates).length === 0) return;
-
-      await db.query(MenuModel).where("id", "=", id).update(updates);
+      await db.query(MenuModel).where('id', '=', id).update(updates);
     },
 
     async delete(id) {
-      // 先删除子菜单
-      await db.query(MenuModel).where("parent_id", "=", id).hardDelete();
-      // 删除角色-菜单关联
-      await db.query(RoleMenuModel).where("menu_id", "=", id).hardDelete();
-      // 删除菜单本身
-      await db.query(MenuModel).where("id", "=", id).hardDelete();
+      const children = await db.query(MenuModel).where('parent_id', '=', id).count();
+      if (children > 0) throw new Error('菜单存在子菜单，不能删除');
+      await db.transaction(async (tx) => {
+        await tx.query(RoleMenuModel).where('menu_id', '=', id).hardDelete();
+        await tx.query(MenuModel).where('id', '=', id).hardDelete();
+      });
     },
 
     async getTree() {
-      const rows = await db.query(MenuModel).where("status", "=", 1).orderBy("sort", "asc").list();
+      const rows = await db.query(MenuModel).where('status', '=', 1).orderBy('sort', 'asc').list();
 
       return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getAllTree() {
-      const rows = await db.query(MenuModel).orderBy("sort", "asc").list();
+      const rows = await db.query(MenuModel).orderBy('sort', 'asc').list();
 
       return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getById(id) {
-      const row = await db.query(MenuModel).where("id", "=", id).get();
+      const row = await db.query(MenuModel).where('id', '=', id).get();
 
       if (!row) return null;
 
       // 获取所有菜单来构建树（因为需要返回含 children 的节点）
       const allRows = await db
         .query(MenuModel)
-        .where("status", "=", 1)
-        .orderBy("sort", "asc")
+        .where('status', '=', 1)
+        .orderBy('sort', 'asc')
         .list();
 
       const tree = buildTree(allRows as unknown as Array<Record<string, unknown>>);

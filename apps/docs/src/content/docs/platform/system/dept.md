@@ -8,6 +8,8 @@ description: '部门与岗位管理模块提供组织架构树的 CRUD、岗位�
 
 部门与岗位管理是组织架构的基础模块。部门以树形结构组织，岗位作为职能标签与用户关联。用户归属于一个部门，可同时担任多个岗位。
 
+部门结构会直接决定数据权限，因此部门写操作当前采用 admin-only 控制面基线。创建或移动部门时必须保证父部门存在且启用，并拒绝自环、移动到自身后代以及历史循环脏数据。删除部门前会检查子部门、关联用户和角色自定义数据范围；数据库迁移 015 进一步用外键约束这些关系。
+
 ## 部门管理
 
 ### 部门树结构
@@ -27,7 +29,7 @@ description: '部门与岗位管理模块提供组织架构树的 CRUD、岗位�
 ### 创建部门
 
 ```typescript
-POST /api/system/dept
+POST /api/system/depts
 {
   "parentId": "dept-tech",       // 父部门 ID，根部门为 "0"
   "name": "后端组",
@@ -42,7 +44,7 @@ POST /api/system/dept
 ### 查询部门树
 
 ```typescript
-GET /api/system/dept?name=技术&status=0
+GET /api/system/depts?name=技术&status=1
 
 // 返回完整部门树
 [
@@ -72,7 +74,7 @@ GET /api/system/dept?name=技术&status=0
 ### 更新部门
 
 ```typescript
-PUT /api/system/dept/{id}
+PUT /api/system/depts/{id}
 {
   "name": "后端研发组",
   "leader": "user-002",
@@ -83,7 +85,7 @@ PUT /api/system/dept/{id}
 ### 删除部门
 
 ```typescript
-DELETE /api/system/dept/{id}
+DELETE /api/system/depts/{id}
 
 // 前置检查：
 // 1. 是否存在子部门 → 存在则拒绝
@@ -95,7 +97,7 @@ DELETE /api/system/dept/{id}
 用于数据权限过滤时获取当前部门及所有子部门 ID：
 
 ```typescript
-GET /api/system/dept/{id}/descendants
+GET /api/system/depts/{id}/descendants
 
 // 响应
 {
@@ -178,7 +180,7 @@ sys_user
 
 ```typescript
 // 创建或更新用户时指定关联
-POST /api/system/user
+POST /api/system/users
 {
   "username": "lisi",
   "deptId": "dept-tech-be",         // 归属部门（必填，单个）

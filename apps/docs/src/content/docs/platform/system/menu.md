@@ -8,6 +8,8 @@ description: '菜单管理模块提供菜单树结构管理、权限标识符定
 
 菜单管理是系统权限体系的核心组成部分，通过树形结构管理系统的导航菜单和操作按钮。每个菜单项可配置权限标识符，用于后端接口的权限校验。
 
+菜单决定功能授权，写操作当前要求数据库实时 admin。创建或移动节点时校验父节点存在且启用，并拒绝自环、后代回挂和历史循环。存在子菜单时禁止删除；删除叶子菜单与清理角色关联在同一事务中完成。角色菜单分配只接受存在且启用的菜单，最多 500 个且按 ID 去重。
+
 ## 菜单类型
 
 菜单分为三种类型：
@@ -41,7 +43,7 @@ description: '菜单管理模块提供菜单树结构管理、权限标识符定
 ### 创建菜单
 
 ```typescript
-POST /api/system/menu
+POST /api/system/menus
 {
   "parentId": "menu-system",        // 父菜单 ID，根菜单为 "0"
   "name": "user",
@@ -61,7 +63,7 @@ POST /api/system/menu
 ### 查询菜单树
 
 ```typescript
-GET /api/system/menu?name=user&status=0
+GET /api/system/menus?name=user&status=1
 
 // 返回完整菜单树
 [
@@ -98,7 +100,7 @@ GET /api/system/menu?name=user&status=0
 ### 更新菜单
 
 ```typescript
-PUT /api/system/menu/{id}
+PUT /api/system/menus/{id}
 {
   "label": "用户管理(新)",
   "icon": "peoples",
@@ -109,7 +111,7 @@ PUT /api/system/menu/{id}
 ### 删除菜单
 
 ```typescript
-DELETE /api/system/menu/{id}
+DELETE /api/system/menus/{id}
 
 // 前置检查：
 // 1. 是否存在子菜单 → 存在则拒绝删除
@@ -145,10 +147,10 @@ import { createPermMiddleware } from '@ventostack/system';
 const perm = createPermMiddleware(rbac);
 
 // 路由级权限控制
-router.get('/api/system/user', listUsers, perm('system', 'user:list'));
-router.post('/api/system/user', createUser, perm('system', 'user:add'));
-router.put('/api/system/user/:id', updateUser, perm('system', 'user:edit'));
-router.delete('/api/system/user/:id', deleteUser, perm('system', 'user:remove'));
+router.get('/api/system/users', listUsers, perm('system:user', 'list'));
+router.post('/api/system/users', createUser, perm('system:user', 'create'));
+router.put('/api/system/users/:id', updateUser, perm('system:user', 'update'));
+router.delete('/api/system/users/:id', deleteUser, perm('system:user', 'delete'));
 ```
 
 ## 动态路由生成
@@ -156,7 +158,7 @@ router.delete('/api/system/user/:id', deleteUser, perm('system', 'user:remove'))
 前端根据用户权限动态生成路由。后端提供菜单接口返回当前用户有权限的菜单树：
 
 ```typescript
-GET /api/system/menu/routes
+GET /api/system/user/routes
 
 // 响应：仅返回当前用户有权限的菜单项
 // 1. 查询用户角色

@@ -17,6 +17,7 @@ import {
 } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import { DataScopeResolutionError, type DataScopeResolver } from '../services/data-scope';
+import { IdentityGovernanceError } from '../services/identity-governance';
 import type { CreateUserParams, UpdateUserParams, UserService } from '../services/user';
 
 const userItemSchema = {
@@ -48,6 +49,7 @@ export function createUserRoutes(
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
   dataScopeResolver: DataScopeResolver,
+  invalidateUserSessions: (userId: string) => Promise<unknown>,
   operationLogMiddleware?: Middleware,
 ): Router {
   const router = createRouter();
@@ -60,8 +62,8 @@ export function createUserRoutes(
     '/api/system/users',
     {
       query: {
-        page: { type: 'int' as const, default: 1, description: '页码' },
-        pageSize: { type: 'int' as const, default: 10, description: '每页数量' },
+        page: { type: 'int' as const, min: 1, default: 1, description: '页码' },
+        pageSize: { type: 'int' as const, min: 1, max: 100, default: 10, description: '每页数量' },
         username: { type: 'string' as const, description: '用户名筛选' },
         status: { type: 'int' as const, description: '状态筛选' },
         deptId: { type: 'string' as const, description: '部门 ID 筛选，__none__ 表示无部门' },
@@ -120,9 +122,19 @@ export function createUserRoutes(
         email: { type: 'string' as const, format: 'email', description: '邮箱' },
         phone: { type: 'string' as const, format: 'phone', description: '手机号' },
         deptId: { type: 'uuid' as const, description: '部门 ID' },
-        roleIds: { type: 'array' as const, description: '角色 ID 列表' },
-        postIds: { type: 'array' as const, description: '岗位 ID 列表' },
-        status: { type: 'int' as const, default: 1, description: '状态' },
+        roleIds: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          max: 100,
+          description: '角色 ID 列表',
+        },
+        postIds: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          max: 100,
+          description: '岗位 ID 列表',
+        },
+        status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
       },
       responses: { 200: { id: { type: 'uuid' as const, description: '用户 ID' } } },
       openapi: { summary: '创建用户', tags: ['user'], operationId: 'createUser' },
@@ -137,10 +149,13 @@ export function createUserRoutes(
           ))
         )
           return fail('无权在该部门创建用户', 403, 403);
-        const result = await userService.create(body as unknown as CreateUserParams);
+        const result = await userService.create({
+          ...(body as unknown as CreateUserParams),
+          actor: ctx.user as AuthUser,
+        });
         return success(result);
       } catch (e) {
-        if (e instanceof DataScopeResolutionError) throw e;
+        if (e instanceof DataScopeResolutionError || e instanceof IdentityGovernanceError) throw e;
         return fail(safeErrorMessage(e, '创建失败'), 400);
       }
     },
@@ -155,9 +170,19 @@ export function createUserRoutes(
         email: { type: 'string' as const, format: 'email', description: '邮箱' },
         phone: { type: 'string' as const, format: 'phone', description: '手机号' },
         deptId: { type: 'uuid' as const, description: '部门 ID' },
-        roleIds: { type: 'array' as const, description: '角色 ID 列表' },
-        postIds: { type: 'array' as const, description: '岗位 ID 列表' },
-        status: { type: 'int' as const, description: '状态' },
+        roleIds: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          max: 100,
+          description: '角色 ID 列表',
+        },
+        postIds: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          max: 100,
+          description: '岗位 ID 列表',
+        },
+        status: { type: 'int' as const, enum: [0, 1], description: '状态' },
       },
       openapi: { summary: '更新用户', tags: ['user'], operationId: 'updateUser' },
     },
@@ -166,12 +191,19 @@ export function createUserRoutes(
       if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id)))
         return fail('用户不存在', 404, 404);
       const body = await parseBody(ctx.request);
+      if (body.roleIds !== undefined) {
+        if (id === (ctx.user as AuthUser).id) return fail('不能修改自己的角色', 403, 403);
+      }
       if (
         body.deptId !== undefined &&
         !(await dataScopeResolver.canAssignDepartment(ctx.user as AuthUser, body.deptId as string))
       )
         return fail('无权将用户分配到该部门', 403, 403);
-      await userService.update(id, body as unknown as UpdateUserParams);
+      await userService.update(id, {
+        ...(body as unknown as UpdateUserParams),
+        actor: ctx.user as AuthUser,
+      });
+      if (body.roleIds !== undefined || body.status !== undefined) await invalidateUserSessions(id);
       return success(null);
     },
     perm('system:user', 'update'),
@@ -187,6 +219,7 @@ export function createUserRoutes(
       if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id)))
         return fail('用户不存在', 404, 404);
       await userService.delete(id);
+      await invalidateUserSessions(id);
       return success(null);
     },
     perm('system:user', 'delete'),
@@ -206,6 +239,7 @@ export function createUserRoutes(
         return fail('用户不存在', 404, 404);
       const body = await parseBody(ctx.request);
       await userService.resetPassword(id, body.newPassword as string);
+      await invalidateUserSessions(id);
       return success(null);
     },
     perm('system:user', 'resetPwd'),
@@ -230,6 +264,7 @@ export function createUserRoutes(
         return fail('用户不存在', 404, 404);
       const body = await parseBody(ctx.request);
       await userService.updateStatus(id, body.status as number);
+      await invalidateUserSessions(id);
       return success(null);
     },
     perm('system:user', 'update'),

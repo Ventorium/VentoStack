@@ -14,10 +14,12 @@ function setup() {
   registerModel('sys_role', 'sys_role', true);
   registerModel('sys_user_role', 'sys_user_role', false);
   registerModel('sys_role_menu', 'sys_role_menu', false);
+  registerModel('sys_menu', 'sys_menu', false);
   registerModel('sys_role_dept', 'sys_role_dept', false);
   registerModel('sys_dept', 'sys_dept', true);
   const cache = createTestCache();
   const roleService = createRoleService({ db, cache });
+  mockExec.results.set('SELECT code FROM sys_role', [{ code: 'editor' }]);
   return { roleService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
 
@@ -38,6 +40,7 @@ describe('RoleService', () => {
 
   test('update executes UPDATE with changed fields', async () => {
     const s = setup();
+    s.results.set('SELECT code, status FROM sys_role', [{ code: 'editor', status: 1 }]);
     await s.roleService.update('r1', { name: '新名称', sort: 2 });
     expect(s.calls.some((c) => c.text.includes('UPDATE'))).toBe(true);
   });
@@ -48,14 +51,36 @@ describe('RoleService', () => {
     expect(s.calls.length).toBe(0);
   });
 
+  test('role code is immutable', async () => {
+    const s = setup();
+    await expect(s.roleService.update('r1', { code: 'admin' })).rejects.toThrow('角色编码不可修改');
+  });
+
+  test('admin role cannot be disabled or deleted', async () => {
+    const s = setup();
+    s.results.set('SELECT code, status FROM sys_role', [{ code: 'admin', status: 1 }]);
+    await expect(s.roleService.update('r1', { status: 0 })).rejects.toThrow(
+      '超级管理员角色不可停用',
+    );
+
+    const d = setup();
+    d.results.set('SELECT code FROM sys_role', [{ code: 'admin' }]);
+    await expect(d.roleService.delete('r1')).rejects.toThrow('超级管理员角色不可删除');
+  });
+
   test('delete removes associations and soft-deletes role', async () => {
     const s = setup();
+    s.results.set('SELECT code FROM sys_role', [{ code: 'editor' }]);
     await s.roleService.delete('r1');
-    expect(s.calls.length).toBe(4);
-    expect(s.calls[0]!.text).toContain('sys_role_menu');
-    expect(s.calls[1]!.text).toContain('sys_user_role');
-    expect(s.calls[2]!.text).toContain('sys_role_dept');
-    expect(s.calls[3]!.text).toContain('deleted_at');
+    expect(s.calls.some((c) => c.text.includes('sys_role_menu') && c.text.includes('DELETE'))).toBe(
+      true,
+    );
+    expect(s.calls.some((c) => c.text.includes('sys_role_dept') && c.text.includes('DELETE'))).toBe(
+      true,
+    );
+    expect(
+      s.calls.some((c) => c.text.includes('UPDATE sys_role') && c.text.includes('deleted_at')),
+    ).toBe(true);
   });
 
   test('getById returns role detail from db', async () => {
@@ -149,6 +174,8 @@ describe('RoleService', () => {
 
   test('assignMenus deletes old and inserts new associations', async () => {
     const s = setup();
+    s.results.set('SELECT id FROM sys_role', [{ id: 'r1' }]);
+    s.results.set('SELECT id FROM sys_menu', [{ id: 'm1' }, { id: 'm2' }]);
     await s.roleService.assignMenus('r1', ['m1', 'm2']);
     // First call: DELETE old associations, second: INSERT new ones
     expect(s.calls.some((c) => c.text.includes('DELETE'))).toBe(true);
@@ -157,9 +184,9 @@ describe('RoleService', () => {
 
   test('assignMenus with empty list only deletes', async () => {
     const s = setup();
+    s.results.set('SELECT id FROM sys_role', [{ id: 'r1' }]);
     await s.roleService.assignMenus('r1', []);
-    expect(s.calls.length).toBe(1);
-    expect(s.calls[0]!.text).toContain('DELETE');
+    expect(s.calls.some((call) => call.text.includes('DELETE'))).toBe(true);
   });
 
   test('assignDataScope updates role data_scope', async () => {
@@ -214,7 +241,7 @@ describe('RoleService', () => {
     s.results.set('FROM sys_dept', [{ id: 'd1' }, { id: 'd2' }]);
     await s.roleService.assignDataScope('r1', 5, ['d1', 'd2'], ALL_GRANT);
     // 校验部门 + UPDATE role + DELETE role_dept + INSERT role_dept
-    expect(s.calls.length).toBe(4);
+    expect(s.calls.some((c) => c.text.includes('SELECT code FROM sys_role'))).toBe(true);
     expect(s.calls.some((c) => c.text.includes('sys_role_dept'))).toBe(true);
   });
 

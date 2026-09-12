@@ -368,16 +368,6 @@ export function createMockRBAC() {
   };
 }
 
-/** 创建 Mock RowFilter */
-export function createMockRowFilter() {
-  return {
-    addRule: mock(() => {}),
-    getFilters: mock(() => []),
-    getRules: mock(() => []),
-    buildWhereClause: mock(() => ({ sql: '', params: [] })),
-  };
-}
-
 /** 创建 Mock AuditStore */
 export function createMockAuditStore() {
   const entries: any[] = [];

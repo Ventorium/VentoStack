@@ -8,12 +8,14 @@ description: '角色与权限管理模块提供角色 CRUD、菜单权限分配�
 
 角色与权限管理基于 `@ventostack/auth` 的 RBAC 引擎，在平台层提供面向业务的角色管理、菜单权限分配和数据范围控制。
 
+角色、菜单权限和数据权限属于授权控制面。当前安全基线要求操作者除具备对应 RBAC 权限外，还必须是数据库中当前有效的 admin。角色 code 创建后不可修改；admin 角色不可停用或删除，数据范围必须保持全部数据；已有成员的角色不能删除。菜单和数据权限替换均在事务中完成，并使相关用户会话失效。
+
 ## 角色 CRUD
 
 ### 创建角色
 
 ```typescript
-POST /api/system/role
+POST /api/system/roles
 {
   "name": "editor",
   "label": "编辑人员",
@@ -27,7 +29,7 @@ POST /api/system/role
 ### 查询角色
 
 ```typescript
-GET /api/system/role?page=1&pageSize=10&name=editor
+GET /api/system/roles?page=1&pageSize=10&name=editor
 
 // 响应
 {
@@ -52,7 +54,7 @@ GET /api/system/role?page=1&pageSize=10&name=editor
 ### 更新角色
 
 ```typescript
-PUT /api/system/role/{id}
+PUT /api/system/roles/{id}
 {
   "label": "高级编辑",
   "sort": 1,
@@ -67,7 +69,7 @@ PUT /api/system/role/{id}
 ### 删除角色
 
 ```typescript
-DELETE /api/system/role/{id}
+DELETE /api/system/roles/{id}
 
 // 前置检查：
 // 1. 角色下是否存在用户 → 存在则拒绝删除
@@ -80,7 +82,7 @@ DELETE /api/system/role/{id}
 
 ```typescript
 // 分配菜单权限
-PUT /api/system/role/{id}/menus
+PUT /api/system/roles/{id}/menus
 {
   "menuIds": [
     "menu-system",          // 系统管理目录

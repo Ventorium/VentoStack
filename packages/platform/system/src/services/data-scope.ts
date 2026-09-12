@@ -62,6 +62,7 @@ export interface DataScopeResolver {
   resolve(user: AuthUser): Promise<ResolvedDataScope>;
   canAccessUser(user: AuthUser, targetUserId: string): Promise<boolean>;
   canMutateUser(user: AuthUser, targetUserId: string): Promise<boolean>;
+  filterMutableUserIds(user: AuthUser, targetUserIds: string[]): Promise<Set<string>>;
   canAssignDepartment(user: AuthUser, departmentId: string | undefined): Promise<boolean>;
 }
 
@@ -135,8 +136,11 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
           children.set(dept.parent_id, [...(children.get(dept.parent_id) ?? []), dept.id]);
       const collected: string[] = [];
       const pending = [...(children.get(principal.dept_id) ?? [])];
+      const visited = new Set<string>([principal.dept_id]);
       while (pending.length > 0) {
         const id = pending.shift()!;
+        if (visited.has(id)) throw new Error('部门层级存在循环引用');
+        visited.add(id);
         collected.push(id);
         pending.push(...(children.get(id) ?? []));
       }
@@ -160,18 +164,18 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
     }
   }
 
+  async function canAccessUser(user: AuthUser, targetUserId: string): Promise<boolean> {
+    const scope = await resolve(user);
+    if (scope.all || (scope.self && scope.userId === targetUserId)) return true;
+    const target = await db.query(UserModel).where('id', '=', targetUserId).select('dept_id').get();
+    return !!target?.dept_id && scope.departmentIds.includes(target.dept_id);
+  }
+
   return {
     resolve,
     async canAccessUser(user, targetUserId) {
       try {
-        const scope = await resolve(user);
-        if (scope.all || (scope.self && scope.userId === targetUserId)) return true;
-        const target = await db
-          .query(UserModel)
-          .where('id', '=', targetUserId)
-          .select('dept_id')
-          .get();
-        return !!target?.dept_id && scope.departmentIds.includes(target.dept_id);
+        return await canAccessUser(user, targetUserId);
       } catch (error) {
         if (error instanceof DataScopeResolutionError) throw error;
         throw new DataScopeResolutionError(error);
@@ -179,7 +183,7 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
     },
     async canMutateUser(user, targetUserId) {
       try {
-        if (!(await this.canAccessUser(user, targetUserId))) return false;
+        if (!(await canAccessUser(user, targetUserId))) return false;
         if (await hasActiveAdminRole(user.id)) return true;
         const targetLinks = await db
           .query(UserRoleModel)
@@ -198,6 +202,49 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
           .select('code')
           .list();
         return !targetRoles.some((role) => role.code === 'admin');
+      } catch (error) {
+        if (error instanceof DataScopeResolutionError) throw error;
+        throw new DataScopeResolutionError(error);
+      }
+    },
+    async filterMutableUserIds(user, targetUserIds) {
+      try {
+        const ids = [...new Set(targetUserIds)];
+        if (ids.length === 0) return new Set();
+        const [scope, actorIsAdmin, targets] = await Promise.all([
+          resolve(user),
+          hasActiveAdminRole(user.id),
+          db.query(UserModel).where('id', 'IN', ids).select('id', 'dept_id').list(),
+        ]);
+        const accessible = targets
+          .filter(
+            (target) =>
+              scope.all ||
+              (scope.self && target.id === scope.userId) ||
+              (!!target.dept_id && scope.departmentIds.includes(target.dept_id)),
+          )
+          .map((target) => target.id);
+        if (actorIsAdmin || accessible.length === 0) return new Set(accessible);
+
+        const links = await db
+          .query(UserRoleModel)
+          .where('user_id', 'IN', accessible)
+          .select('user_id', 'role_id')
+          .list();
+        if (links.length === 0) return new Set(accessible);
+        const roleIds = [...new Set(links.map((link) => link.role_id))];
+        const adminRoles = await db
+          .query(RoleModel)
+          .where('id', 'IN', roleIds)
+          .where('status', '=', 1)
+          .where('code', '=', 'admin')
+          .select('id')
+          .list();
+        const adminRoleIds = new Set(adminRoles.map((role) => role.id));
+        const protectedUsers = new Set(
+          links.filter((link) => adminRoleIds.has(link.role_id)).map((link) => link.user_id),
+        );
+        return new Set(accessible.filter((id) => !protectedUsers.has(id)));
       } catch (error) {
         if (error instanceof DataScopeResolutionError) throw error;
         throw new DataScopeResolutionError(error);

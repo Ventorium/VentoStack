@@ -8,12 +8,22 @@ description: '用户管理模块提供用户的增删改查、密码管理、状
 
 用户管理是系统管理模块的核心，提供完整的用户生命周期管理能力。所有操作自动记录审计日志，并遵循多租户隔离原则。
 
+> 当前实现的管理端点统一使用 `/api/system/users`（复数）。列表、详情、更新、删除、密码重置、状态、解锁、黑名单、标签、批量操作和导出都受数据权限约束；越权目标按不存在处理。创建和更新用户时，service 会在事务中同时维护用户、角色和岗位关系。
+
+### 角色授予边界
+
+- admin 身份由数据库当前有效角色确认，不信任 JWT 中的历史角色快照。
+- 非 admin 只能分配自己当前持有且启用的角色，不能修改自己的角色。
+- `roleIds` 存在时 service 强制要求传入已认证操作者，防止新路由或脚本绕过。
+- 停用、拉黑、删除、重置密码和角色变更会删除服务端会话；旧 access token 下一次访问 system 管理接口即返回 401。
+- 用户名由迁移 015 保证大小写不敏感且仅在活跃用户中唯一。
+
 ## CRUD 操作
 
 ### 创建用户
 
 ```typescript
-POST /api/system/user
+POST /api/system/users
 {
   "username": "zhangsan",
   "nickname": "张三",
@@ -31,7 +41,7 @@ POST /api/system/user
 ### 查询用户
 
 ```typescript
-GET /api/system/user?page=1&pageSize=10&username=zhang&status=0&deptId=dept-001
+GET /api/system/users?page=1&pageSize=10&username=zhang&status=1&deptId=dept-001
 
 // 响应
 {
@@ -57,7 +67,7 @@ GET /api/system/user?page=1&pageSize=10&username=zhang&status=0&deptId=dept-001
 ### 更新用户
 
 ```typescript
-PUT /api/system/user/{id}
+PUT /api/system/users/{id}
 {
   "nickname": "张三丰",
   "email": "zhangsan@example.com",
@@ -73,7 +83,7 @@ PUT /api/system/user/{id}
 ### 删除用户
 
 ```typescript
-DELETE /api/system/user/{id}
+DELETE /api/system/users/{id}
 
 // 软删除：设置 deleted_at 字段
 // 如果用户有活跃会话，自动执行强制下线
@@ -85,7 +95,7 @@ DELETE /api/system/user/{id}
 ### 管理员重置密码
 
 ```typescript
-PUT /api/system/user/{id}/password/reset
+PUT /api/system/users/{id}/reset-pwd
 
 // 响应
 {
@@ -99,7 +109,7 @@ PUT /api/system/user/{id}/password/reset
 ### 用户修改密码
 
 ```typescript
-PUT /api/system/user/password
+PUT /api/system/users/password
 {
   "oldPassword": "Old@1234",
   "newPassword": "New@5678"
@@ -118,7 +128,7 @@ PUT /api/system/user/password
 | `1` | 停用 | 无法登录，已有 Token 立即失效 |
 
 ```typescript
-PUT /api/system/user/{id}/status
+PUT /api/system/users/{id}/status
 {
   "status": 1    // 停用用户
 }
@@ -137,7 +147,7 @@ PUT /api/system/user/{id}/status
 
 ```typescript
 // 用户管理中同步更新角色关联
-PUT /api/system/user/{id}
+PUT /api/system/users/{id}
 {
   "roleIds": ["role-admin", "role-editor"]
 }
@@ -174,7 +184,7 @@ PUT /api/system/user/{id}
 ### 导出用户
 
 ```typescript
-GET /api/system/user/export?deptId=dept-001&format=xlsx
+POST /api/system/users/export?deptId=dept-001
 
 // 返回文件流
 // Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet
@@ -186,7 +196,7 @@ GET /api/system/user/export?deptId=dept-001&format=xlsx
 ### 导入用户
 
 ```typescript
-POST /api/system/user/import
+POST /api/system/users/import
 Content-Type: multipart/form-data
 
 // 上传 Excel 文件（限制 5MB 以内）

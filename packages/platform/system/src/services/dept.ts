@@ -5,6 +5,7 @@
 
 import type { Database } from '@ventostack/database';
 import { DeptModel } from '../models/dept';
+import { RoleDeptModel } from '../models/role';
 import { UserModel } from '../models/user';
 
 /** 部门创建参数 */
@@ -14,11 +15,12 @@ export interface CreateDeptParams {
   sort?: number;
   /** 负责人用户 ID */
   leaderUserId?: string;
+  status?: number;
 }
 
 /** 部门更新参数 */
 export interface UpdateDeptParams {
-  parentId?: string;
+  parentId?: string | null;
   name?: string;
   sort?: number;
   /** 负责人用户 ID，传 null 表示清除负责人 */
@@ -70,6 +72,14 @@ export function createDeptService(deps: { db: Database }): DeptService {
 
   async function create(params: CreateDeptParams): Promise<{ id: string }> {
     if (params.leaderUserId) await assertLeaderValid(params.leaderUserId);
+    if (params.parentId) {
+      const parent = await db
+        .query(DeptModel)
+        .where('id', '=', params.parentId)
+        .select('status')
+        .get();
+      if (!parent || parent.status !== 1) throw new Error('父部门不存在或已停用');
+    }
     const id = crypto.randomUUID();
     await db.query(DeptModel).insert({
       id,
@@ -77,13 +87,31 @@ export function createDeptService(deps: { db: Database }): DeptService {
       name: params.name,
       sort: params.sort ?? 0,
       leader_user_id: params.leaderUserId ?? null,
-      status: 1,
+      status: params.status ?? 1,
     });
     return { id };
   }
 
   async function update(id: string, params: UpdateDeptParams): Promise<void> {
+    if (Object.keys(params).length === 0) return;
     if (params.leaderUserId) await assertLeaderValid(params.leaderUserId);
+    const current = await db.query(DeptModel).where('id', '=', id).select('id').get();
+    if (!current) throw new Error('部门不存在');
+    if (params.parentId === id) throw new Error('部门不能设置自己为父部门');
+    if (params.parentId) {
+      const rows = await db.query(DeptModel).select('id', 'parent_id', 'status').list();
+      const byId = new Map(rows.map((row) => [row.id, row]));
+      const parent = byId.get(params.parentId);
+      if (!parent || parent.status !== 1) throw new Error('父部门不存在或已停用');
+      const visited = new Set<string>();
+      let cursor: string | null = params.parentId;
+      while (cursor) {
+        if (cursor === id) throw new Error('不能将部门移动到自己的子部门下');
+        if (visited.has(cursor)) throw new Error('部门层级存在循环引用');
+        visited.add(cursor);
+        cursor = byId.get(cursor)?.parent_id ?? null;
+      }
+    }
     const updates: Record<string, unknown> = {};
     if (params.parentId !== undefined) updates.parent_id = params.parentId;
     if (params.name !== undefined) updates.name = params.name;
@@ -91,12 +119,16 @@ export function createDeptService(deps: { db: Database }): DeptService {
     if (params.leaderUserId !== undefined) updates.leader_user_id = params.leaderUserId;
     if (params.status !== undefined) updates.status = params.status;
 
-    if (Object.keys(updates).length === 0) return;
-
     await db.query(DeptModel).where('id', '=', id).update(updates);
   }
 
   async function deleteDept(id: string): Promise<void> {
+    const children = await db.query(DeptModel).where('parent_id', '=', id).count();
+    if (children > 0) throw new Error('部门存在子部门，不能删除');
+    const users = await db.query(UserModel).where('dept_id', '=', id).count();
+    if (users > 0) throw new Error('部门存在用户，不能删除');
+    const roleScopes = await db.query(RoleDeptModel).where('dept_id', '=', id).count();
+    if (roleScopes > 0) throw new Error('部门正在被角色数据权限使用，不能删除');
     await db.query(DeptModel).where('id', '=', id).delete();
   }
 
@@ -143,6 +175,16 @@ export function createDeptService(deps: { db: Database }): DeptService {
     const nodeMap = new Map<string, DeptTreeNode>();
     for (const node of nodes) {
       nodeMap.set(node.id, node);
+    }
+
+    for (const node of nodes) {
+      const visited = new Set<string>();
+      let cursor: DeptTreeNode | undefined = node;
+      while (cursor?.parentId) {
+        if (visited.has(cursor.id)) throw new Error('部门层级存在循环引用');
+        visited.add(cursor.id);
+        cursor = nodeMap.get(cursor.parentId);
+      }
     }
 
     const roots: DeptTreeNode[] = [];

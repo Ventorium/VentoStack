@@ -10,7 +10,6 @@ import type {
   MultiDeviceManager,
   PasswordHasher,
   RBAC,
-  RowFilter,
   SessionManager,
   TOTPManager,
   TokenRefreshManager,
@@ -35,6 +34,7 @@ import { createDeptService } from './services/dept';
 import type { CreateDeptParams, UpdateDeptParams } from './services/dept';
 import { createDictService } from './services/dict';
 import type { CreateDictDataParams, CreateDictTypeParams } from './services/dict';
+import { createIdentityGovernanceService } from './services/identity-governance';
 import { createMenuService } from './services/menu';
 import type { CreateMenuParams } from './services/menu';
 import { createMenuTreeBuilder } from './services/menu-tree-builder';
@@ -53,6 +53,7 @@ import type { UpdateUserParams } from './services/user';
 
 import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
 import { fail, pageOf, paginated, parseBody, safeErrorMessage, success } from '@ventostack/core';
+import { createLiveSystemAuthMiddleware } from './middlewares/live-auth';
 import { type OperationLogEntry, createOperationLogMiddleware } from './middlewares/operation-log';
 import { createAuthRoutes } from './routes/auth';
 import { createCrudRoutes } from './routes/crud';
@@ -98,7 +99,6 @@ export interface SystemModuleDeps {
   passwordHasher: PasswordHasher;
   totp: TOTPManager;
   rbac: RBAC;
-  rowFilter: RowFilter;
   sessionManager: SessionManager;
   deviceManager: MultiDeviceManager;
   tokenRefresh: TokenRefreshManager;
@@ -154,7 +154,15 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     // 与缓存命名空间/数据服务同一来源：tenantEnabled 时使用 deps.tenantId，否则 undefined（auth 内回退 'default'）
     tenantId,
   });
-  const userService = createUserService({ db, passwordHasher, cache, configService, tenantId });
+  const governance = createIdentityGovernanceService(db);
+  const userService = createUserService({
+    db,
+    passwordHasher,
+    cache,
+    configService,
+    governance,
+    tenantId,
+  });
   const roleService = createRoleService({ db, cache, tenantId });
   const menuService = createMenuService({ db });
   const deptService = createDeptService({ db });
@@ -163,6 +171,14 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const noticeService = createNoticeService({ db });
   const permissionLoader = createPermissionLoader({ db, rbac });
   const dataScopeResolver = createDataScopeResolver(db);
+  const invalidateRoleSessions = async (roleId: string): Promise<void> => {
+    const links = await db
+      .query(UserRoleModel)
+      .where('role_id', '=', roleId)
+      .select('user_id')
+      .list();
+    await Promise.all(links.map((link) => authService.forceLogout(link.user_id)));
+  };
   const menuTreeBuilder = createMenuTreeBuilder({ db });
   const passkeyService = createPasskeyService({
     db,
@@ -175,7 +191,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const tagService = createTagService({ db });
 
   // Middlewares
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createLiveSystemAuthMiddleware({
+    tokenAuthMiddleware: createAuthMiddleware(jwt, jwtSecret),
+    sessionManager: deps.sessionManager,
+    db,
+  });
   const perm = createPermMiddleware(rbac);
 
   // 操作日志数据库写入函数
@@ -279,7 +299,14 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     ),
   );
   router.merge(
-    createUserRoutes(userService, authMiddleware, perm, dataScopeResolver, opLogMiddleware),
+    createUserRoutes(
+      userService,
+      authMiddleware,
+      perm,
+      dataScopeResolver,
+      (userId) => authService.forceLogout(userId),
+      opLogMiddleware,
+    ),
   );
 
   // CRUD routes for other entities
@@ -301,6 +328,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           if (role?.code) {
             await permissionLoader.reloadRole(role.code);
           }
+          await invalidateRoleSessions(id);
           return result;
         },
         delete: async (id) => {
@@ -315,7 +343,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       authMiddleware,
       perm,
       operationLogMiddleware: opLogMiddleware,
+      mutationGuard: governance.adminOnlyMiddleware,
       schemas: {
+        listQuery: { status: { type: 'int' as const, enum: [0, 1], description: '状态' } },
         item: {
           id: { type: 'uuid' as const, description: '角色 ID' },
           name: { type: 'string' as const, description: '角色名称' },
@@ -328,15 +358,14 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         createBody: {
           name: { type: 'string' as const, required: true, description: '角色名称' },
           code: { type: 'string' as const, required: true, description: '角色编码' },
-          sort: { type: 'int' as const, default: 0, description: '排序' },
-          status: { type: 'int' as const, default: 1, description: '状态' },
+          sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
           remark: { type: 'string' as const, description: '备注' },
         },
         updateBody: {
           name: { type: 'string' as const, description: '角色名称' },
-          code: { type: 'string' as const, description: '角色编码' },
-          sort: { type: 'int' as const, description: '排序' },
-          status: { type: 'int' as const, description: '状态' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
           remark: { type: 'string' as const, description: '备注' },
         },
       },
@@ -360,7 +389,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           '/api/system/roles/:id/menus',
           {
             body: {
-              menuIds: { type: 'array' as const, required: true, description: '菜单 ID 列表' },
+              menuIds: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                max: 500,
+                required: true,
+                description: '菜单 ID 列表',
+              },
             },
             openapi: { summary: '分配角色菜单', tags: ['role'], operationId: 'assignRoleMenus' },
           },
@@ -374,8 +409,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             if (role?.code) {
               await permissionLoader.reloadRole(role.code);
             }
+            await invalidateRoleSessions(id);
             return success(null);
           },
+          governance.adminOnlyMiddleware,
           perm('system:role', 'update'),
         );
         r.get(
@@ -405,7 +442,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           {
             body: {
               scope: { type: 'int' as const, required: true, description: '数据范围' },
-              deptIds: { type: 'array' as const, description: '部门 ID 列表' },
+              deptIds: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                max: 500,
+                description: '部门 ID 列表',
+              },
             },
             openapi: {
               summary: '分配角色数据范围',
@@ -441,18 +483,29 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
                 all: actorScope.all,
                 departmentIds: actorScope.departmentIds,
               });
+              await invalidateRoleSessions(id);
               return success(null);
             } catch (error) {
               return fail(safeErrorMessage(error, '数据权限设置失败'), 400);
             }
           },
+          governance.adminOnlyMiddleware,
           perm('system:role', 'update'),
         );
         // Batch delete roles
         r.post(
           '/api/system/roles/batch-delete',
           {
-            body: { ids: { type: 'array' as const, required: true, description: '角色 ID 列表' } },
+            body: {
+              ids: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                min: 1,
+                max: 100,
+                required: true,
+                description: '角色 ID 列表',
+              },
+            },
             openapi: { summary: '批量删除角色', tags: ['role'] },
           },
           async (ctx) => {
@@ -477,6 +530,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
+          governance.adminOnlyMiddleware,
           perm('system:role', 'delete'),
         );
       },
@@ -513,7 +567,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       authMiddleware,
       perm,
       operationLogMiddleware: opLogMiddleware,
+      mutationGuard: governance.adminOnlyMiddleware,
       schemas: {
+        listQuery: {},
         item: {
           id: { type: 'uuid' as const, description: '菜单 ID' },
           parentId: { type: 'uuid' as const, description: '父菜单 ID' },
@@ -533,7 +589,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           path: { type: 'string' as const, description: '路由路径' },
           component: { type: 'string' as const, description: '组件路径' },
           icon: { type: 'string' as const, description: '图标' },
-          sort: { type: 'int' as const, default: 0, description: '排序' },
+          sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
           type: {
             type: 'int' as const,
             required: true,
@@ -541,7 +597,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             description: '类型 1=目录 2=菜单 3=按钮',
           },
           visible: { type: 'boolean' as const, default: true, description: '是否可见' },
-          status: { type: 'int' as const, default: 1, description: '状态' },
+          status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
           permission: { type: 'string' as const, description: '权限标识' },
         },
         updateBody: {
@@ -550,10 +606,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           path: { type: 'string' as const, description: '路由路径' },
           component: { type: 'string' as const, description: '组件路径' },
           icon: { type: 'string' as const, description: '图标' },
-          sort: { type: 'int' as const, description: '排序' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
           type: { type: 'int' as const, enum: [1, 2, 3], description: '类型 1=目录 2=菜单 3=按钮' },
           visible: { type: 'boolean' as const, description: '是否可见' },
-          status: { type: 'int' as const, description: '状态' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
           permission: { type: 'string' as const, description: '权限标识' },
         },
       },
@@ -590,7 +646,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       authMiddleware,
       perm,
       operationLogMiddleware: opLogMiddleware,
+      mutationGuard: governance.adminOnlyMiddleware,
       schemas: {
+        listQuery: {},
         item: {
           id: { type: 'uuid' as const, description: '部门 ID' },
           parentId: { type: 'uuid' as const, description: '父部门 ID' },
@@ -603,16 +661,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         createBody: {
           parentId: { type: 'uuid' as const, description: '父部门 ID' },
           name: { type: 'string' as const, required: true, description: '部门名称' },
-          sort: { type: 'int' as const, default: 0, description: '排序' },
+          sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
           leaderUserId: { type: 'string' as const, description: '负责人用户 ID' },
-          status: { type: 'int' as const, default: 1, description: '状态' },
+          status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
         },
         updateBody: {
           parentId: { type: 'uuid' as const, description: '父部门 ID' },
           name: { type: 'string' as const, description: '部门名称' },
-          sort: { type: 'int' as const, description: '排序' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
           leaderUserId: { type: 'string' as const, description: '负责人用户 ID' },
-          status: { type: 'int' as const, description: '状态' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
         },
       },
       extraRoutes: (r) => {
@@ -632,7 +690,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         r.post(
           '/api/system/depts/batch-delete',
           {
-            body: { ids: { type: 'array' as const, required: true, description: '部门 ID 列表' } },
+            body: {
+              ids: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                min: 1,
+                max: 100,
+                required: true,
+                description: '部门 ID 列表',
+              },
+            },
             openapi: { summary: '批量删除部门', tags: ['dept'] },
           },
           async (ctx) => {
@@ -660,6 +727,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             }
             return success({ success: successCount, skipped });
           },
+          governance.adminOnlyMiddleware,
           perm('system:dept', 'delete'),
         );
       },
@@ -679,6 +747,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
+        listQuery: { status: { type: 'int' as const, enum: [0, 1], description: '状态' } },
         item: {
           id: { type: 'uuid' as const, description: '岗位 ID' },
           name: { type: 'string' as const, description: '岗位名称' },
@@ -750,6 +819,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
+        listQuery: {},
         item: {
           id: { type: 'uuid' as const, description: '字典类型 ID' },
           name: { type: 'string' as const, description: '字典名称' },
@@ -812,6 +882,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
+        listQuery: { group: { type: 'string' as const, max: 64, description: '配置分组' } },
         item: {
           id: { type: 'uuid' as const, description: '配置 ID' },
           name: { type: 'string' as const, description: '配置名称' },
@@ -875,6 +946,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
+        listQuery: {
+          type: { type: 'int' as const, description: '通知类型' },
+          status: { type: 'int' as const, description: '状态' },
+        },
         item: {
           id: { type: 'uuid' as const, description: '通知 ID' },
           title: { type: 'string' as const, description: '通知标题' },
@@ -1028,6 +1103,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
+        listQuery: { status: { type: 'int' as const, enum: [0, 1], description: '状态' } },
         item: {
           id: { type: 'uuid' as const, description: '标签 ID' },
           name: { type: 'string' as const, description: '标签名称' },
@@ -1391,7 +1467,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
     async (ctx) => {
       const body = await parseBody(ctx.request);
-      const ids = (body.ids as string[]) ?? [];
+      const ids = [...new Set((body.ids as string[]) ?? [])];
       if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       let successCount = 0;
       let skipped = 0;
@@ -1460,6 +1536,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const blacklisted = body.blacklisted as boolean;
       await db.query(UserModel).where('id', '=', id).update({ blacklisted });
       await cache.del(ns.detailKey('user', id));
+      await authService.forceLogout(id);
       return success(null);
     },
     perm('system:user', 'update'),
@@ -1469,14 +1546,24 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   userRouter.post(
     '/api/system/users/batch-delete',
     {
-      body: { ids: { type: 'array' as const, required: true, description: '用户 ID 列表' } },
+      body: {
+        ids: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          min: 1,
+          max: 100,
+          required: true,
+          description: '用户 ID 列表',
+        },
+      },
       openapi: { summary: '批量删除用户', tags: ['user'] },
     },
     async (ctx) => {
       const body = await parseBody(ctx.request);
-      const ids = (body.ids as string[]) ?? [];
+      const ids = [...new Set((body.ids as string[]) ?? [])];
       if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       const user = ctx.user as { id: string };
+      const mutableIds = await dataScopeResolver.filterMutableUserIds(ctx.user as AuthUser, ids);
       let successCount = 0;
       let skipped = 0;
       for (const id of ids) {
@@ -1484,12 +1571,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
           continue;
         }
-        if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+        if (!mutableIds.has(id)) {
           skipped++;
           continue;
         }
         try {
           await userService.delete(id);
+          await authService.forceLogout(id);
           successCount++;
         } catch {
           skipped++;
@@ -1505,17 +1593,30 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/users/batch-status',
     {
       body: {
-        ids: { type: 'array' as const, required: true, description: '用户 ID 列表' },
-        status: { type: 'int' as const, required: true, description: '目标状态 0=停用 1=正常' },
+        ids: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          min: 1,
+          max: 100,
+          required: true,
+          description: '用户 ID 列表',
+        },
+        status: {
+          type: 'int' as const,
+          enum: [0, 1],
+          required: true,
+          description: '目标状态 0=停用 1=正常',
+        },
       },
       openapi: { summary: '批量修改用户状态', tags: ['user'] },
     },
     async (ctx) => {
       const body = await parseBody(ctx.request);
-      const ids = (body.ids as string[]) ?? [];
+      const ids = [...new Set((body.ids as string[]) ?? [])];
       if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       const targetStatus = body.status as number;
       const user = ctx.user as { id: string };
+      const mutableIds = await dataScopeResolver.filterMutableUserIds(ctx.user as AuthUser, ids);
       let successCount = 0;
       let skipped = 0;
       for (const id of ids) {
@@ -1523,7 +1624,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
           continue;
         }
-        if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+        if (!mutableIds.has(id)) {
           skipped++;
           continue;
         }
@@ -1533,6 +1634,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           continue;
         }
         await userService.updateStatus(id, targetStatus);
+        await authService.forceLogout(id);
         successCount++;
       }
       return success({ success: successCount, skipped });
@@ -1544,23 +1646,34 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   userRouter.post(
     '/api/system/users/batch-reset-pwd',
     {
-      body: { ids: { type: 'array' as const, required: true, description: '用户 ID 列表' } },
+      body: {
+        ids: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          min: 1,
+          max: 100,
+          required: true,
+          description: '用户 ID 列表',
+        },
+      },
       openapi: { summary: '批量重置用户密码', tags: ['user'] },
     },
     async (ctx) => {
       const body = await parseBody(ctx.request);
-      const ids = (body.ids as string[]) ?? [];
+      const ids = [...new Set((body.ids as string[]) ?? [])];
       if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
       const defaultPwd = (await configService.getValue('sys_user_init_password')) || '123456';
+      const mutableIds = await dataScopeResolver.filterMutableUserIds(ctx.user as AuthUser, ids);
       let successCount = 0;
       let skipped = 0;
       for (const id of ids) {
-        if (!(await dataScopeResolver.canMutateUser(ctx.user as AuthUser, id))) {
+        if (!mutableIds.has(id)) {
           skipped++;
           continue;
         }
         try {
           await userService.resetPassword(id, defaultPwd);
+          await authService.forceLogout(id);
           successCount++;
         } catch {
           skipped++;
@@ -1593,7 +1706,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/users/:id/tags',
     {
       body: {
-        tagIds: { type: 'array' as const, required: true, description: '标签 ID 列表' },
+        tagIds: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          max: 100,
+          required: true,
+          description: '标签 ID 列表',
+        },
       },
       openapi: { summary: '分配用户标签', tags: ['user'], operationId: 'assignUserTags' },
     },

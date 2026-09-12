@@ -6,7 +6,7 @@
 import type { Cache } from '@ventostack/cache';
 import type { Database } from '@ventostack/database';
 import { DeptModel } from '../models/dept';
-import { RoleMenuModel } from '../models/menu';
+import { MenuModel, RoleMenuModel } from '../models/menu';
 import { RoleDeptModel, RoleModel, UserRoleModel } from '../models/role';
 import { createCacheKeyNamespace } from './cache-key';
 import type { CacheKeyNamespace } from './cache-key';
@@ -101,6 +101,12 @@ export function createRoleService(deps: {
   return {
     async create(params) {
       const { name, code, sort, dataScope, remark, status } = params;
+      if (dataScope !== undefined && !DATA_SCOPE_VALUES.has(dataScope)) {
+        throw new Error('无效的数据权限范围');
+      }
+      if (code === 'admin' && dataScope !== undefined && dataScope !== DataScope.ALL) {
+        throw new Error('超级管理员必须拥有全部数据权限');
+      }
       const id = crypto.randomUUID();
 
       await db.query(RoleModel).insert({
@@ -119,15 +125,19 @@ export function createRoleService(deps: {
     },
 
     async update(id, params) {
+      if (params.code !== undefined) throw new Error('角色编码不可修改');
+      if (Object.keys(params).length === 0) return;
+      const current = await db.query(RoleModel).where('id', '=', id).select('code', 'status').get();
+      if (!current) throw new Error('角色不存在');
+      if (current.code === 'admin' && params.status !== undefined && params.status !== 1) {
+        throw new Error('超级管理员角色不可停用');
+      }
       const updates: Record<string, unknown> = {};
       if (params.name !== undefined) updates.name = params.name;
-      if (params.code !== undefined) updates.code = params.code;
       if (params.sort !== undefined) updates.sort = params.sort;
       if (params.dataScope !== undefined) updates.data_scope = params.dataScope;
       if (params.remark !== undefined) updates.remark = params.remark;
       if (params.status !== undefined) updates.status = params.status;
-
-      if (Object.keys(updates).length === 0) return;
 
       await db.query(RoleModel).where('id', '=', id).update(updates);
 
@@ -136,9 +146,13 @@ export function createRoleService(deps: {
     },
 
     async delete(id) {
+      const role = await db.query(RoleModel).where('id', '=', id).select('code').get();
+      if (!role) throw new Error('角色不存在');
+      if (role.code === 'admin') throw new Error('超级管理员角色不可删除');
+      const assignedUsers = await db.query(UserRoleModel).where('role_id', '=', id).count();
+      if (assignedUsers > 0) throw new Error('角色已分配给用户，不能删除');
       await db.transaction(async (tx) => {
         await tx.query(RoleMenuModel).where('role_id', '=', id).hardDelete();
-        await tx.query(UserRoleModel).where('role_id', '=', id).hardDelete();
         await tx.query(RoleDeptModel).where('role_id', '=', id).hardDelete();
         await tx.query(RoleModel).where('id', '=', id).delete();
       });
@@ -227,15 +241,31 @@ export function createRoleService(deps: {
     },
 
     async assignMenus(roleId, menuIds) {
-      // 先删除旧的关联
-      await db.query(RoleMenuModel).where('role_id', '=', roleId).hardDelete();
-
-      // 批量插入新关联
-      if (menuIds.length > 0) {
-        await db
-          .query(RoleMenuModel)
-          .batchInsert(menuIds.map((menuId) => ({ role_id: roleId, menu_id: menuId })));
+      const normalized = [...new Set(menuIds)];
+      if (normalized.length > 500) throw new Error('菜单数量不能超过 500');
+      if (normalized.some((id) => typeof id !== 'string' || id.length === 0 || id.length > 36)) {
+        throw new Error('菜单 ID 列表格式错误');
       }
+      const role = await db.query(RoleModel).where('id', '=', roleId).select('id').get();
+      if (!role) throw new Error('角色不存在');
+      if (normalized.length > 0) {
+        const menus = await db
+          .query(MenuModel)
+          .where('id', 'IN', normalized)
+          .where('status', '=', 1)
+          .select('id')
+          .list();
+        if (menus.length !== normalized.length) throw new Error('包含不存在或已停用的菜单');
+      }
+
+      await db.transaction(async (tx) => {
+        await tx.query(RoleMenuModel).where('role_id', '=', roleId).hardDelete();
+        if (normalized.length > 0) {
+          await tx
+            .query(RoleMenuModel)
+            .batchInsert(normalized.map((menuId) => ({ role_id: roleId, menu_id: menuId })));
+        }
+      });
 
       // 清除与角色相关的缓存
       await cache.del(ns.key(`role:menus:${roleId}`));
@@ -283,6 +313,11 @@ export function createRoleService(deps: {
         normalizedDeptIds.some((deptId) => !grant.departmentIds.includes(deptId))
       ) {
         throw new Error('不能选择自身数据权限范围外的部门');
+      }
+      const role = await db.query(RoleModel).where('id', '=', roleId).select('code').get();
+      if (!role) throw new Error('角色不存在');
+      if (role.code === 'admin' && scope !== DataScope.ALL) {
+        throw new Error('超级管理员必须拥有全部数据权限');
       }
 
       if (normalizedDeptIds.length > 0) {

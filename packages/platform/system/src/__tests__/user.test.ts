@@ -17,6 +17,9 @@ import {
   createTestCache,
 } from './helpers';
 
+const TEST_ACTOR = { id: 'admin-user', username: 'admin', roles: ['admin'] };
+const allowRoleGrants = { assertCanAssignRoles: async () => {} };
+
 function setup(configOverrides: Record<string, string> = {}) {
   const mockExec = createMockExecutor();
   const { db, registerModel, calls } = createMockDatabase(mockExec);
@@ -26,7 +29,13 @@ function setup(configOverrides: Record<string, string> = {}) {
   const cache = createTestCache();
   const passwordHasher = createMockPasswordHasher();
   const configService = createMockConfigService(configOverrides);
-  const userService = createUserService({ db, passwordHasher, cache, configService });
+  const userService = createUserService({
+    db,
+    passwordHasher,
+    cache,
+    configService,
+    governance: allowRoleGrants,
+  });
   return {
     userService,
     executor: mockExec.executor,
@@ -50,7 +59,7 @@ describe('UserService', () => {
     expect(typeof result.id).toBe('string');
     expect(s.passwordHasher.hash).toHaveBeenCalledWith('pass123');
     expect(s.calls.length).toBeGreaterThan(0);
-    expect(s.calls[0]!.text).toContain('INSERT');
+    expect(s.calls.some((call) => call.text.includes('INSERT INTO sys_user'))).toBe(true);
   });
 
   test('create user uses default password from config when not provided', async () => {
@@ -80,13 +89,13 @@ describe('UserService', () => {
       username: 'alice',
       password: 'pass123',
       roleIds: ['r1', 'r2'],
+      actor: TEST_ACTOR,
     });
     expect(result.id).toBeTruthy();
-    // 应执行 sys_user_role 覆盖写 CTE（含 DELETE FROM sys_user_role）
-    const roleCall = s.calls.find((c) => c.text.includes('sys_user_role'));
-    expect(roleCall).toBeDefined();
-    expect(roleCall!.text).toContain('DELETE FROM sys_user_role');
-    expect(roleCall!.params).toEqual([result.id, 'r1', 'r2']);
+    const deleteCall = s.calls.find((c) => c.text.includes('DELETE FROM sys_user_role'));
+    const insertCall = s.calls.find((c) => c.text.includes('INSERT INTO sys_user_role'));
+    expect(deleteCall?.params).toEqual([result.id]);
+    expect(insertCall?.params).toEqual([result.id, 'r1', result.id, 'r2']);
   });
 
   test('create user rejects invalid roleIds', async () => {
@@ -99,23 +108,31 @@ describe('UserService', () => {
         username: 'alice',
         password: 'pass123',
         roleIds: ['r1', 'r-bad'],
+        actor: TEST_ACTOR,
       }),
     ).rejects.toThrow('角色不存在或已停用');
   });
 
-  test('update user replaces roleIds via CTE', async () => {
+  test('service rejects role assignment without an authenticated grant actor', async () => {
+    const s = setup();
+    await expect(
+      s.userService.create({ username: 'alice', password: 'pass123', roleIds: ['r1'] }),
+    ).rejects.toThrow('分配角色必须提供授权操作者');
+  });
+
+  test('update user atomically replaces roleIds with ORM operations', async () => {
     const s = setup();
     s.results.set('sys_role WHERE id IN', [{ id: 'r9' }]);
-    await s.userService.update('u1', { roleIds: ['r9'] });
-    const roleCall = s.calls.find((c) => c.text.includes('sys_user_role'));
-    expect(roleCall).toBeDefined();
-    expect(roleCall!.text).toContain('DELETE FROM sys_user_role');
-    expect(roleCall!.params).toEqual(['u1', 'r9']);
+    await s.userService.update('u1', { roleIds: ['r9'], actor: TEST_ACTOR });
+    const deleteCall = s.calls.find((c) => c.text.includes('DELETE FROM sys_user_role'));
+    const insertCall = s.calls.find((c) => c.text.includes('INSERT INTO sys_user_role'));
+    expect(deleteCall?.params).toEqual(['u1']);
+    expect(insertCall?.params).toEqual(['u1', 'r9']);
   });
 
   test('update user with empty roleIds clears roles', async () => {
     const s = setup();
-    await s.userService.update('u1', { roleIds: [] });
+    await s.userService.update('u1', { roleIds: [], actor: TEST_ACTOR });
     const roleCall = s.calls.find((c) => c.text.includes('DELETE FROM sys_user_role'));
     expect(roleCall).toBeDefined();
     expect(roleCall!.params).toEqual(['u1']);
@@ -254,6 +271,7 @@ describe('UserService', () => {
       passwordHasher: createMockPasswordHasher(),
       cache: createTestCache(),
       configService: createMockConfigService(),
+      governance: allowRoleGrants,
     });
     await userService.list({
       page: 1,
@@ -313,7 +331,13 @@ describe('用户导出权限（安全回归）', () => {
     const cache = createTestCache();
     const passwordHasher = createMockPasswordHasher();
     const configService = createMockConfigService();
-    const userService = createUserService({ db, passwordHasher, cache, configService });
+    const userService = createUserService({
+      db,
+      passwordHasher,
+      cache,
+      configService,
+      governance: allowRoleGrants,
+    });
 
     const jwt = createMockJWTManager();
     const authMiddleware = createAuthMiddlewareForTest(jwt);
@@ -330,9 +354,16 @@ describe('用户导出权限（安全回归）', () => {
       }),
       canAccessUser: async () => true,
       canMutateUser: async () => true,
+      filterMutableUserIds: async (_user: unknown, ids: string[]) => new Set(ids),
       canAssignDepartment: async () => true,
     };
-    return createUserRoutes(userService, authMiddleware, perm, dataScopeResolver).compile();
+    return createUserRoutes(
+      userService,
+      authMiddleware,
+      perm,
+      dataScopeResolver,
+      async () => {},
+    ).compile();
   }
 
   test('POST /api/system/users/export 无 user:export 权限时返回 403', async () => {

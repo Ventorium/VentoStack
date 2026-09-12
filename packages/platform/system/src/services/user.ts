@@ -3,7 +3,7 @@
  * 用户管理服务：创建、更新、删除、查询、密码重置、状态变更
  */
 
-import type { PasswordHasher } from '@ventostack/auth';
+import type { AuthUser, PasswordHasher } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import type { Database } from '@ventostack/database';
 import { DeptModel } from '../models/dept';
@@ -14,10 +14,13 @@ import { createCacheKeyNamespace } from './cache-key';
 import type { CacheKeyNamespace } from './cache-key';
 import type { ConfigService } from './config';
 import type { ResolvedDataScope } from './data-scope';
+import type { IdentityGovernanceService } from './identity-governance';
 import { validatePassword } from './password-policy';
 
 /** 创建用户参数 */
 export interface CreateUserParams {
+  /** 授权操作者，仅供服务内部调用，不属于 HTTP body */
+  actor?: AuthUser;
   username: string;
   password: string;
   email?: string;
@@ -34,6 +37,8 @@ export interface CreateUserParams {
 
 /** 更新用户参数 */
 export interface UpdateUserParams {
+  /** 授权操作者，仅供服务内部调用，不属于 HTTP body */
+  actor?: AuthUser;
   email?: string;
   phone?: string;
   nickname?: string;
@@ -156,15 +161,17 @@ export function createUserService(deps: {
   passwordHasher: PasswordHasher;
   cache: Cache;
   configService: ConfigService;
+  governance: Pick<IdentityGovernanceService, 'assertCanAssignRoles'>;
   /** 租户 ID，启用多租户时传入以隔离缓存 */
   tenantId?: string;
 }): UserService {
-  const { db, passwordHasher, cache, configService } = deps;
+  const { db, passwordHasher, cache, configService, governance } = deps;
   const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
 
   /** 校验岗位 ID 均存在且启用，返回无效的岗位 ID */
   async function findInvalidPostIds(postIds: string[]): Promise<string[]> {
     if (postIds.length === 0) return [];
+    if (postIds.length > 100) throw new Error('岗位数量不能超过 100');
     const rows = await db
       .query(PostModel)
       .where('id', 'IN', postIds)
@@ -175,28 +182,24 @@ export function createUserService(deps: {
     return postIds.filter((id) => !valid.has(id));
   }
 
-  /** 覆盖用户的岗位关联（单条 CTE：DELETE+INSERT+ON CONFLICT，避免 Bun.sql 多连接池禁止 BEGIN/COMMIT 的限制） */
-  async function assignUserPosts(userId: string, postIds: string[]): Promise<void> {
-    if (postIds.length === 0) {
-      await db.query(UserPostModel).where('user_id', '=', userId).hardDelete();
-      return;
+  /** 在同一事务连接内覆盖用户岗位关联。 */
+  async function assignUserPosts(
+    database: Database,
+    userId: string,
+    postIds: string[],
+  ): Promise<void> {
+    await database.query(UserPostModel).where('user_id', '=', userId).hardDelete();
+    if (postIds.length > 0) {
+      await database
+        .query(UserPostModel)
+        .batchInsert(postIds.map((postId) => ({ user_id: userId, post_id: postId })));
     }
-    const placeholders = postIds.map((_, i) => `$${i * 2 + 2}`).join(', ');
-    const params: string[] = [userId];
-    for (const postId of postIds) params.push(postId);
-    await db.raw(
-      `WITH d AS (DELETE FROM sys_user_post WHERE user_id = $1 RETURNING user_id)
-       INSERT INTO sys_user_post (user_id, post_id)
-       SELECT $1, unnest(ARRAY[${placeholders}]::varchar[])
-       WHERE EXISTS (SELECT 1 FROM d)
-       ON CONFLICT (user_id, post_id) DO NOTHING`,
-      params,
-    );
   }
 
   /** 校验角色 ID 均存在且启用，返回无效的角色 ID */
   async function findInvalidRoleIds(roleIds: string[]): Promise<string[]> {
     if (roleIds.length === 0) return [];
+    if (roleIds.length > 100) throw new Error('角色数量不能超过 100');
     const rows = await db
       .query(RoleModel)
       .where('id', 'IN', roleIds)
@@ -207,23 +210,18 @@ export function createUserService(deps: {
     return roleIds.filter((id) => !valid.has(id));
   }
 
-  /** 覆盖用户的角色关联（单条 CTE：DELETE+INSERT+ON CONFLICT，避免 BEGIN/COMMIT 限制） */
-  async function assignUserRoles(userId: string, roleIds: string[]): Promise<void> {
-    if (roleIds.length === 0) {
-      await db.query(UserRoleModel).where('user_id', '=', userId).hardDelete();
-      return;
+  /** 在同一事务连接内覆盖用户角色关联。 */
+  async function assignUserRoles(
+    database: Database,
+    userId: string,
+    roleIds: string[],
+  ): Promise<void> {
+    await database.query(UserRoleModel).where('user_id', '=', userId).hardDelete();
+    if (roleIds.length > 0) {
+      await database
+        .query(UserRoleModel)
+        .batchInsert(roleIds.map((roleId) => ({ user_id: userId, role_id: roleId })));
     }
-    const placeholders = roleIds.map((_, i) => `$${i * 2 + 2}`).join(', ');
-    const params: string[] = [userId];
-    for (const roleId of roleIds) params.push(roleId);
-    await db.raw(
-      `WITH d AS (DELETE FROM sys_user_role WHERE user_id = $1 RETURNING user_id)
-       INSERT INTO sys_user_role (user_id, role_id)
-       SELECT $1, unnest(ARRAY[${placeholders}]::varchar[])
-       WHERE EXISTS (SELECT 1 FROM d)
-       ON CONFLICT (user_id, role_id) DO NOTHING`,
-      params,
-    );
   }
 
   /** 查询用户角色 */
@@ -274,6 +272,21 @@ export function createUserService(deps: {
     async create(params) {
       const { username, password, email, phone, nickname, deptId, status, remark } = params;
       const id = crypto.randomUUID();
+      const duplicate = await db
+        .query(UserModel)
+        .where('username', '=', username)
+        .select('id')
+        .get();
+      if (duplicate) throw new Error('用户名已存在');
+      if (deptId) {
+        const department = await db
+          .query(DeptModel)
+          .where('id', '=', deptId)
+          .where('status', '=', 1)
+          .select('id')
+          .get();
+        if (!department) throw new Error('部门不存在或已停用');
+      }
 
       // 校验 + 去重岗位 ID（在事务前一次性做完，避免事务内浪费连接）
       const dedupPostIds = params.postIds ? [...new Set(params.postIds)] : undefined;
@@ -284,6 +297,10 @@ export function createUserService(deps: {
 
       // 校验 + 去重角色 ID
       const dedupRoleIds = params.roleIds ? [...new Set(params.roleIds)] : undefined;
+      if (dedupRoleIds !== undefined) {
+        if (!params.actor) throw new Error('分配角色必须提供授权操作者');
+        await governance.assertCanAssignRoles(params.actor, dedupRoleIds);
+      }
       const invalidRoles = await findInvalidRoleIds(dedupRoleIds ?? []);
       if (invalidRoles.length > 0) {
         throw new Error(`角色不存在或已停用: ${invalidRoles.join(', ')}`);
@@ -307,27 +324,23 @@ export function createUserService(deps: {
 
       const passwordHash = await passwordHasher.hash(actualPassword);
 
-      // 注：Bun.sql 多连接池禁止事务里 BEGIN/COMMIT，所以 sys_user insert + sys_user_post
-      // 覆盖写拆为两条串行 SQL；DELETE+INSERT 合并到 assignUserPosts 内部单条 CTE 保证原子。
-      await db.query(UserModel).insert({
-        id,
-        username,
-        password_hash: passwordHash,
-        email: email ?? null,
-        phone: phone ?? null,
-        nickname: nickname ?? null,
-        dept_id: deptId ?? null,
-        status: status ?? 1,
-        remark: remark ?? null,
-        mfa_enabled: false,
-        password_changed_at: new Date(),
+      await db.transaction(async (tx) => {
+        await tx.query(UserModel).insert({
+          id,
+          username,
+          password_hash: passwordHash,
+          email: email ?? null,
+          phone: phone ?? null,
+          nickname: nickname ?? null,
+          dept_id: deptId ?? null,
+          status: status ?? 1,
+          remark: remark ?? null,
+          mfa_enabled: false,
+          password_changed_at: new Date(),
+        });
+        if (dedupPostIds) await assignUserPosts(tx, id, dedupPostIds);
+        if (dedupRoleIds) await assignUserRoles(tx, id, dedupRoleIds);
       });
-      if (dedupPostIds) {
-        await assignUserPosts(id, dedupPostIds);
-      }
-      if (dedupRoleIds) {
-        await assignUserRoles(id, dedupRoleIds);
-      }
 
       // 清除用户列表缓存
       await cache.del(ns.listKey('user'));
@@ -336,6 +349,15 @@ export function createUserService(deps: {
     },
 
     async update(id, params) {
+      if (params.deptId) {
+        const department = await db
+          .query(DeptModel)
+          .where('id', '=', params.deptId)
+          .where('status', '=', 1)
+          .select('id')
+          .get();
+        if (!department) throw new Error('部门不存在或已停用');
+      }
       // 校验岗位 ID（去重 + 上限保护，防止 IN 列表过长 / PK 冲突）
       const dedupPostIds = params.postIds ? [...new Set(params.postIds)] : undefined;
       const invalidPosts = await findInvalidPostIds(dedupPostIds ?? []);
@@ -345,6 +367,10 @@ export function createUserService(deps: {
 
       // 校验角色 ID
       const dedupRoleIds = params.roleIds ? [...new Set(params.roleIds)] : undefined;
+      if (dedupRoleIds !== undefined) {
+        if (!params.actor) throw new Error('分配角色必须提供授权操作者');
+        await governance.assertCanAssignRoles(params.actor, dedupRoleIds);
+      }
       const invalidRoles = await findInvalidRoleIds(dedupRoleIds ?? []);
       if (invalidRoles.length > 0) {
         throw new Error(`角色不存在或已停用: ${invalidRoles.join(', ')}`);
@@ -368,17 +394,13 @@ export function createUserService(deps: {
       )
         return;
 
-      // 注：Bun.sql 多连接池禁止事务里 BEGIN/COMMIT，sys_user update + sys_user_post
-      // 覆盖写拆为两条串行 SQL；DELETE+INSERT 合并到 assignUserPosts 内部单条 CTE 保证原子。
-      if (Object.keys(updates).length > 0) {
-        await db.query(UserModel).where('id', '=', id).update(updates);
-      }
-      if (dedupPostIds !== undefined) {
-        await assignUserPosts(id, dedupPostIds);
-      }
-      if (dedupRoleIds !== undefined) {
-        await assignUserRoles(id, dedupRoleIds);
-      }
+      await db.transaction(async (tx) => {
+        if (Object.keys(updates).length > 0) {
+          await tx.query(UserModel).where('id', '=', id).update(updates);
+        }
+        if (dedupPostIds !== undefined) await assignUserPosts(tx, id, dedupPostIds);
+        if (dedupRoleIds !== undefined) await assignUserRoles(tx, id, dedupRoleIds);
+      });
 
       // 清除用户缓存
       await cache.del(ns.detailKey('user', id));

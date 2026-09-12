@@ -108,6 +108,8 @@ export { createPermissionLoader } from './permission-loader';
 export type { PermissionLoader } from './permission-loader';
 export { createDataScopeResolver, mergeDataScopes } from './data-scope';
 export type { DataScopeResolver, ResolvedDataScope } from './data-scope';
+export { createIdentityGovernanceService, IdentityGovernanceError } from './identity-governance';
+export type { IdentityGovernanceService } from './identity-governance';
 
 // MenuTreeBuilder
 export { createMenuTreeBuilder } from './menu-tree-builder';

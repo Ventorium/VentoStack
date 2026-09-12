@@ -23,7 +23,6 @@ import type { Middleware, VentoStackApp } from '@ventostack/core';
 import { createDatabase, listTables, readTableSchema } from '@ventostack/database';
 import { createEventBus, createScheduler } from '@ventostack/events';
 import { createInAppChannel } from '@ventostack/notification';
-import { STATIC_ALLOWED_EXTENSIONS } from '@ventostack/oss';
 import {
   createAuditLog,
   createDefaultHealthCheck,
@@ -36,6 +35,7 @@ import {
 } from '@ventostack/observability';
 import type { SpanContext } from '@ventostack/observability';
 import { setupOpenAPI } from '@ventostack/openapi';
+import { STATIC_ALLOWED_EXTENSIONS } from '@ventostack/oss';
 
 import { assembleAuthEngines } from './auth';
 import { createCacheInstance } from './cache';
@@ -136,7 +136,6 @@ export async function buildApp(opts?: {
     passwordHasher: auth.passwordHasher,
     totpManager: auth.totp,
     rbac: auth.rbac,
-    rowFilter: auth.rowFilter,
     authSessionManager: auth.authSessionManager,
     tokenRefreshManager: auth.tokenRefresh,
     sessionManager: auth.sessionManager,
@@ -170,11 +169,13 @@ export async function buildApp(opts?: {
             storagePath: env.AI_STORAGE_PATH,
             credentialEncryptionKey: env.AI_CREDENTIAL_ENCRYPTION_KEY!,
             ...(env.VENTO_RUNTIME_URL && env.VENTO_RUNTIME_TOKEN
-              ? { agentRuntime: {
-                  baseUrl: env.VENTO_RUNTIME_URL,
-                  token: env.VENTO_RUNTIME_TOKEN,
-                  timeoutMs: env.VENTO_RUNTIME_TIMEOUT_MS,
-                } }
+              ? {
+                  agentRuntime: {
+                    baseUrl: env.VENTO_RUNTIME_URL,
+                    token: env.VENTO_RUNTIME_TOKEN,
+                    timeoutMs: env.VENTO_RUNTIME_TIMEOUT_MS,
+                  },
+                }
               : {}),
           },
         }

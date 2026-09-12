@@ -5,17 +5,16 @@
  */
 
 import {
-  createAuthMiddleware,
-  createPermMiddleware,
   type AuthSessionManager,
   type JWTManager,
   type MultiDeviceManager,
   type PasswordHasher,
   type RBAC,
-  type RowFilter,
   type SessionManager,
   type TOTPManager,
   type TokenRefreshManager,
+  createAuthMiddleware,
+  createPermMiddleware,
 } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import type { Router } from '@ventostack/core';
@@ -27,7 +26,11 @@ import type { AuditStore, HealthCheck } from '@ventostack/observability';
 
 import { createAIModule } from '@ventostack/ai';
 import type { AIModule, LLMProviderConfig } from '@ventostack/ai';
+import { createAiTraceModule } from '@ventostack/ai-trace';
+import type { AiTraceModule } from '@ventostack/ai-trace';
 import type { Scheduler } from '@ventostack/events';
+import { createGenModule } from '@ventostack/gen';
+import type { GenModule } from '@ventostack/gen';
 import { createI18nModule } from '@ventostack/i18n';
 import type { I18nModule } from '@ventostack/i18n';
 import { createMonitorModule } from '@ventostack/monitor';
@@ -38,14 +41,10 @@ import { createOSSModule } from '@ventostack/oss';
 import type { OSSModule, StorageAdapter } from '@ventostack/oss';
 import { createSchedulerModule } from '@ventostack/scheduler';
 import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
-import { createAiTraceModule } from '@ventostack/ai-trace';
-import type { AiTraceModule } from '@ventostack/ai-trace';
 import { createSystemModule } from '@ventostack/system';
 import type { SystemModule } from '@ventostack/system';
 import { createWorkflowModule } from '@ventostack/workflow';
 import type { WorkflowModule } from '@ventostack/workflow';
-import { createGenModule } from '@ventostack/gen';
-import type { GenModule } from '@ventostack/gen';
 
 /** 平台配置 */
 export interface PlatformConfig {
@@ -69,8 +68,6 @@ export interface PlatformConfig {
   totpManager: TOTPManager;
   /** RBAC 权限 */
   rbac: RBAC;
-  /** 行级过滤 */
-  rowFilter: RowFilter;
   /** 会话管理 */
   authSessionManager: AuthSessionManager;
   /** Token 刷新 */
@@ -169,7 +166,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   const {
     executor,
     readTableSchema,
-    listTables,
     cache,
     db: providedDb,
     jwt,
@@ -177,7 +173,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     passwordHasher,
     totpManager,
     rbac,
-    rowFilter,
     authSessionManager,
     tokenRefreshManager,
     sessionManager,
@@ -228,7 +223,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     passwordHasher,
     totp: totpManager,
     rbac,
-    rowFilter,
     authSessionManager,
     tokenRefresh: tokenRefreshManager,
     sessionManager,

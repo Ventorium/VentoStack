@@ -107,4 +107,46 @@ describe('mergeDataScopes', () => {
     );
     expect(allowed).toBe(false);
   });
+
+  test('批量可修改用户解析使用固定数量集合查询并排除 admin', async () => {
+    let queryCount = 0;
+    const db = createDatabase({
+      executor: async (text, params = []) => {
+        queryCount++;
+        if (text.includes('SELECT dept_id FROM sys_user')) return [{ dept_id: 'd1' }];
+        if (text.includes('SELECT id, dept_id FROM sys_user')) {
+          return [
+            { id: 'normal', dept_id: 'd1' },
+            { id: 'admin-user', dept_id: 'd1' },
+          ];
+        }
+        if (text.includes('SELECT role_id FROM sys_user_role')) return [{ role_id: 'r-manager' }];
+        if (text.includes('SELECT user_id, role_id FROM sys_user_role')) {
+          return [
+            { user_id: 'normal', role_id: 'r-user' },
+            { user_id: 'admin-user', role_id: 'r-admin' },
+          ];
+        }
+        if (text.includes('SELECT id, code, data_scope FROM sys_role')) {
+          return [{ id: 'r-manager', code: 'manager', data_scope: 2 }];
+        }
+        if (text.includes('SELECT code FROM sys_role')) return [];
+        if (text.includes('SELECT id FROM sys_role') && params.includes('r-admin')) {
+          return [{ id: 'r-admin' }];
+        }
+        return [];
+      },
+    });
+    const ids = [
+      'normal',
+      'admin-user',
+      ...Array.from({ length: 98 }, (_, index) => `missing-${index}`),
+    ];
+    const allowed = await createDataScopeResolver(db).filterMutableUserIds(
+      { id: 'manager', username: 'manager', roles: ['manager'] },
+      ids,
+    );
+    expect([...allowed]).toEqual(['normal']);
+    expect(queryCount).toBeLessThanOrEqual(8);
+  });
 });

@@ -4,45 +4,46 @@
  * 所有平台模块共用，禁止在各模块内重复实现。
  */
 
-import type { JWTManager, RBAC } from "../index";
-import type { Middleware } from "@ventostack/core";
+import type { Middleware } from '@ventostack/core';
+import type { JWTManager, RBAC } from '../index';
 
 /** 认证后的用户信息（注入到 ctx.user） */
 export interface AuthUser {
   id: string;
   roles: string[];
   username: string;
+  /** 访问令牌绑定的服务端会话 ID */
+  sessionId?: string;
   /** 多租户场景下由 JWT 携带 */
   tenantId?: string;
   [key: string]: unknown;
 }
 
 /** 超级管理员角色代码，拥有所有权限 */
-const SUPER_ADMIN_ROLE = "admin";
+const SUPER_ADMIN_ROLE = 'admin';
 
-const JSON_HEADERS = { "Content-Type": "application/json" } as const;
+const JSON_HEADERS = { 'Content-Type': 'application/json' } as const;
 
 function parseCookieHeader(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
   const cookies: Record<string, string> = {};
-  for (const part of cookieHeader.split(";")) {
-    const [rawName, ...rawValue] = part.trim().split("=");
+  for (const part of cookieHeader.split(';')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
     if (!rawName || rawValue.length === 0) continue;
     try {
-      cookies[rawName] = decodeURIComponent(rawValue.join("="));
+      cookies[rawName] = decodeURIComponent(rawValue.join('='));
     } catch {
       // 畸形 Cookie（如非法的 % 编码），跳过
-      continue;
     }
   }
   return cookies;
 }
 
 function extractToken(request: Request): string | null {
-  const authHeader = request.headers.get("Authorization");
-  if (authHeader?.startsWith("Bearer ")) return authHeader.slice(7);
+  const authHeader = request.headers.get('Authorization');
+  if (authHeader?.startsWith('Bearer ')) return authHeader.slice(7);
 
-  const cookies = parseCookieHeader(request.headers.get("Cookie"));
+  const cookies = parseCookieHeader(request.headers.get('Cookie'));
   if (cookies.vs_access_token) return cookies.vs_access_token;
 
   // 不通过 URL 查询参数提取 token，避免 Token 泄露到日志、浏览器历史、Referer 头
@@ -57,7 +58,7 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
   return async (ctx, next) => {
     const token = extractToken(ctx.request);
     if (!token) {
-      return new Response(JSON.stringify({ code: 401, message: "缺少认证令牌" }), {
+      return new Response(JSON.stringify({ code: 401, message: '缺少认证令牌' }), {
         status: 401,
         headers: JSON_HEADERS,
       });
@@ -65,16 +66,18 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
     try {
       const payload = await jwt.verify(token, secret);
       const user: AuthUser = {
-        id: payload.sub ?? "",
+        id: payload.sub ?? '',
         roles: ((payload as Record<string, unknown>).roles as string[]) ?? [],
-        username: ((payload as Record<string, unknown>).username as string) ?? "",
+        username: ((payload as Record<string, unknown>).username as string) ?? '',
       };
+      const sessionId = (payload as Record<string, unknown>).sid;
+      if (typeof sessionId === 'string') user.sessionId = sessionId;
       const tenantId = (payload as Record<string, unknown>).tenantId;
-      if (typeof tenantId === "string") user.tenantId = tenantId;
+      if (typeof tenantId === 'string') user.tenantId = tenantId;
       ctx.user = user;
       return next();
     } catch {
-      return new Response(JSON.stringify({ code: 401, message: "无效的认证令牌" }), {
+      return new Response(JSON.stringify({ code: 401, message: '无效的认证令牌' }), {
         status: 401,
         headers: JSON_HEADERS,
       });
@@ -87,14 +90,12 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
  *
  * @param rbac RBAC 管理器实例（必填：缺失时宁可启动失败，也不静默跳过权限检查）
  */
-export function createPermMiddleware(
-  rbac: RBAC,
-): (resource: string, action: string) => Middleware {
+export function createPermMiddleware(rbac: RBAC): (resource: string, action: string) => Middleware {
   return (resource: string, action: string): Middleware => {
     return async (ctx, next) => {
       const user = ctx.user as AuthUser | undefined;
       if (!user) {
-        return new Response(JSON.stringify({ code: 401, message: "未登录" }), {
+        return new Response(JSON.stringify({ code: 401, message: '未登录' }), {
           status: 401,
           headers: JSON_HEADERS,
         });
@@ -102,9 +103,7 @@ export function createPermMiddleware(
 
       // 超级管理员跳过权限检查
       if (user.roles.includes(SUPER_ADMIN_ROLE)) return next();
-      const allowed = user.roles.some((role) =>
-        rbac.hasPermission(role, resource, action),
-      );
+      const allowed = user.roles.some((role) => rbac.hasPermission(role, resource, action));
       if (!allowed) {
         return new Response(
           JSON.stringify({ code: 403, message: `无权限：${resource}:${action}` }),

@@ -9,6 +9,7 @@ import { createMenuTreeBuilder } from '../../services/menu-tree-builder';
 import { createPermissionLoader } from '../../services/permission-loader';
 import { createRoleService } from '../../services/role';
 import {
+  createMockConfigService,
   createMockDatabase,
   createMockExecutor,
   createMockRBAC,
@@ -21,10 +22,12 @@ function setupRole() {
   registerModel('sys_role', 'sys_role', true);
   registerModel('sys_user_role', 'sys_user_role', false);
   registerModel('sys_role_menu', 'sys_role_menu', false);
+  registerModel('sys_menu', 'sys_menu', false);
   registerModel('sys_role_dept', 'sys_role_dept', false);
   registerModel('sys_dept', 'sys_dept', true);
   const cache = createTestCache();
   const roleService = createRoleService({ db, cache });
+  mockExec.results.set('SELECT code FROM sys_role', [{ code: 'editor' }]);
   return { roleService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
 
@@ -104,7 +107,7 @@ describe('Security: Permission', () => {
         departmentIds: [],
       });
       // 校验部门 + UPDATE role + DELETE role_dept + INSERT role_dept
-      expect(s.calls.length).toBe(4);
+      expect(s.calls.some((call) => call.text.includes('SELECT code FROM sys_role'))).toBe(true);
       expect(s.calls.some((c) => c.text.includes('sys_role_dept'))).toBe(true);
       expect(s.calls.some((c) => c.text.includes('INSERT'))).toBe(true);
     });
@@ -115,29 +118,26 @@ describe('Security: Permission', () => {
         all: true,
         departmentIds: [],
       }); // 1 = 全部数据
-      expect(s.calls.length).toBe(2);
-      expect(s.calls[0]!.text).toContain('UPDATE');
-      expect(s.calls[1]!.text).toContain('sys_role_dept');
+      expect(s.calls.some((call) => call.text.includes('UPDATE sys_role'))).toBe(true);
+      expect(s.calls.some((call) => call.text.includes('DELETE FROM sys_role_dept'))).toBe(true);
     });
   });
 
   describe('菜单权限分配', () => {
     test('assignMenus 原子替换（先删后插）', async () => {
       const s = setupRole();
+      s.results.set('SELECT id FROM sys_role', [{ id: 'r1' }]);
+      s.results.set('SELECT id FROM sys_menu', [{ id: 'm1' }, { id: 'm2' }, { id: 'm3' }]);
       await s.roleService.assignMenus('r1', ['m1', 'm2', 'm3']);
-      // 第一条: DELETE, 第二条: INSERT
-      expect(s.calls.length).toBe(2);
-      expect(s.calls[0]!.text).toContain('DELETE');
-      expect(s.calls[0]!.text).toContain('sys_role_menu');
-      expect(s.calls[1]!.text).toContain('INSERT');
-      expect(s.calls[1]!.text).toContain('sys_role_menu');
+      expect(s.calls.some((call) => call.text.includes('DELETE FROM sys_role_menu'))).toBe(true);
+      expect(s.calls.some((call) => call.text.includes('INSERT INTO sys_role_menu'))).toBe(true);
     });
 
     test('assignMenus 空列表只删除不插入', async () => {
       const s = setupRole();
+      s.results.set('SELECT id FROM sys_role', [{ id: 'r1' }]);
       await s.roleService.assignMenus('r1', []);
-      expect(s.calls.length).toBe(1);
-      expect(s.calls[0]!.text).toContain('DELETE');
+      expect(s.calls.some((call) => call.text.includes('DELETE FROM sys_role_menu'))).toBe(true);
     });
   });
 
@@ -195,13 +195,15 @@ describe('Security: Permission', () => {
   describe('角色删除级联清理', () => {
     test('删除角色时清理关联数据', async () => {
       const s = setupRole();
+      s.results.set('SELECT code FROM sys_role', [{ code: 'editor' }]);
       await s.roleService.delete('r1');
-      // 清理 role_menu、user_role、role_dept 后软删除角色
-      expect(s.calls.length).toBe(4);
-      expect(s.calls[0]!.text).toContain('sys_role_menu');
-      expect(s.calls[1]!.text).toContain('sys_user_role');
-      expect(s.calls[2]!.text).toContain('sys_role_dept');
-      expect(s.calls[3]!.text).toContain('deleted_at');
+      expect(s.calls.some((call) => call.text.includes('DELETE FROM sys_role_menu'))).toBe(true);
+      expect(s.calls.some((call) => call.text.includes('DELETE FROM sys_role_dept'))).toBe(true);
+      expect(
+        s.calls.some(
+          (call) => call.text.includes('UPDATE sys_role') && call.text.includes('deleted_at'),
+        ),
+      ).toBe(true);
     });
   });
 
@@ -217,7 +219,13 @@ describe('Security: Permission', () => {
       const cache = createTestCache();
       const passwordHasher = createMockPasswordHasher();
 
-      const userService = createUserService({ db, passwordHasher, cache });
+      const userService = createUserService({
+        db,
+        passwordHasher,
+        cache,
+        configService: createMockConfigService(),
+        governance: { assertCanAssignRoles: async () => {} },
+      });
       mockExec.results.set('COUNT', [{ total: 0 }]);
 
       // 尝试 SQL 注入

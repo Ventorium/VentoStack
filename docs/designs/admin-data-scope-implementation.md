@@ -354,14 +354,14 @@ Admin API 本地启动还受到 PostgreSQL 连接关闭影响，因此无法运�
 
 以下项目经交叉审阅确认不阻塞本次合并，但应与 scoped CRUD / scoped 路由机制一并处理。
 
-#### TD-DS-01：清理组合根残留 RowFilter 依赖
+#### TD-DS-01：清理组合根残留 RowFilter 依赖（已完成）
 
-现状：
+完成情况：
 
-- `packages/platform/system/src/module.ts` 仍导入 `RowFilter`。
-- `SystemModuleDeps.rowFilter` 仍要求调用方传入该对象。
-- `apps/admin/api/src/app.ts` 和 platform boot 仍沿用该装配参数。
-- 数据范围已经改由 `DataScopeResolver` 处理，system 模块内没有 RowFilter 消费者。
+- system 模块已删除 `RowFilter` import 和依赖字段。
+- boot 已停止向 system 透传 RowFilter。
+- admin composition root 已停止创建和装配无消费者的 RowFilter。
+- auth 包的通用 RowFilter 能力保持不变。
 
 影响：不会造成运行时越权，但会让维护者误以为 system 数据权限仍依赖 RowFilter，并保留无意义的装配契约。
 
@@ -374,9 +374,9 @@ Admin API 本地启动还受到 PostgreSQL 连接关闭影响，因此无法运�
 - admin composition root 不再为 system 数据权限装配 RowFilter。
 - RBAC、数据权限及启动测试保持通过。
 
-#### TD-DS-02：批量用户操作的数据权限查询放大
+#### TD-DS-02：批量用户操作的数据权限查询放大（已完成）
 
-现状：`canMutateUser` 为保证实时权限和 admin 目标保护，会解析操作者范围、确认操作者 admin 状态并查询目标角色。批量端点逐个调用该函数，最大 100 个目标时可能产生数百条串行查询。
+完成情况：新增 `filterMutableUserIds`，一次解析操作者范围并通过集合查询加载目标用户和 admin 角色，查询数量保持固定数量级；批量删除、状态修改和密码重置均已接入。
 
 影响：正确性和 fail-closed 行为不受影响，但大批量操作可能产生明显延迟和数据库压力。
 
