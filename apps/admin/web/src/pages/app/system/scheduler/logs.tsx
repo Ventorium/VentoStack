@@ -1,18 +1,19 @@
-import { client } from "@/api";
-import type { ScheduleJobLog } from "@/api/types";
-import { SCHEDULER_API } from "@/constants";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { ArrowLeftOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Form, Select, Space, Table, Tag } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { client } from '@/api';
+import type { ScheduleJobLog } from '@/api/types';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { SCHEDULER_API } from '@/constants';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { ArrowLeftOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Select, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useEffect, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router';
 
 const SchedulerLogsPage = () => {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const jobId = searchParams.get("jobId");
+  const jobId = searchParams.get('jobId');
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<ScheduleJobLog[]>([]);
   const [total, setTotal] = useState(0);
@@ -50,42 +51,42 @@ const SchedulerLogsPage = () => {
   };
 
   const columns: ColumnsType<ScheduleJobLog> = [
-    { title: "任务名称", dataIndex: "jobName", key: "jobName", width: 160 },
+    { title: '任务名称', dataIndex: 'jobName', key: 'jobName', width: 160 },
     {
-      title: "开始时间",
-      dataIndex: "startAt",
-      key: "startAt",
+      title: '开始时间',
+      dataIndex: 'startAt',
+      key: 'startAt',
       width: 180,
       render: (_: unknown, r: ScheduleJobLog) => fmtDate(r.startAt),
     },
     {
-      title: "结束时间",
-      dataIndex: "endAt",
-      key: "endAt",
+      title: '结束时间',
+      dataIndex: 'endAt',
+      key: 'endAt',
       width: 180,
       render: (_: unknown, r: ScheduleJobLog) => fmtDate(r.endAt),
     },
     {
-      title: "耗时",
-      dataIndex: "durationMs",
-      key: "durationMs",
+      title: '耗时',
+      dataIndex: 'durationMs',
+      key: 'durationMs',
       width: 100,
       render: (v: number) => `${v}ms`,
     },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 100,
       render: (v: string) =>
         v === 1 ? <Tag color="green">成功</Tag> : <Tag color="red">失败</Tag>,
     },
     {
-      title: "错误信息",
-      dataIndex: "error",
-      key: "error",
+      title: '错误信息',
+      dataIndex: 'error',
+      key: 'error',
       ellipsis: true,
-      render: (v: string) => v || "-",
+      render: (v: string) => v || '-',
     },
   ];
 
@@ -93,25 +94,24 @@ const SchedulerLogsPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">执行日志</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="status" initialValue={undefined}>
-            <Select placeholder="状态" className="w-[120px]" allowClear>
+        <SearchToolbar
+          form={searchForm}
+          onSearch={handleSearch}
+          onReset={() => fetchData({ page, pageSize })}
+          resetText="刷新"
+          extraActions={
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/app/system/scheduler')}>
+              返回
+            </Button>
+          }
+        >
+          <SearchField name="status" width="normal" initialValue={undefined}>
+            <Select placeholder="状态" allowClear>
               <Select.Option value={1}>成功</Select.Option>
               <Select.Option value={0}>失败</Select.Option>
             </Select>
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={() => fetchData({ page, pageSize })}>
-              刷新
-            </Button>
-            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/app/system/scheduler")}>
-              返回
-            </Button>
-          </Space>
-        </Form>
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card title={`日志列表（${total}）`}>
         <Table

@@ -1,37 +1,42 @@
-import { client } from "@/api";
-import type { NotifyMessage } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import { msg } from "@/components/GlobalMessage";
-import { NOTIFICATION_API } from "@/constants";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Badge, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { client } from '@/api';
+import type { NotifyMessage } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { NOTIFICATION_API } from '@/constants';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { SearchOutlined } from '@ant-design/icons';
+import { Badge, Button, Card, Form, Input, Modal, Select, Space, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 
-interface PostItem { id: string; name: string; code: string }
+interface PostItem {
+  id: string;
+  name: string;
+  code: string;
+}
 const fetcher = (params: Record<string, unknown>) =>
   client.get(NOTIFICATION_API.MESSAGES, { query: cleanParams(params) });
 
 const channelOptions = [
-  { label: "站内信", value: "in_app" },
-  { label: "邮件", value: "email" },
-  { label: "短信", value: "sms" },
-  { label: "Webhook", value: "webhook" },
+  { label: '站内信', value: 'in_app' },
+  { label: '邮件', value: 'email' },
+  { label: '短信', value: 'sms' },
+  { label: 'Webhook', value: 'webhook' },
 ];
 
 const statusOptions = [
-  { label: "未读", value: "unread" },
-  { label: "已读", value: "read" },
+  { label: '未读', value: 'unread' },
+  { label: '已读', value: 'read' },
 ];
 
 const channelMap: Record<string, { label: string; color: string }> = {
-  email: { label: "邮件", color: "blue" },
-  sms: { label: "短信", color: "green" },
-  webhook: { label: "Webhook", color: "purple" },
-  in_app: { label: "站内信", color: "orange" },
+  email: { label: '邮件', color: 'blue' },
+  sms: { label: '短信', color: 'green' },
+  webhook: { label: 'Webhook', color: 'purple' },
+  in_app: { label: '站内信', color: 'orange' },
 };
 
 const NotificationPage = () => {
@@ -70,12 +75,12 @@ const NotificationPage = () => {
   const openSendModal = async () => {
     setSendModalOpen(true);
     sendForm.resetFields();
-    sendForm.setFieldsValue({ channel: "in_app" });
-    const { error, data } = (await client.get("/api/system/posts", {
+    sendForm.setFieldsValue({ channel: 'in_app' });
+    const { error, data } = (await client.get('/api/system/posts', {
       query: { pageSize: 100 },
     })) as { error?: unknown; data?: { list?: PostItem[] } };
     if (error) {
-      msg.error("岗位列表加载失败");
+      msg.error('岗位列表加载失败');
       return;
     }
     setPostOptions((data?.list ?? []).map((p) => ({ label: p.name, value: p.id })));
@@ -83,11 +88,13 @@ const NotificationPage = () => {
 
   const handleSend = async () => {
     const values = await sendForm.validateFields();
-    const { error, data } = await client.post("/api/system/notification/send-by-posts" as any, {
+    const { error, data } = await client.post('/api/system/notification/send-by-posts' as any, {
       body: values,
     });
     if (!error) {
-      msg.success(`已发送：成功 ${(data as { sent?: number })?.sent ?? 0} 条，失败 ${(data as { failed?: number })?.failed ?? 0} 条`);
+      msg.success(
+        `已发送：成功 ${(data as { sent?: number })?.sent ?? 0} 条，失败 ${(data as { failed?: number })?.failed ?? 0} 条`,
+      );
       setSendModalOpen(false);
     }
   };
@@ -95,21 +102,21 @@ const NotificationPage = () => {
   const handleMarkAsRead = async (id: string) => {
     const { error } = await client.put(NOTIFICATION_API.MESSAGE_READ, { params: { id } });
     if (!error) {
-      msg.success("已标记为已读");
+      msg.success('已标记为已读');
       refresh();
     }
   };
 
   const handleBatchMarkAsRead = async () => {
     if (selectedRowKeys.length === 0) {
-      msg.warning("请先选择消息");
+      msg.warning('请先选择消息');
       return;
     }
     const { error } = await client.post(NOTIFICATION_API.MESSAGE_READ_BATCH, {
       body: { messageIds: selectedRowKeys as string[] },
     });
     if (!error) {
-      msg.success("批量标记成功");
+      msg.success('批量标记成功');
       clearSelection();
       refresh();
     }
@@ -118,7 +125,7 @@ const NotificationPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete(NOTIFICATION_API.MESSAGE_DELETE, { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
@@ -133,22 +140,22 @@ const NotificationPage = () => {
   };
 
   const columns: ColumnsType<NotifyMessage> = [
-    { title: "标题", dataIndex: "title", key: "title", ellipsis: true, width: 200 },
+    { title: '标题', dataIndex: 'title', key: 'title', ellipsis: true, width: 200 },
     {
-      title: "渠道",
-      dataIndex: "channel",
-      key: "channel",
+      title: '渠道',
+      dataIndex: 'channel',
+      key: 'channel',
       width: 100,
       render: (_: unknown, r: NotifyMessage) => {
         const ch = channelMap[r.channel];
         return ch ? <Tag color={ch.color}>{ch.label}</Tag> : r.channel;
       },
     },
-    { title: "内容", dataIndex: "content", key: "content", ellipsis: true },
+    { title: '内容', dataIndex: 'content', key: 'content', ellipsis: true },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 100,
       render: (_: unknown, r: NotifyMessage) =>
         !r.read ? (
@@ -158,29 +165,27 @@ const NotificationPage = () => {
         ),
     },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: NotifyMessage) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 160,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: NotifyMessage) => (
         <ActionColumn
           items={[
-            { label: "查看", onClick: () => handleViewDetail(r) },
-            ...(!r.read
-              ? [{ label: "标记已读", onClick: () => handleMarkAsRead(r.id) }]
-              : []),
+            { label: '查看', onClick: () => handleViewDetail(r) },
+            ...(!r.read ? [{ label: '标记已读', onClick: () => handleMarkAsRead(r.id) }] : []),
             {
-              label: "删除",
+              label: '删除',
               onClick: () => handleDelete(r.id),
               danger: true,
-              confirm: "确定删除该消息？",
+              confirm: '确定删除该消息？',
             },
           ]}
         />
@@ -192,25 +197,17 @@ const NotificationPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">消息通知</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="title">
-            <Input placeholder="消息标题" prefix={<SearchOutlined />} className="w-[200px]" />
-          </Form.Item>
-          <Form.Item name="channel">
-            <Select placeholder="渠道" allowClear options={channelOptions} className="w-[120px]" />
-          </Form.Item>
-          <Form.Item name="status">
-            <Select placeholder="状态" allowClear options={statusOptions} className="w-[100px]" />
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
-          </Space>
-        </Form>
+        <SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+          <SearchField name="title" width="wide">
+            <Input placeholder="消息标题" prefix={<SearchOutlined />} />
+          </SearchField>
+          <SearchField name="channel" width="normal">
+            <Select placeholder="渠道" allowClear options={channelOptions} />
+          </SearchField>
+          <SearchField name="status" width="normal">
+            <Select placeholder="状态" allowClear options={statusOptions} />
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card
         title={`消息列表（${total}）`}
@@ -229,7 +226,7 @@ const NotificationPage = () => {
       >
         {hasSelected && (
           <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-            已选 {selectedRowKeys.length} 项{" "}
+            已选 {selectedRowKeys.length} 项{' '}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择
             </Button>
@@ -262,14 +259,22 @@ const NotificationPage = () => {
         width={520}
       >
         <Form form={sendForm} layout="vertical" preserve={false}>
-          <Form.Item name="postIds" label="目标岗位" rules={[{ required: true, message: "请选择至少一个岗位" }]}>
+          <Form.Item
+            name="postIds"
+            label="目标岗位"
+            rules={[{ required: true, message: '请选择至少一个岗位' }]}
+          >
             <Select
               mode="multiple"
               placeholder="选择岗位，发送给岗位下所有启用用户"
               options={postOptions}
               allowClear
               showSearch
-              filterOption={(input, option) => String(option?.label ?? "").toLowerCase().includes(input.toLowerCase())}
+              filterOption={(input, option) =>
+                String(option?.label ?? '')
+                  .toLowerCase()
+                  .includes(input.toLowerCase())
+              }
             />
           </Form.Item>
           <Form.Item name="channel" label="渠道" rules={[{ required: true }]}>
@@ -278,7 +283,11 @@ const NotificationPage = () => {
           <Form.Item name="title" label="标题">
             <Input placeholder="通知标题" />
           </Form.Item>
-          <Form.Item name="content" label="内容" rules={[{ required: true, message: "请输入通知内容" }]}>
+          <Form.Item
+            name="content"
+            label="内容"
+            rules={[{ required: true, message: '请输入通知内容' }]}
+          >
             <Input.TextArea rows={4} placeholder="通知内容" />
           </Form.Item>
         </Form>

@@ -27,6 +27,18 @@ describe('NoticeService', () => {
     expect(s.calls.some((c) => c.text.includes('INSERT'))).toBe(true);
   });
 
+  test('create and update reject unsupported notice types', async () => {
+    const s = setup();
+    await expect(
+      s.noticeService.create({ title: '错误类型', content: '内容', type: 7 }),
+    ).rejects.toMatchObject({ code: 400, errorCode: 'INVALID_NOTICE_TYPE' });
+    await expect(s.noticeService.update('n1', { type: 0 })).rejects.toMatchObject({
+      code: 400,
+      errorCode: 'INVALID_NOTICE_TYPE',
+    });
+    expect(s.calls).toHaveLength(0);
+  });
+
   test('update executes UPDATE with changed fields', async () => {
     const s = setup();
     s.results.set('UPDATE sys_notice', [{ id: 'n1', status: 0 }]);
@@ -85,11 +97,21 @@ describe('NoticeService', () => {
 
   test('publish updates status to 1', async () => {
     const s = setup();
+    s.results.set('SELECT', [{ status: 0 }]);
     s.results.set('UPDATE sys_notice', [{ id: 'n1', status: 1 }]);
-    await s.noticeService.publish('n1', 'u1');
+    await s.noticeService.publishApproved('n1', 'u1');
     expect(s.calls.some((c) => c.text.includes('status') && c.text.includes('publisher_id'))).toBe(
       true,
     );
+  });
+
+  test('approved publish is idempotent when notice is already published', async () => {
+    const { noticeService, results, calls } = setup();
+    results.set('SELECT', [{ status: 1 }]);
+
+    await noticeService.publishApproved('n1', 'approver-1');
+
+    expect(calls.some((c) => c.text.includes('UPDATE'))).toBe(false);
   });
 
   test('revoke updates status to 2', async () => {
@@ -158,13 +180,13 @@ describe('NoticeService', () => {
     expect((error as VentoStackError).message).toBe('仅草稿状态的通知可编辑');
   });
 
-  test('publish on published notice throws 409', async () => {
+  test('approved publish rejects an invalid notice state', async () => {
     const s = setup();
+    s.results.set('SELECT', [{ status: 9 }]);
     s.results.set('UPDATE sys_notice', []);
-    s.results.set('SELECT status FROM sys_notice', [{ status: 1 }]);
     let error: unknown;
     try {
-      await s.noticeService.publish('n1', 'u1');
+      await s.noticeService.publishApproved('n1', 'u1');
     } catch (e) {
       error = e;
     }
@@ -177,7 +199,7 @@ describe('NoticeService', () => {
     s.results.set('UPDATE sys_notice', []);
     let error: unknown;
     try {
-      await s.noticeService.publish('n404', 'u1');
+      await s.noticeService.publishApproved('n404', 'u1');
     } catch (e) {
       error = e;
     }

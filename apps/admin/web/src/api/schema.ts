@@ -1041,7 +1041,56 @@ export type OpenAPIs = {
         /**
          * @description 当前用户登录日志列表
          */
-        list?: {}[],
+        list?: {
+          /**
+           * @description 日志 ID
+           */
+          id?: string,
+          /**
+           * @description 用户 ID
+           */
+          userId?: string,
+          /**
+           * @description 用户名
+           */
+          username?: string,
+          /**
+           * @description 登录 IP
+           */
+          ip?: string,
+          /**
+           * @description IP 位置描述
+           */
+          location?: string,
+          /**
+           * @description 浏览器
+           */
+          browser?: string,
+          /**
+           * @description 操作系统
+           */
+          os?: string,
+          /**
+           * @description 状态 0=失败 1=成功
+           */
+          status?: number,
+          /**
+           * @description 登录结果信息
+           */
+          message?: string,
+          /**
+           * @description 登录方式
+           */
+          loginMethod?: string,
+          /**
+           * @description 登录时间
+           */
+          loginAt?: string,
+          /**
+           * @description 记录创建时间
+           */
+          createdAt?: string
+        }[],
         /**
          * @description 总数
          */
@@ -1096,7 +1145,8 @@ export type OpenAPIs = {
         page?: number,
         pageSize?: number,
         username?: string,
-        module?: string
+        module?: string,
+        result?: number
       },
       params: never,
       headers: never,
@@ -1105,7 +1155,64 @@ export type OpenAPIs = {
         /**
          * @description 操作日志列表
          */
-        list?: {}[],
+        list?: {
+          /**
+           * @description 日志 ID
+           */
+          id?: string,
+          /**
+           * @description 操作者用户 ID
+           */
+          userId?: string,
+          /**
+           * @description 操作者用户名
+           */
+          username?: string,
+          /**
+           * @description 业务模块
+           */
+          module?: string,
+          /**
+           * @description 中文操作名称
+           */
+          action?: string,
+          /**
+           * @description HTTP 方法
+           */
+          method?: string,
+          /**
+           * @description 请求路径（不含查询串）
+           */
+          url?: string,
+          /**
+           * @description 可信客户端 IP
+           */
+          ip?: string,
+          /**
+           * @description IP 位置描述
+           */
+          location?: string,
+          /**
+           * @description 脱敏后的请求参数 JSON
+           */
+          params?: string,
+          /**
+           * @description 结果 0=失败 1=成功
+           */
+          result?: number,
+          /**
+           * @description 异常信息
+           */
+          errorMsg?: string,
+          /**
+           * @description 耗时（毫秒）
+           */
+          duration?: number,
+          /**
+           * @description 操作时间
+           */
+          createdAt?: string
+        }[],
         /**
          * @description 总数
          */
@@ -1126,12 +1233,14 @@ export type OpenAPIs = {
     },
     /**
      * 获取登录日志
+     * @description 按当前租户查询登录日志，支持用户名和登录结果筛选。
      */
     '/api/system/login-logs': {
       query: {
         page?: number,
         pageSize?: number,
-        username?: string
+        username?: string,
+        status?: number
       },
       params: never,
       headers: never,
@@ -1190,7 +1299,10 @@ export type OpenAPIs = {
      * 获取已发布通知列表（含已读状态）
      */
     '/api/system/notices/published': {
-      query: never,
+      query: {
+        page?: number,
+        pageSize?: number
+      },
       params: never,
       headers: never,
       body: never,
@@ -2833,7 +2945,8 @@ export type OpenAPIs = {
          */
         content: string,
         /**
-         * @description 通知类型
+         * @description 通知类型 1=通知 2=公告
+         * @enum 1,2
          */
         type: number
       },
@@ -4010,6 +4123,7 @@ export type OpenAPIs = {
     },
     /**
      * 清空登录日志
+     * @description 仅管理员可清空当前租户的登录日志，不影响其他租户。
      */
     '/api/system/login-logs': {
       query: never,
@@ -4544,7 +4658,8 @@ export type OpenAPIs = {
          */
         content?: string,
         /**
-         * @description 通知类型
+         * @description 通知类型 1=通知 2=公告
+         * @enum 1,2
          */
         type?: number
       },

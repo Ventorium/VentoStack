@@ -1,42 +1,56 @@
 /** 自定义节点组件 — 加大 Handle 可操作区域 */
 
-import { memo } from "react";
-import { Handle, Position, type NodeProps } from "@xyflow/react";
-import { NODE_TYPE_META, type FlowNodeData } from "./types";
+import { Handle, type NodeProps, Position } from '@xyflow/react';
+import { memo } from 'react';
+import { type FlowNodeData, NODE_TYPE_META } from './types';
 
 const handleStyle: React.CSSProperties = {
   width: 12,
   height: 12,
-  border: "2px solid #fff",
-  boxShadow: "0 0 4px rgba(0,0,0,0.2)",
+  border: '2px solid #fff',
+  boxShadow: '0 0 4px rgba(0,0,0,0.2)',
 };
 
 const nodeBaseStyle: React.CSSProperties = {
-  padding: "8px 16px",
+  padding: '8px 16px',
   borderRadius: 8,
-  border: "2px solid",
+  border: '2px solid',
   minWidth: 120,
-  textAlign: "center",
+  textAlign: 'center',
   fontSize: 13,
-  background: "#fff",
-  cursor: "move",
+  background: '#fff',
+  cursor: 'move',
 };
 
 function StartEndNode({ data, selected }: NodeProps) {
   const d = data as unknown as FlowNodeData;
   const meta = NODE_TYPE_META[d.nodeType];
-  const isStart = d.nodeType === "start";
+  const isStart = d.nodeType === 'start';
   return (
-    <div style={{
-      ...nodeBaseStyle,
-      borderColor: selected ? "#000" : meta.color,
-      borderRadius: isStart ? 24 : 8,
-      background: selected ? `${meta.color}10` : "#fff",
-    }}>
+    <div
+      style={{
+        ...nodeBaseStyle,
+        borderColor: selected ? '#000' : meta.color,
+        borderRadius: isStart ? 24 : 8,
+        background: selected ? `${meta.color}10` : '#fff',
+      }}
+    >
       <span className="mr-1">{meta.icon}</span>
       {d.label}
-      {isStart && <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, background: meta.color }} />}
-      {!isStart && <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />}
+      {isStart && (
+        <Handle
+          type="source"
+          position={Position.Bottom}
+          style={{ ...handleStyle, background: meta.color }}
+        />
+      )}
+      {!isStart && (
+        <Handle
+          type="target"
+          position={Position.Top}
+          style={{ ...handleStyle, background: meta.color }}
+        />
+      )}
     </div>
   );
 }
@@ -44,23 +58,52 @@ function StartEndNode({ data, selected }: NodeProps) {
 function ApproveNode({ data, selected }: NodeProps) {
   const d = data as unknown as FlowNodeData;
   const meta = NODE_TYPE_META[d.nodeType];
-  const strategy = d.config?.strategy ?? "sequential";
+  const strategy = d.config?.strategy ?? 'sequential';
   const strategyLabel: Record<string, string> = {
-    sequential: "依次审批", parallel_and: "会签(全部)", parallel_or: "或签(任一)",
+    sequential: '依次审批',
+    parallel_and: '会签(全部)',
+    parallel_or: '或签(任一)',
     percentage: `百分比(${d.config?.percentage ?? 50}%)`,
   };
   const assignee = d.config?.assignee;
-  const assigneeLabel = assignee?.mode === "fixed" ? `${assignee.userIds?.length ?? 0}人` : assignee?.mode === "role" ? "按角色" : assignee?.mode === "department" ? "按部门" : assignee?.mode === "dept_tag" ? `标签(${assignee.tagCodes?.join(",") ?? ""}${assignee.deptTraversal ? ",向上遍历" : ""})` : assignee?.mode === "lookup" ? "自动查找" : "未配置";
+  const assigneeLabel =
+    assignee?.mode === 'fixed'
+      ? `${assignee.userIds?.length ?? 0}人`
+      : assignee?.mode === 'role'
+        ? '按角色'
+        : assignee?.mode === 'department'
+          ? '按部门'
+          : assignee?.mode === 'dept_tag'
+            ? `标签(${assignee.tagCodes?.join(',') ?? ''}${assignee.deptTraversal ? ',向上遍历' : ''})`
+            : assignee?.mode === 'lookup'
+              ? '自动查找'
+              : '未配置';
   return (
-    <div style={{
-      ...nodeBaseStyle, minWidth: 140,
-      borderColor: selected ? "#000" : meta.color,
-      background: selected ? `${meta.color}10` : "#fff",
-    }}>
-      <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />
-      <div className="font-semibold"><span className="mr-1">{meta.icon}</span>{d.label}</div>
-      <div className="text-[11px] text-[#888] mt-0.5">{strategyLabel[strategy]} · {assigneeLabel}</div>
-      <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, background: meta.color }} />
+    <div
+      style={{
+        ...nodeBaseStyle,
+        minWidth: 140,
+        borderColor: selected ? '#000' : meta.color,
+        background: selected ? `${meta.color}10` : '#fff',
+      }}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ ...handleStyle, background: meta.color }}
+      />
+      <div className="font-semibold">
+        <span className="mr-1">{meta.icon}</span>
+        {d.label}
+      </div>
+      <div className="text-[11px] text-[#888] mt-0.5">
+        {strategyLabel[strategy]} · {assigneeLabel}
+      </div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ ...handleStyle, background: meta.color }}
+      />
     </div>
   );
 }
@@ -69,17 +112,43 @@ function CcNode({ data, selected }: NodeProps) {
   const d = data as unknown as FlowNodeData;
   const meta = NODE_TYPE_META[d.nodeType];
   const assignee = d.config?.assignee;
-  const assigneeLabel = assignee?.mode === "fixed" ? `${assignee.userIds?.length ?? 0}人` : assignee?.mode === "role" ? "按角色" : assignee?.mode === "department" ? "按部门" : assignee?.mode === "dept_tag" ? "部门标签" : assignee?.mode === "lookup" ? "自动查找" : assignee?.mode === "form_field" ? "表单字段" : "未配置";
+  const assigneeLabel =
+    assignee?.mode === 'fixed'
+      ? `${assignee.userIds?.length ?? 0}人`
+      : assignee?.mode === 'role'
+        ? '按角色'
+        : assignee?.mode === 'department'
+          ? '按部门'
+          : assignee?.mode === 'dept_tag'
+            ? '部门标签'
+            : assignee?.mode === 'lookup'
+              ? '自动查找'
+              : assignee?.mode === 'form_field'
+                ? '表单字段'
+                : '未配置';
   return (
-    <div style={{
-      ...nodeBaseStyle,
-      borderColor: selected ? "#000" : meta.color,
-      background: selected ? `${meta.color}10` : "#fff",
-    }}>
-      <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />
-      <div className="font-semibold"><span className="mr-1">{meta.icon}</span>{d.label}</div>
+    <div
+      style={{
+        ...nodeBaseStyle,
+        borderColor: selected ? '#000' : meta.color,
+        background: selected ? `${meta.color}10` : '#fff',
+      }}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ ...handleStyle, background: meta.color }}
+      />
+      <div className="font-semibold">
+        <span className="mr-1">{meta.icon}</span>
+        {d.label}
+      </div>
       <div className="text-[11px] text-[#888] mt-0.5">{assigneeLabel}</div>
-      <Handle type="source" position={Position.Bottom} style={{ ...handleStyle, background: meta.color }} />
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        style={{ ...handleStyle, background: meta.color }}
+      />
     </div>
   );
 }
@@ -89,19 +158,39 @@ function ConditionNode({ data, selected }: NodeProps) {
   const meta = NODE_TYPE_META[d.nodeType];
   const condCount = d.config?.conditions?.length ?? 0;
   return (
-    <div style={{
-      ...nodeBaseStyle, minWidth: 100,
-      borderColor: selected ? "#000" : meta.color,
-      background: selected ? `${meta.color}10` : "#fff",
-      borderRadius: 4,
-    }}>
-      <Handle type="target" position={Position.Top} style={{ ...handleStyle, background: meta.color }} />
-      <div className="font-semibold"><span className="mr-1">{meta.icon}</span>{d.label}</div>
-      <div className="text-[11px] text-[#888] mt-0.5">
-        {condCount > 0 ? `${condCount} 个条件` : "未配置条件"}
+    <div
+      style={{
+        ...nodeBaseStyle,
+        minWidth: 100,
+        borderColor: selected ? '#000' : meta.color,
+        background: selected ? `${meta.color}10` : '#fff',
+        borderRadius: 4,
+      }}
+    >
+      <Handle
+        type="target"
+        position={Position.Top}
+        style={{ ...handleStyle, background: meta.color }}
+      />
+      <div className="font-semibold">
+        <span className="mr-1">{meta.icon}</span>
+        {d.label}
       </div>
-      <Handle type="source" position={Position.Bottom} id="default" style={{ ...handleStyle, background: meta.color }} />
-      <Handle type="source" position={Position.Right} id="condition" style={{ ...handleStyle, background: meta.color, top: "50%" }} />
+      <div className="text-[11px] text-[#888] mt-0.5">
+        {condCount > 0 ? `${condCount} 个条件` : '未配置条件'}
+      </div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="default"
+        style={{ ...handleStyle, background: meta.color }}
+      />
+      <Handle
+        type="source"
+        position={Position.Right}
+        id="condition"
+        style={{ ...handleStyle, background: meta.color, top: '50%' }}
+      />
     </div>
   );
 }

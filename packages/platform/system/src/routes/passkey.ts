@@ -155,6 +155,9 @@ export function createPasskeyRoutes(
       },
     },
     async (ctx) => {
+      const ip = getClientIP(ctx.request, trustedProxies);
+      const userAgent = ctx.request.headers.get('user-agent') ?? 'unknown';
+      let subject: { userId: string; username: string } | undefined;
       try {
         // 检查 Passkey 是否全局启用
         const enabled = (await configService.getValue('sys_passkey_enabled')) !== 'false';
@@ -163,24 +166,32 @@ export function createPasskeyRoutes(
         }
 
         const body = await parseBody(ctx.request);
-        const { userId, username } = await passkeyService.finishAuthentication(
+        subject = await passkeyService.finishAuthentication(
           body.challengeId as string,
           body.assertion as any,
         );
 
-        const ip = getClientIP(ctx.request, trustedProxies);
-
         const loginResult = await authService.completePasskeyLogin({
-          userId,
-          username,
+          userId: subject.userId,
+          username: subject.username,
           ip,
-          userAgent: ctx.request.headers.get('user-agent') ?? 'unknown',
+          userAgent,
           ...(body.deviceType ? { deviceType: body.deviceType as string } : {}),
         });
 
         return withTokenCookies(success(loginResult), ctx.request, loginResult);
       } catch (e) {
         const msg = safeErrorMessage(e, '通行密钥验证失败');
+        try {
+          await authService.recordPasskeyFailure({
+            ...(subject ? subject : {}),
+            ip,
+            userAgent,
+            message: msg,
+          });
+        } catch {
+          // 登录日志故障不能改变认证失败响应。
+        }
         return fail(msg, 401, 401);
       }
     },

@@ -332,8 +332,10 @@ export function createAuthRoutes(
         const body = await parseBody(ctx.request);
         const refreshToken =
           (body.refreshToken as string | undefined) ?? getCookie(ctx.request, 'vs_refresh_token');
-        if (!refreshToken) return fail('缺少刷新令牌', 401, 401);
-        const result = await authService.refreshToken(refreshToken);
+        const result = await authService.refreshToken(refreshToken ?? '', {
+          ip: extractClientIP(ctx.request, trustedProxies),
+          userAgent: ctx.request.headers.get('user-agent') ?? 'unknown',
+        });
         return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e) {
         const msg = safeErrorMessage(e, '刷新令牌失败');

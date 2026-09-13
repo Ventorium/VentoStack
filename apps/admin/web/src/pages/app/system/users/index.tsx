@@ -1,23 +1,23 @@
-import { client } from "@/api";
-import type { DeptItem, PaginatedData, PostItem, RoleItem, TagItem, UserItem } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { usePublicConfig } from "@/hooks/usePublicConfig";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { emailRules, getPasswordRules, phoneRules, usernameRules } from "@/utils/validators";
+import { client } from '@/api';
+import type { DeptItem, PaginatedData, PostItem, RoleItem, TagItem, UserItem } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { usePublicConfig } from '@/hooks/usePublicConfig';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { emailRules, getPasswordRules, phoneRules, usernameRules } from '@/utils/validators';
 import {
   ApartmentOutlined,
   AppstoreOutlined,
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   PlusOutlined,
-  ReloadOutlined,
   SearchOutlined,
   StopOutlined,
-} from "@ant-design/icons";
+} from '@ant-design/icons';
 import {
   Button,
   Card,
@@ -33,13 +33,13 @@ import {
   Tag,
   Tree,
   TreeSelect,
-} from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get("/api/system/users", { query: cleanParams(params) }) as Promise<{
+  client.get('/api/system/users', { query: cleanParams(params) }) as Promise<{
     error?: unknown;
     data?: PaginatedData<UserItem>;
   }>;
@@ -93,7 +93,7 @@ const UserPage = () => {
 
   const [resetPwdOpen, setResetPwdOpen] = useState(false);
   const [resetPwdLoading, setResetPwdLoading] = useState(false);
-  const [resetPwdUserId, setResetPwdUserId] = useState("");
+  const [resetPwdUserId, setResetPwdUserId] = useState('');
   const [resetPwdForm] = Form.useForm();
 
   // Dept tree state (for left panel Tree: key/title)
@@ -120,11 +120,11 @@ const UserPage = () => {
   // Fetch posts for selector
   useEffect(() => {
     const fetchPosts = async () => {
-      const { error, data } = (await client.get("/api/system/posts", {
+      const { error, data } = (await client.get('/api/system/posts', {
         query: { pageSize: 100 },
       })) as { error?: unknown; data?: PaginatedData<PostItem> };
       if (error) {
-        msg.error("岗位列表加载失败");
+        msg.error('岗位列表加载失败');
         return;
       }
       setPostOptions((data?.list ?? []).map((p) => ({ label: p.name, value: p.id })));
@@ -135,11 +135,11 @@ const UserPage = () => {
   // Fetch roles for selector
   useEffect(() => {
     const fetchRoles = async () => {
-      const { error, data } = (await client.get("/api/system/roles", {
+      const { error, data } = (await client.get('/api/system/roles', {
         query: { pageSize: 100 },
       })) as { error?: unknown; data?: PaginatedData<RoleItem> };
       if (error) {
-        msg.error("角色列表加载失败");
+        msg.error('角色列表加载失败');
         return;
       }
       setRoleOptions((data?.list ?? []).map((r) => ({ label: r.name, value: r.id })));
@@ -150,7 +150,7 @@ const UserPage = () => {
   // Fetch tags for selector
   useEffect(() => {
     const fetchTags = async () => {
-      const { data } = (await client.get("/api/system/tags/all" as any)) as {
+      const { data } = (await client.get('/api/system/tags/all' as any)) as {
         data?: TagItem[];
       };
       if (data) {
@@ -164,7 +164,7 @@ const UserPage = () => {
   const fetchDeptTree = useCallback(async () => {
     setDeptLoading(true);
     try {
-      const { data: result } = (await client.get("/api/system/depts/tree")) as {
+      const { data: result } = (await client.get('/api/system/depts/tree')) as {
         error?: unknown;
         data?: DeptItem[];
       };
@@ -187,10 +187,10 @@ const UserPage = () => {
     setSelectedDeptId(rawKey);
     // "__all__" = 所有部门（不传 deptId），"__none__" = 无部门用户
     let deptId: string | undefined;
-    if (rawKey === "__all__") {
+    if (rawKey === '__all__') {
       deptId = undefined;
-    } else if (rawKey === "__none__") {
-      deptId = "__none__";
+    } else if (rawKey === '__none__') {
+      deptId = '__none__';
     } else {
       deptId = rawKey;
     }
@@ -200,16 +200,16 @@ const UserPage = () => {
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
     const deptId =
-      selectedDeptId === "__all__" || !selectedDeptId
+      selectedDeptId === '__all__' || !selectedDeptId
         ? undefined
-        : selectedDeptId === "__none__"
-          ? "__none__"
+        : selectedDeptId === '__none__'
+          ? '__none__'
           : selectedDeptId;
     onSearch(cleanParams({ ...values, deptId }));
   };
   const handleReset = () => {
     searchForm.resetFields();
-    setSelectedDeptId("__all__");
+    setSelectedDeptId('__all__');
     onSearch({});
   };
 
@@ -218,7 +218,7 @@ const UserPage = () => {
     form.resetFields();
     // 自动选中左侧当前选中的部门（排除 __all__ 和 __none__）
     const preselectedDeptId =
-      selectedDeptId && selectedDeptId !== "__all__" && selectedDeptId !== "__none__"
+      selectedDeptId && selectedDeptId !== '__all__' && selectedDeptId !== '__none__'
         ? selectedDeptId
         : undefined;
     form.setFieldsValue({ status: 1, deptId: preselectedDeptId });
@@ -255,7 +255,7 @@ const UserPage = () => {
     setModalLoading(true);
     try {
       if (editingUser) {
-        const { error } = await client.put("/api/system/users/:id", {
+        const { error } = await client.put('/api/system/users/:id', {
           params: { id: editingUser.id },
           body: {
             nickname: values.nickname,
@@ -269,19 +269,22 @@ const UserPage = () => {
         });
         if (!error) {
           // 保存标签（始终调用，支持清空）
-          const { error: tagError } = await client.put(`/api/system/users/${editingUser.id}/tags` as any, {
-            body: { tagIds: values.tagIds ?? [] },
-          });
+          const { error: tagError } = await client.put(
+            `/api/system/users/${editingUser.id}/tags` as any,
+            {
+              body: { tagIds: values.tagIds ?? [] },
+            },
+          );
           if (tagError) {
-            msg.warning("用户信息已更新，但标签保存失败");
+            msg.warning('用户信息已更新，但标签保存失败');
           } else {
-            msg.success("更新成功");
+            msg.success('更新成功');
           }
           setModalOpen(false);
           refresh();
         }
       } else {
-        const { error, data } = await client.post("/api/system/users", {
+        const { error, data } = await client.post('/api/system/users', {
           body: {
             username: values.username,
             password: values.password,
@@ -298,14 +301,17 @@ const UserPage = () => {
           // 新建用户后保存标签
           const newUserId = (data as { id?: string })?.id;
           if (newUserId && values.tagIds?.length) {
-            const { error: tagError } = await client.put(`/api/system/users/${newUserId}/tags` as any, {
-              body: { tagIds: values.tagIds },
-            });
+            const { error: tagError } = await client.put(
+              `/api/system/users/${newUserId}/tags` as any,
+              {
+                body: { tagIds: values.tagIds },
+              },
+            );
             if (tagError) {
-              msg.warning("用户已创建，但标签保存失败");
+              msg.warning('用户已创建，但标签保存失败');
             }
           }
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           refresh();
         }
@@ -316,21 +322,21 @@ const UserPage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete("/api/system/users/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/users/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
 
   const handleStatus = async (id: string, status: number) => {
     const newStatus = status === 1 ? 0 : 1;
-    const { error } = await client.put("/api/system/users/:id/status", {
+    const { error } = await client.put('/api/system/users/:id/status', {
       params: { id },
       body: { status: newStatus },
     });
     if (!error) {
-      msg.success(newStatus === 1 ? "已启用" : "已禁用");
+      msg.success(newStatus === 1 ? '已启用' : '已禁用');
       refresh();
     }
   };
@@ -344,16 +350,16 @@ const UserPage = () => {
   };
 
   const handleBatchDisable = () => {
-    const names = selectedRows.map((r) => r.username).join("、");
+    const names = selectedRows.map((r) => r.username).join('、');
     Modal.confirm({
-      title: "批量禁用",
+      title: '批量禁用',
       content: `确定要禁用以下 ${selectedRowKeys.length} 个用户吗？\n${names}`,
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/users/batch-status", {
+        const { error, data } = await client.post('/api/system/users/batch-status', {
           body: { ids: selectedRowKeys as string[], status: 0 },
         });
         if (!error) {
-          showBatchResult(data as { success: number; skipped: number }, "禁用");
+          showBatchResult(data as { success: number; skipped: number }, '禁用');
           clearSelection();
           refresh();
         }
@@ -362,16 +368,16 @@ const UserPage = () => {
   };
 
   const handleBatchEnable = () => {
-    const names = selectedRows.map((r) => r.username).join("、");
+    const names = selectedRows.map((r) => r.username).join('、');
     Modal.confirm({
-      title: "批量启用",
+      title: '批量启用',
       content: `确定要启用以下 ${selectedRowKeys.length} 个用户吗？\n${names}`,
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/users/batch-status", {
+        const { error, data } = await client.post('/api/system/users/batch-status', {
           body: { ids: selectedRowKeys as string[], status: 1 },
         });
         if (!error) {
-          showBatchResult(data as { success: number; skipped: number }, "启用");
+          showBatchResult(data as { success: number; skipped: number }, '启用');
           clearSelection();
           refresh();
         }
@@ -380,18 +386,18 @@ const UserPage = () => {
   };
 
   const handleBatchDelete = () => {
-    const names = selectedRows.map((r) => r.username).join("、");
+    const names = selectedRows.map((r) => r.username).join('、');
     Modal.confirm({
-      title: "批量删除",
+      title: '批量删除',
       content: `确定要删除以下 ${selectedRowKeys.length} 个用户吗？此操作不可恢复。\n${names}`,
-      okType: "danger",
-      okText: "确定删除",
+      okType: 'danger',
+      okText: '确定删除',
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/users/batch-delete", {
+        const { error, data } = await client.post('/api/system/users/batch-delete', {
           body: { ids: selectedRowKeys as string[] },
         });
         if (!error) {
-          showBatchResult(data as { success: number; skipped: number }, "删除");
+          showBatchResult(data as { success: number; skipped: number }, '删除');
           clearSelection();
           refresh();
         }
@@ -400,16 +406,16 @@ const UserPage = () => {
   };
 
   const handleBatchResetPwd = () => {
-    const names = selectedRows.map((r) => r.username).join("、");
+    const names = selectedRows.map((r) => r.username).join('、');
     Modal.confirm({
-      title: "批量重置密码",
+      title: '批量重置密码',
       content: `确定要将以下 ${selectedRowKeys.length} 个用户的密码重置为系统默认初始密码吗？\n${names}`,
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/users/batch-reset-pwd", {
+        const { error, data } = await client.post('/api/system/users/batch-reset-pwd', {
           body: { ids: selectedRowKeys as string[] },
         });
         if (!error) {
-          showBatchResult(data as { success: number; skipped: number }, "重置密码");
+          showBatchResult(data as { success: number; skipped: number }, '重置密码');
           clearSelection();
           refresh();
         }
@@ -427,12 +433,12 @@ const UserPage = () => {
     const values = await resetPwdForm.validateFields();
     setResetPwdLoading(true);
     try {
-      const { error } = await client.put("/api/system/users/:id/reset-pwd", {
+      const { error } = await client.put('/api/system/users/:id/reset-pwd', {
         params: { id: resetPwdUserId },
         body: { newPassword: values.newPassword },
       });
       if (!error) {
-        msg.success("密码重置成功");
+        msg.success('密码重置成功');
         setResetPwdOpen(false);
       }
     } finally {
@@ -441,20 +447,20 @@ const UserPage = () => {
   };
 
   const columns: ColumnsType<UserItem> = [
-    { title: "用户名", dataIndex: "username", key: "username", width: 120 },
-    { title: "昵称", dataIndex: "nickname", key: "nickname", width: 120 },
+    { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
+    { title: '昵称', dataIndex: 'nickname', key: 'nickname', width: 120 },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: UserItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
     {
-      title: "标签",
-      key: "tags",
+      title: '标签',
+      key: 'tags',
       width: 200,
       render: (_: unknown, r: UserItem) =>
         r.tags?.length
@@ -463,45 +469,43 @@ const UserPage = () => {
                 {t.name}
               </Tag>
             ))
-          : "-",
+          : '-',
     },
     {
-      title: "岗位",
-      key: "posts",
+      title: '岗位',
+      key: 'posts',
       width: 160,
       render: (_: unknown, r: UserItem) =>
-        r.posts?.length
-          ? r.posts.map((p) => <Tag key={p.id}>{p.name}</Tag>)
-          : "-",
+        r.posts?.length ? r.posts.map((p) => <Tag key={p.id}>{p.name}</Tag>) : '-',
     },
-    { title: "邮箱", dataIndex: "email", key: "email", width: 200 },
-    { title: "手机号", dataIndex: "phone", key: "phone", width: 140 },
+    { title: '邮箱', dataIndex: 'email', key: 'email', width: 200 },
+    { title: '手机号', dataIndex: 'phone', key: 'phone', width: 140 },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: UserItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 136,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: UserItem) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEdit(r) },
-            { label: "重置密码", onClick: () => openResetPwd(r.id) },
+            { label: '编辑', onClick: () => openEdit(r) },
+            { label: '重置密码', onClick: () => openResetPwd(r.id) },
             {
-              label: r.status === 1 ? "禁用" : "启用",
+              label: r.status === 1 ? '禁用' : '启用',
               onClick: () => handleStatus(r.id, r.status),
             },
             {
-              label: "删除",
+              label: '删除',
               onClick: () => handleDelete(r.id),
               danger: true,
-              confirm: "确定删除该用户？",
+              confirm: '确定删除该用户？',
             },
           ]}
         />
@@ -515,18 +519,14 @@ const UserPage = () => {
       <div className="flex gap-4">
         {/* Dept tree sidebar */}
         {deptEnabled && deptPanelVisible && (
-          <Card
-            className="shrink-0 w-[240px]"
-            
-            styles={{ body: { padding: "12px 16px" } }}
-          >
+          <Card className="shrink-0 w-[240px]" styles={{ body: { padding: '12px 16px' } }}>
             <div className="flex items-center mb-2">
               <span className="text-sm font-medium text-gray-600 dark:text-gray-400">部门筛选</span>
               <Button
                 type="link"
                 size="small"
                 icon={<ApartmentOutlined />}
-                onClick={() => navigate("/app/system/depts")}
+                onClick={() => navigate('/app/system/depts')}
                 className="ml-4 mr-auto text-xs p-0"
               >
                 管理部门
@@ -543,33 +543,35 @@ const UserPage = () => {
                 <Tree
                   treeData={[
                     {
-                      key: "__all__",
+                      key: '__all__',
                       title: (
                         <span>
-                          <AppstoreOutlined className="mr-1 color-inherit"  />
+                          <AppstoreOutlined className="mr-1 color-inherit" />
                           所有部门
                         </span>
                       ),
                     },
                     {
-                      key: "__none__",
+                      key: '__none__',
                       title: (
                         <span>
-                          <StopOutlined className="mr-1 color-inherit"  />
+                          <StopOutlined className="mr-1 color-inherit" />
                           无部门
                         </span>
                       ),
                     },
                     ...deptTreeData,
                   ]}
-                  selectedKeys={[selectedDeptId ?? "__all__"]}
+                  selectedKeys={[selectedDeptId ?? '__all__']}
                   onSelect={handleDeptSelect}
                   defaultExpandAll
                   showLine={{ showLeafIcon: false }}
                   className="text-sm"
                 />
               ) : (
-                <div className="text-xs text-gray-400 dark:text-gray-500 py-4 text-center">暂无部门数据</div>
+                <div className="text-xs text-gray-400 dark:text-gray-500 py-4 text-center">
+                  暂无部门数据
+                </div>
               )}
             </Spin>
           </Card>
@@ -578,32 +580,23 @@ const UserPage = () => {
         {/* Main content */}
         <div className="flex-1 min-w-0">
           <Card className="mb-4">
-            <Form form={searchForm} layout="inline">
-              {deptEnabled && !deptPanelVisible && (
-                <Form.Item>
+            <SearchToolbar
+              form={searchForm}
+              onSearch={handleSearch}
+              onReset={handleReset}
+              extraActions={
+                deptEnabled && !deptPanelVisible ? (
                   <Button icon={<MenuUnfoldOutlined />} onClick={() => setDeptPanelVisible(true)} />
-                </Form.Item>
-              )}
-              <Form.Item name="username">
+                ) : undefined
+              }
+            >
+              <SearchField name="username" width="wide">
                 <Input placeholder="用户名" prefix={<SearchOutlined />} />
-              </Form.Item>
-              <Form.Item name="status">
-                <DictSelect
-                  typeCode="sys_status"
-                  placeholder="状态"
-                  allowClear
-                  className="w-[100px]"
-                />
-              </Form.Item>
-              <Space>
-                <Button type="primary" onClick={handleSearch}>
-                  搜索
-                </Button>
-                <Button icon={<ReloadOutlined />} onClick={handleReset}>
-                  重置
-                </Button>
-              </Space>
-            </Form>
+              </SearchField>
+              <SearchField name="status" width="normal">
+                <DictSelect typeCode="sys_status" placeholder="状态" allowClear />
+              </SearchField>
+            </SearchToolbar>
           </Card>
           <Card
             title={`用户列表（${total}）`}
@@ -633,7 +626,7 @@ const UserPage = () => {
           >
             {hasSelected && (
               <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-                已选 {selectedRowKeys.length} 项{" "}
+                已选 {selectedRowKeys.length} 项{' '}
                 <Button type="link" size="small" onClick={clearSelection}>
                   取消选择
                 </Button>
@@ -660,7 +653,7 @@ const UserPage = () => {
         </div>
       </div>
       <Modal
-        title={editingUser ? "编辑用户" : "新增用户"}
+        title={editingUser ? '编辑用户' : '新增用户'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}
@@ -671,11 +664,7 @@ const UserPage = () => {
         <Form form={form} layout="vertical" preserve={false}>
           <Row gutter={16}>
             <Col span={12}>
-              <Form.Item
-                name="username"
-                label="用户名"
-                rules={usernameRules}
-              >
+              <Form.Item name="username" label="用户名" rules={usernameRules}>
                 <Input disabled={!!editingUser} />
               </Form.Item>
             </Col>
@@ -701,20 +690,12 @@ const UserPage = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item
-                name="email"
-                label="邮箱"
-                rules={emailRules}
-              >
+              <Form.Item name="email" label="邮箱" rules={emailRules}>
                 <Input />
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item
-                name="phone"
-                label="手机号"
-                rules={phoneRules}
-              >
+              <Form.Item name="phone" label="手机号" rules={phoneRules}>
                 <Input />
               </Form.Item>
             </Col>
@@ -766,13 +747,13 @@ const UserPage = () => {
           <Form.Item
             name="confirmPassword"
             label="确认密码"
-            dependencies={["newPassword"]}
+            dependencies={['newPassword']}
             rules={[
-              { required: true, message: "请确认密码" },
+              { required: true, message: '请确认密码' },
               ({ getFieldValue }) => ({
                 validator(_, value) {
-                  if (!value || getFieldValue("newPassword") === value) return Promise.resolve();
-                  return Promise.reject(new Error("两次输入的密码不一致"));
+                  if (!value || getFieldValue('newPassword') === value) return Promise.resolve();
+                  return Promise.reject(new Error('两次输入的密码不一致'));
                 },
               }),
             ]}

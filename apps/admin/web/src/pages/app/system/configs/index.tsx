@@ -3,23 +3,12 @@ import type { ConfigItem, PaginatedData } from '@/api/types';
 import ActionColumn from '@/components/ActionColumn';
 import DictSelect from '@/components/DictSelect';
 import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
 import { useTable } from '@/hooks/useTable';
 import { cleanParams } from '@/utils/cleanParams';
 import { fmtDate } from '@/utils/fmtDate';
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
-import {
-  Button,
-  Card,
-  Col,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Row,
-  Space,
-  Switch,
-  Table,
-} from 'antd';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Switch, Table } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import { useState } from 'react';
 
@@ -166,22 +155,14 @@ const ConfigPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">系统参数</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="name">
+        <SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+          <SearchField name="name" width="wide">
             <Input placeholder="参数名称" prefix={<SearchOutlined />} />
-          </Form.Item>
-          <Form.Item name="key">
+          </SearchField>
+          <SearchField name="key" width="wide">
             <Input placeholder="参数键名" />
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
-          </Space>
-        </Form>
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card
         title={`参数列表（${total}）`}

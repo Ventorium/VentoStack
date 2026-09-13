@@ -18,7 +18,7 @@ import {
 } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import type { Router } from '@ventostack/core';
-import { createConfigEncryptor, createRouter } from '@ventostack/core';
+import { createConfigEncryptor, createRouter, createTagLogger } from '@ventostack/core';
 import type { Database, SqlExecutor, TableSchemaInfo } from '@ventostack/database';
 import { createDatabase } from '@ventostack/database';
 import type { EventBus } from '@ventostack/events';
@@ -43,7 +43,7 @@ import { createSchedulerModule } from '@ventostack/scheduler';
 import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
 import { createSystemModule } from '@ventostack/system';
 import type { SystemModule } from '@ventostack/system';
-import { createWorkflowModule } from '@ventostack/workflow';
+import { createWorkflowModule, workflowInstanceCompleted } from '@ventostack/workflow';
 import type { WorkflowModule } from '@ventostack/workflow';
 
 /** 平台配置 */
@@ -158,6 +158,8 @@ export interface Platform {
   /** 初始化所有模块 */
   init(): Promise<void>;
 }
+
+const bootLog = createTagLogger('boot');
 
 /**
  * 创建完整的 VentoStack 平台
@@ -288,6 +290,22 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
+  if (system && workflow) {
+    eventBus.on(workflowInstanceCompleted, async (payload) => {
+      if (payload.businessType !== 'notice' || !payload.businessId) return;
+      if (payload.tenantId !== normalizedTenantId) return;
+      try {
+        await system.services.notice.publishApproved(payload.businessId, payload.completedBy);
+      } catch (error) {
+        // 事件在审批事务内同步派发：发布失败不得回滚审批完结（例如审批期间公告被删除）。
+        // publishApproved 幂等，重放安全；失败仅记录日志供人工跟进。
+        bootLog.error(
+          `notice approval publish failed (businessId=${payload.businessId}): ${String(error)}`,
+        );
+      }
+    });
+  }
+
   const oss =
     enabled.oss && storageAdapter
       ? createOSSModule({
@@ -358,6 +376,10 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   // Aggregate routers
   const router = createRouter();
+
+  // system 提供统一操作审计；挂在聚合路由后覆盖所有已启用平台模块。
+  // system 内部已有的局部挂载由中间件自身去重，避免重复日志。
+  if (system) router.use(system.operationLogMiddleware);
 
   // Mount module routers
   if (system) router.merge(system.router);

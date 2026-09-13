@@ -16,7 +16,7 @@ import type {
 } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
 import { createRouter } from '@ventostack/core';
-import type { Router } from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
 import type { Database } from '@ventostack/database';
 import type { EventBus } from '@ventostack/events';
 import type { AuditStore } from '@ventostack/observability';
@@ -82,6 +82,8 @@ export interface SystemModule {
     passkey: ReturnType<typeof createPasskeyService>;
     tag: ReturnType<typeof createTagService>;
   };
+  /** 聚合到平台根路由的全局操作日志中间件。 */
+  operationLogMiddleware: Middleware;
   router: Router;
   init(): Promise<void>;
 }
@@ -229,7 +231,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
 
   const opLogMiddleware = createOperationLogMiddleware(auditLog, {
     saveToDb: saveOperationLog,
-    excludePathPrefixes: ['/api/system/operation-logs', '/api/system/login-logs'],
+    // 操作日志自身必须排除以避免查询/清理形成递归；清空登录日志则应留下审计记录。
+    excludePathPrefixes: ['/api/system/operation-logs', '/api/auth/refresh'],
     trustedProxies: deps.trustedProxies ?? [],
   });
 
@@ -1010,7 +1013,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       schemas: {
         listQuery: {
           title: { type: 'string' as const, max: 200, description: '通知标题' },
-          type: { type: 'int' as const, min: 0, max: 99, description: '通知类型' },
+          type: { type: 'int' as const, enum: [1, 2], description: '通知类型 1=通知 2=公告' },
           status: {
             type: 'int' as const,
             enum: [0, 1, 2],
@@ -1033,12 +1036,17 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             max: 100000,
             description: '通知内容',
           },
-          type: { type: 'int' as const, required: true, min: 0, max: 99, description: '通知类型' },
+          type: {
+            type: 'int' as const,
+            required: true,
+            enum: [1, 2],
+            description: '通知类型 1=通知 2=公告',
+          },
         },
         updateBody: {
           title: { type: 'string' as const, max: 200, description: '通知标题' },
           content: { type: 'string' as const, max: 100000, description: '通知内容' },
-          type: { type: 'int' as const, min: 0, max: 99, description: '通知类型' },
+          type: { type: 'int' as const, enum: [1, 2], description: '通知类型 1=通知 2=公告' },
         },
       },
       extraRoutes: (r) => {
@@ -1047,11 +1055,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           {
             openapi: { summary: '发布通知', tags: ['notice'], operationId: 'publishNotice' },
           },
-          async (ctx) => {
-            const id = (ctx.params as Record<string, string>).id!;
-            const user = ctx.user as { id: string };
-            await noticeService.publish(id, user.id);
-            return success(null);
+          async (_ctx) => {
+            return fail('通知必须在审批流程通过后发布', 409, 409);
           },
           perm('system:notice', 'update'),
         );
@@ -1083,26 +1088,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             },
             openapi: { summary: '批量发布通知', tags: ['notice'] },
           },
-          async (ctx) => {
-            const body = await parseBody(ctx.request);
-            const ids = (body.ids as string[]) ?? [];
-            if (ids.length > 100) return fail('批量操作数量不能超过 100', 400);
-            const user = ctx.user as { id: string };
-            let successCount = 0;
-            let skipped = 0;
-            for (const id of ids) {
-              const rows = (await db.raw(
-                'SELECT status FROM sys_notice WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL',
-                [tenantId, id],
-              )) as Array<{ status: number }>;
-              if (!rows.length || rows[0]!.status === 1) {
-                skipped++;
-                continue;
-              }
-              await noticeService.publish(id, user.id);
-              successCount++;
-            }
-            return success({ success: successCount, skipped });
+          async (_ctx) => {
+            return fail('批量发布不支持绕过审批，请逐条提交审批', 409, 409);
           },
           perm('system:notice', 'update'),
         );
@@ -1366,7 +1353,23 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         200: {
           list: {
             type: 'array' as const,
-            items: { type: 'object' as const },
+            items: {
+              type: 'object' as const,
+              properties: {
+                id: { type: 'uuid' as const, description: '日志 ID' },
+                userId: { type: 'uuid' as const, description: '用户 ID' },
+                username: { type: 'string' as const, description: '用户名' },
+                ip: { type: 'string' as const, description: '登录 IP' },
+                location: { type: 'string' as const, description: 'IP 位置描述' },
+                browser: { type: 'string' as const, description: '浏览器' },
+                os: { type: 'string' as const, description: '操作系统' },
+                status: { type: 'int' as const, description: '状态 0=失败 1=成功' },
+                message: { type: 'string' as const, description: '登录结果信息' },
+                loginMethod: { type: 'string' as const, description: '登录方式' },
+                loginAt: { type: 'date' as const, description: '登录时间' },
+                createdAt: { type: 'date' as const, description: '记录创建时间' },
+              },
+            },
             description: '当前用户登录日志列表',
           },
           total: { type: 'int' as const, description: '总数' },
@@ -1948,16 +1951,35 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/operation-logs',
     {
       query: {
-        page: { type: 'int' as const, default: 1, description: '页码' },
-        pageSize: { type: 'int' as const, default: 10, description: '每页数量' },
-        username: { type: 'string' as const, description: '用户名筛选' },
-        module: { type: 'string' as const, description: '模块筛选' },
+        page: { type: 'int' as const, min: 1, default: 1, description: '页码' },
+        pageSize: { type: 'int' as const, min: 1, max: 100, default: 10, description: '每页数量' },
+        username: { type: 'string' as const, max: 64, description: '用户名筛选' },
+        module: { type: 'string' as const, max: 64, description: '模块筛选' },
+        result: { type: 'int' as const, enum: [0, 1], description: '结果 0=失败 1=成功' },
       },
       responses: {
         200: {
           list: {
             type: 'array' as const,
-            items: { type: 'object' as const },
+            items: {
+              type: 'object' as const,
+              properties: {
+                id: { type: 'uuid' as const, description: '日志 ID' },
+                userId: { type: 'uuid' as const, description: '操作者用户 ID' },
+                username: { type: 'string' as const, description: '操作者用户名' },
+                module: { type: 'string' as const, description: '业务模块' },
+                action: { type: 'string' as const, description: '中文操作名称' },
+                method: { type: 'string' as const, description: 'HTTP 方法' },
+                url: { type: 'string' as const, description: '请求路径（不含查询串）' },
+                ip: { type: 'string' as const, description: '可信客户端 IP' },
+                location: { type: 'string' as const, description: 'IP 位置描述' },
+                params: { type: 'string' as const, description: '脱敏后的请求参数 JSON' },
+                result: { type: 'int' as const, description: '结果 0=失败 1=成功' },
+                errorMsg: { type: 'string' as const, description: '异常信息' },
+                duration: { type: 'int' as const, description: '耗时（毫秒）' },
+                createdAt: { type: 'date' as const, description: '操作时间' },
+              },
+            },
             description: '操作日志列表',
           },
           total: { type: 'int' as const, description: '总数' },
@@ -1979,6 +2001,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       let query = db.query(OperationLogModel).where('tenant_id', '=', tenantId);
       if (q.username) query = query.where('username', 'LIKE', `%${q.username}%`);
       if (q.module) query = query.where('module', '=', q.module);
+      if (q.result !== undefined) query = query.where('result', '=', Number(q.result));
       const offset = (page - 1) * pageSize;
       const total = await query.count();
       const rows = await query.orderBy('created_at', 'desc').limit(pageSize).offset(offset).list();
@@ -2006,9 +2029,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/login-logs',
     {
       query: {
-        page: { type: 'int' as const, default: 1, description: '页码' },
-        pageSize: { type: 'int' as const, default: 10, description: '每页数量' },
-        username: { type: 'string' as const, description: '用户名筛选' },
+        page: { type: 'int' as const, min: 1, default: 1, description: '页码' },
+        pageSize: { type: 'int' as const, min: 1, max: 100, default: 10, description: '每页数量' },
+        username: { type: 'string' as const, max: 64, description: '用户名筛选' },
+        status: { type: 'int' as const, enum: [0, 1], description: '状态 0=失败 1=成功' },
       },
       responses: {
         200: {
@@ -2023,13 +2047,19 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           totalPages: { type: 'int' as const, description: '总页数' },
         },
       },
-      openapi: { summary: '获取登录日志', tags: ['log'], operationId: 'listLoginLogs' },
+      openapi: {
+        summary: '获取登录日志',
+        description: '按当前租户查询登录日志，支持用户名和登录结果筛选。',
+        tags: ['log'],
+        operationId: 'listLoginLogs',
+      },
     },
     async (ctx) => {
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
       const q = ctx.query as unknown as Record<string, string>;
       let query = db.query(LoginLogModel).where('tenant_id', '=', tenantId);
       if (q.username) query = query.where('username', 'LIKE', `%${q.username}%`);
+      if (q.status !== undefined) query = query.where('status', '=', Number(q.status));
       const offset = (page - 1) * pageSize;
       const total = await query.count();
       const rows = await query.orderBy('login_at', 'desc').limit(pageSize).offset(offset).list();
@@ -2052,7 +2082,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   userRouter.delete(
     '/api/system/login-logs',
     {
-      openapi: { summary: '清空登录日志', tags: ['log'], operationId: 'clearLoginLogs' },
+      openapi: {
+        summary: '清空登录日志',
+        description: '仅管理员可清空当前租户的登录日志，不影响其他租户。',
+        tags: ['log'],
+        operationId: 'clearLoginLogs',
+      },
     },
     async () => {
       await db.query(LoginLogModel).where('tenant_id', '=', tenantId).hardDelete();
@@ -2100,6 +2135,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   userRouter.get(
     '/api/system/notices/published',
     {
+      query: {
+        page: { type: 'int' as const, min: 1, default: 1, description: '页码' },
+        pageSize: {
+          type: 'int' as const,
+          min: 1,
+          max: 100,
+          default: 10,
+          description: '每页数量',
+        },
+      },
       responses: {
         200: {
           items: {
@@ -2122,10 +2167,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const user = ctx.user as { id: string } | undefined;
       const userId = user?.id ?? '';
-      const query = ctx.url ? new URL(ctx.url).searchParams : new URLSearchParams();
-      const page = Number(query.get('page') ?? '1');
-      const pageSize = Number(query.get('pageSize') ?? '10');
-
+      const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
       const result = await noticeService.listPublishedForUser(userId, { page, pageSize });
       return success(result);
     },
@@ -2186,6 +2228,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       passkey: passkeyService,
       tag: tagService,
     },
+    operationLogMiddleware: opLogMiddleware,
     router,
     async init() {
       await permissionLoader.loadAll();

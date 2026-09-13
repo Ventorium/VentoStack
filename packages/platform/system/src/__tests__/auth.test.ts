@@ -64,6 +64,49 @@ function setup(configOverrides: Record<string, string> = {}) {
 }
 
 describe('AuthService', () => {
+  describe('refreshToken', () => {
+    test('records successful refresh in login logs', async () => {
+      const s = setup();
+      const token = `${Buffer.from(JSON.stringify({ sub: 'u1', username: 'admin' })).toString('base64url')}.sig`;
+
+      await s.authService.refreshToken(token, { ip: '1.2.3.4', userAgent: 'Chrome/1' });
+
+      const log = s.calls.find((call) => call.text.includes('INSERT INTO sys_login_log'));
+      expect(log?.params).toContain('admin');
+      expect(log?.params).toContain('refresh_token');
+      expect(log?.params).toContain('刷新令牌成功');
+      expect(log?.params).toContain(1);
+    });
+
+    test('records failed refresh without trusting invalid token claims', async () => {
+      const s = setup();
+      s.authSessionManager.refreshTokens.mockRejectedValueOnce(new Error('invalid refresh token'));
+
+      await expect(
+        s.authService.refreshToken('forged.token', { ip: '1.2.3.4', userAgent: 'Chrome/1' }),
+      ).rejects.toThrow('invalid refresh token');
+
+      const log = s.calls.find((call) => call.text.includes('INSERT INTO sys_login_log'));
+      expect(log?.params).toContain('unknown');
+      expect(log?.params).toContain('refresh_token');
+      expect(log?.params).toContain('刷新令牌失败');
+      expect(log?.params).toContain(0);
+    });
+
+    test('records a missing refresh token as a failed authentication event', async () => {
+      const s = setup();
+
+      await expect(
+        s.authService.refreshToken('', { ip: '1.2.3.4', userAgent: 'Chrome/1' }),
+      ).rejects.toThrow('缺少刷新令牌');
+
+      const log = s.calls.find((call) => call.text.includes('INSERT INTO sys_login_log'));
+      expect(log?.params).toContain('缺少刷新令牌');
+      expect(log?.params).toContain('refresh_token');
+      expect(s.authSessionManager.refreshTokens).not.toHaveBeenCalled();
+    });
+  });
+
   describe('login', () => {
     test('missing password expiry config uses 30-day default instead of zero days', async () => {
       const s = setup();
@@ -342,6 +385,9 @@ describe('AuthService', () => {
       expect(result.refreshToken).toBeTruthy();
       expect(result.mfaRequired).toBe(false);
       expect(s.totp.verifyAndConsume).toHaveBeenCalledWith('JBSWY3DPEHPK3PXP', '123456');
+      const loginLog = s.calls.find((call) => call.text.includes('INSERT INTO sys_login_log'));
+      expect(loginLog?.params).toContain('mfa');
+      expect(loginLog?.params).toContain('MFA 登录成功');
     });
 
     test('invalid mfaToken throws error', async () => {
@@ -381,6 +427,9 @@ describe('AuthService', () => {
       await expect(
         s.authService.completeMFALogin('valid-token', '000000', '1.2.3.4', 'test'),
       ).rejects.toThrow('MFA 验证码错误');
+      const loginLog = s.calls.find((call) => call.text.includes('INSERT INTO sys_login_log'));
+      expect(loginLog?.params).toContain('mfa');
+      expect(loginLog?.params).toContain('MFA 验证码错误');
     });
 
     test('user without MFA configured throws error', async () => {
@@ -494,6 +543,23 @@ describe('AuthService', () => {
   });
 
   describe('completePasskeyLogin', () => {
+    test('records a failed passkey login with its method and audit result', async () => {
+      const s = setup();
+
+      await s.authService.recordPasskeyFailure({
+        username: 'admin',
+        ip: '1.2.3.4',
+        userAgent: 'test',
+        message: '通行密钥验证失败',
+      });
+
+      const insertCall = s.calls.find((c) => c.text.includes('INSERT INTO sys_login_log'));
+      expect(insertCall?.params).toContain(0);
+      expect(insertCall?.params).toContain('passkey');
+      expect(insertCall?.params).toContain('通行密钥验证失败');
+      expect(s.auditLog._entries.some((e) => e.action === 'login.passkey_failure')).toBe(true);
+    });
+
     test('creates session and returns tokens', async () => {
       const s = setup();
       s.results.set('sys_user WHERE tenant_id', [

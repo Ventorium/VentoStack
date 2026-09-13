@@ -1,11 +1,11 @@
-import { client } from "@/api";
-import type { DeptItem } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { fmtDate } from "@/utils/fmtDate";
-import { PlusOutlined } from "@ant-design/icons";
-import { ExpandAltOutlined, ShrinkOutlined } from "@ant-design/icons";
+import { client } from '@/api';
+import type { DeptItem } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { fmtDate } from '@/utils/fmtDate';
+import { PlusOutlined } from '@ant-design/icons';
+import { ExpandAltOutlined, ShrinkOutlined } from '@ant-design/icons';
 import {
   Button,
   Card,
@@ -20,9 +20,9 @@ import {
   Table,
   Tag,
   TreeSelect,
-} from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 function toTreeSelectData(items: DeptItem[]): any[] {
   return items.map((item) => ({
@@ -56,7 +56,7 @@ function LeaderSelect({
   const loadOptions = useCallback(async (keyword?: string) => {
     setFetching(true);
     try {
-      const { data } = await client.get("/api/system/users", {
+      const { data } = await client.get('/api/system/users', {
         query: keyword?.trim()
           ? { page: 1, pageSize: 20, username: keyword.trim() }
           : { page: 1, pageSize: 20 },
@@ -75,10 +75,7 @@ function LeaderSelect({
   // 用初始 label 构造回填选项
   useEffect(() => {
     if (value && initialLabel && !options.some((o) => o.id === value)) {
-      setOptions((prev) => [
-        { id: value, nickname: initialLabel, username: "" },
-        ...prev,
-      ]);
+      setOptions((prev) => [{ id: value, nickname: initialLabel, username: '' }, ...prev]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [value, initialLabel]);
@@ -97,7 +94,7 @@ function LeaderSelect({
       allowClear
       filterOption={false}
       placeholder="搜索并选择用户"
-      notFoundContent={fetching ? "搜索中…" : "暂无匹配用户"}
+      notFoundContent={fetching ? '搜索中…' : '暂无匹配用户'}
       value={value ?? undefined}
       labelInValue={false}
       onSearch={handleSearch}
@@ -145,7 +142,7 @@ const DeptPage = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { error, data } = (await client.get("/api/system/depts/tree")) as {
+      const { error, data } = (await client.get('/api/system/depts/tree')) as {
         error?: unknown;
         data?: DeptItem[];
       };
@@ -187,19 +184,19 @@ const DeptPage = () => {
     setModalLoading(true);
     try {
       if (editingDept) {
-        const { error } = await client.put("/api/system/depts/:id", {
+        const { error } = await client.put('/api/system/depts/:id', {
           params: { id: editingDept.id },
           body: values,
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setModalOpen(false);
           fetchData();
         }
       } else {
-        const { error } = await client.post("/api/system/depts", { body: values });
+        const { error } = await client.post('/api/system/depts', { body: values });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           fetchData();
         }
@@ -210,22 +207,22 @@ const DeptPage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete("/api/system/depts/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/depts/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       fetchData();
     }
   };
 
   const handleBatchDelete = () => {
-    const names = selectedRows.map((r) => r.name).join("、");
+    const names = selectedRows.map((r) => r.name).join('、');
     Modal.confirm({
-      title: "批量删除",
+      title: '批量删除',
       content: `确定要删除以下 ${selectedRowKeys.length} 个部门吗？此操作不可恢复。\n${names}`,
-      okType: "danger",
-      okText: "确定删除",
+      okType: 'danger',
+      okText: '确定删除',
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/depts/batch-delete", {
+        const { error, data } = await client.post('/api/system/depts/batch-delete', {
           body: { ids: selectedRowKeys as string[] },
         });
         if (!error) {
@@ -244,40 +241,40 @@ const DeptPage = () => {
   };
 
   const columns: ColumnsType<DeptItem> = [
-    { title: "部门名称", dataIndex: "name", key: "name" },
-    { title: "负责人", dataIndex: "leaderName", key: "leaderName", width: 120 },
+    { title: '部门名称', dataIndex: 'name', key: 'name' },
+    { title: '负责人', dataIndex: 'leaderName', key: 'leaderName', width: 120 },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: DeptItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
-    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: DeptItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 180,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: DeptItem) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEdit(r) },
-            { label: "新增子部门", onClick: () => openCreate(r) },
+            { label: '编辑', onClick: () => openEdit(r) },
+            { label: '新增子部门', onClick: () => openCreate(r) },
             {
-              label: "删除",
+              label: '删除',
               onClick: () => handleDelete(r.id),
               danger: true,
-              confirm: "确定删除该部门？",
+              confirm: '确定删除该部门？',
             },
           ]}
         />
@@ -298,7 +295,7 @@ const DeptPage = () => {
               icon={allExpanded ? <ShrinkOutlined /> : <ExpandAltOutlined />}
               onClick={() => setExpandedKeys(allExpanded ? [] : allKeys)}
             >
-              {allExpanded ? "收起所有" : "展开所有"}
+              {allExpanded ? '收起所有' : '展开所有'}
             </Button>
           </Space>
         }
@@ -317,7 +314,7 @@ const DeptPage = () => {
       >
         {hasSelected && (
           <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-            已选 {selectedRowKeys.length} 项{" "}
+            已选 {selectedRowKeys.length} 项{' '}
             <Button
               type="link"
               size="small"
@@ -352,7 +349,7 @@ const DeptPage = () => {
         />
       </Card>
       <Modal
-        title={editingDept ? "编辑部门" : "新增部门"}
+        title={editingDept ? '编辑部门' : '新增部门'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}

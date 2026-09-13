@@ -1,12 +1,13 @@
-import { client } from "@/api";
-import type { DictDataItem, DictTypeItem, PaginatedData } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
+import { client } from '@/api';
+import type { DictDataItem, DictTypeItem, PaginatedData } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import {
   Button,
   Card,
@@ -22,13 +23,13 @@ import {
   Switch,
   Table,
   Tag,
-} from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
-import { buildDictTypeUpdateBody } from "./dict-form";
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
+import { buildDictTypeUpdateBody } from './dict-form';
 
 const typeFetcher = (params: Record<string, unknown>) =>
-  client.get("/api/system/dict/types", { query: cleanParams(params) }) as Promise<{
+  client.get('/api/system/dict/types', { query: cleanParams(params) }) as Promise<{
     error?: unknown;
     data?: PaginatedData<DictTypeItem>;
   }>;
@@ -51,8 +52,8 @@ const DictPage = () => {
   const [typeModalLoading, setTypeModalLoading] = useState(false);
   const [typeForm] = Form.useForm();
   const [drawerOpen, setDrawerOpen] = useState(false);
-  const [currentTypeCode, setCurrentTypeCode] = useState("");
-  const [currentTypeName, setCurrentTypeName] = useState("");
+  const [currentTypeCode, setCurrentTypeCode] = useState('');
+  const [currentTypeName, setCurrentTypeName] = useState('');
   const [dictData, setDictData] = useState<DictDataItem[]>([]);
   const [dataLoading, setDataLoading] = useState(false);
   const [dataEditOpen, setDataEditOpen] = useState(false);
@@ -97,19 +98,19 @@ const DictPage = () => {
     setTypeModalLoading(true);
     try {
       if (editingType) {
-        const { error } = await client.put("/api/system/dict/types/:id", {
+        const { error } = await client.put('/api/system/dict/types/:id', {
           params: { id: editingType.code },
           body: buildDictTypeUpdateBody(values),
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setTypeModalOpen(false);
           refresh();
         }
       } else {
-        const { error } = await client.post("/api/system/dict/types", { body: values });
+        const { error } = await client.post('/api/system/dict/types', { body: values });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setTypeModalOpen(false);
           refresh();
         }
@@ -119,20 +120,20 @@ const DictPage = () => {
     }
   };
   const handleDeleteType = async (code: string) => {
-    const { error } = await client.delete("/api/system/dict/types/:id", { params: { id: code } });
+    const { error } = await client.delete('/api/system/dict/types/:id', { params: { id: code } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
 
   const handlePublicChange = async (record: DictTypeItem, isPublic: boolean) => {
-    const { error } = await client.put("/api/system/dict/types/:id", {
+    const { error } = await client.put('/api/system/dict/types/:id', {
       params: { id: record.code },
       body: { isPublic },
     });
     if (!error) {
-      msg.success(isPublic ? "已允许匿名访问" : "已关闭匿名访问");
+      msg.success(isPublic ? '已允许匿名访问' : '已关闭匿名访问');
       refresh();
     }
   };
@@ -145,7 +146,7 @@ const DictPage = () => {
     setDrawerOpen(true);
     setDataSelectedKeys([]);
     setDataSelectedRows([]);
-    const { error, data } = (await client.get("/api/system/dict/types/:code/data", {
+    const { error, data } = (await client.get('/api/system/dict/types/:code/data', {
       params: { code: typeCode },
     })) as { error?: unknown; data?: DictDataItem[] };
     if (!error) {
@@ -156,7 +157,7 @@ const DictPage = () => {
 
   const refreshDictData = async () => {
     setDataLoading(true);
-    const { error, data } = (await client.get("/api/system/dict/types/:code/data", {
+    const { error, data } = (await client.get('/api/system/dict/types/:code/data', {
       params: { code: currentTypeCode },
     })) as { error?: unknown; data?: DictDataItem[] };
     if (!error) {
@@ -189,7 +190,7 @@ const DictPage = () => {
     setDataModalLoading(true);
     try {
       if (editingData) {
-        const { error } = await client.put("/api/system/dict/data/:id", {
+        const { error } = await client.put('/api/system/dict/data/:id', {
           params: { id: editingData.id },
           body: {
             label: values.label,
@@ -201,12 +202,12 @@ const DictPage = () => {
           },
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setDataEditOpen(false);
           refreshDictData();
         }
       } else {
-        const { error } = await client.post("/api/system/dict/data", {
+        const { error } = await client.post('/api/system/dict/data', {
           body: {
             label: values.label,
             value: values.value,
@@ -218,7 +219,7 @@ const DictPage = () => {
           },
         });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setDataEditOpen(false);
           refreshDictData();
         }
@@ -229,22 +230,22 @@ const DictPage = () => {
   };
 
   const handleDeleteData = async (id: string) => {
-    const { error } = await client.delete("/api/system/dict/data/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/dict/data/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refreshDictData();
     }
   };
 
   const handleBatchDeleteData = () => {
-    const names = dataSelectedRows.map((r) => r.label).join("、");
+    const names = dataSelectedRows.map((r) => r.label).join('、');
     Modal.confirm({
-      title: "批量删除",
+      title: '批量删除',
       content: `确定要删除以下 ${dataSelectedKeys.length} 个字典项吗？此操作不可恢复。\n${names}`,
-      okType: "danger",
-      okText: "确定删除",
+      okType: 'danger',
+      okText: '确定删除',
       onOk: async () => {
-        const { error, data } = await client.post("/api/system/dict/data/batch-delete", {
+        const { error, data } = await client.post('/api/system/dict/data/batch-delete', {
           body: { ids: dataSelectedKeys as string[] },
         });
         if (!error) {
@@ -263,21 +264,21 @@ const DictPage = () => {
   };
 
   const typeColumns: ColumnsType<DictTypeItem> = [
-    { title: "字典名称", dataIndex: "name", key: "name", width: 160 },
-    { title: "字典标识", dataIndex: "code", key: "code", width: 160 },
-    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
+    { title: '字典名称', dataIndex: 'name', key: 'name', width: 160 },
+    { title: '字典标识', dataIndex: 'code', key: 'code', width: 160 },
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     {
-      title: "系统内置",
-      dataIndex: "isSystem",
-      key: "isSystem",
+      title: '系统内置',
+      dataIndex: 'isSystem',
+      key: 'isSystem',
       width: 80,
       render: (_: unknown, r: DictTypeItem) =>
         r.isSystem ? <Tag color="blue">是</Tag> : <Tag>否</Tag>,
     },
     {
-      title: "公开访问",
-      dataIndex: "isPublic",
-      key: "isPublic",
+      title: '公开访问',
+      dataIndex: 'isPublic',
+      key: 'isPublic',
       width: 100,
       render: (_: unknown, r: DictTypeItem) => (
         <Switch
@@ -289,39 +290,39 @@ const DictPage = () => {
       ),
     },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: DictTypeItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
-    { title: "备注", dataIndex: "remark", key: "remark", ellipsis: true },
+    { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: DictTypeItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 160,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: DictTypeItem) => (
         <ActionColumn
           items={[
-            ...(!r.isSystem ? [{ label: "编辑" as const, onClick: () => openEditType(r) }] : []),
-            { label: "字典数据", onClick: () => openDictData(r.code, r.name, r.isSystem) },
+            ...(!r.isSystem ? [{ label: '编辑' as const, onClick: () => openEditType(r) }] : []),
+            { label: '字典数据', onClick: () => openDictData(r.code, r.name, r.isSystem) },
             ...(!r.isSystem
               ? [
                   {
-                    label: "删除" as const,
+                    label: '删除' as const,
                     onClick: () => handleDeleteType(r.code),
                     danger: true as const,
-                    confirm: "确定删除该字典类型？",
+                    confirm: '确定删除该字典类型？',
                   },
                 ]
               : []),
@@ -331,43 +332,45 @@ const DictPage = () => {
     },
   ];
   const dataColumns: ColumnsType<DictDataItem> = [
-    { title: "标签", dataIndex: "label", key: "label", width: 140 },
-    { title: "值", dataIndex: "value", key: "value", width: 140 },
+    { title: '标签', dataIndex: 'label', key: 'label', width: 140 },
+    { title: '值', dataIndex: 'value', key: 'value', width: 140 },
     {
-      title: "样式",
-      dataIndex: "cssClass",
-      key: "cssClass",
+      title: '样式',
+      dataIndex: 'cssClass',
+      key: 'cssClass',
       width: 120,
-      render: (color: string) => (color ? <Tag color={color}>{color}</Tag> : "-"),
+      render: (color: string) => (color ? <Tag color={color}>{color}</Tag> : '-'),
     },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: DictDataItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
-    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     ...(!currentTypeIsSystem
       ? [
           {
-            title: "操作",
-            key: "action",
+            title: '操作',
+            key: 'action',
             width: 130,
-            fixed: "right" as const,
+            fixed: 'right' as const,
             render: (_: unknown, r: DictDataItem) => (
               <ActionColumn
                 items={[
-                  ...(!r.isSystem ? [{ label: "编辑" as const, onClick: () => openEditData(r) }] : []),
+                  ...(!r.isSystem
+                    ? [{ label: '编辑' as const, onClick: () => openEditData(r) }]
+                    : []),
                   ...(!r.isSystem
                     ? [
                         {
-                          label: "删除" as const,
+                          label: '删除' as const,
                           onClick: () => handleDeleteData(r.id),
                           danger: true as const,
-                          confirm: "确定删除？",
+                          confirm: '确定删除？',
                         },
                       ]
                     : []),
@@ -383,22 +386,14 @@ const DictPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">字典管理</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="name">
+        <SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+          <SearchField name="name" width="wide">
             <Input placeholder="字典名称" prefix={<SearchOutlined />} />
-          </Form.Item>
-          <Form.Item name="code">
+          </SearchField>
+          <SearchField name="code" width="wide">
             <Input placeholder="字典标识" />
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
-          </Space>
-        </Form>
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card
         title={`字典类型（${total}）`}
@@ -426,7 +421,7 @@ const DictPage = () => {
         />
       </Card>
       <Modal
-        title={editingType ? "编辑字典类型" : "新增字典类型"}
+        title={editingType ? '编辑字典类型' : '新增字典类型'}
         open={typeModalOpen}
         onOk={handleTypeOk}
         onCancel={() => setTypeModalOpen(false)}
@@ -513,7 +508,9 @@ const DictPage = () => {
           )}
         </div>
         {dataHasSelected && (
-          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">已选 {dataSelectedKeys.length} 项</div>
+          <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
+            已选 {dataSelectedKeys.length} 项
+          </div>
         )}
         <Table
           rowKey="id"
@@ -538,7 +535,7 @@ const DictPage = () => {
       </Drawer>
 
       <Modal
-        title={editingData ? "编辑字典项" : "新增字典项"}
+        title={editingData ? '编辑字典项' : '新增字典项'}
         open={dataEditOpen}
         onOk={handleDataOk}
         onCancel={() => setDataEditOpen(false)}
@@ -569,7 +566,7 @@ const DictPage = () => {
               <Form.Item
                 name="cssClass"
                 label="样式"
-                getValueFromEvent={(_color, css: string) => css ?? ""}
+                getValueFromEvent={(_color, css: string) => css ?? ''}
               >
                 <ColorPicker format="hex" disabledAlpha allowClear showText />
               </Form.Item>

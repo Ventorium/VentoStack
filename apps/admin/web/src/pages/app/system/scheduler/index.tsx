@@ -1,16 +1,17 @@
-import { client } from "@/api";
-import type { ScheduleJob } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import { msg } from "@/components/GlobalMessage";
-import { SCHEDULER_API } from "@/constants";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, Modal, Row, Select, Space, Table, Tag } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
-import { useNavigate } from "react-router";
+import { client } from '@/api';
+import type { ScheduleJob } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { SCHEDULER_API } from '@/constants';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Form, Input, Modal, Row, Select, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
+import { useNavigate } from 'react-router';
 
 const fetcher = (params: Record<string, unknown>) =>
   client.get(SCHEDULER_API.JOBS, { query: cleanParams(params) });
@@ -60,14 +61,14 @@ const SchedulerPage = () => {
           body: values,
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setModalOpen(false);
           refresh();
         }
       } else {
         const { error } = await client.post(SCHEDULER_API.JOB_CREATE, { body: values });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           refresh();
         }
@@ -79,7 +80,7 @@ const SchedulerPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete(SCHEDULER_API.JOB_DELETE, { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
@@ -87,14 +88,14 @@ const SchedulerPage = () => {
     const endpoint = job.status === 1 ? SCHEDULER_API.JOB_STOP : SCHEDULER_API.JOB_START;
     const { error } = await client.put(endpoint, { params: { id: job.id } });
     if (!error) {
-      msg.success("状态切换成功");
+      msg.success('状态切换成功');
       refresh();
     }
   };
   const handleExecute = async (id: string) => {
     const { error } = await client.post(SCHEDULER_API.JOB_EXECUTE, { params: { id } });
     if (!error) {
-      msg.success("执行成功");
+      msg.success('执行成功');
       refresh();
     }
   };
@@ -103,52 +104,52 @@ const SchedulerPage = () => {
   };
 
   const columns: ColumnsType<ScheduleJob> = [
-    { title: "任务名称", dataIndex: "name", key: "name", width: 160 },
+    { title: '任务名称', dataIndex: 'name', key: 'name', width: 160 },
     {
-      title: "Cron表达式",
-      dataIndex: "cron",
-      key: "cron",
+      title: 'Cron表达式',
+      dataIndex: 'cron',
+      key: 'cron',
       width: 140,
       render: (v: string) => <span className="font-mono text-sm">{v}</span>,
     },
-    { title: "处理器ID", dataIndex: "handlerId", key: "handlerId", width: 180 },
+    { title: '处理器ID', dataIndex: 'handlerId', key: 'handlerId', width: 180 },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 100,
       render: (v: string) =>
         v === 1 ? <Tag color="green">运行中</Tag> : <Tag color="orange">已暂停</Tag>,
     },
-    { title: "描述", dataIndex: "description", key: "description", ellipsis: true },
+    { title: '描述', dataIndex: 'description', key: 'description', ellipsis: true },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: ScheduleJob) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 200,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: ScheduleJob) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEdit(r) },
-            { label: r.status === 1 ? "暂停" : "启动", onClick: () => handleToggle(r) },
+            { label: '编辑', onClick: () => openEdit(r) },
+            { label: r.status === 1 ? '暂停' : '启动', onClick: () => handleToggle(r) },
             {
-              label: "立即执行",
+              label: '立即执行',
               onClick: () => handleExecute(r.id),
-              confirm: "确定立即执行该任务？",
+              confirm: '确定立即执行该任务？',
             },
-            { label: "查看日志", onClick: () => viewLogs(r.id) },
+            { label: '查看日志', onClick: () => viewLogs(r.id) },
             {
-              label: "删除",
+              label: '删除',
               onClick: () => handleDelete(r.id),
               danger: true,
-              confirm: "确定删除该任务？",
+              confirm: '确定删除该任务？',
             },
           ]}
           maxInline={3}
@@ -161,25 +162,17 @@ const SchedulerPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">定时任务</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="name">
+        <SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+          <SearchField name="name" width="wide">
             <Input placeholder="任务名称" prefix={<SearchOutlined />} />
-          </Form.Item>
-          <Form.Item name="status" initialValue={undefined}>
-            <Select placeholder="状态" className="w-[120px]" allowClear>
+          </SearchField>
+          <SearchField name="status" width="normal" initialValue={undefined}>
+            <Select placeholder="状态" allowClear>
               <Select.Option value={1}>运行中</Select.Option>
               <Select.Option value={0}>已暂停</Select.Option>
             </Select>
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
-          </Space>
-        </Form>
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card
         title={`任务列表（${total}）`}
@@ -207,7 +200,7 @@ const SchedulerPage = () => {
         />
       </Card>
       <Modal
-        title={editingJob ? "编辑任务" : "新增任务"}
+        title={editingJob ? '编辑任务' : '新增任务'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}

@@ -1,29 +1,24 @@
-import { client } from "@/api";
-import type { OSSFile } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import { msg } from "@/components/GlobalMessage";
-import { OSS_API } from "@/constants";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import {
-  DownloadOutlined,
-  EyeOutlined,
-  ReloadOutlined,
-  SearchOutlined,
-  UploadOutlined,
-} from "@ant-design/icons";
-import { Button, Card, Form, Image, Input, Modal, Space, Table, Tag, Upload } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { client } from '@/api';
+import type { OSSFile } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { OSS_API } from '@/constants';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { DownloadOutlined, EyeOutlined, SearchOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Card, Form, Image, Input, Modal, Space, Table, Tag, Upload } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 
 const fetcher = (params: Record<string, unknown>) =>
   client.get(OSS_API.LIST, { query: cleanParams(params) });
 
 const formatFileSize = (bytes: number): string => {
-  if (bytes === 0) return "0 B";
+  if (bytes === 0) return '0 B';
   const k = 1024;
-  const sizes = ["B", "KB", "MB", "GB"];
+  const sizes = ['B', 'KB', 'MB', 'GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / Math.pow(k, i)).toFixed(2)} ${sizes[i]}`;
 };
@@ -34,7 +29,7 @@ const OSSPage = () => {
   const [searchForm] = Form.useForm();
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const [previewImage, setPreviewImage] = useState("");
+  const [previewImage, setPreviewImage] = useState('');
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
@@ -48,22 +43,22 @@ const OSSPage = () => {
   const handleDelete = async (id: string) => {
     const { error } = await client.delete(OSS_API.DELETE, { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
 
   const handleUploadChange = (info: any) => {
-    if (info.file.status === "done") {
-      msg.success("上传成功");
+    if (info.file.status === 'done') {
+      msg.success('上传成功');
       refresh();
-    } else if (info.file.status === "error") {
-      msg.error("上传失败");
+    } else if (info.file.status === 'error') {
+      msg.error('上传失败');
     }
   };
 
   const uploadProps = {
-    name: "file",
+    name: 'file',
     multiple: true,
     action: OSS_API.UPLOAD,
     withCredentials: true,
@@ -85,42 +80,42 @@ const OSSPage = () => {
       params: { id: record.id },
     })) as { error?: unknown; data?: { url: string } };
     if (!error && data?.url) {
-      window.open(data.url, "_blank");
+      window.open(data.url, '_blank');
     }
   };
 
-  const isImage = (contentType: string) => contentType?.startsWith("image/");
+  const isImage = (contentType: string) => contentType?.startsWith('image/');
 
   const columns: ColumnsType<OSSFile> = [
-    { title: "文件名", dataIndex: "filename", key: "filename", width: 200, ellipsis: true },
+    { title: '文件名', dataIndex: 'filename', key: 'filename', width: 200, ellipsis: true },
     {
-      title: "大小",
-      dataIndex: "size",
-      key: "size",
+      title: '大小',
+      dataIndex: 'size',
+      key: 'size',
       width: 100,
       render: (_: unknown, r: OSSFile) => formatFileSize(r.size),
     },
     {
-      title: "类型",
-      dataIndex: "contentType",
-      key: "contentType",
+      title: '类型',
+      dataIndex: 'contentType',
+      key: 'contentType',
       width: 120,
       render: (v: string) => <Tag>{v}</Tag>,
     },
-    { title: "存储桶", dataIndex: "bucket", key: "bucket", width: 120 },
-    { title: "上传者", dataIndex: "uploaderName", key: "uploaderName", width: 120 },
+    { title: '存储桶', dataIndex: 'bucket', key: 'bucket', width: 120 },
+    { title: '上传者', dataIndex: 'uploaderName', key: 'uploaderName', width: 120 },
     {
-      title: "上传时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '上传时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: OSSFile) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 150,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: OSSFile) => (
         <Space size="small">
           {isImage(r.contentType) && (
@@ -140,10 +135,10 @@ const OSSPage = () => {
           <ActionColumn
             items={[
               {
-                label: "删除",
+                label: '删除',
                 onClick: () => handleDelete(r.id),
                 danger: true,
-                confirm: "确定删除该文件？",
+                confirm: '确定删除该文件？',
               },
             ]}
           />
@@ -156,20 +151,11 @@ const OSSPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">文件管理</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="filename">
-            <Input placeholder="文件名" prefix={<SearchOutlined />} />
-          </Form.Item>
-          <Form.Item name="bucket">
-            <Input placeholder="存储桶" />
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
+        <SearchToolbar
+          form={searchForm}
+          onSearch={handleSearch}
+          onReset={handleReset}
+          extraActions={
             <Button
               type="primary"
               icon={<UploadOutlined />}
@@ -177,8 +163,15 @@ const OSSPage = () => {
             >
               上传文件
             </Button>
-          </Space>
-        </Form>
+          }
+        >
+          <SearchField name="filename" width="wide">
+            <Input placeholder="文件名" prefix={<SearchOutlined />} />
+          </SearchField>
+          <SearchField name="bucket" width="wide">
+            <Input placeholder="存储桶" />
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card title={`文件列表（${total}）`}>
         <Table

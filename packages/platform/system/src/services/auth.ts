@@ -49,7 +49,10 @@ export interface AuthService {
     deviceType?: string;
   }): Promise<LoginResult>;
   logout(userId: string, sessionId: string, refreshTokenJti?: string): Promise<void>;
-  refreshToken(oldRefreshToken: string): Promise<{
+  refreshToken(
+    oldRefreshToken: string,
+    context: { ip: string; userAgent: string },
+  ): Promise<{
     accessToken: string;
     refreshToken: string;
     expiresIn: number;
@@ -83,6 +86,13 @@ export interface AuthService {
     userAgent: string;
     deviceType?: string;
   }): Promise<LoginResult>;
+  recordPasskeyFailure(params: {
+    userId?: string;
+    username?: string;
+    ip: string;
+    userAgent: string;
+    message: string;
+  }): Promise<void>;
 }
 
 /** 脱敏：截断 token / sessionId 等敏感字符串，仅保留前 8 位 */
@@ -213,6 +223,26 @@ export function createAuthService(deps: {
   }
 
   return {
+    async recordPasskeyFailure(params) {
+      const username = params.username ?? 'unknown';
+      await recordLoginLog({
+        ...(params.userId ? { userId: params.userId } : {}),
+        username,
+        ip: params.ip,
+        userAgent: params.userAgent,
+        status: 0,
+        message: params.message,
+        loginMethod: 'passkey',
+      });
+      await auditStore.append({
+        actor: params.username ?? params.userId ?? 'anonymous',
+        action: 'login.passkey_failure',
+        resource: 'auth',
+        result: 'failure',
+        metadata: { ip: params.ip, ...(params.userId ? { userId: params.userId } : {}) },
+      });
+    },
+
     async login(params) {
       const { username, password, ip, userAgent, deviceType } = params;
 
@@ -452,15 +482,6 @@ export function createAuthService(deps: {
           result: 'success',
           metadata: { ip, userId: user.id },
         });
-        await recordLoginLog({
-          userId: user.id,
-          username,
-          ip,
-          userAgent,
-          status: 1,
-          message: '需要MFA验证',
-        });
-
         return {
           accessToken: '',
           refreshToken: '',
@@ -534,15 +555,62 @@ export function createAuthService(deps: {
       });
     },
 
-    async refreshToken(oldRefreshToken) {
-      const pair = await authSessionManager.refreshTokens(oldRefreshToken, jwtSecret);
-
-      return {
-        accessToken: pair.accessToken,
-        refreshToken: pair.refreshToken,
-        expiresIn: pair.expiresIn,
-        refreshExpiresIn: pair.refreshExpiresIn,
-      };
+    async refreshToken(oldRefreshToken, context) {
+      if (!oldRefreshToken) {
+        try {
+          await recordLoginLog({
+            username: 'unknown',
+            ip: context.ip,
+            userAgent: context.userAgent,
+            status: 0,
+            message: '缺少刷新令牌',
+            loginMethod: 'refresh_token',
+          });
+        } catch {
+          // 认证失败优先返回，日志故障不改变结果。
+        }
+        throw new UnauthorizedError('缺少刷新令牌');
+      }
+      try {
+        const pair = await authSessionManager.refreshTokens(oldRefreshToken, jwtSecret);
+        // 只有刷新校验成功后才信任旧令牌中的主体声明。
+        const payload = jwt.decode(oldRefreshToken);
+        const username = typeof payload?.username === 'string' ? payload.username : 'unknown';
+        const userId = typeof payload?.sub === 'string' ? payload.sub : undefined;
+        try {
+          await recordLoginLog({
+            ...(userId ? { userId } : {}),
+            username,
+            ip: context.ip,
+            userAgent: context.userAgent,
+            status: 1,
+            message: '刷新令牌成功',
+            loginMethod: 'refresh_token',
+          });
+        } catch {
+          // 日志故障不能让已完成轮换的令牌刷新表现为失败。
+        }
+        return {
+          accessToken: pair.accessToken,
+          refreshToken: pair.refreshToken,
+          expiresIn: pair.expiresIn,
+          refreshExpiresIn: pair.refreshExpiresIn,
+        };
+      } catch (error) {
+        try {
+          await recordLoginLog({
+            username: 'unknown',
+            ip: context.ip,
+            userAgent: context.userAgent,
+            status: 0,
+            message: '刷新令牌失败',
+            loginMethod: 'refresh_token',
+          });
+        } catch {
+          // 保留原始刷新异常。
+        }
+        throw error;
+      }
     },
 
     async register(params) {
@@ -930,6 +998,15 @@ export function createAuthService(deps: {
           result: 'failure',
           metadata: { ip },
         });
+        await recordLoginLog({
+          userId,
+          username,
+          ip,
+          userAgent,
+          status: 0,
+          message: 'MFA 验证码错误',
+          loginMethod: 'mfa',
+        });
         throw new Error('MFA 验证码错误');
       }
 
@@ -951,6 +1028,15 @@ export function createAuthService(deps: {
         resource: 'auth',
         result: 'success',
         metadata: { ip, userId, sessionId: redactToken(sessionResult.sessionId) },
+      });
+      await recordLoginLog({
+        userId,
+        username,
+        ip,
+        userAgent,
+        status: 1,
+        message: 'MFA 登录成功',
+        loginMethod: 'mfa',
       });
 
       return {

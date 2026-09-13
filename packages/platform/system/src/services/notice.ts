@@ -69,8 +69,8 @@ export interface NoticeService {
   delete(id: string): Promise<void>;
   /** 分页查询通知列表 */
   list(params?: NoticeListParams): Promise<PaginatedResult<NoticeItem>>;
-  /** 发布通知 */
-  publish(id: string, publisherId: string): Promise<void>;
+  /** 审批完成事件触发的幂等发布 */
+  publishApproved(id: string, publisherId: string): Promise<void>;
   /** 撤回通知 */
   revoke(id: string): Promise<void>;
   /** 标记通知已读 */
@@ -94,6 +94,12 @@ export interface NoticeService {
 export function createNoticeService(deps: { db: Database; tenantId: string }): NoticeService {
   const { db } = deps;
 
+  function assertNoticeType(type: number): void {
+    if (type !== 1 && type !== 2) {
+      throw new VentoStackError('通知类型仅允许 1（通知）或 2（公告）', 400, 'INVALID_NOTICE_TYPE');
+    }
+  }
+
   /** 条件更新 0 行后区分 404（不存在/跨租户）与 409（状态冲突） */
   async function assertNoticeState(
     id: string,
@@ -110,6 +116,7 @@ export function createNoticeService(deps: { db: Database; tenantId: string }): N
   }
 
   async function create(params: CreateNoticeParams): Promise<{ id: string }> {
+    assertNoticeType(params.type);
     const id = crypto.randomUUID();
     await db.query(NoticeModel).insert({
       id,
@@ -125,6 +132,7 @@ export function createNoticeService(deps: { db: Database; tenantId: string }): N
   }
 
   async function update(id: string, params: UpdateNoticeParams): Promise<void> {
+    if (params.type !== undefined) assertNoticeType(params.type);
     const updates: Record<string, unknown> = {};
     if (params.title !== undefined) updates.title = params.title;
     if (params.content !== undefined) updates.content = params.content;
@@ -230,6 +238,18 @@ export function createNoticeService(deps: { db: Database; tenantId: string }): N
     if (!updated) await assertNoticeState(id, () => '仅草稿或已撤回状态的通知可发布');
   }
 
+  async function publishApproved(id: string, publisherId: string): Promise<void> {
+    const current = await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('status')
+      .get();
+    if (!current) throw new NotFoundError('通知不存在');
+    if (current.status === 1) return;
+    await publish(id, publisherId);
+  }
+
   async function revoke(id: string): Promise<void> {
     const updated = await db
       .query(NoticeModel)
@@ -331,7 +351,7 @@ export function createNoticeService(deps: { db: Database; tenantId: string }): N
     update,
     delete: deleteNotice,
     list,
-    publish,
+    publishApproved,
     revoke,
     markRead,
     markBatchRead,

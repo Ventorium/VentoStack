@@ -1,8 +1,8 @@
-import { client } from "@/api";
-import type { CacheStatus, DataSourceStatus, HealthStatus, ServerStatus } from "@/api/types";
-import { ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Progress, Row, Space, Spin, Statistic, Tag } from "antd";
-import { useEffect, useState } from "react";
+import { client } from '@/api';
+import type { CacheStatus, DataSourceStatus, HealthStatus, ServerStatus } from '@/api/types';
+import { ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Progress, Row, Space, Spin, Statistic, Tag } from 'antd';
+import { useEffect, useState } from 'react';
 
 const formatUptime = (seconds: number): string => {
   const days = Math.floor(seconds / 86400);
@@ -23,10 +23,10 @@ const MonitorPage = () => {
   const fetchAllData = async () => {
     setLoading(true);
     const [serverRes, cacheRes, dsRes, healthRes] = await Promise.all([
-      client.get("/api/system/monitor/server"),
-      client.get("/api/system/monitor/cache"),
-      client.get("/api/system/monitor/datasource"),
-      client.get("/api/system/monitor/health"),
+      client.get('/api/system/monitor/server'),
+      client.get('/api/system/monitor/cache'),
+      client.get('/api/system/monitor/datasource'),
+      client.get('/api/system/monitor/health'),
     ]);
     if (!serverRes?.error && serverRes?.data) setServerStatus(serverRes.data as ServerStatus);
     if (!cacheRes?.error && cacheRes?.data) setCacheStatus(cacheRes.data as CacheStatus);
@@ -54,10 +54,10 @@ const MonitorPage = () => {
             刷新
           </Button>
           <Button
-            type={autoRefresh ? "primary" : "default"}
+            type={autoRefresh ? 'primary' : 'default'}
             onClick={() => setAutoRefresh(!autoRefresh)}
           >
-            {autoRefresh ? "自动刷新：开" : "自动刷新：关"}
+            {autoRefresh ? '自动刷新：开' : '自动刷新：关'}
           </Button>
         </Space>
       </div>
@@ -79,7 +79,7 @@ const MonitorPage = () => {
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">内存使用率</div>
                     <Progress percent={Math.round(serverStatus.memory.usage * 100)} size="small" />
                     <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      {Math.round(serverStatus.memory.used / 1024 / 1024)} MB /{" "}
+                      {Math.round(serverStatus.memory.used / 1024 / 1024)} MB /{' '}
                       {Math.round(serverStatus.memory.total / 1024 / 1024)} MB
                     </div>
                   </div>
@@ -87,7 +87,7 @@ const MonitorPage = () => {
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">磁盘使用率</div>
                     <Progress percent={Math.round(serverStatus.disk.usage * 100)} size="small" />
                     <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                      {Math.round(serverStatus.disk.used / 1024 / 1024 / 1024)} GB /{" "}
+                      {Math.round(serverStatus.disk.used / 1024 / 1024 / 1024)} GB /{' '}
                       {Math.round(serverStatus.disk.total / 1024 / 1024 / 1024)} GB
                     </div>
                   </div>
@@ -111,7 +111,9 @@ const MonitorPage = () => {
                     <div className="text-xs text-gray-600 dark:text-gray-400">
                       {serverStatus.os.platform} / {serverStatus.os.arch}
                     </div>
-                    <div className="text-xs text-gray-600 dark:text-gray-400">主机名: {serverStatus.os.hostname}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400">
+                      主机名: {serverStatus.os.hostname}
+                    </div>
                   </div>
                 </Space>
               ) : (
@@ -148,8 +150,8 @@ const MonitorPage = () => {
                 <Space orientation="vertical" className="w-full">
                   <div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">连接状态</div>
-                    <Tag color={dataSourceStatus.connected ? "green" : "red"}>
-                      {dataSourceStatus.connected ? "已连接" : "未连接"}
+                    <Tag color={dataSourceStatus.connected ? 'green' : 'red'}>
+                      {dataSourceStatus.connected ? '已连接' : '未连接'}
                     </Tag>
                   </div>
                   <Statistic title="连接池大小" value={dataSourceStatus.poolSize} />
@@ -168,7 +170,7 @@ const MonitorPage = () => {
                 <Space orientation="vertical" className="w-full">
                   <div>
                     <div className="text-sm text-gray-500 dark:text-gray-400 mb-1">总体状态</div>
-                    <Tag color={healthStatus.status === "UP" ? "green" : "red"}>
+                    <Tag color={healthStatus.status === 'UP' ? 'green' : 'red'}>
                       {healthStatus.status}
                     </Tag>
                   </div>
@@ -178,7 +180,7 @@ const MonitorPage = () => {
                       <div key={check.name} className="flex justify-between items-center py-1">
                         <span className="text-xs">{check.name}</span>
                         <Tag
-                          color={check.status === "UP" ? "green" : "red"}
+                          color={check.status === 'UP' ? 'green' : 'red'}
                           className="text-[10px]"
                         >
                           {check.status}

@@ -1,11 +1,11 @@
-import { client } from "@/api";
-import type { OnlineUser } from "@/api/types";
-import { msg } from "@/components/GlobalMessage";
-import { fmtDate } from "@/utils/fmtDate";
-import { LogoutOutlined, ReloadOutlined } from "@ant-design/icons";
-import { Button, Card, Modal, Space, Table } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useEffect, useState } from "react";
+import { client } from '@/api';
+import type { OnlineUser } from '@/api/types';
+import { msg } from '@/components/GlobalMessage';
+import { fmtDate } from '@/utils/fmtDate';
+import { LogoutOutlined, ReloadOutlined } from '@ant-design/icons';
+import { Button, Card, Modal, Space, Table } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useEffect, useState } from 'react';
 
 const OnlinePage = () => {
   const [loading, setLoading] = useState(false);
@@ -16,7 +16,7 @@ const OnlinePage = () => {
   const fetchData = async () => {
     setLoading(true);
     try {
-      const { error, data: result } = (await client.get("/api/system/monitor/online")) as {
+      const { error, data: result } = (await client.get('/api/system/monitor/online')) as {
         error?: unknown;
         data?: { list: OnlineUser[]; total: number };
       };
@@ -40,40 +40,40 @@ const OnlinePage = () => {
   }, [autoRefresh]);
 
   const handleForceLogout = async (sessionId: string) => {
-    const { error } = await client.delete("/api/system/monitor/online/:sessionId", {
+    const { error } = await client.delete('/api/system/monitor/online/:sessionId', {
       params: { sessionId },
     });
     if (!error) {
-      msg.success("已强制下线");
+      msg.success('已强制下线');
       fetchData();
     }
   };
 
   const columns: ColumnsType<OnlineUser> = [
-    { title: "用户名", dataIndex: "username", key: "username", width: 120 },
-    { title: "昵称", dataIndex: "nickname", key: "nickname", width: 120 },
-    { title: "IP地址", dataIndex: "ip", key: "ip", width: 140 },
-    { title: "浏览器", dataIndex: "browser", key: "browser", width: 120 },
-    { title: "操作系统", dataIndex: "os", key: "os", width: 120 },
+    { title: '用户名', dataIndex: 'username', key: 'username', width: 120 },
+    { title: '昵称', dataIndex: 'nickname', key: 'nickname', width: 120 },
+    { title: 'IP地址', dataIndex: 'ip', key: 'ip', width: 140 },
+    { title: '浏览器', dataIndex: 'browser', key: 'browser', width: 120 },
+    { title: '操作系统', dataIndex: 'os', key: 'os', width: 120 },
     {
-      title: "登录时间",
-      dataIndex: "loginAt",
-      key: "loginAt",
+      title: '登录时间',
+      dataIndex: 'loginAt',
+      key: 'loginAt',
       width: 180,
       render: (_: unknown, r: OnlineUser) => fmtDate(r.loginAt),
     },
     {
-      title: "最后访问",
-      dataIndex: "lastAccessAt",
-      key: "lastAccessAt",
+      title: '最后访问',
+      dataIndex: 'lastAccessAt',
+      key: 'lastAccessAt',
       width: 180,
       render: (_: unknown, r: OnlineUser) => fmtDate(r.lastAccessAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 100,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: OnlineUser) => (
         <Button
           type="link"
@@ -82,7 +82,7 @@ const OnlinePage = () => {
           icon={<LogoutOutlined />}
           onClick={() =>
             Modal.confirm({
-              title: "强制下线",
+              title: '强制下线',
               content: `确定要强制下线用户 ${r.nickname} 吗？`,
               onOk: () => handleForceLogout(r.sessionId),
             })
@@ -103,10 +103,10 @@ const OnlinePage = () => {
             刷新
           </Button>
           <Button
-            type={autoRefresh ? "primary" : "default"}
+            type={autoRefresh ? 'primary' : 'default'}
             onClick={() => setAutoRefresh(!autoRefresh)}
           >
-            {autoRefresh ? "自动刷新：开" : "自动刷新：关"}
+            {autoRefresh ? '自动刷新：开' : '自动刷新：关'}
           </Button>
         </Space>
       </div>

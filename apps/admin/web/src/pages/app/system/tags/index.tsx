@@ -1,18 +1,19 @@
-import { client } from "@/api";
-import type { PaginatedData, TagItem } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Table, Tag } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { client } from '@/api';
+import type { PaginatedData, TagItem } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get("/api/system/tags", { query: cleanParams(params) }) as Promise<{
+  client.get('/api/system/tags', { query: cleanParams(params) }) as Promise<{
     error?: unknown;
     data?: PaginatedData<TagItem>;
   }>;
@@ -72,19 +73,19 @@ const TagPage = () => {
     setModalLoading(true);
     try {
       if (editingTag) {
-        const { error } = await client.put("/api/system/tags/:id", {
+        const { error } = await client.put('/api/system/tags/:id', {
           params: { id: editingTag.id },
           body: values,
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setModalOpen(false);
           refresh();
         }
       } else {
-        const { error } = await client.post("/api/system/tags", { body: values });
+        const { error } = await client.post('/api/system/tags', { body: values });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           refresh();
         }
@@ -95,23 +96,23 @@ const TagPage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete("/api/system/tags/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/tags/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
 
   const handleBatchDelete = () => {
-    const names = selectedRows.map((r) => r.name).join("、");
+    const names = selectedRows.map((r) => r.name).join('、');
     Modal.confirm({
-      title: "批量删除",
+      title: '批量删除',
       content: `确定要删除以下 ${selectedRowKeys.length} 个标签吗？\n${names}`,
-      okType: "danger",
-      okText: "确定删除",
+      okType: 'danger',
+      okText: '确定删除',
       onOk: async () => {
         for (const id of selectedRowKeys) {
-          await client.delete("/api/system/tags/:id", { params: { id } });
+          await client.delete('/api/system/tags/:id', { params: { id } });
         }
         msg.success(`删除成功，共 ${selectedRowKeys.length} 项`);
         clearSelection();
@@ -121,40 +122,40 @@ const TagPage = () => {
   };
 
   const columns: ColumnsType<TagItem> = [
-    { title: "标签名称", dataIndex: "name", key: "name", width: 120 },
-    { title: "标签标识", dataIndex: "code", key: "code", width: 160 },
+    { title: '标签名称', dataIndex: 'name', key: 'name', width: 120 },
+    { title: '标签标识', dataIndex: 'code', key: 'code', width: 160 },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: TagItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
-    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
-    { title: "备注", dataIndex: "remark", key: "remark", ellipsis: true },
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
+    { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: TagItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 130,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: TagItem) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEdit(r) },
+            { label: '编辑', onClick: () => openEdit(r) },
             {
-              label: "删除",
+              label: '删除',
               onClick: () => handleDelete(r.id),
               danger: true,
-              confirm: "确定删除该标签？删除后用户绑定关系也会被清除。",
+              confirm: '确定删除该标签？删除后用户绑定关系也会被清除。',
             },
           ]}
         />
@@ -166,27 +167,14 @@ const TagPage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">标签管理</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="name">
+        <SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+          <SearchField name="name" width="wide">
             <Input placeholder="标签名称" prefix={<SearchOutlined />} />
-          </Form.Item>
-          <Form.Item name="status">
-            <DictSelect
-              typeCode="sys_status"
-              placeholder="状态"
-              allowClear
-              className="w-[100px]"
-            />
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
-          </Space>
-        </Form>
+          </SearchField>
+          <SearchField name="status" width="normal">
+            <DictSelect typeCode="sys_status" placeholder="状态" allowClear />
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card
         title={`标签列表（${total}）`}
@@ -205,7 +193,7 @@ const TagPage = () => {
       >
         {hasSelected && (
           <div className="mb-2 text-sm text-gray-500 dark:text-gray-400">
-            已选 {selectedRowKeys.length} 项{" "}
+            已选 {selectedRowKeys.length} 项{' '}
             <Button type="link" size="small" onClick={clearSelection}>
               取消选择
             </Button>
@@ -230,7 +218,7 @@ const TagPage = () => {
         />
       </Card>
       <Modal
-        title={editingTag ? "编辑标签" : "新增标签"}
+        title={editingTag ? '编辑标签' : '新增标签'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}

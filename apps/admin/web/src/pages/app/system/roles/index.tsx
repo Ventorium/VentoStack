@@ -3,10 +3,11 @@ import type { DeptItem, MenuItem, PaginatedData, RoleItem } from '@/api/types';
 import ActionColumn from '@/components/ActionColumn';
 import DictSelect from '@/components/DictSelect';
 import { msg } from '@/components/GlobalMessage';
+import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
 import { useTable } from '@/hooks/useTable';
 import { cleanParams } from '@/utils/cleanParams';
 import { fmtDate } from '@/utils/fmtDate';
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Card, Col, Form, Input, Modal, Radio, Row, Space, Table, Tag, Tree } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
 import type { DataNode, TreeProps } from 'antd/es/tree';
@@ -371,22 +372,14 @@ const RolePage = () => {
     <div>
       <h3 className="text-lg font-semibold mb-4">角色管理</h3>
       <Card className="mb-4">
-        <Form form={searchForm} layout="inline">
-          <Form.Item name="name">
+        <SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+          <SearchField name="name" width="wide">
             <Input placeholder="角色名称" prefix={<SearchOutlined />} />
-          </Form.Item>
-          <Form.Item name="status">
-            <DictSelect typeCode="sys_status" placeholder="状态" allowClear className="w-[100px]" />
-          </Form.Item>
-          <Space>
-            <Button type="primary" onClick={handleSearch}>
-              搜索
-            </Button>
-            <Button icon={<ReloadOutlined />} onClick={handleReset}>
-              重置
-            </Button>
-          </Space>
-        </Form>
+          </SearchField>
+          <SearchField name="status" width="normal">
+            <DictSelect typeCode="sys_status" placeholder="状态" allowClear />
+          </SearchField>
+        </SearchToolbar>
       </Card>
       <Card
         title={`角色列表（${total}）`}

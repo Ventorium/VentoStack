@@ -1,92 +1,92 @@
-import { client } from "@/api";
-import type { MenuItem } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { fmtDate } from "@/utils/fmtDate";
-import { resolveIcon } from "@/utils/icon";
-import { PlusOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Table, Tag } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useCallback, useEffect, useState } from "react";
+import { client } from '@/api';
+import type { MenuItem } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { fmtDate } from '@/utils/fmtDate';
+import { resolveIcon } from '@/utils/icon';
+import { PlusOutlined } from '@ant-design/icons';
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Select, Table, Tag } from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useCallback, useEffect, useState } from 'react';
 
 /** 菜单类型：后端 int（1=目录 2=菜单 3=按钮），字典 sys_menu_type 的值为字符串 "1"/"2"/"3" */
-const MENU_TYPE_LABEL: Record<string, string> = { 1: "目录", 2: "菜单", 3: "按钮" };
-const MENU_TYPE_COLOR: Record<string, string> = { 1: "blue", 2: "green", 3: "orange" };
+const MENU_TYPE_LABEL: Record<string, string> = { 1: '目录', 2: '菜单', 3: '按钮' };
+const MENU_TYPE_COLOR: Record<string, string> = { 1: 'blue', 2: 'green', 3: 'orange' };
 
 /** 常用图标列表（使用 @ant-design/icons 完整名称） */
 const iconOptions = [
-  "SettingOutlined",
-  "UserOutlined",
-  "TeamOutlined",
-  "MenuOutlined",
-  "HomeOutlined",
-  "DashboardOutlined",
-  "AppstoreOutlined",
-  "DatabaseOutlined",
-  "FileOutlined",
-  "FolderOutlined",
-  "LockOutlined",
-  "KeyOutlined",
-  "BellOutlined",
-  "MailOutlined",
-  "PhoneOutlined",
-  "SearchOutlined",
-  "PlusOutlined",
-  "MinusOutlined",
-  "EditOutlined",
-  "DeleteOutlined",
-  "EyeOutlined",
-  "EyeInvisibleOutlined",
-  "UploadOutlined",
-  "DownloadOutlined",
-  "CheckOutlined",
-  "CloseOutlined",
-  "InfoCircleOutlined",
-  "WarningOutlined",
-  "ExclamationCircleOutlined",
-  "QuestionCircleOutlined",
-  "CalendarOutlined",
-  "ClockOutlined",
-  "StarOutlined",
-  "HeartOutlined",
-  "LikeOutlined",
-  "DislikeOutlined",
-  "ShareAltOutlined",
-  "LinkOutlined",
-  "BookOutlined",
-  "ReadOutlined",
-  "ProfileOutlined",
-  "SolutionOutlined",
-  "AuditOutlined",
-  "SafetyCertificateOutlined",
-  "TransactionOutlined",
-  "DollarOutlined",
-  "FundOutlined",
-  "ShopOutlined",
-  "ShoppingOutlined",
-  "ToolOutlined",
-  "BuildOutlined",
-  "CodeOutlined",
-  "BugOutlined",
-  "ExperimentOutlined",
-  "ApiOutlined",
-  "CloudOutlined",
-  "ServerOutlined",
-  "GlobalOutlined",
-  "EnvironmentOutlined",
-  "CompassOutlined",
-  "SwitcherOutlined",
-  "GatewayOutlined",
-  "MonitorOutlined",
-  "PrinterOutlined",
-  "ScanOutlined",
-  "QrcodeOutlined",
-  "BarChartOutlined",
-  "PieChartOutlined",
-  "LineChartOutlined",
-  "AreaChartOutlined",
-  "FundProjectionScreenOutlined",
+  'SettingOutlined',
+  'UserOutlined',
+  'TeamOutlined',
+  'MenuOutlined',
+  'HomeOutlined',
+  'DashboardOutlined',
+  'AppstoreOutlined',
+  'DatabaseOutlined',
+  'FileOutlined',
+  'FolderOutlined',
+  'LockOutlined',
+  'KeyOutlined',
+  'BellOutlined',
+  'MailOutlined',
+  'PhoneOutlined',
+  'SearchOutlined',
+  'PlusOutlined',
+  'MinusOutlined',
+  'EditOutlined',
+  'DeleteOutlined',
+  'EyeOutlined',
+  'EyeInvisibleOutlined',
+  'UploadOutlined',
+  'DownloadOutlined',
+  'CheckOutlined',
+  'CloseOutlined',
+  'InfoCircleOutlined',
+  'WarningOutlined',
+  'ExclamationCircleOutlined',
+  'QuestionCircleOutlined',
+  'CalendarOutlined',
+  'ClockOutlined',
+  'StarOutlined',
+  'HeartOutlined',
+  'LikeOutlined',
+  'DislikeOutlined',
+  'ShareAltOutlined',
+  'LinkOutlined',
+  'BookOutlined',
+  'ReadOutlined',
+  'ProfileOutlined',
+  'SolutionOutlined',
+  'AuditOutlined',
+  'SafetyCertificateOutlined',
+  'TransactionOutlined',
+  'DollarOutlined',
+  'FundOutlined',
+  'ShopOutlined',
+  'ShoppingOutlined',
+  'ToolOutlined',
+  'BuildOutlined',
+  'CodeOutlined',
+  'BugOutlined',
+  'ExperimentOutlined',
+  'ApiOutlined',
+  'CloudOutlined',
+  'ServerOutlined',
+  'GlobalOutlined',
+  'EnvironmentOutlined',
+  'CompassOutlined',
+  'SwitcherOutlined',
+  'GatewayOutlined',
+  'MonitorOutlined',
+  'PrinterOutlined',
+  'ScanOutlined',
+  'QrcodeOutlined',
+  'BarChartOutlined',
+  'PieChartOutlined',
+  'LineChartOutlined',
+  'AreaChartOutlined',
+  'FundProjectionScreenOutlined',
 ];
 
 const MenuPage = () => {
@@ -100,7 +100,7 @@ const MenuPage = () => {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const { error, data } = (await client.get("/api/system/menus/tree")) as {
+      const { error, data } = (await client.get('/api/system/menus/tree')) as {
         error?: unknown;
         data?: MenuItem[];
       };
@@ -120,7 +120,7 @@ const MenuPage = () => {
     setEditingMenu(null);
     form.resetFields();
     form.setFieldsValue({
-      type: parent ? "2" : "1",
+      type: parent ? '2' : '1',
       sort: 0,
       visible: true,
       status: 1,
@@ -157,19 +157,19 @@ const MenuPage = () => {
     };
     try {
       if (editingMenu) {
-        const { error } = await client.put("/api/system/menus/:id", {
+        const { error } = await client.put('/api/system/menus/:id', {
           params: { id: editingMenu.id },
           body,
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setModalOpen(false);
           fetchData();
         }
       } else {
-        const { error } = await client.post("/api/system/menus", { body });
+        const { error } = await client.post('/api/system/menus', { body });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           fetchData();
         }
@@ -180,22 +180,22 @@ const MenuPage = () => {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete("/api/system/menus/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/menus/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       fetchData();
     }
   };
 
   const columns: ColumnsType<MenuItem> = [
-    { title: "菜单名称", dataIndex: "name", key: "name" },
+    { title: '菜单名称', dataIndex: 'name', key: 'name' },
     {
-      title: "图标",
-      dataIndex: "icon",
-      key: "icon",
+      title: '图标',
+      dataIndex: 'icon',
+      key: 'icon',
       width: 80,
       render: (_: unknown, r: MenuItem) => {
-        if (!r.icon) return "-";
+        if (!r.icon) return '-';
         const IconComp = resolveIcon(r.icon);
         return IconComp ? (
           <span className="text-lg">
@@ -207,56 +207,58 @@ const MenuPage = () => {
       },
     },
     {
-      title: "类型",
-      dataIndex: "type",
-      key: "type",
+      title: '类型',
+      dataIndex: 'type',
+      key: 'type',
       width: 80,
       render: (_: unknown, r: MenuItem) => (
-        <Tag color={MENU_TYPE_COLOR[String(r.type)]}>{MENU_TYPE_LABEL[String(r.type)] ?? r.type}</Tag>
+        <Tag color={MENU_TYPE_COLOR[String(r.type)]}>
+          {MENU_TYPE_LABEL[String(r.type)] ?? r.type}
+        </Tag>
       ),
     },
-    { title: "路由地址", dataIndex: "path", key: "path", width: 200 },
-    { title: "权限标识", dataIndex: "permission", key: "permission", width: 180 },
+    { title: '路由地址', dataIndex: 'path', key: 'path', width: 200 },
+    { title: '权限标识', dataIndex: 'permission', key: 'permission', width: 180 },
     {
-      title: "显示",
-      dataIndex: "visible",
-      key: "visible",
+      title: '显示',
+      dataIndex: 'visible',
+      key: 'visible',
       width: 60,
       render: (_: unknown, r: MenuItem) =>
         r.visible ? <Tag color="green">显示</Tag> : <Tag color="red">隐藏</Tag>,
     },
     {
-      title: "状态",
-      dataIndex: "status",
-      key: "status",
+      title: '状态',
+      dataIndex: 'status',
+      key: 'status',
       width: 80,
       render: (_: unknown, r: MenuItem) => (
-        <Tag color={r.status === 1 ? "green" : "red"}>{r.status === 1 ? "正常" : "禁用"}</Tag>
+        <Tag color={r.status === 1 ? 'green' : 'red'}>{r.status === 1 ? '正常' : '禁用'}</Tag>
       ),
     },
-    { title: "排序", dataIndex: "sort", key: "sort", width: 60 },
+    { title: '排序', dataIndex: 'sort', key: 'sort', width: 60 },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: MenuItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 176,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: MenuItem) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEdit(r) },
-            { label: "添加子菜单", onClick: () => openCreate(r) },
+            { label: '编辑', onClick: () => openEdit(r) },
+            { label: '添加子菜单', onClick: () => openCreate(r) },
             {
-              label: "删除",
+              label: '删除',
               onClick: () => handleDelete(r.id),
               danger: true,
-              confirm: "确定删除该菜单？",
+              confirm: '确定删除该菜单？',
             },
           ]}
         />
@@ -288,7 +290,7 @@ const MenuPage = () => {
         />
       </Card>
       <Modal
-        title={editingMenu ? "编辑菜单" : "新增菜单"}
+        title={editingMenu ? '编辑菜单' : '新增菜单'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}

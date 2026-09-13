@@ -5,6 +5,25 @@ description: Admin 前端共享组件与 Hooks 速查。涵盖 ActionColumn、Di
 
 # Admin 共享组件与 Hooks
 
+## SearchToolbar / SearchField — 列表查询栏
+
+路径：`src/components/SearchToolbar/index.tsx`
+
+所有后台列表页使用统一查询栏，不要自行组合 `layout="inline"`、固定像素宽度和零散按钮间距。
+
+```tsx
+<SearchToolbar form={searchForm} onSearch={handleSearch} onReset={handleReset}>
+  <SearchField name="keyword" width="wide">
+    <Input placeholder="关键词" />
+  </SearchField>
+  <SearchField name="status" width="normal">
+    <DictSelect typeCode="sys_status" placeholder="全部状态" allowClear />
+  </SearchField>
+</SearchToolbar>
+```
+
+宽度档位：`compact` 用于很短的枚举，`normal` 用于常规下拉，`wide` 用于关键词，`fluid` 用于需要占据剩余空间的字段。查询栏统一负责横纵 gap、响应式换行、回车搜索和搜索/重置按钮；额外操作放入 `extraActions`。
+
 ## ActionColumn — 表格操作列
 
 路径：`src/components/ActionColumn.tsx`
