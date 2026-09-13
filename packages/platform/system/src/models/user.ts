@@ -1,9 +1,10 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const UserModel = defineModel(
-  "sys_user",
+  'sys_user',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     username: column.varchar({ length: 64 }),
     password_hash: column.varchar({ length: 128 }),
     nickname: column.varchar({ length: 64, nullable: true }),

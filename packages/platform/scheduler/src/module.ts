@@ -2,14 +2,14 @@
  * @ventostack/scheduler - 模块聚合
  */
 
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { Router } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import type { Scheduler } from "@ventostack/events";
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import { createSchedulerRoutes } from "./routes/scheduler";
-import { createSchedulerService } from "./services/scheduler";
-import type { JobHandlerMap } from "./services/scheduler";
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import type { Router } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import type { Scheduler } from '@ventostack/events';
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import { createSchedulerRoutes } from './routes/scheduler';
+import { createSchedulerService } from './services/scheduler';
+import type { JobHandlerMap } from './services/scheduler';
 
 export interface SchedulerModule {
   services: {
@@ -27,13 +27,14 @@ export interface SchedulerModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
 }
 
 export function createSchedulerModule(deps: SchedulerModuleDeps): SchedulerModule {
   const { db, scheduler, handlers, jwt, jwtSecret, rbac } = deps;
 
   const schedulerService = createSchedulerService({ db, scheduler, handlers });
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
   const perm = createPermMiddleware(rbac);
 
   const router = createSchedulerRoutes(schedulerService, authMiddleware, perm);

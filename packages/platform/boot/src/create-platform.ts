@@ -124,10 +124,10 @@ export interface PlatformConfig {
     agentRuntime?: { baseUrl: string; token: string; timeoutMs: number };
   };
 
-  /** 是否启用多租户隔离（默认 false，向后兼容） */
+  /** 当前部署的可信租户标识；所有 Admin 资源必须绑定该值 */
+  tenantId: string;
+  /** @deprecated 保留兼容配置；Admin 中租户隔离始终启用 */
   tenantEnabled?: boolean;
-  /** 当前部署的租户标识（未启用多租户时的默认租户，默认 'default'） */
-  tenantId?: string;
   /** 认证 Cookie 是否附加 Secure 属性（生产环境应设为 true，防止令牌 Cookie 明文传输） */
   secureCookies?: boolean;
 }
@@ -194,6 +194,11 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     secureCookies,
   } = config;
 
+  const normalizedTenantId = tenantId.trim();
+  if (!normalizedTenantId || normalizedTenantId.length > 36) {
+    throw new Error('tenantId must contain 1 to 36 characters');
+  }
+
   const db = providedDb ?? createDatabase({ executor });
 
   if (moduleFlags?.ai === true && !config.aiConfig) {
@@ -234,7 +239,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(rpOrigins !== undefined ? { rpOrigins } : {}),
     ...(trustedProxies !== undefined ? { trustedProxies } : {}),
     ...(tenantEnabled !== undefined ? { tenantEnabled } : {}),
-    ...(tenantId !== undefined ? { tenantId } : {}),
+    tenantId: normalizedTenantId,
     ...(secureCookies !== undefined ? { secureCookies } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
@@ -246,6 +251,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwtSecret,
         rbac,
         db,
+        tenantId: normalizedTenantId,
       })
     : undefined;
 
@@ -256,6 +262,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
           jwt,
           jwtSecret,
           rbac,
+          tenantId: normalizedTenantId,
           channels: notifyChannels,
         })
       : undefined;
@@ -266,6 +273,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwt,
         jwtSecret,
         rbac,
+        tenantId: normalizedTenantId,
       })
     : undefined;
 
@@ -276,6 +284,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwtSecret,
         rbac,
         eventBus,
+        tenantId: normalizedTenantId,
       })
     : undefined;
 
@@ -287,6 +296,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
           jwt,
           jwtSecret,
           rbac,
+          tenantId: normalizedTenantId,
         })
       : undefined;
 
@@ -298,6 +308,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwtSecret,
         rbac,
         handlers: jobHandlers ?? {},
+        tenantId: normalizedTenantId,
       })
     : undefined;
 
@@ -309,6 +320,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwt,
         jwtSecret,
         rbac,
+        tenantId: normalizedTenantId,
       })
     : undefined;
 
@@ -317,7 +329,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         db,
         cache,
         // framework/ai 不依赖 platform/auth：认证与权限中间件由平台组装层注入
-        authMiddleware: createAuthMiddleware(jwt, jwtSecret),
+        authMiddleware: createAuthMiddleware(jwt, jwtSecret, normalizedTenantId),
         permMiddleware: createPermMiddleware(rbac),
         eventBus,
         credentialEncryptor: createConfigEncryptor({
@@ -340,6 +352,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
           jwt,
           jwtSecret,
           rbac,
+          tenantId: normalizedTenantId,
         })
       : undefined;
 

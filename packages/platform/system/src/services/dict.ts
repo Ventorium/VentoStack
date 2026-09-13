@@ -3,11 +3,12 @@
  * 提供字典类型与字典数据的 CRUD，带缓存策略
  */
 
-import type { Cache } from "@ventostack/cache";
-import type { Database } from "@ventostack/database";
-import { DictDataModel, DictTypeModel } from "../models/dict";
-import { createCacheKeyNamespace } from "./cache-key";
-import type { CacheKeyNamespace } from "./cache-key";
+import type { Cache } from '@ventostack/cache';
+import { NotFoundError } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import { DictDataModel, DictTypeModel } from '../models/dict';
+import { createCacheKeyNamespace } from './cache-key';
+import type { CacheKeyNamespace } from './cache-key';
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -22,6 +23,8 @@ export interface PaginatedResult<T> {
 export interface CreateDictTypeParams {
   name: string;
   code: string;
+  sort?: number;
+  status?: number;
   remark?: string;
 }
 
@@ -52,6 +55,8 @@ export interface CreateDictDataParams {
   value: string;
   sort?: number;
   cssClass?: string;
+  status?: number;
+  remark?: string;
 }
 
 /** 字典数据更新参数 */
@@ -86,7 +91,14 @@ export interface DictService {
   /** 删除字典类型 */
   deleteType(code: string): Promise<void>;
   /** 分页查询字典类型 */
-  listTypes(params?: { page?: number; pageSize?: number }): Promise<PaginatedResult<DictTypeItem>>;
+  getTypeByCode(code: string): Promise<DictTypeItem | null>;
+  listTypes(params?: {
+    page?: number;
+    pageSize?: number;
+    name?: string;
+    code?: string;
+    status?: number;
+  }): Promise<PaginatedResult<DictTypeItem>>;
 
   /** 创建字典数据 */
   createData(params: CreateDictDataParams): Promise<{ id: string }>;
@@ -109,7 +121,7 @@ export function createDictService(deps: {
   db: Database;
   cache: Cache;
   /** 租户 ID，启用多租户时传入以隔离缓存 */
-  tenantId?: string;
+  tenantId: string;
 }): DictService {
   const { db, cache } = deps;
   const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
@@ -124,11 +136,12 @@ export function createDictService(deps: {
     const id = crypto.randomUUID();
     await db.query(DictTypeModel).insert({
       id,
+      tenant_id: deps.tenantId,
       name: params.name,
       code: params.code,
       is_system: false,
-      sort: 0,
-      status: 1,
+      sort: params.sort ?? 0,
+      status: params.status ?? 1,
       remark: params.remark ?? null,
     });
     return { id };
@@ -138,11 +151,13 @@ export function createDictService(deps: {
     // 系统内置字典类型不可修改
     const existing = await db
       .query(DictTypeModel)
-      .where("code", "=", code)
-      .select("is_system")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('code', '=', code)
+      .select('is_system')
       .get();
-    if (existing?.is_system) {
-      throw new Error("系统内置字典类型不可修改");
+    if (!existing) throw new NotFoundError('字典类型不存在');
+    if (existing.is_system) {
+      throw new Error('系统内置字典类型不可修改');
     }
 
     const updates: Record<string, unknown> = {};
@@ -153,7 +168,11 @@ export function createDictService(deps: {
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(DictTypeModel).where("code", "=", code).update(updates);
+    await db
+      .query(DictTypeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('code', '=', code)
+      .update(updates);
 
     // 类型变更后刷新对应字典数据缓存
     await refreshCache(code);
@@ -163,31 +182,72 @@ export function createDictService(deps: {
     // 系统内置字典类型不可删除
     const existing = await db
       .query(DictTypeModel)
-      .where("code", "=", code)
-      .select("is_system")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('code', '=', code)
+      .select('is_system')
       .get();
-    if (existing?.is_system) {
-      throw new Error("系统内置字典类型不可删除");
+    if (!existing) throw new NotFoundError('字典类型不存在');
+    if (existing.is_system) {
+      throw new Error('系统内置字典类型不可删除');
     }
 
-    await db.query(DictDataModel).where("type_code", "=", code).hardDelete();
-    await db.query(DictTypeModel).where("code", "=", code).hardDelete();
+    await db.transaction(async (tx) => {
+      await tx
+        .query(DictDataModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('type_code', '=', code)
+        .hardDelete();
+      await tx
+        .query(DictTypeModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('code', '=', code)
+        .hardDelete();
+    });
     await cache.del(cacheKey(code));
   }
 
-  async function listTypes(params?: { page?: number; pageSize?: number }): Promise<
-    PaginatedResult<DictTypeItem>
-  > {
+  async function getTypeByCode(code: string): Promise<DictTypeItem | null> {
+    const row = await db
+      .query(DictTypeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('code', '=', code)
+      .get();
+    if (!row) return null;
+    return {
+      id: row.id,
+      name: row.name,
+      code: row.code,
+      isSystem: Boolean(row.is_system),
+      sort: row.sort ?? 0,
+      status: row.status ?? 1,
+      remark: row.remark ?? '',
+      createdAt:
+        row.created_at instanceof Date
+          ? row.created_at.toISOString()
+          : String(row.created_at ?? ''),
+    };
+  }
+
+  async function listTypes(params?: {
+    page?: number;
+    pageSize?: number;
+    name?: string;
+    code?: string;
+    status?: number;
+  }): Promise<PaginatedResult<DictTypeItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
 
-    const total = await db.query(DictTypeModel).count();
+    let query = db.query(DictTypeModel).where('tenant_id', '=', deps.tenantId);
+    if (params?.name) query = query.where('name', 'LIKE', `%${params.name}%`);
+    if (params?.code) query = query.where('code', 'LIKE', `%${params.code}%`);
+    if (params?.status !== undefined) query = query.where('status', '=', params.status);
+    const total = await query.count();
 
-    const rows = await db
-      .query(DictTypeModel)
-      .select("id", "name", "code", "is_system", "sort", "status", "remark", "created_at")
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+    const rows = await query
+      .select('id', 'name', 'code', 'is_system', 'sort', 'status', 'remark', 'created_at')
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();
@@ -199,11 +259,11 @@ export function createDictService(deps: {
       isSystem: Boolean(row.is_system),
       sort: row.sort ?? 0,
       status: row.status ?? 1,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
 
     return {
@@ -222,21 +282,24 @@ export function createDictService(deps: {
     // 如果所属字典类型是系统内置，新增的字典数据也标记为系统内置
     const parentType = await db
       .query(DictTypeModel)
-      .where("code", "=", params.typeCode)
-      .select("is_system")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('code', '=', params.typeCode)
+      .select('is_system')
       .get();
-    const isSystem = Boolean(parentType?.is_system);
+    if (!parentType) throw new Error('字典类型不存在');
+    const isSystem = Boolean(parentType.is_system);
 
     await db.query(DictDataModel).insert({
       id,
+      tenant_id: deps.tenantId,
       type_code: params.typeCode,
       label: params.label,
       value: params.value,
       sort: params.sort ?? 0,
       css_class: params.cssClass ?? null,
       is_system: isSystem,
-      status: 1,
-      remark: null,
+      status: params.status ?? 1,
+      remark: params.remark ?? null,
     });
     // 新增数据后使缓存失效
     await cache.del(cacheKey(params.typeCode));
@@ -247,13 +310,15 @@ export function createDictService(deps: {
     // 先查出当前记录的 type_code 和 is_system 以便刷新缓存和校验
     const existing = await db
       .query(DictDataModel)
-      .where("id", "=", id)
-      .select("type_code", "is_system")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('type_code', 'is_system')
       .get();
 
     // 系统内置字典数据不可修改
-    if (existing?.is_system) {
-      throw new Error("系统内置字典数据不可修改");
+    if (!existing) throw new NotFoundError('字典数据不存在');
+    if (existing.is_system) {
+      throw new Error('系统内置字典数据不可修改');
     }
 
     const updates: Record<string, unknown> = {};
@@ -266,7 +331,11 @@ export function createDictService(deps: {
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(DictDataModel).where("id", "=", id).update(updates);
+    await db
+      .query(DictDataModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .update(updates);
 
     // 刷新关联的字典类型缓存
     if (existing?.type_code) {
@@ -278,16 +347,22 @@ export function createDictService(deps: {
     // 先查出当前记录的 type_code 和 is_system 以便刷新缓存和校验
     const existing = await db
       .query(DictDataModel)
-      .where("id", "=", id)
-      .select("type_code", "is_system")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('type_code', 'is_system')
       .get();
 
     // 系统内置字典数据不可删除
-    if (existing?.is_system) {
-      throw new Error("系统内置字典数据不可删除");
+    if (!existing) throw new NotFoundError('字典数据不存在');
+    if (existing.is_system) {
+      throw new Error('系统内置字典数据不可删除');
     }
 
-    await db.query(DictDataModel).where("id", "=", id).hardDelete();
+    await db
+      .query(DictDataModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .hardDelete();
 
     if (existing?.type_code) {
       await cache.del(cacheKey(existing.type_code));
@@ -297,11 +372,22 @@ export function createDictService(deps: {
   async function queryDataByType(typeCode: string): Promise<DictDataItem[]> {
     const rows = await db
       .query(DictDataModel)
-      .where("type_code", "=", typeCode)
-      .where("status", "=", 1)
-      .select("id", "type_code", "label", "value", "sort", "css_class", "is_system", "status", "remark")
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('type_code', '=', typeCode)
+      .where('status', '=', 1)
+      .select(
+        'id',
+        'type_code',
+        'label',
+        'value',
+        'sort',
+        'css_class',
+        'is_system',
+        'status',
+        'remark',
+      )
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .list();
 
     return rows.map((row) => ({
@@ -310,10 +396,10 @@ export function createDictService(deps: {
       label: row.label,
       value: row.value,
       sort: row.sort ?? 0,
-      cssClass: row.css_class ?? "",
+      cssClass: row.css_class ?? '',
       isSystem: Boolean(row.is_system),
       status: row.status ?? 1,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
     }));
   }
 
@@ -331,8 +417,8 @@ export function createDictService(deps: {
     } else {
       // 刷新所有 dict:* 缓存
       const adapter = (cache as unknown as { keys?: (pattern: string) => Promise<string[]> }).keys;
-      if (adapter && typeof adapter === "function") {
-        const allKeys = await adapter("dict:*");
+      if (adapter && typeof adapter === 'function') {
+        const allKeys = await adapter(ns.key('dict:*'));
         for (const key of allKeys) {
           await cache.del(key);
         }
@@ -342,6 +428,7 @@ export function createDictService(deps: {
 
   return {
     createType,
+    getTypeByCode,
     updateType,
     deleteType,
     listTypes,

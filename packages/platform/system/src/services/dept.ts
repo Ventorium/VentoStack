@@ -59,12 +59,17 @@ export interface DeptService {
  * @param deps 依赖注入
  * @returns DeptService 实例
  */
-export function createDeptService(deps: { db: Database }): DeptService {
+export function createDeptService(deps: { db: Database; tenantId: string }): DeptService {
   const { db } = deps;
 
   /** 校验负责人用户 ID 有效（存在且未删除且启用） */
   async function assertLeaderValid(userId: string): Promise<void> {
-    const user = await db.query(UserModel).where('id', '=', userId).select('status').get();
+    const user = await db
+      .query(UserModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', userId)
+      .select('status')
+      .get();
     if (!user || user.status !== 1) {
       throw new Error('负责人用户不存在或已停用');
     }
@@ -75,6 +80,7 @@ export function createDeptService(deps: { db: Database }): DeptService {
     if (params.parentId) {
       const parent = await db
         .query(DeptModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('id', '=', params.parentId)
         .select('status')
         .get();
@@ -83,6 +89,7 @@ export function createDeptService(deps: { db: Database }): DeptService {
     const id = crypto.randomUUID();
     await db.query(DeptModel).insert({
       id,
+      tenant_id: deps.tenantId,
       parent_id: params.parentId ?? null,
       name: params.name,
       sort: params.sort ?? 0,
@@ -95,11 +102,20 @@ export function createDeptService(deps: { db: Database }): DeptService {
   async function update(id: string, params: UpdateDeptParams): Promise<void> {
     if (Object.keys(params).length === 0) return;
     if (params.leaderUserId) await assertLeaderValid(params.leaderUserId);
-    const current = await db.query(DeptModel).where('id', '=', id).select('id').get();
+    const current = await db
+      .query(DeptModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('id')
+      .get();
     if (!current) throw new Error('部门不存在');
     if (params.parentId === id) throw new Error('部门不能设置自己为父部门');
     if (params.parentId) {
-      const rows = await db.query(DeptModel).select('id', 'parent_id', 'status').list();
+      const rows = await db
+        .query(DeptModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .select('id', 'parent_id', 'status')
+        .list();
       const byId = new Map(rows.map((row) => [row.id, row]));
       const parent = byId.get(params.parentId);
       if (!parent || parent.status !== 1) throw new Error('父部门不存在或已停用');
@@ -119,22 +135,39 @@ export function createDeptService(deps: { db: Database }): DeptService {
     if (params.leaderUserId !== undefined) updates.leader_user_id = params.leaderUserId;
     if (params.status !== undefined) updates.status = params.status;
 
-    await db.query(DeptModel).where('id', '=', id).update(updates);
+    await db
+      .query(DeptModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .update(updates);
   }
 
   async function deleteDept(id: string): Promise<void> {
-    const children = await db.query(DeptModel).where('parent_id', '=', id).count();
+    const children = await db
+      .query(DeptModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('parent_id', '=', id)
+      .count();
     if (children > 0) throw new Error('部门存在子部门，不能删除');
-    const users = await db.query(UserModel).where('dept_id', '=', id).count();
+    const users = await db
+      .query(UserModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('dept_id', '=', id)
+      .count();
     if (users > 0) throw new Error('部门存在用户，不能删除');
-    const roleScopes = await db.query(RoleDeptModel).where('dept_id', '=', id).count();
+    const roleScopes = await db
+      .query(RoleDeptModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('dept_id', '=', id)
+      .count();
     if (roleScopes > 0) throw new Error('部门正在被角色数据权限使用，不能删除');
-    await db.query(DeptModel).where('id', '=', id).delete();
+    await db.query(DeptModel).where('tenant_id', '=', deps.tenantId).where('id', '=', id).delete();
   }
 
   async function getTree(): Promise<DeptTreeNode[]> {
     const rows = await db
       .query(DeptModel)
+      .where('tenant_id', '=', deps.tenantId)
       .select('id', 'parent_id', 'name', 'sort', 'leader_user_id', 'status', 'remark', 'created_at')
       .orderBy('sort', 'asc')
       .orderBy('id', 'asc')
@@ -148,6 +181,7 @@ export function createDeptService(deps: { db: Database }): DeptService {
     if (leaderIds.length > 0) {
       const userRows = await db
         .query(UserModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('id', 'IN', leaderIds)
         .select('id', 'nickname', 'username')
         .list();

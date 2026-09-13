@@ -183,6 +183,7 @@ export async function buildApp(opts?: {
     notifyChannels: new Map([['in_app', createInAppChannel()]]),
     // 多租户隔离开关
     tenantEnabled: env.TENANT_ENABLED,
+    tenantId: env.TENANT_ID,
     // 认证 Cookie Secure 属性（生产环境必须为 true，防止令牌明文传输）
     secureCookies: env.COOKIE_SECURE || env.NODE_ENV === 'production',
     // 可信反向代理 IP/CIDR 列表（登录审计/操作日志/限流据此提取真实客户端 IP）
@@ -336,7 +337,12 @@ export async function buildApp(opts?: {
   // OpenAPI 文档（非生产环境注册；挂主 app 以包含全部平台路由，含 /api/ai）
   if (env.NODE_ENV !== 'production') {
     setupOpenAPI(app, {
-      info: { title: 'VentoStack API', version: '0.1.0' },
+      info: {
+        title: 'VentoStack API',
+        version: '0.1.0',
+        description:
+          'Admin API 的租户作用域由服务端根据部署 TENANT_ID 与认证会话确定。客户端不得提交资源 tenantId；跨租户资源按不存在处理。',
+      },
       servers: [{ url: `http://${env.HOST}:${env.PORT}`, description: env.NODE_ENV }],
       jsonPath: '/openapi.json',
       docsPath: '/docs',
@@ -442,14 +448,6 @@ export async function buildApp(opts?: {
     return next();
   };
   app.use(authRateLimitMiddleware);
-
-  // 4e-1. 多租户：数据模型层尚未实现租户列与查询过滤，此处不注入租户中间件，
-  // 避免"客户端可控 x-tenant-id 头被盲信"的假隔离；真租户化需先完成 P0 数据层改造
-  if (env.TENANT_ENABLED) {
-    serverLogger.warn(
-      'TENANT_ENABLED=true 仅启用 boot 层预留配置：当前数据模型无租户列/查询过滤，不提供真实租户隔离（实验性）',
-    );
-  }
 
   // 4e. 平台模块路由（createPlatform 自动聚合了所有模块路由）
   app.use(platform.router);

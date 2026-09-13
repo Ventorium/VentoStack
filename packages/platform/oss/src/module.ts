@@ -1,10 +1,10 @@
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { Router } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import type { StorageAdapter } from "./adapters/storage";
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import { createOSSRoutes } from "./routes/oss";
-import { createOSSService } from "./services/oss";
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import type { Router } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import type { StorageAdapter } from './adapters/storage';
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import { createOSSRoutes } from './routes/oss';
+import { createOSSService } from './services/oss';
 
 export interface OSSModule {
   services: {
@@ -21,13 +21,14 @@ export interface OSSModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
 }
 
 export function createOSSModule(deps: OSSModuleDeps): OSSModule {
   const { db, storage, jwt, jwtSecret, rbac } = deps;
 
   const ossService = createOSSService({ db, storage });
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
   // rbac 必填：无 RBAC 实例时直接失败，禁止静默跳过权限检查
   const perm = createPermMiddleware(rbac);
 

@@ -26,7 +26,7 @@ function setupRole() {
   registerModel('sys_role_dept', 'sys_role_dept', false);
   registerModel('sys_dept', 'sys_dept', true);
   const cache = createTestCache();
-  const roleService = createRoleService({ db, cache });
+  const roleService = createRoleService({ db, cache, tenantId: 'default' });
   mockExec.results.set('SELECT code FROM sys_role', [{ code: 'editor' }]);
   return { roleService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }
@@ -38,7 +38,7 @@ function setupPermissionLoader() {
   registerModel('sys_role_menu', 'sys_role_menu', false);
   registerModel('sys_menu', 'sys_menu', true);
   const rbac = createMockRBAC();
-  const loader = createPermissionLoader({ db, rbac });
+  const loader = createPermissionLoader({ db, rbac, tenantId: 'default' });
   return { loader, executor: mockExec.executor, calls, results: mockExec.results, rbac };
 }
 
@@ -49,7 +49,7 @@ function setupMenuTreeBuilder() {
   registerModel('sys_role', 'sys_role', true);
   registerModel('sys_role_menu', 'sys_role_menu', false);
   registerModel('sys_menu', 'sys_menu', true);
-  const builder = createMenuTreeBuilder({ db });
+  const builder = createMenuTreeBuilder({ db, tenantId: 'default' });
   return { builder, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
@@ -225,6 +225,7 @@ describe('Security: Permission', () => {
         cache,
         configService: createMockConfigService(),
         governance: { assertCanAssignRoles: async () => {} },
+        tenantId: 'default',
       });
       mockExec.results.set('COUNT', [{ total: 0 }]);
 

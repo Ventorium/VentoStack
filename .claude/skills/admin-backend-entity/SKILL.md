@@ -275,3 +275,47 @@ pageOf(query)                         // { page: 1, pageSize: 10 } (page ≥ 1, 
 ### SQL 安全
 
 - **参数化查询强制**：所有 SQL 使用 `$1, $2, ...` 占位符，禁止字符串拼接。动态字段名使用 `assertValidIdentifier` 校验。
+
+### Admin 多租户硬约束
+
+- **默认租户资源**：所有 Admin 非公开实体默认归属 tenant，表必须包含非空 `tenant_id`；全局资源必须有显式白名单和安全理由。
+- **可信来源**：`tenantId` 只能由认证上下文与数据库实时租户成员校验生成；不得信任 Header、Path、Query、Body 或旧 JWT 快照中的租户归属。
+- **fail-closed**：缺失 tenant、租户/成员停用或校验异常时必须拒绝请求，不得回退为无 tenant 查询或 `default` tenant。
+- **Service 强制 scope**：Service 必须接收不可缺省的 `TenantScope`；列表/count/详情/创建/更新/删除/批量/导入导出/树形/统计/关联查询全部在 SQL 层携带 `tenant_id`。
+- **所有权由服务端写入**：Create 由服务端注入 `tenant_id`，请求 Schema 必须拒绝客户端传入 tenant 归属字段。
+- **跨租户不可枚举**：Update/Delete 使用 `WHERE id = ? AND tenant_id = ?`；跨 tenant 与不存在资源对外统一 404。
+- **关联同 tenant**：角色、菜单、部门、岗位、标签、公告等关联写入必须校验两端属于同 tenant，并优先用 `(tenant_id, id)` 复合约束兜底。
+- **Raw SQL**：必须包含参数化 tenant 条件、说明租户策略并有跨 tenant 回归测试；未说明租户策略的 raw SQL 不得合并。
+- **全链路 namespace**：缓存、操作/登录/审计日志、导出文件、对象存储、队列、定时任务和幂等键全部包含 tenant namespace。
+- **OpenAPI**：每个非公开端点必须说明 tenant 由当前认证上下文确定、客户端不得传入 `tenantId`、跨 tenant 资源按 404 处理。
+- **回归测试**：每个 Admin 端点至少覆盖同 tenant 成功、跨 tenant 读写失败、tenant 缺失/失效 fail-closed，并覆盖批量、关联、统计、导入导出。
+
+### 模块安全契约（2026-09 模块交叉审查）
+
+以下规则来自第三轮模块审查（config / dict / notice / tag 教训），新增或修改实体时逐条对照：
+
+**数据权限与端点语义**
+
+- **用户关联查询必须带数据范围**：接口若返回用户 ID 列表或按用户维度聚合数据（标签反查用户、通知接收人等），必须把当前操作者传入 service，并与 `DataScopeResolver` 解析的部门/本人范围取交集；`ALL` 以外 fail-closed，解析异常整体拒绝，不回退全量。
+- **个人/管理端点分离**：管理端点要求 `system:*` 权限并应用数据范围；个人视角走 `/api/system/user/**` 自助端点，服务端强制注入 `ctx.user.id`，不接受前端传 userId。禁止一个端点同时承担两种视角。
+- **敏感配置是控制面**：影响认证安全的配置键（初始密码、密码长度/复杂度、MFA、Passkey、锁定策略）读改需要数据库实时 admin（`governance.adminOnlyMiddleware`）；列表响应脱敏，编辑空值表示"不修改"，不得把掩码写回数据库；变更写独立审计事件（旧/新值摘要，不记明文）。配置应声明集中式元数据（category: public/business/security/secret、mutable、deletable），不散落 `PROTECTED_KEYS`。
+
+**Service 层真实契约**
+
+- **`getById` 必须真实**：用路径参数查询目标；禁止用 `list({ page: 1, pageSize: 1 })` 第一条伪造详情（字典类型教训）。资源主键统一 UUID；需要按 code 操作时提供显式 `/by-code/:code` 端点。
+- **字段名契约**：HTTP body 字段名与 service 参数名必须一致或显式映射；禁止 `dictService.createData(body as CreateDictDataParams)` 这种断言桥接（dictType/typeCode 教训）。必须有真实 HTTP 集成测试断言最终 INSERT 的列值。
+- **状态机下沉 service**：有状态实体（如公告 0 草稿 → 1 已发布 → 2 已撤回）用条件更新 `WHERE id = ? AND status = 期望值` 实现，affected rows 为 0 返回 404 或冲突；`markRead` 等操作仅对合法状态生效；禁止路由层"先查后改"承担状态校验（存在并发竞争）。
+- **全量覆盖写入事务化**：assignRoles / assignTags / assignMenus 类接口先校验目标存在、启用、去重，再在同一 `db.transaction` 内删除旧关系 + `batchInsert` 新关系；禁止非事务先删后插、循环单条写入。
+- **affected rows 必检**：update/delete 后检查影响行数，目标不存在返回 404，不静默成功。
+
+**数据库完整性**
+
+- **关联表必须外键**：用户标签、用户通知等关联表补 `ON DELETE CASCADE/RESTRICT` 外键；新增外键迁移先扫描孤儿数据，发现脏数据主动 `RAISE EXCEPTION`，不静默清理。软删除不触发 cascade，service 删除时显式清理关联行。
+- **父引用校验**：创建子记录（字典数据等）前必须确认父类型存在且启用，不能只依赖数据库报错。
+
+**输入边界与前后端契约**
+
+- **Schema 边界统一**：字符串按模型列长设 `max`（name/code 常用 64/128，remark 512）；`sort: min 0, max 9999`；`status: enum [0,1]`（特殊实体显式声明枚举，如公告 `[0,1,2]`、类型 `[1,2,3]`）；批量 IDs 用 `items: { type: 'uuid' }, min: 1, max: 100`；大文本字段（公告 content）设上限（如 64 KiB）。
+- **listQuery 与前端搜索对齐**：后端 `listQuery` 白名单必须覆盖前端全部搜索字段且类型一致；strict 校验下未声明字段直接 400（配置页传 name/key 被拒的教训）。筛选用 ORM 参数化表达。
+- **前后端类型一致**：同一字段在前端、Schema、数据库中类型必须一致（配置 `type` int/string 混用教训）；create/update body 覆盖前端实际提交的全部字段。
+- **OpenAPI 描述完整**：summary 说明权限标识、数据范围语义、租户由认证上下文确定、跨租户 404、敏感值脱敏行为；功能变更同步更新 `apps/docs` 对应模块文档。

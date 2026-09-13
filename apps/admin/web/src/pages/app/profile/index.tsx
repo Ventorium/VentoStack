@@ -100,7 +100,11 @@ export default function ProfilePage() {
     onPageChange,
   } = useTable<LoginLogItem>(
     async (params) => {
-      const { error, data } = await client.get("/api/system/login-logs", { query: params });
+      const { error, data } = await client.get(
+        // 个人中心使用自助端点（仅本人登录日志）；schema 待 o2t 重新生成后移除断言
+        "/api/system/user/login-logs" as unknown as "/api/system/login-logs",
+        { query: params },
+      );
       if (!error && data) {
         return data;
       }

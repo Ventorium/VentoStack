@@ -23,7 +23,7 @@ function setup() {
   registerModel('sys_role_menu', 'sys_role_menu', false);
   registerModel('sys_menu', 'sys_menu', true);
   const rbac = createRBAC();
-  const permissionLoader = createPermissionLoader({ db, rbac });
+  const permissionLoader = createPermissionLoader({ db, rbac, tenantId: 'default' });
   return { permissionLoader, executor: mockExec.executor, results: mockExec.results, rbac };
 }
 
@@ -41,7 +41,7 @@ function seedPermissions(
 ) {
   results.clear();
   // loadAll 第一步：查所有启用角色
-  results.set('sys_role WHERE status', roleRows);
+  results.set('sys_role WHERE tenant_id', roleRows);
   // 按角色查角色-菜单关联（permission-loader 用 query 构建器，表名匹配即可）
   results.set('sys_role_menu', roleMenus);
   // 菜单权限查询

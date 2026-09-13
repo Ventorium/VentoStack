@@ -398,3 +398,59 @@ describe("DictDataService", () => {
 8. **Database**: Use parameterized queries. Never concatenate strings.
 9. **Naming**: Use snake_case for database columns, camelCase for TypeScript.
 10. **Functional Style**: Use functions and explicit dependencies, not classes.
+
+## Mandatory Tenant Isolation
+
+Every non-public Admin operation is tenant-scoped by default. Treat an entity as global only when the repository documents an explicit allowlist entry and a security reason.
+
+1. **Trusted source only**: derive `tenantId` from the authenticated server context and validate the user's live tenant membership. Never trust a tenant identifier supplied only through a header, path, query, body, or stale JWT claim.
+2. **Fail closed**: reject the request when tenant resolution or membership validation fails. Never fall back to an unscoped query or a `default` tenant in a protected route.
+3. **Required service scope**: services must accept a required `TenantScope`; do not make tenant scope an optional CRUD parameter when tenancy is enabled.
+4. **SQL-level enforcement**: list, count, detail, create, update, delete, batch, export, statistics, tree traversal, and relation queries must constrain `tenant_id` in SQL. Update/delete must use both resource ID and tenant ID in the predicate.
+5. **Server-owned writes**: inject `tenant_id` on create in the service. Request schemas must reject client-supplied tenant ownership fields.
+6. **Same-tenant relations**: validate both ends of role, menu, department, post, tag, notice, and other association writes. Prefer composite `(tenant_id, id)` database constraints as a final backstop.
+7. **Raw SQL**: every raw query must include a parameterized tenant predicate and a stated tenant strategy. Add an isolation regression test or replace the query with ORM.
+8. **All storage planes**: namespace cache keys, logs, audit records, exports, object paths, queue jobs, scheduled tasks, and idempotency keys by tenant.
+9. **Non-enumeration**: return the same 404 response for a missing resource and a resource owned by another tenant.
+10. **OpenAPI contract**: document that tenant scope comes from the authenticated context, clients must not submit `tenantId`, and cross-tenant resources are not visible.
+11. **Required tests**: every Admin endpoint needs same-tenant success, cross-tenant read/write denial, and missing/invalid tenant fail-closed cases, including batch and relation endpoints.
+
+### Tenant Review Checklist
+
+- [ ] Model and migration include non-null `tenant_id` and tenant-aware indexes/uniques.
+- [ ] Route uses authenticated tenant membership middleware before permission middleware.
+- [ ] Service cannot be called without a validated tenant scope.
+- [ ] Every ORM and raw SQL statement is tenant constrained.
+- [ ] Cache, log, file, event, and background-job keys include the tenant namespace.
+- [ ] OpenAPI states tenant behavior and rejects tenant ownership input.
+- [ ] Cross-tenant regression tests cover CRUD, batch, relations, statistics, import, and export.
+
+## Mandatory Module Security Contract (2026-09 cross-review)
+
+Rules distilled from the third module review (config / dict / notice / tag findings). Apply to every new or modified system module; see also CLAUDE.md §26.
+
+### Data scope and endpoint semantics
+
+1. **User-linked queries must be data-scoped**: any endpoint returning user ID lists or aggregating by user (tag-to-users back-references, notice recipients) must pass the acting user into the service and intersect with the `DataScopeResolver` department/self scope. Fail closed outside `ALL`; resolution errors reject the request (503), never fall back to full data.
+2. **Separate personal and admin views**: admin endpoints require `system:*` permissions plus data scope; personal views go through `/api/system/user/**` self-service endpoints that force `ctx.user.id` server-side. Never let one endpoint serve both audiences.
+3. **Security-sensitive config is control plane**: config keys affecting authentication (initial password, password length/complexity, MFA, passkey, lockout policy) require DB-realtime admin for read and write. Mask values in list responses; empty value on edit means "keep current" — never write the mask back; log an audit event with old/new value digests, never plaintext.
+
+### Service-layer truth
+
+4. **Real `getById`**: query by the path parameter. Faking detail with the first row of a list query is a defect. Use UUID primary keys on CRUD paths; expose explicit `/by-code/:code` endpoints when code-based access is needed.
+5. **Field-name contracts**: HTTP body fields and service params must match or be mapped explicitly. Never bridge a mismatch with a TS `as` cast (the `dictType`/`typeCode` bug). New/changed endpoints need real HTTP integration tests asserting the inserted columns.
+6. **State machines live in the service**: conditional updates `WHERE id = ? AND status = expected`, return 404/conflict when affected rows = 0. Route-level check-then-update has race conditions and does not count.
+7. **Full-replace writes are transactional**: validate targets exist/are enabled/deduped first, then delete-old + batchInsert-new inside one `db.transaction`. No non-transactional delete-then-insert, no per-row insert loops.
+8. **Check affected rows**: update/delete on a missing target must return 404, never silently succeed.
+
+### Database integrity
+
+9. **Association tables need foreign keys** with explicit CASCADE/RESTRICT/SET NULL. FK migrations must scan for orphans first and fail loudly on dirty data. Soft delete does not cascade — services must clean association rows explicitly.
+10. **Parent reference validation**: creating child records (dict data etc.) must confirm the parent exists and is enabled.
+
+### Input boundaries and contracts
+
+11. **Uniform schema bounds**: strings get `max` from model column lengths (name/code 64–128, remark 512); `sort` 0–9999; `status` `enum: [0,1]` (declare explicit enums for special entities); batch IDs `items: uuid + min 1 + max 100`; large text fields capped (e.g. 64 KiB for notice content).
+12. **listQuery matches frontend search fields**: every frontend search field must be declared in the backend `listQuery` whitelist with the same type; strict validation rejects undeclared fields with 400. Express filters with parameterized ORM queries.
+13. **Types agree across tiers**: one field must have the same type in the frontend, route schema, and database (the config `type` int/string mismatch). create/update bodies must cover every field the frontend actually submits.
+14. **OpenAPI completeness**: document permission identifiers, data-scope semantics, tenant-from-auth-context, cross-tenant 404, and sensitive-value masking for every endpoint; update module docs in `apps/docs` alongside behavior changes.

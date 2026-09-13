@@ -4,8 +4,8 @@
  * 菜单类型：1=目录 2=菜单 3=按钮
  */
 
-import type { Database } from "@ventostack/database";
-import { MenuModel, RoleMenuModel, RoleModel, UserRoleModel } from "../models";
+import type { Database } from '@ventostack/database';
+import { MenuModel, RoleMenuModel, RoleModel, UserRoleModel } from '../models';
 
 /** 前端路由元信息 */
 export interface RouteMeta {
@@ -128,6 +128,7 @@ function buildRouteTree(
  */
 export function createMenuTreeBuilder(deps: {
   db: Database;
+  tenantId: string;
 }): MenuTreeBuilder {
   const { db } = deps;
 
@@ -140,8 +141,9 @@ export function createMenuTreeBuilder(deps: {
     // 查询用户的角色 ID
     const userRoles = await db
       .query(UserRoleModel)
-      .where("user_id", "=", userId)
-      .select("role_id")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('user_id', '=', userId)
+      .select('role_id')
       .list();
     const roleIds = userRoles.map((ur) => ur.role_id);
 
@@ -150,9 +152,10 @@ export function createMenuTreeBuilder(deps: {
     // 过滤出启用的角色
     const activeRoles = await db
       .query(RoleModel)
-      .where("id", "IN", roleIds)
-      .where("status", "=", 1)
-      .select("id")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', 'IN', roleIds)
+      .where('status', '=', 1)
+      .select('id')
       .list();
     const activeRoleIds = activeRoles.map((r) => r.id);
 
@@ -161,8 +164,9 @@ export function createMenuTreeBuilder(deps: {
     // 查询角色关联的菜单 ID
     const roleMenus = await db
       .query(RoleMenuModel)
-      .where("role_id", "IN", activeRoleIds)
-      .select("menu_id")
+      .where('tenant_id', '=', deps.tenantId)
+      .where('role_id', 'IN', activeRoleIds)
+      .select('menu_id')
       .list();
 
     return new Set(roleMenus.map((rm) => rm.menu_id));
@@ -175,33 +179,34 @@ export function createMenuTreeBuilder(deps: {
   async function queryAllMenus(): Promise<MenuRow[]> {
     const rows = await db
       .query(MenuModel)
-      .where("status", "=", 1)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('status', '=', 1)
       .select(
-        "id",
-        "parent_id",
-        "name",
-        "path",
-        "component",
-        "redirect",
-        "type",
-        "permission",
-        "icon",
-        "sort",
-        "visible",
+        'id',
+        'parent_id',
+        'name',
+        'path',
+        'component',
+        'redirect',
+        'type',
+        'permission',
+        'icon',
+        'sort',
+        'visible',
       )
-      .orderBy("sort", "asc")
+      .orderBy('sort', 'asc')
       .list();
 
     return rows.map((row) => ({
       id: row.id,
       parent_id: row.parent_id ?? null,
       name: row.name,
-      path: row.path ?? "",
-      component: row.component ?? "",
-      redirect: row.redirect ?? "",
+      path: row.path ?? '',
+      component: row.component ?? '',
+      redirect: row.redirect ?? '',
       type: row.type,
-      permission: row.permission ?? "",
-      icon: row.icon ?? "",
+      permission: row.permission ?? '',
+      icon: row.icon ?? '',
       sort: row.sort ?? 0,
       visible: row.visible ?? true,
     }));

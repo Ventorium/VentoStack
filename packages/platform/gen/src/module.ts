@@ -2,12 +2,12 @@
  * @ventostack/gen - 模块聚合
  */
 
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { Router } from "@ventostack/core";
-import type { Database, SqlExecutor, TableSchemaInfo } from "@ventostack/database";
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import { createGenRoutes } from "./routes/gen";
-import { createGenService } from "./services/gen";
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import type { Router } from '@ventostack/core';
+import type { Database, SqlExecutor, TableSchemaInfo } from '@ventostack/database';
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import { createGenRoutes } from './routes/gen';
+import { createGenService } from './services/gen';
 
 export interface GenModule {
   services: {
@@ -26,13 +26,14 @@ export interface GenModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
 }
 
 export function createGenModule(deps: GenModuleDeps): GenModule {
   const { db, executor, readTableSchema, jwt, jwtSecret, rbac } = deps;
 
   const genService = createGenService({ db, executor, readTableSchema });
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
   const perm = createPermMiddleware(rbac);
 
   const router = createGenRoutes(genService, authMiddleware, perm);

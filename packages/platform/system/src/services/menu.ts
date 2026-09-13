@@ -141,6 +141,7 @@ function findInTree(nodes: MenuTreeNode[], id: string): MenuTreeNode | null {
  */
 export function createMenuService(deps: {
   db: Database;
+  tenantId: string;
 }): MenuService {
   const { db } = deps;
 
@@ -161,12 +162,18 @@ export function createMenuService(deps: {
       } = params;
       const id = crypto.randomUUID();
       if (parentId) {
-        const parent = await db.query(MenuModel).where('id', '=', parentId).select('status').get();
+        const parent = await db
+          .query(MenuModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('id', '=', parentId)
+          .select('status')
+          .get();
         if (!parent || parent.status !== 1) throw new Error('父菜单不存在或已停用');
       }
 
       await db.query(MenuModel).insert({
         id,
+        tenant_id: deps.tenantId,
         parent_id: parentId ?? null,
         name,
         path,
@@ -185,11 +192,20 @@ export function createMenuService(deps: {
 
     async update(id, params) {
       if (Object.keys(params).length === 0) return;
-      const current = await db.query(MenuModel).where('id', '=', id).select('id').get();
+      const current = await db
+        .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .select('id')
+        .get();
       if (!current) throw new Error('菜单不存在');
       if (params.parentId === id) throw new Error('菜单不能设置自己为父菜单');
       if (params.parentId) {
-        const rows = await db.query(MenuModel).select('id', 'parent_id', 'status').list();
+        const rows = await db
+          .query(MenuModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .select('id', 'parent_id', 'status')
+          .list();
         const byId = new Map(rows.map((row) => [row.id, row]));
         const parent = byId.get(params.parentId);
         if (!parent || parent.status !== 1) throw new Error('父菜单不存在或已停用');
@@ -215,38 +231,68 @@ export function createMenuService(deps: {
       if (params.visible !== undefined) updates.visible = params.visible;
       if (params.status !== undefined) updates.status = params.status;
 
-      await db.query(MenuModel).where('id', '=', id).update(updates);
+      await db
+        .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .update(updates);
     },
 
     async delete(id) {
-      const children = await db.query(MenuModel).where('parent_id', '=', id).count();
+      const children = await db
+        .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('parent_id', '=', id)
+        .count();
       if (children > 0) throw new Error('菜单存在子菜单，不能删除');
       await db.transaction(async (tx) => {
-        await tx.query(RoleMenuModel).where('menu_id', '=', id).hardDelete();
-        await tx.query(MenuModel).where('id', '=', id).hardDelete();
+        await tx
+          .query(RoleMenuModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('menu_id', '=', id)
+          .hardDelete();
+        await tx
+          .query(MenuModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('id', '=', id)
+          .hardDelete();
       });
     },
 
     async getTree() {
-      const rows = await db.query(MenuModel).where('status', '=', 1).orderBy('sort', 'asc').list();
+      const rows = await db
+        .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('status', '=', 1)
+        .orderBy('sort', 'asc')
+        .list();
 
       return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getAllTree() {
-      const rows = await db.query(MenuModel).orderBy('sort', 'asc').list();
+      const rows = await db
+        .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .orderBy('sort', 'asc')
+        .list();
 
       return buildTree(rows as unknown as Array<Record<string, unknown>>);
     },
 
     async getById(id) {
-      const row = await db.query(MenuModel).where('id', '=', id).get();
+      const row = await db
+        .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .get();
 
       if (!row) return null;
 
       // 获取所有菜单来构建树（因为需要返回含 children 的节点）
       const allRows = await db
         .query(MenuModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('status', '=', 1)
         .orderBy('sort', 'asc')
         .list();

@@ -2,14 +2,14 @@
  * @ventostack/monitor - 模块聚合
  */
 
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { Middleware, Router } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import type { HealthCheck } from "@ventostack/observability";
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import { createMonitorRoutes } from "./routes/monitor";
-import { createMonitorService } from "./services/monitor";
-import type { CacheStatus, DataSourceStatus, MonitorService } from "./services/monitor";
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import type { Middleware, Router } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import type { HealthCheck } from '@ventostack/observability';
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import { createMonitorRoutes } from './routes/monitor';
+import { createMonitorService } from './services/monitor';
+import type { CacheStatus, DataSourceStatus, MonitorService } from './services/monitor';
 
 export interface MonitorModule {
   services: {
@@ -25,6 +25,7 @@ export interface MonitorModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
   db?: Database;
   cacheStatsProvider?: () => Promise<CacheStatus>;
   dataSourceStatsProvider?: () => Promise<DataSourceStatus>;
@@ -40,7 +41,7 @@ export function createMonitorModule(deps: MonitorModuleDeps): MonitorModule {
     cacheStatsProvider,
     dataSourceStatsProvider,
   });
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
 
   const perm = createPermMiddleware(rbac);
 

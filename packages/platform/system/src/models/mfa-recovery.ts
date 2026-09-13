@@ -1,9 +1,10 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const MfaRecoveryModel = defineModel(
-  "sys_mfa_recovery",
+  'sys_mfa_recovery',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     user_id: column.varchar({ length: 36 }),
     code_hash: column.varchar({ length: 128 }),
     used_at: column.timestamp({ nullable: true }),

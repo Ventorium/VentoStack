@@ -4,8 +4,9 @@ export const RoleModel = defineModel(
   'sys_role',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     name: column.varchar({ length: 64 }),
-    code: column.varchar({ length: 64, unique: true }),
+    code: column.varchar({ length: 64 }),
     sort: column.int({ default: 0 }),
     data_scope: column.int({ nullable: true }),
     status: column.int({ default: 1 }),
@@ -17,6 +18,7 @@ export const RoleModel = defineModel(
 export const UserRoleModel = defineModel(
   'sys_user_role',
   {
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     user_id: column.varchar({ length: 36 }),
     role_id: column.varchar({ length: 36 }),
   },
@@ -26,6 +28,7 @@ export const UserRoleModel = defineModel(
 export const RoleDeptModel = defineModel(
   'sys_role_dept',
   {
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     role_id: column.varchar({ length: 36 }),
     dept_id: column.varchar({ length: 36 }),
   },

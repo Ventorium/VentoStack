@@ -2,13 +2,13 @@
  * @ventostack/notify - 模块聚合
  */
 
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { Router } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import { createNotificationRoutes } from "./routes/notification";
-import { createNotificationService } from "./services/notification";
-import type { NotificationService, NotifyChannel } from "./services/notification";
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import type { Router } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import { createNotificationRoutes } from './routes/notification';
+import { createNotificationService } from './services/notification';
+import type { NotificationService, NotifyChannel } from './services/notification';
 
 export interface NotificationModule {
   services: {
@@ -24,6 +24,7 @@ export interface NotificationModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
   channels: Map<string, NotifyChannel>;
 }
 
@@ -31,7 +32,7 @@ export function createNotificationModule(deps: NotificationModuleDeps): Notifica
   const { db, jwt, jwtSecret, rbac, channels } = deps;
 
   const notificationService = createNotificationService({ db, channels });
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
   const perm = createPermMiddleware(rbac);
 
   const router = createNotificationRoutes(notificationService, authMiddleware, perm);

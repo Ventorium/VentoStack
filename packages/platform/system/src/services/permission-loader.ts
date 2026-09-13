@@ -52,6 +52,7 @@ function parsePermission(permission: string): ParsedPermission | null {
 export function createPermissionLoader(deps: {
   db: Database;
   rbac: RBAC;
+  tenantId: string;
 }): PermissionLoader {
   const { db, rbac } = deps;
 
@@ -64,6 +65,7 @@ export function createPermissionLoader(deps: {
     // 查询角色关联的菜单 ID
     const roleMenus = await db
       .query(RoleMenuModel)
+      .where('tenant_id', '=', deps.tenantId)
       .where('role_id', '=', roleId)
       .select('menu_id')
       .list();
@@ -78,6 +80,7 @@ export function createPermissionLoader(deps: {
     // 查询菜单权限
     const menus = await db
       .query(MenuModel)
+      .where('tenant_id', '=', deps.tenantId)
       .where('id', 'IN', menuIds)
       .where('status', '=', 1)
       .where('permission', 'IS NOT NULL')
@@ -101,7 +104,12 @@ export function createPermissionLoader(deps: {
   return {
     async loadAll() {
       // 1. 查询所有启用角色
-      const roles = await db.query(RoleModel).where('status', '=', 1).select('id', 'code').list();
+      const roles = await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('status', '=', 1)
+        .select('id', 'code')
+        .list();
 
       // 2. 为每个角色加载权限
       for (const role of roles) {
@@ -115,6 +123,7 @@ export function createPermissionLoader(deps: {
       // 查询角色
       const role = await db
         .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('code', '=', roleCode)
         .where('status', '=', 1)
         .select('id')

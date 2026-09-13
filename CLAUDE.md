@@ -159,11 +159,15 @@ VentoStack 是基于 Bun 运行时构建的全栈框架，但当前研发重心�
 - API Key 必须哈希存储，不存明文
 - 权限检查在 Handler 入口统一做，不在业务逻辑里分散判断
 - 多租户场景必须强制注入 tenant_id，不能依赖前端传递
+- Admin 后台的所有非公开操作必须关联已认证主体的 `tenantId`，并在服务端实时校验用户与租户的有效归属；不得单独信任 JWT 快照、Header、Query、Path 或 Body 中的租户标识
+- 租户作用域必须同时覆盖列表、详情、创建、更新、删除、批量操作、导入导出、关联表、统计、日志、缓存、对象存储和异步任务；任一路径无法解析或验证租户时必须 fail-closed
 
 ### 5.3 数据访问
 
 - SQL 必须用参数化查询，禁止字符串拼接
 - ORM 的 raw query 必须有审计日志和审批流
+- Admin 多租户表的主键查询与写操作也必须携带 `tenant_id`；禁止先按全局 ID 取数后再在业务层判断租户
+- 跨表关联必须校验两端属于同一租户，数据库约束优先使用 `(tenant_id, id)` 复合外键/唯一约束兜底
 - 缓存 key、对象存储路径、队列名必须包含租户 namespace
 - 数据库连接必须按环境隔离，禁止生产环境直接连开发库
 
@@ -504,6 +508,18 @@ packages/platform/xxx/
 4. Routes → 在 `module.ts` 中用 `createCrudRoutes()` 或自定义
 5. 注册 Migration → `apps/admin/api/src/database/migrations.ts`
 
+### Admin 租户隔离硬约束
+
+- 所有 Admin 业务实体默认是租户资源，表必须包含非空 `tenant_id`；全局资源必须显式列入白名单并说明理由
+- `tenantId` 只能由认证与租户归属中间件注入，路由不得从请求 body/query 接受并信任 `tenantId`
+- Service 必须显式接收不可缺省的 `TenantScope`，所有 ORM 查询、详情、更新、删除都在 SQL 层追加 `tenant_id = ?`
+- Create 必须由服务端写入 `tenant_id`；Update/Delete 必须使用 `WHERE id = ? AND tenant_id = ?`，affected rows 为 0 统一按 404 处理，避免泄露跨租户资源是否存在
+- 批量操作、树形后代展开、标签/角色/部门/岗位等关联查询必须在单次受限查询中同时筛选 `tenant_id`，禁止逐项查后在内存中补过滤
+- Raw SQL 必须显式携带参数化 tenant 条件并有租户隔离回归测试；未声明租户策略的 raw SQL 不得合并
+- 缓存键、审计/操作/登录日志、导入导出文件、对象存储路径、队列与定时任务必须携带租户 namespace
+- OpenAPI 必须说明“租户由当前认证上下文确定”、跨租户资源按 404 处理、客户端无需且不得传入 tenantId
+- 每个 Admin HTTP 端点至少要有同租户成功、跨租户不可见/不可写、缺失或失效 tenant fail-closed 三类回归测试
+
 ### 响应封装
 ```typescript
 import { ok, okPage, fail } from "./routes/common";
@@ -662,3 +678,38 @@ notifyChannels: new Map([
 | P2 | 前端 `types.ts` 手写接口 → OpenAPI 自动生成 | 待处理 |
 | P2 | `schema.ts` 中 `any` 类型优化 | 待处理 |
 | P3 | workflow 模块增强（可视化设计器） | 待规划 |
+
+---
+
+## 26. Admin 系统模块安全契约（2026-09 模块交叉审查）
+
+> 适用于 config / dict / notice / tag / post 等全部 system 模块与未来新增模块，与 §16 租户硬约束同级，违反不得合并。所有后台操作（列表、详情、创建、更新、删除、批量、导入导出、关联、统计、日志）一律关联 tenantId 权限限制，无例外。详细模板见 `.claude/skills/admin-backend-entity/SKILL.md` 与 `.agents/skills/`。
+
+### 数据权限与端点语义
+
+- **用户关联查询必须带数据范围**：任何返回用户 ID 列表或按用户维度聚合数据的接口（标签反查用户、通知接收人等），必须接入 `DataScopeResolver` 与操作者部门/本人范围取交集；`ALL` 以外 fail-closed，解析失败返回 503，不回退全量。
+- **个人/管理端点分离**：管理端点要求 `system:*` 权限并应用数据范围；个人视角必须走 `/api/system/user/**` 自助端点，服务端强制注入 `ctx.user.id`，不接受外部 userId。禁止一个端点同时承担两种视角。
+- **敏感配置是控制面**：影响认证安全的配置键（初始密码、密码长度/复杂度、MFA、Passkey、锁定策略）读取与修改需要数据库实时 admin；列表响应脱敏，编辑空值表示不修改，不得把掩码写回数据库；变更写独立审计事件，记录旧/新值摘要，不记明文。
+
+### Service 层真实契约
+
+- `getById` 必须用路径参数真实查询，禁止用列表第一条伪造详情。
+- HTTP body 字段名与 service 参数名必须一致或显式映射，禁止 `as` 断言桥接不一致字段名；新增/修改接口必须有真实 HTTP 集成测试断言最终落库字段。
+- 状态机（如公告 草稿→已发布→已撤回）必须下沉 service 层：条件更新 `WHERE id = ? AND status = 期望值`，affected rows 为 0 时返回 404 或冲突；禁止依赖路由层"先查后改"承担状态校验。
+- 全量覆盖写入（assignRoles / assignTags 等）：先校验目标存在且合法，再在同一事务内删除旧关系 + 批量插入；禁止非事务的先删后插与循环单条写入。
+- update / delete 必须检查 affected rows；目标不存在返回 404，不静默成功。
+
+### 数据库完整性
+
+- 关联表（sys_user_tag、sys_user_notice 等）必须有外键并明确 CASCADE / RESTRICT / SET NULL；新增外键迁移发现脏数据时主动失败，不静默清理。软删除不触发 cascade，service 删除时必须显式清理关联。
+
+### 输入边界与前后端契约
+
+- 输入 Schema 统一边界：字符串按模型列长设 `max`；`sort: 0—9999`；`status: enum [0,1]`（特殊实体显式声明自己的枚举）；批量 IDs 必须为 `items: uuid + min: 1 + max: 100`。
+- `listQuery` 白名单必须与前端搜索字段一一对应且类型一致（int/string 对齐）；strict 校验下未声明字段直接 400，前端有搜索框后端就必须声明。
+- OpenAPI 描述不得遗漏：权限标识、数据范围语义、租户由认证上下文确定、跨租户 404、敏感值脱敏行为；功能变更时同步更新对应模块文档。
+
+### 审计与 SQL
+
+- 清空审计/登录日志等审计证据需要数据库实时 admin 守卫，且保留期/归档策略优先于全表 `TRUNCATE`。
+- raw SQL 持续向 ORM 迁移（列表筛选、统计、状态查询优先）；为 ORM 补结构化能力（批量 insert、upsert、affected rows、exists、JOIN projection），不增加字符串逃生口。

@@ -44,8 +44,12 @@ export interface CacheKeyNamespace {
  * @param tenantId 租户 ID，为空或 undefined 时不添加前缀
  * @returns CacheKeyNamespace 实例
  */
-export function createCacheKeyNamespace(tenantId?: string): CacheKeyNamespace {
-  const prefix = tenantId ? `tenant:${tenantId}:` : "";
+export function createCacheKeyNamespace(tenantId: string): CacheKeyNamespace {
+  const normalizedTenantId = tenantId.trim();
+  if (!normalizedTenantId || normalizedTenantId.length > 36) {
+    throw new Error('tenantId must contain 1 to 36 characters');
+  }
+  const prefix = `tenant:${normalizedTenantId}:`;
 
   return {
     key(key: string): string {

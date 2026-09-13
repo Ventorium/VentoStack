@@ -19,16 +19,21 @@ export class IdentityGovernanceError extends VentoStackError {
 }
 
 /** 授权控制面策略。admin 身份始终从数据库实时确认，不信任 JWT 声明。 */
-export function createIdentityGovernanceService(db: Database): IdentityGovernanceService {
+export function createIdentityGovernanceService(
+  db: Database,
+  tenantId: string,
+): IdentityGovernanceService {
   async function getActiveRoleIds(userId: string): Promise<string[]> {
     const links = await db
       .query(UserRoleModel)
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .select('role_id')
       .list();
     if (links.length === 0) return [];
     const roles = await db
       .query(RoleModel)
+      .where('tenant_id', '=', tenantId)
       .where(
         'id',
         'IN',
@@ -43,12 +48,14 @@ export function createIdentityGovernanceService(db: Database): IdentityGovernanc
   async function isActiveAdmin(userId: string): Promise<boolean> {
     const links = await db
       .query(UserRoleModel)
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .select('role_id')
       .list();
     if (links.length === 0) return false;
     const role = await db
       .query(RoleModel)
+      .where('tenant_id', '=', tenantId)
       .where(
         'id',
         'IN',

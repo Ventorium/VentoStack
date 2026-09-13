@@ -13,7 +13,7 @@ function setup() {
   registerModel('sys_role_menu', 'sys_role_menu', false);
   registerModel('sys_menu', 'sys_menu', true);
   const rbac = createMockRBAC();
-  const permissionLoader = createPermissionLoader({ db, rbac });
+  const permissionLoader = createPermissionLoader({ db, rbac, tenantId: 'default' });
   return {
     permissionLoader,
     executor: mockExec.executor,
@@ -27,7 +27,7 @@ describe('PermissionLoader', () => {
   test('loadAll loads all roles and their permissions', async () => {
     const s = setup();
     s.results.clear();
-    s.results.set('sys_role WHERE status', [{ id: 'r1', code: 'admin' }]);
+    s.results.set('sys_role WHERE tenant_id', [{ id: 'r1', code: 'admin' }]);
     s.results.set('sys_role_menu', [{ permission: 'system:user:list' }]);
 
     await s.permissionLoader.loadAll();
@@ -36,7 +36,7 @@ describe('PermissionLoader', () => {
 
   test('loadAll with no roles still completes', async () => {
     const s = setup();
-    s.results.set('sys_role WHERE status', []);
+    s.results.set('sys_role WHERE tenant_id', []);
     await s.permissionLoader.loadAll();
     // No roles to add
     expect(s.rbac.addRole).not.toHaveBeenCalled();
@@ -59,7 +59,7 @@ describe('PermissionLoader', () => {
 
   test('reloadAll clears existing roles and reloads', async () => {
     const s = setup();
-    s.results.set('sys_role WHERE status', [{ id: 'r1', code: 'admin' }]);
+    s.results.set('sys_role WHERE tenant_id', [{ id: 'r1', code: 'admin' }]);
     s.results.set('sys_role_menu', [{ permission: 'system:user:list' }]);
 
     await s.permissionLoader.reloadAll();

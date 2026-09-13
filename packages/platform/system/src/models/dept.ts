@@ -1,9 +1,10 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const DeptModel = defineModel(
-  "sys_dept",
+  'sys_dept',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     parent_id: column.varchar({ length: 36, nullable: true }),
     name: column.varchar({ length: 64 }),
     sort: column.int({ default: 0 }),

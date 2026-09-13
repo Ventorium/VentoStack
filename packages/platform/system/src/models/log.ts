@@ -1,9 +1,10 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const LoginLogModel = defineModel(
-  "sys_login_log",
+  'sys_login_log',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     user_id: column.varchar({ length: 36, nullable: true }),
     username: column.varchar({ length: 64 }),
     ip: column.varchar({ length: 45 }),
@@ -20,9 +21,10 @@ export const LoginLogModel = defineModel(
 );
 
 export const OperationLogModel = defineModel(
-  "sys_operation_log",
+  'sys_operation_log',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     user_id: column.varchar({ length: 36, nullable: true }),
     username: column.varchar({ length: 64 }),
     module: column.varchar({ length: 64 }),

@@ -3,8 +3,8 @@
  * 提供岗位的 CRUD 与分页查询
  */
 
-import type { Database } from "@ventostack/database";
-import { PostModel } from "../models/post";
+import type { Database } from '@ventostack/database';
+import { PostModel } from '../models/post';
 
 /** 岗位创建参数 */
 export interface CreatePostParams {
@@ -47,6 +47,8 @@ export interface PaginatedResult<T> {
 export interface PostListParams {
   page?: number;
   pageSize?: number;
+  name?: string;
+  code?: string;
   status?: number;
 }
 
@@ -67,13 +69,14 @@ export interface PostService {
  * @param deps 依赖注入
  * @returns PostService 实例
  */
-export function createPostService(deps: { db: Database }): PostService {
+export function createPostService(deps: { db: Database; tenantId: string }): PostService {
   const { db } = deps;
 
   async function create(params: CreatePostParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.query(PostModel).insert({
       id,
+      tenant_id: deps.tenantId,
       name: params.name,
       code: params.code,
       sort: params.sort ?? 0,
@@ -93,28 +96,34 @@ export function createPostService(deps: { db: Database }): PostService {
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(PostModel).where("id", "=", id).update(updates);
+    await db
+      .query(PostModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .update(updates);
   }
 
   async function deletePost(id: string): Promise<void> {
-    await db.query(PostModel).where("id", "=", id).delete();
+    await db.query(PostModel).where('tenant_id', '=', deps.tenantId).where('id', '=', id).delete();
   }
 
   async function list(params?: PostListParams): Promise<PaginatedResult<PostItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
 
-    let query = db.query(PostModel);
+    let query = db.query(PostModel).where('tenant_id', '=', deps.tenantId);
+    if (params?.name) query = query.where('name', 'LIKE', `%${params.name}%`);
+    if (params?.code) query = query.where('code', 'LIKE', `%${params.code}%`);
     if (params?.status !== undefined) {
-      query = query.where("status", "=", params.status);
+      query = query.where('status', '=', params.status);
     }
 
     const total = await query.count();
 
     const rows = await query
-      .select("id", "name", "code", "sort", "status", "remark", "created_at")
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+      .select('id', 'name', 'code', 'sort', 'status', 'remark', 'created_at')
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();
@@ -125,11 +134,11 @@ export function createPostService(deps: { db: Database }): PostService {
       code: row.code,
       sort: row.sort ?? 0,
       status: row.status ?? 1,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
 
     return {

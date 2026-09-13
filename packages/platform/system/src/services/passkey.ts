@@ -9,18 +9,18 @@ import {
   generateRegistrationOptions,
   verifyAuthenticationResponse,
   verifyRegistrationResponse,
-} from "@simplewebauthn/server";
+} from '@simplewebauthn/server';
 import type {
   AuthenticationResponseJSON,
   PublicKeyCredentialCreationOptionsJSON,
   PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
-} from "@simplewebauthn/server";
-import type { Cache } from "@ventostack/cache";
-import type { Database } from "@ventostack/database";
-import type { AuditStore } from "@ventostack/observability";
-import { PasskeyModel } from "../models/passkey";
-import { UserModel } from "../models/user";
+} from '@simplewebauthn/server';
+import type { Cache } from '@ventostack/cache';
+import type { Database } from '@ventostack/database';
+import type { AuditStore } from '@ventostack/observability';
+import { PasskeyModel } from '../models/passkey';
+import { UserModel } from '../models/user';
 
 /** 通行密钥列表项（不含敏感数据） */
 export interface PasskeyListItem {
@@ -88,13 +88,18 @@ export function createPasskeyService(deps: {
   rpName: string;
   rpOrigins: string[];
   auditStore: AuditStore;
+  tenantId: string;
 }): PasskeyService {
   const { db, cache, rpID, rpName, rpOrigins, auditStore } = deps;
 
   return {
     async beginRegistration(userId) {
       // 检查数量限制
-      const count = await db.query(PasskeyModel).where("user_id", "=", userId).count();
+      const count = await db
+        .query(PasskeyModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('user_id', '=', userId)
+        .count();
       if (count >= MAX_PASSKEYS) {
         throw new Error(`最多只能注册 ${MAX_PASSKEYS} 个通行密钥`);
       }
@@ -102,12 +107,13 @@ export function createPasskeyService(deps: {
       // 查询已有凭证用于排除重复注册
       const existingRows = await db
         .query(PasskeyModel)
-        .where("user_id", "=", userId)
-        .select("credential_id")
+        .where('tenant_id', '=', deps.tenantId)
+        .where('user_id', '=', userId)
+        .select('credential_id')
         .list();
       const excludeCredentials = existingRows.map((r) => ({
         id: r.credential_id,
-        type: "public-key" as const,
+        type: 'public-key' as const,
       }));
 
       const options = await generateRegistrationOptions({
@@ -116,25 +122,28 @@ export function createPasskeyService(deps: {
         userName: userId,
         excludeCredentials,
         authenticatorSelection: {
-          residentKey: "preferred",
-          userVerification: "preferred",
+          residentKey: 'preferred',
+          userVerification: 'preferred',
         },
       });
 
       // 存储 challenge（字符串，不需要 JSON.stringify）
       const challengeId = crypto.randomUUID();
-      await cache.set(`passkey_reg:${challengeId}`, options.challenge, { ttl: CHALLENGE_TTL });
+      await cache.set(`tenant:${deps.tenantId}:passkey_reg:${challengeId}`, options.challenge, {
+        ttl: CHALLENGE_TTL,
+      });
 
       return { options, challengeId };
     },
 
     async finishRegistration(userId, name, challengeId, credential) {
       // 取回 challenge
-      const challengeStr = await cache.get<string>(`passkey_reg:${challengeId}`);
+      const challengeKey = `tenant:${deps.tenantId}:passkey_reg:${challengeId}`;
+      const challengeStr = await cache.get<string>(challengeKey);
       if (!challengeStr) {
-        throw new Error("注册请求已过期，请重新开始");
+        throw new Error('注册请求已过期，请重新开始');
       }
-      await cache.del(`passkey_reg:${challengeId}`);
+      await cache.del(challengeKey);
 
       // 验证
       const verification = await verifyRegistrationResponse({
@@ -145,17 +154,18 @@ export function createPasskeyService(deps: {
       });
 
       if (!verification.verified || !verification.registrationInfo) {
-        throw new Error("通行密钥验证失败");
+        throw new Error('通行密钥验证失败');
       }
 
       const info = verification.registrationInfo;
       const id = crypto.randomUUID();
 
       // Convert Uint8Array publicKey to base64 for storage
-      const publicKeyBase64 = Buffer.from(info.credential.publicKey).toString("base64");
+      const publicKeyBase64 = Buffer.from(info.credential.publicKey).toString('base64');
 
       await db.query(PasskeyModel).insert({
         id,
+        tenant_id: deps.tenantId,
         user_id: userId,
         name,
         credential_id: info.credential.id,
@@ -163,17 +173,17 @@ export function createPasskeyService(deps: {
         counter: BigInt(info.credential.counter),
         transports: JSON.stringify(info.credential.transports ?? []),
         device_type: info.credentialDeviceType,
-        backed_up: info.credentialBackedUp ? true : false,
+        backed_up: !!info.credentialBackedUp,
         aaguid: info.aaguid,
         created_at: new Date(),
       });
 
       await auditStore.append({
         actor: userId,
-        action: "passkey.registered",
-        resource: "auth",
+        action: 'passkey.registered',
+        resource: 'auth',
         resourceId: id,
-        result: "success",
+        result: 'success',
         metadata: { name },
       });
 
@@ -191,12 +201,13 @@ export function createPasskeyService(deps: {
       // 查找用户
       const authUser = await db
         .query(UserModel)
-        .where("username", "=", username)
-        .where("status", "=", 1)
-        .select("id")
+        .where('tenant_id', '=', deps.tenantId)
+        .where('username', '=', username)
+        .where('status', '=', 1)
+        .select('id')
         .get();
       if (!authUser) {
-        throw new Error("通行密钥登录失败");
+        throw new Error('通行密钥登录失败');
       }
 
       const userId = authUser.id;
@@ -204,29 +215,30 @@ export function createPasskeyService(deps: {
       // 查找用户的 passkeys
       const passkeyRows = await db
         .query(PasskeyModel)
-        .where("user_id", "=", userId)
-        .select("credential_id", "transports")
+        .where('tenant_id', '=', deps.tenantId)
+        .where('user_id', '=', userId)
+        .select('credential_id', 'transports')
         .list();
       if (passkeyRows.length === 0) {
-        throw new Error("通行密钥登录失败");
+        throw new Error('通行密钥登录失败');
       }
 
       const allowCredentials = passkeyRows.map((pk) => ({
         id: pk.credential_id,
-        type: "public-key" as const,
+        type: 'public-key' as const,
         transports: pk.transports ? JSON.parse(pk.transports) : undefined,
       }));
 
       const options = await generateAuthenticationOptions({
         rpID,
         allowCredentials,
-        userVerification: "preferred",
+        userVerification: 'preferred',
       });
 
       // 存储 challenge + userId 映射
       const challengeId = crypto.randomUUID();
       await cache.set(
-        `passkey_auth:${challengeId}`,
+        `tenant:${deps.tenantId}:passkey_auth:${challengeId}`,
         JSON.stringify({
           challenge: options.challenge,
           userId,
@@ -240,11 +252,12 @@ export function createPasskeyService(deps: {
 
     async finishAuthentication(challengeId, assertion) {
       // 取回 challenge 数据
-      const dataStr = await cache.get<string>(`passkey_auth:${challengeId}`);
+      const challengeKey = `tenant:${deps.tenantId}:passkey_auth:${challengeId}`;
+      const dataStr = await cache.get<string>(challengeKey);
       if (!dataStr) {
-        throw new Error("认证请求已过期，请重新开始");
+        throw new Error('认证请求已过期，请重新开始');
       }
-      await cache.del(`passkey_auth:${challengeId}`);
+      await cache.del(challengeKey);
 
       const { challenge, userId, username } = JSON.parse(dataStr) as {
         challenge: string;
@@ -255,16 +268,17 @@ export function createPasskeyService(deps: {
       // 查找 passkey
       const passkey = await db
         .query(PasskeyModel)
-        .where("user_id", "=", userId)
-        .where("credential_id", "=", assertion.id)
-        .select("id", "credential_id", "public_key", "counter")
+        .where('tenant_id', '=', deps.tenantId)
+        .where('user_id', '=', userId)
+        .where('credential_id', '=', assertion.id)
+        .select('id', 'credential_id', 'public_key', 'counter')
         .get();
       if (!passkey) {
-        throw new Error("通行密钥未找到");
+        throw new Error('通行密钥未找到');
       }
 
       // Decode base64 publicKey back to Uint8Array
-      const publicKeyBytes = new Uint8Array(Buffer.from(passkey.public_key, "base64"));
+      const publicKeyBytes = new Uint8Array(Buffer.from(passkey.public_key, 'base64'));
 
       // 验证
       const verification = await verifyAuthenticationResponse({
@@ -282,18 +296,19 @@ export function createPasskeyService(deps: {
       if (!verification.verified) {
         await auditStore.append({
           actor: userId,
-          action: "passkey.auth_failed",
-          resource: "auth",
-          result: "failure",
+          action: 'passkey.auth_failed',
+          resource: 'auth',
+          result: 'failure',
         });
-        throw new Error("通行密钥验证失败");
+        throw new Error('通行密钥验证失败');
       }
 
       // 更新 counter 和最后使用时间
       const newCounter = verification.authenticationInfo.newCounter;
       await db
         .query(PasskeyModel)
-        .where("id", "=", passkey.id)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', passkey.id)
         .update({
           counter: BigInt(newCounter),
           last_used_at: new Date(),
@@ -301,10 +316,10 @@ export function createPasskeyService(deps: {
 
       await auditStore.append({
         actor: userId,
-        action: "passkey.auth_success",
-        resource: "auth",
+        action: 'passkey.auth_success',
+        resource: 'auth',
         resourceId: passkey.id,
-        result: "success",
+        result: 'success',
       });
 
       return { userId, username };
@@ -313,9 +328,10 @@ export function createPasskeyService(deps: {
     async listPasskeys(userId) {
       const rows = await db
         .query(PasskeyModel)
-        .where("user_id", "=", userId)
-        .select("id", "name", "device_type", "backed_up", "created_at", "last_used_at")
-        .orderBy("created_at", "desc")
+        .where('tenant_id', '=', deps.tenantId)
+        .where('user_id', '=', userId)
+        .select('id', 'name', 'device_type', 'backed_up', 'created_at', 'last_used_at')
+        .orderBy('created_at', 'desc')
         .list();
 
       return rows.map((r) => ({
@@ -324,7 +340,7 @@ export function createPasskeyService(deps: {
         deviceType: r.device_type ?? null,
         backedUp: r.backed_up,
         createdAt:
-          r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
+          r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ''),
         lastUsedAt:
           r.last_used_at instanceof Date ? r.last_used_at.toISOString() : (r.last_used_at ?? null),
       }));
@@ -333,22 +349,27 @@ export function createPasskeyService(deps: {
     async removePasskey(userId, passkeyId) {
       const existing = await db
         .query(PasskeyModel)
-        .where("id", "=", passkeyId)
-        .where("user_id", "=", userId)
-        .select("id")
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', passkeyId)
+        .where('user_id', '=', userId)
+        .select('id')
         .get();
       if (!existing) {
-        throw new Error("通行密钥不存在或不属于当前用户");
+        throw new Error('通行密钥不存在或不属于当前用户');
       }
 
-      await db.query(PasskeyModel).where("id", "=", passkeyId).hardDelete();
+      await db
+        .query(PasskeyModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', passkeyId)
+        .hardDelete();
 
       await auditStore.append({
         actor: userId,
-        action: "passkey.removed",
-        resource: "auth",
+        action: 'passkey.removed',
+        resource: 'auth',
         resourceId: passkeyId,
-        result: "success",
+        result: 'success',
       });
     },
   };

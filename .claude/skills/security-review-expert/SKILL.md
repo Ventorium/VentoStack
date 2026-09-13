@@ -49,6 +49,14 @@ description: Use when reviewing VentoStack backend code, configs, manifests, or 
 - 日志、trace、错误对象里泄露 token、cookie、secret
 - 容器仍可写根文件系统，或保留默认 capabilities
 - 输入校验没有请求大小、JSON 深度、上传大小边界
+- 返回用户 ID 的接口没接数据范围（标签反查用户可枚举范围外用户）
+- HTTP body 字段名与 service 参数不一致，靠 `as` 断言桥接，运行时为 undefined
+- `getById` 忽略路径参数，用列表第一条伪造详情
+- 前端搜索字段不在后端 listQuery 白名单里，strict 校验直接 400
+- 状态转换靠路由层"先查后改"，有并发竞争且 service 可被绕过
+- 关联表没有外键，删除主体后遗留孤儿关系
+- 全量覆盖写入先删后插不在一个事务，失败后数据半成品
+- 敏感配置（密码策略/MFA/初始密码）普通管理员可改可读明文
 
 ## Security Rules (2024 Security Audit)
 
@@ -80,6 +88,39 @@ description: Use when reviewing VentoStack backend code, configs, manifests, or 
 
 - **沙箱默认拒绝所有工具**：`allowedTools` 为空时 `canExecute()` 返回 `false`，必须显式配置白名单。
 - **文件/网络访问默认关闭**：`allowFileRead`、`allowFileWrite`、`allowNetworkAccess` 默认 `false`，开启时必须提供 `workingDirectory` / `allowedHosts`。
+
+## Security Rules (2026-09 模块交叉审查)
+
+第三轮模块审查（config / dict / notice / tag / post）后引入，审查 system 及业务模块时逐项确认：
+
+### 数据权限与端点语义
+
+- **用户关联查询必须带数据范围**：返回用户 ID 列表或按用户维度聚合的接口（标签反查用户等）必须接入 `DataScopeResolver` 取交集；`ALL` 以外 fail-closed，解析失败 503 不回退全量。
+- **个人/管理端点分离**：管理端点 `system:*` 权限 + 数据范围；个人视角走 `/api/system/user/**` 强制注入 `ctx.user.id`；禁止一个端点双视角（登录日志教训）。
+- **敏感配置是控制面**：认证安全配置键（初始密码、密码策略、MFA、Passkey、锁定策略）读改需数据库实时 admin；列表脱敏、空值不修改、变更写审计摘要。警惕"改默认密码 + 批量重置"的账号接管链。
+
+### Service 层真实契约
+
+- **getById 真实性**：必须用路径参数查询；列表第一条伪造详情直接判缺陷。
+- **字段名契约**：HTTP body 与 service 参数不一致且靠 `as` 断言桥接，运行时 undefined → 必须有真实 HTTP 集成测试断言落库。
+- **状态机下沉 service**：条件更新 `WHERE id = ? AND status = ?` + affected rows；路由层"先查后改"存在并发竞争，不算实现。
+- **全量覆盖写入事务化**：先校验目标存在合法，同事务 delete + batchInsert；非事务先删后插判缺陷。
+- **affected rows 必检**：update/delete 目标不存在必须 404，静默成功判缺陷。
+
+### 数据库完整性
+
+- **关联表必须外键**：用户标签/通知等关联表缺外键判缺陷；新增外键迁移必须先扫脏数据、发现即失败，不得静默清理。软删除不触发 cascade，service 必须显式清理关联。
+
+### 输入边界与契约
+
+- **Schema 边界**：字符串 max、`sort 0—9999`、status enum、批量 IDs `uuid + min 1 + max 100`；同一字段前后端与数据库类型必须一致（int/string 混用判缺陷）。
+- **listQuery 白名单对齐前端搜索**：strict 校验下前端搜索字段未声明直接 400；逐一对照页面搜索框与 `listQuery`。
+- **OpenAPI 完整性**：权限、数据范围、租户语义、脱敏行为描述不得缺失；功能变更未同步文档判缺陷。
+
+### 审计与 SQL
+
+- **审计证据保护**：清空日志类操作需实时 admin 守卫；全表 `TRUNCATE` 优先替换为保留期策略。
+- **raw SQL 渐进迁移**：列表筛选、统计、状态查询等 ORM 已能表达的 raw 应迁移；ORM 缺能力时补结构化能力，不开字符串逃生口。
 
 ## Review Standard
 

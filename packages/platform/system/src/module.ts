@@ -23,17 +23,17 @@ import type { AuditStore } from '@ventostack/observability';
 import { createCacheKeyNamespace } from './services/cache-key';
 import type { CacheKeyNamespace } from './services/cache-key';
 
-import { OperationLogModel } from './models/log';
-import { UserRoleModel } from './models/role';
+import { LoginLogModel, OperationLogModel } from './models/log';
+import { RoleModel, UserRoleModel } from './models/role';
 import { UserModel } from './models/user';
 import { createAuthService } from './services/auth';
-import { createConfigService } from './services/config';
+import { MASKED_CONFIG_VALUE, createConfigService, isSensitiveConfigKey } from './services/config';
 import type { CreateConfigParams } from './services/config';
 import { createDataScopeResolver } from './services/data-scope';
 import { createDeptService } from './services/dept';
 import type { CreateDeptParams, UpdateDeptParams } from './services/dept';
 import { createDictService } from './services/dict';
-import type { CreateDictDataParams, CreateDictTypeParams } from './services/dict';
+import type { CreateDictTypeParams } from './services/dict';
 import { createIdentityGovernanceService } from './services/identity-governance';
 import { createMenuService } from './services/menu';
 import type { CreateMenuParams } from './services/menu';
@@ -111,10 +111,8 @@ export interface SystemModuleDeps {
   fileUploader?: FileUploader;
   /** 可信代理 IP/CIDR 列表，用于安全提取客户端真实 IP */
   trustedProxies?: string[];
-  /** 是否启用多租户隔离 */
-  tenantEnabled?: boolean;
-  /** 当前租户 ID，启用多租户时传入以隔离缓存键 */
-  tenantId?: string;
+  /** 当前部署的可信租户 ID，不得从请求参数获取 */
+  tenantId: string;
   /** 认证 Cookie 是否附加 Secure 属性（生产环境应设为 true） */
   secureCookies?: boolean;
 }
@@ -134,8 +132,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     fileUploader,
   } = deps;
 
-  const tenantEnabled = deps.tenantEnabled === true;
-  const tenantId = tenantEnabled ? deps.tenantId : undefined;
+  const tenantId = deps.tenantId.trim();
+  if (!tenantId || tenantId.length > 36) {
+    throw new Error('tenantId must contain 1 to 36 characters');
+  }
   const ns: CacheKeyNamespace = createCacheKeyNamespace(tenantId);
 
   // Services
@@ -151,10 +151,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     auditStore: auditLog,
     eventBus,
     configService,
-    // 与缓存命名空间/数据服务同一来源：tenantEnabled 时使用 deps.tenantId，否则 undefined（auth 内回退 'default'）
     tenantId,
   });
-  const governance = createIdentityGovernanceService(db);
+  const governance = createIdentityGovernanceService(db, tenantId);
   const userService = createUserService({
     db,
     passwordHasher,
@@ -164,22 +163,23 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     tenantId,
   });
   const roleService = createRoleService({ db, cache, tenantId });
-  const menuService = createMenuService({ db });
-  const deptService = createDeptService({ db });
-  const postService = createPostService({ db });
+  const menuService = createMenuService({ db, tenantId });
+  const deptService = createDeptService({ db, tenantId });
+  const postService = createPostService({ db, tenantId });
   const dictService = createDictService({ db, cache, tenantId });
-  const noticeService = createNoticeService({ db });
-  const permissionLoader = createPermissionLoader({ db, rbac });
-  const dataScopeResolver = createDataScopeResolver(db);
+  const noticeService = createNoticeService({ db, tenantId });
+  const permissionLoader = createPermissionLoader({ db, rbac, tenantId });
+  const dataScopeResolver = createDataScopeResolver(db, tenantId);
   const invalidateRoleSessions = async (roleId: string): Promise<void> => {
     const links = await db
       .query(UserRoleModel)
+      .where('tenant_id', '=', tenantId)
       .where('role_id', '=', roleId)
       .select('user_id')
       .list();
     await Promise.all(links.map((link) => authService.forceLogout(link.user_id)));
   };
-  const menuTreeBuilder = createMenuTreeBuilder({ db });
+  const menuTreeBuilder = createMenuTreeBuilder({ db, tenantId });
   const passkeyService = createPasskeyService({
     db,
     cache,
@@ -187,14 +187,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     rpName: deps.rpName ?? 'VentoStack Admin',
     rpOrigins: deps.rpOrigins ?? ['http://localhost:5173'],
     auditStore: auditLog,
+    tenantId,
   });
-  const tagService = createTagService({ db });
+  const tagService = createTagService({ db, tenantId });
 
   // Middlewares
   const authMiddleware = createLiveSystemAuthMiddleware({
     tokenAuthMiddleware: createAuthMiddleware(jwt, jwtSecret),
     sessionManager: deps.sessionManager,
     db,
+    tenantId,
   });
   const perm = createPermMiddleware(rbac);
 
@@ -202,6 +204,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   const saveOperationLog = async (entry: OperationLogEntry): Promise<void> => {
     await db.query(OperationLogModel).insert({
       id: entry.id,
+      tenant_id: tenantId,
       user_id: entry.user_id,
       username: entry.username,
       module: entry.module,
@@ -517,7 +520,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             for (const id of ids) {
               try {
                 // Check if role has users assigned
-                const count = await db.query(UserRoleModel).where('role_id', '=', id).count();
+                const count = await db
+                  .query(UserRoleModel)
+                  .where('tenant_id', '=', tenantId)
+                  .where('role_id', '=', id)
+                  .count();
                 if (count > 0) {
                   skipped++;
                   continue;
@@ -712,8 +719,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
               try {
                 // Check if dept has children
                 const children = (await db.raw(
-                  'SELECT COUNT(*) as cnt FROM sys_dept WHERE parent_id = $1 AND deleted_at IS NULL',
-                  [id],
+                  'SELECT COUNT(*) as cnt FROM sys_dept WHERE tenant_id = $1 AND parent_id = $2 AND deleted_at IS NULL',
+                  [tenantId, id],
                 )) as Array<{ cnt: number }>;
                 if (Number(children[0]?.cnt ?? 0) > 0) {
                   skipped++;
@@ -747,7 +754,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
-        listQuery: { status: { type: 'int' as const, enum: [0, 1], description: '状态' } },
+        listQuery: {
+          name: { type: 'string' as const, max: 64, description: '岗位名称' },
+          code: { type: 'string' as const, max: 64, description: '岗位编码' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+        },
         item: {
           id: { type: 'uuid' as const, description: '岗位 ID' },
           name: { type: 'string' as const, description: '岗位名称' },
@@ -757,18 +768,18 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           remark: { type: 'string' as const, description: '备注' },
         },
         createBody: {
-          name: { type: 'string' as const, required: true, description: '岗位名称' },
-          code: { type: 'string' as const, required: true, description: '岗位编码' },
-          sort: { type: 'int' as const, default: 0, description: '排序' },
-          status: { type: 'int' as const, default: 1, description: '状态' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, required: true, max: 64, description: '岗位名称' },
+          code: { type: 'string' as const, required: true, max: 64, description: '岗位编码' },
+          sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
         updateBody: {
-          name: { type: 'string' as const, description: '岗位名称' },
-          code: { type: 'string' as const, description: '岗位编码' },
-          sort: { type: 'int' as const, description: '排序' },
-          status: { type: 'int' as const, description: '状态' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, max: 64, description: '岗位名称' },
+          code: { type: 'string' as const, max: 64, description: '岗位编码' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
       },
       extraRoutes: (r) => {
@@ -776,7 +787,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         r.post(
           '/api/system/posts/batch-delete',
           {
-            body: { ids: { type: 'array' as const, required: true, description: '岗位 ID 列表' } },
+            body: {
+              ids: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                min: 1,
+                max: 100,
+                required: true,
+                description: '岗位 ID 列表',
+              },
+            },
             openapi: { summary: '批量删除岗位', tags: ['post'] },
           },
           async (ctx) => {
@@ -812,14 +832,17 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         update: (idOrCode, body) =>
           dictService.updateType(idOrCode, body as Record<string, unknown>),
         delete: (idOrCode) => dictService.deleteType(idOrCode),
-        getById: (_code) =>
-          dictService.listTypes({ page: 1, pageSize: 1 }).then((r) => r.items[0] ?? null),
+        getById: (code) => dictService.getTypeByCode(code),
       },
       authMiddleware,
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
-        listQuery: {},
+        listQuery: {
+          name: { type: 'string' as const, max: 64, description: '字典名称' },
+          code: { type: 'string' as const, max: 64, description: '字典编码' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+        },
         item: {
           id: { type: 'uuid' as const, description: '字典类型 ID' },
           name: { type: 'string' as const, description: '字典名称' },
@@ -830,17 +853,17 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           remark: { type: 'string' as const, description: '备注' },
         },
         createBody: {
-          name: { type: 'string' as const, required: true, description: '字典名称' },
-          code: { type: 'string' as const, required: true, description: '字典编码' },
-          sort: { type: 'int' as const, default: 0, description: '排序' },
-          status: { type: 'int' as const, default: 1, description: '状态' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, required: true, max: 64, description: '字典名称' },
+          code: { type: 'string' as const, required: true, max: 64, description: '字典编码' },
+          sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
         updateBody: {
-          name: { type: 'string' as const, description: '字典名称' },
-          sort: { type: 'int' as const, description: '排序' },
-          status: { type: 'int' as const, description: '状态' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, max: 64, description: '字典名称' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
       },
       extraRoutes: (r) => {
@@ -880,29 +903,45 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       },
       authMiddleware,
       perm,
+      accessGuard: governance.adminOnlyMiddleware,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
-        listQuery: { group: { type: 'string' as const, max: 64, description: '配置分组' } },
+        listQuery: {
+          name: { type: 'string' as const, max: 128, description: '配置名称' },
+          key: { type: 'string' as const, max: 128, description: '配置键' },
+          group: { type: 'string' as const, max: 64, description: '配置分组' },
+        },
         item: {
           id: { type: 'uuid' as const, description: '配置 ID' },
           name: { type: 'string' as const, description: '配置名称' },
           key: { type: 'string' as const, description: '配置键' },
-          value: { type: 'string' as const, description: '配置值' },
-          type: { type: 'string' as const, description: '配置类型' },
+          value: { type: 'string' as const, description: '配置值（敏感配置返回掩码）' },
+          type: { type: 'int' as const, description: '配置类型' },
+          group: { type: 'string' as const, description: '配置分组' },
+          sort: { type: 'int' as const, description: '排序' },
           remark: { type: 'string' as const, description: '备注' },
+          sensitivity: {
+            type: 'string' as const,
+            enum: ['security', 'public', 'business'],
+            description: '敏感级别：security=值已掩码；public=公开白名单；business=普通配置',
+          },
         },
         createBody: {
-          name: { type: 'string' as const, required: true, description: '配置名称' },
-          key: { type: 'string' as const, required: true, description: '配置键' },
-          value: { type: 'string' as const, required: true, description: '配置值' },
-          type: { type: 'string' as const, description: '配置类型' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, required: true, max: 128, description: '配置名称' },
+          key: { type: 'string' as const, required: true, max: 128, description: '配置键' },
+          value: { type: 'string' as const, required: true, max: 65536, description: '配置值' },
+          type: { type: 'int' as const, enum: [0, 1, 2, 3], description: '配置类型' },
+          group: { type: 'string' as const, max: 64, description: '配置分组' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
         updateBody: {
-          name: { type: 'string' as const, description: '配置名称' },
-          value: { type: 'string' as const, description: '配置值' },
-          type: { type: 'string' as const, description: '配置类型' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, max: 128, description: '配置名称' },
+          value: { type: 'string' as const, max: 65536, description: '配置值' },
+          type: { type: 'int' as const, enum: [0, 1, 2, 3], description: '配置类型' },
+          group: { type: 'string' as const, max: 64, description: '配置分组' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
       },
       extraRoutes: (r) => {
@@ -925,7 +964,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             const key = (ctx.params as Record<string, string>).key!;
             const value = await configService.getValue(key);
             if (value === null) return fail('Config not found', 404, 404);
-            return success({ key, value });
+            // 敏感配置通过 by-key 也只返回掩码，与列表行为一致；真实值仅在服务端内部使用
+            return success({ key, value: isSensitiveConfigKey(key) ? MASKED_CONFIG_VALUE : value });
           },
           perm('system:config', 'query'),
         );
@@ -947,26 +987,36 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       operationLogMiddleware: opLogMiddleware,
       schemas: {
         listQuery: {
-          type: { type: 'int' as const, description: '通知类型' },
-          status: { type: 'int' as const, description: '状态' },
+          title: { type: 'string' as const, max: 200, description: '通知标题' },
+          type: { type: 'int' as const, min: 0, max: 99, description: '通知类型' },
+          status: {
+            type: 'int' as const,
+            enum: [0, 1, 2],
+            description: '状态 0=草稿 1=已发布 2=已撤回',
+          },
         },
         item: {
           id: { type: 'uuid' as const, description: '通知 ID' },
           title: { type: 'string' as const, description: '通知标题' },
           content: { type: 'string' as const, description: '通知内容' },
-          type: { type: 'string' as const, description: '通知类型' },
+          type: { type: 'int' as const, description: '通知类型' },
           status: { type: 'int' as const, description: '状态' },
           createdAt: { type: 'date' as const, description: '创建时间' },
         },
         createBody: {
-          title: { type: 'string' as const, required: true, description: '通知标题' },
-          content: { type: 'string' as const, required: true, description: '通知内容' },
-          type: { type: 'string' as const, required: true, description: '通知类型' },
+          title: { type: 'string' as const, required: true, max: 200, description: '通知标题' },
+          content: {
+            type: 'string' as const,
+            required: true,
+            max: 100000,
+            description: '通知内容',
+          },
+          type: { type: 'int' as const, required: true, min: 0, max: 99, description: '通知类型' },
         },
         updateBody: {
-          title: { type: 'string' as const, description: '通知标题' },
-          content: { type: 'string' as const, description: '通知内容' },
-          type: { type: 'string' as const, description: '通知类型' },
+          title: { type: 'string' as const, max: 200, description: '通知标题' },
+          content: { type: 'string' as const, max: 100000, description: '通知内容' },
+          type: { type: 'int' as const, min: 0, max: 99, description: '通知类型' },
         },
       },
       extraRoutes: (r) => {
@@ -999,7 +1049,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         r.post(
           '/api/system/notices/batch-publish',
           {
-            body: { ids: { type: 'array' as const, required: true, description: '通知 ID 列表' } },
+            body: {
+              ids: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                min: 1,
+                max: 100,
+                required: true,
+                description: '通知 ID 列表',
+              },
+            },
             openapi: { summary: '批量发布通知', tags: ['notice'] },
           },
           async (ctx) => {
@@ -1011,8 +1070,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             let skipped = 0;
             for (const id of ids) {
               const rows = (await db.raw(
-                'SELECT status FROM sys_notice WHERE id = $1 AND deleted_at IS NULL',
-                [id],
+                'SELECT status FROM sys_notice WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL',
+                [tenantId, id],
               )) as Array<{ status: number }>;
               if (!rows.length || rows[0]!.status === 1) {
                 skipped++;
@@ -1029,7 +1088,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         r.post(
           '/api/system/notices/batch-revoke',
           {
-            body: { ids: { type: 'array' as const, required: true, description: '通知 ID 列表' } },
+            body: {
+              ids: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                min: 1,
+                max: 100,
+                required: true,
+                description: '通知 ID 列表',
+              },
+            },
             openapi: { summary: '批量撤回通知', tags: ['notice'] },
           },
           async (ctx) => {
@@ -1040,8 +1108,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             let skipped = 0;
             for (const id of ids) {
               const rows = (await db.raw(
-                'SELECT status FROM sys_notice WHERE id = $1 AND deleted_at IS NULL',
-                [id],
+                'SELECT status FROM sys_notice WHERE tenant_id = $1 AND id = $2 AND deleted_at IS NULL',
+                [tenantId, id],
               )) as Array<{ status: number }>;
               if (!rows.length || rows[0]!.status !== 1) {
                 skipped++;
@@ -1058,7 +1126,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         r.post(
           '/api/system/notices/batch-delete',
           {
-            body: { ids: { type: 'array' as const, required: true, description: '通知 ID 列表' } },
+            body: {
+              ids: {
+                type: 'array' as const,
+                items: { type: 'uuid' as const },
+                min: 1,
+                max: 100,
+                required: true,
+                description: '通知 ID 列表',
+              },
+            },
             openapi: { summary: '批量删除通知', tags: ['notice'] },
           },
           async (ctx) => {
@@ -1094,6 +1171,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           tagService.list({
             page: params.page as number,
             pageSize: params.pageSize as number,
+            name: params.name as string | undefined,
             status: params.status as number | undefined,
           }),
         create: (body) => tagService.create(body as CreateTagParams),
@@ -1103,7 +1181,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       perm,
       operationLogMiddleware: opLogMiddleware,
       schemas: {
-        listQuery: { status: { type: 'int' as const, enum: [0, 1], description: '状态' } },
+        listQuery: {
+          name: { type: 'string' as const, max: 64, description: '标签名称' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+        },
         item: {
           id: { type: 'uuid' as const, description: '标签 ID' },
           name: { type: 'string' as const, description: '标签名称' },
@@ -1114,17 +1195,17 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           createdAt: { type: 'date' as const, description: '创建时间' },
         },
         createBody: {
-          name: { type: 'string' as const, required: true, description: '标签名称' },
-          code: { type: 'string' as const, required: true, description: '标签标识' },
-          sort: { type: 'int' as const, default: 0, description: '排序' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, required: true, max: 64, description: '标签名称' },
+          code: { type: 'string' as const, required: true, max: 64, description: '标签标识' },
+          sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
         updateBody: {
-          name: { type: 'string' as const, description: '标签名称' },
-          code: { type: 'string' as const, description: '标签标识' },
-          sort: { type: 'int' as const, description: '排序' },
-          status: { type: 'int' as const, description: '状态' },
-          remark: { type: 'string' as const, description: '备注' },
+          name: { type: 'string' as const, max: 64, description: '标签名称' },
+          code: { type: 'string' as const, max: 64, description: '标签标识' },
+          sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+          status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+          remark: { type: 'string' as const, max: 512, description: '备注' },
         },
       },
       extraRoutes: (r) => {
@@ -1151,7 +1232,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const id = (ctx.params as Record<string, string>).id!;
             const userIds = await tagService.getUserIdsByTag(id);
-            return success(userIds);
+            const accessible = await dataScopeResolver.filterAccessibleUserIds(
+              ctx.user as AuthUser,
+              userIds,
+            );
+            return success(userIds.filter((userId) => accessible.has(userId)));
           },
           perm('system:tag', 'query'),
         );
@@ -1169,7 +1254,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           async (ctx) => {
             const code = (ctx.params as Record<string, string>).code!;
             const userIds = await tagService.getUserIdsByTagCode(code);
-            return success(userIds);
+            const accessible = await dataScopeResolver.filterAccessibleUserIds(
+              ctx.user as AuthUser,
+              userIds,
+            );
+            return success(userIds.filter((userId) => accessible.has(userId)));
           },
           perm('system:tag', 'query'),
         );
@@ -1243,6 +1332,60 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     },
   );
 
+  // === Personal login logs (self-service, tenant-scoped and forced to current user) ===
+  userRouter.get(
+    '/api/system/user/login-logs',
+    {
+      query: {
+        page: { type: 'int' as const, min: 1, default: 1, description: '页码' },
+        pageSize: { type: 'int' as const, min: 1, max: 100, default: 10, description: '每页数量' },
+      },
+      responses: {
+        200: {
+          list: {
+            type: 'array' as const,
+            items: { type: 'object' as const },
+            description: '当前用户登录日志列表',
+          },
+          total: { type: 'int' as const, description: '总数' },
+          page: { type: 'int' as const, description: '当前页' },
+          pageSize: { type: 'int' as const, description: '每页数量' },
+          totalPages: { type: 'int' as const, description: '总页数' },
+        },
+      },
+      openapi: {
+        summary: '获取当前用户登录日志（个人视角）',
+        description: '租户作用域由服务端根据当前部署与认证会话确定；仅返回当前认证用户自己的登录记录。',
+        tags: ['user'],
+        operationId: 'getMyLoginLogs',
+      },
+    },
+    async (ctx) => {
+      const user = ctx.user as { id: string } | undefined;
+      if (!user?.id) return fail('未登录', 401, 401);
+      const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
+      const query = db
+        .query(LoginLogModel)
+        .where('tenant_id', '=', tenantId)
+        .where('user_id', '=', user.id);
+      const offset = (page - 1) * pageSize;
+      const total = await query.count();
+      const rows = await query.orderBy('login_at', 'desc').limit(pageSize).offset(offset).list();
+      return paginated(
+        rows.map((row) => ({
+          ...row,
+          userId: row.user_id,
+          loginMethod: row.login_method,
+          loginAt: row.login_at,
+          createdAt: row.created_at,
+        })),
+        total,
+        page,
+        pageSize,
+      );
+    },
+  );
+
   // === User profile self-service ===
   userRouter.put(
     '/api/system/user/profile',
@@ -1300,6 +1443,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       // 验证旧密码
       const profile = await db
         .query(UserModel)
+        .where('tenant_id', '=', tenantId)
         .where('id', '=', user.id)
         .select('password_hash')
         .get();
@@ -1317,7 +1461,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       if (!validation.valid) return fail(validation.message, 400, 400);
 
       const hash = await deps.passwordHasher.hash(newPassword);
-      await db.query(UserModel).where('id', '=', user.id).update({
+      await db.query(UserModel).where('tenant_id', '=', tenantId).where('id', '=', user.id).update({
         password_hash: hash,
         password_changed_at: new Date(),
       });
@@ -1368,7 +1512,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         avatarUrl = `data:${file.type};base64,${data.toString('base64')}`;
       }
 
-      await db.query(UserModel).where('id', '=', user.id).update({ avatar: avatarUrl });
+      await db
+        .query(UserModel)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', user.id)
+        .update({ avatar: avatarUrl });
       await cache.del(ns.detailKey('user', user.id));
       return success({ avatar: avatarUrl });
     },
@@ -1386,6 +1534,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       if (!user?.id) return fail('未登录', 401, 401);
       const mfaUser = await db
         .query(UserModel)
+        .where('tenant_id', '=', tenantId)
         .where('id', '=', user.id)
         .select('mfa_enabled')
         .get();
@@ -1399,11 +1548,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/dict/data',
     {
       body: {
-        dictType: { type: 'string' as const, required: true, description: '字典类型编码' },
-        label: { type: 'string' as const, required: true, description: '字典标签' },
-        value: { type: 'string' as const, required: true, description: '字典值' },
-        sort: { type: 'int' as const, default: 0, description: '排序' },
-        status: { type: 'int' as const, default: 1, description: '状态' },
+        dictType: { type: 'string' as const, required: true, max: 64, description: '字典类型编码' },
+        label: { type: 'string' as const, required: true, max: 128, description: '字典标签' },
+        value: { type: 'string' as const, required: true, max: 128, description: '字典值' },
+        sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
+        status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
       },
       responses: { 200: { id: { type: 'uuid' as const, description: '字典数据 ID' } } },
       openapi: { summary: '创建字典数据', tags: ['dict'], operationId: 'createDictData' },
@@ -1411,7 +1560,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const body = await parseBody(ctx.request);
       try {
-        const result = await dictService.createData(body as unknown as CreateDictDataParams);
+        const result = await dictService.createData({
+          typeCode: body.dictType as string,
+          label: body.label as string,
+          value: body.value as string,
+          sort: body.sort as number | undefined,
+          status: body.status as number | undefined,
+        });
         return success(result);
       } catch (e) {
         return fail(safeErrorMessage(e, '创建失败'), 400);
@@ -1423,10 +1578,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/dict/data/:id',
     {
       body: {
-        label: { type: 'string' as const, description: '字典标签' },
-        value: { type: 'string' as const, description: '字典值' },
-        sort: { type: 'int' as const, description: '排序' },
-        status: { type: 'int' as const, description: '状态' },
+        label: { type: 'string' as const, max: 128, description: '字典标签' },
+        value: { type: 'string' as const, max: 128, description: '字典值' },
+        sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+        status: { type: 'int' as const, enum: [0, 1], description: '状态' },
       },
       openapi: { summary: '更新字典数据', tags: ['dict'], operationId: 'updateDictData' },
     },
@@ -1462,7 +1617,16 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
   userRouter.post(
     '/api/system/dict/data/batch-delete',
     {
-      body: { ids: { type: 'array' as const, required: true, description: '字典数据 ID 列表' } },
+      body: {
+        ids: {
+          type: 'array' as const,
+          items: { type: 'uuid' as const },
+          min: 1,
+          max: 100,
+          required: true,
+          description: '字典数据 ID 列表',
+        },
+      },
       openapi: { summary: '批量删除字典数据', tags: ['dict'] },
     },
     async (ctx) => {
@@ -1511,6 +1675,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
       await db
         .query(UserModel)
+        .where('tenant_id', '=', tenantId)
         .where('id', '=', id)
         .update({ locked_until: null, login_attempts: 0 });
       await cache.del(ns.detailKey('user', id));
@@ -1534,7 +1699,11 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       }
       const body = await parseBody(ctx.request);
       const blacklisted = body.blacklisted as boolean;
-      await db.query(UserModel).where('id', '=', id).update({ blacklisted });
+      await db
+        .query(UserModel)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', id)
+        .update({ blacklisted });
       await cache.del(ns.detailKey('user', id));
       await authService.forceLogout(id);
       return success(null);
@@ -1628,7 +1797,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           skipped++;
           continue;
         }
-        const row = await db.query(UserModel).where('id', '=', id).select('status').get();
+        const row = await db
+          .query(UserModel)
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', id)
+          .select('status')
+          .get();
         if (!row || row.status === targetStatus) {
           skipped++;
           continue;
@@ -1760,34 +1934,23 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
       const q = ctx.query as unknown as Record<string, string>;
-      const conditions: string[] = [];
-      const params: unknown[] = [];
-      let idx = 1;
-
-      if (q.username) {
-        conditions.push(`username LIKE $${idx++}`);
-        params.push(`%${q.username}%`);
-      }
-      if (q.module) {
-        conditions.push(`module = $${idx++}`);
-        params.push(q.module);
-      }
-
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      let query = db.query(OperationLogModel).where('tenant_id', '=', tenantId);
+      if (q.username) query = query.where('username', 'LIKE', `%${q.username}%`);
+      if (q.module) query = query.where('module', '=', q.module);
       const offset = (page - 1) * pageSize;
-
-      const countResult = await db.raw(
-        `SELECT COUNT(*) as cnt FROM sys_operation_log ${where}`,
-        params,
+      const total = await query.count();
+      const rows = await query.orderBy('created_at', 'desc').limit(pageSize).offset(offset).list();
+      return paginated(
+        rows.map((row) => ({
+          ...row,
+          userId: row.user_id,
+          errorMsg: row.error_msg,
+          createdAt: row.created_at,
+        })),
+        total,
+        page,
+        pageSize,
       );
-      const total = Number((countResult as Array<Record<string, unknown>>)[0]?.cnt ?? 0);
-
-      const rows = await db.raw(
-        `SELECT id, user_id as "userId", username, module, action, method, url, ip, params, result, error_msg as "errorMsg", duration, created_at as "createdAt" FROM sys_operation_log ${where} ORDER BY created_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...params, pageSize, offset],
-      );
-
-      return paginated(rows as unknown[], total, page, pageSize);
     },
     opLogPerm,
   );
@@ -1819,30 +1982,23 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     async (ctx) => {
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
       const q = ctx.query as unknown as Record<string, string>;
-      const conditions: string[] = [];
-      const params: unknown[] = [];
-      let idx = 1;
-
-      if (q.username) {
-        conditions.push(`username LIKE $${idx++}`);
-        params.push(`%${q.username}%`);
-      }
-
-      const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
+      let query = db.query(LoginLogModel).where('tenant_id', '=', tenantId);
+      if (q.username) query = query.where('username', 'LIKE', `%${q.username}%`);
       const offset = (page - 1) * pageSize;
-
-      const countResult = await db.raw(
-        `SELECT COUNT(*) as cnt FROM sys_login_log ${where}`,
-        params,
+      const total = await query.count();
+      const rows = await query.orderBy('login_at', 'desc').limit(pageSize).offset(offset).list();
+      return paginated(
+        rows.map((row) => ({
+          ...row,
+          userId: row.user_id,
+          loginMethod: row.login_method,
+          loginAt: row.login_at,
+          createdAt: row.created_at,
+        })),
+        total,
+        page,
+        pageSize,
       );
-      const total = Number((countResult as Array<Record<string, unknown>>)[0]?.cnt ?? 0);
-
-      const rows = await db.raw(
-        `SELECT id, user_id as "userId", username, ip, location, browser, os, status, message, login_method as "loginMethod", login_at as "loginAt", created_at as "createdAt" FROM sys_login_log ${where} ORDER BY login_at DESC LIMIT $${idx++} OFFSET $${idx++}`,
-        [...params, pageSize, offset],
-      );
-
-      return paginated(rows as unknown[], total, page, pageSize);
     },
     opLogPerm,
   );
@@ -1853,9 +2009,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       openapi: { summary: '清空登录日志', tags: ['log'], operationId: 'clearLoginLogs' },
     },
     async () => {
-      await db.raw('TRUNCATE TABLE sys_login_log');
+      await db.query(LoginLogModel).where('tenant_id', '=', tenantId).hardDelete();
       return success(null);
     },
+    governance.adminOnlyMiddleware,
     logDeletePerm,
   );
 
@@ -1878,13 +2035,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       const userId = user?.id ?? '';
 
       const [userCount, roleCount, todayLogs, unreadNotices] = await Promise.all([
-        db.query(UserModel).count(),
+        db.query(UserModel).where('tenant_id', '=', tenantId).count(),
+        db.query(RoleModel).where('tenant_id', '=', tenantId).count(),
         db
-          .raw('SELECT COUNT(*) AS cnt FROM sys_role')
-          .then((r) => Number((r as Array<Record<string, unknown>>)[0]?.cnt ?? 0)),
-        db
-          .raw('SELECT COUNT(*) AS cnt FROM sys_operation_log WHERE created_at >= CURRENT_DATE')
-          .then((r) => Number((r as Array<Record<string, unknown>>)[0]?.cnt ?? 0)),
+          .query(OperationLogModel)
+          .where('tenant_id', '=', tenantId)
+          .where('created_at', '>=', new Date(new Date().setHours(0, 0, 0, 0)))
+          .count(),
         noticeService.getUnreadCount(userId),
       ]);
 

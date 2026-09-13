@@ -1,9 +1,10 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const NoticeModel = defineModel(
-  "sys_notice",
+  'sys_notice',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     title: column.varchar({ length: 256 }),
     content: column.text(),
     type: column.int({ default: 1 }),
@@ -17,8 +18,9 @@ export const NoticeModel = defineModel(
 );
 
 export const UserNoticeModel = defineModel(
-  "sys_user_notice",
+  'sys_user_notice',
   {
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     user_id: column.varchar({ length: 36 }),
     notice_id: column.varchar({ length: 36 }),
     read_at: column.timestamp({ nullable: true }),

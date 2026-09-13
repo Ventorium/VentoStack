@@ -1,9 +1,10 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const MenuModel = defineModel(
-  "sys_menu",
+  'sys_menu',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     parent_id: column.varchar({ length: 36, nullable: true }),
     name: column.varchar({ length: 64 }),
     path: column.varchar({ length: 256, nullable: true }),
@@ -21,8 +22,9 @@ export const MenuModel = defineModel(
 );
 
 export const RoleMenuModel = defineModel(
-  "sys_role_menu",
+  'sys_role_menu',
   {
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     role_id: column.varchar({ length: 36 }),
     menu_id: column.varchar({ length: 36 }),
   },

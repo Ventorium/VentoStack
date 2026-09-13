@@ -3,11 +3,12 @@
  * 提供系统配置的 CRUD、按 key 查值（带缓存）与缓存刷新
  */
 
-import type { Cache } from "@ventostack/cache";
-import type { Database } from "@ventostack/database";
-import { ConfigModel } from "../models/config";
-import { createCacheKeyNamespace } from "./cache-key";
-import type { CacheKeyNamespace } from "./cache-key";
+import type { Cache } from '@ventostack/cache';
+import { NotFoundError } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import { ConfigModel } from '../models/config';
+import { createCacheKeyNamespace } from './cache-key';
+import type { CacheKeyNamespace } from './cache-key';
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -25,6 +26,7 @@ export interface CreateConfigParams {
   value: string;
   type?: number;
   group?: string;
+  sort?: number;
   remark?: string;
 }
 
@@ -34,23 +36,52 @@ export interface UpdateConfigParams {
   value?: string;
   type?: number;
   group?: string;
+  sort?: number;
   remark?: string;
 }
 
 /** 受保护的系统配置 key — 不允许删除 */
 const PROTECTED_KEYS = [
-  "sys_dept_enabled",
-  "sys_user_init_password",
-  "sys_password_min_length",
-  "sys_password_complexity",
-  "sys_password_expire_days",
-  "sys_login_max_attempts",
-  "sys_login_lock_minutes",
-  "sys_site_name",
-  "sys_mfa_enabled",
-  "sys_mfa_force",
-  "sys_passkey_enabled",
+  'sys_dept_enabled',
+  'sys_user_init_password',
+  'sys_password_min_length',
+  'sys_password_complexity',
+  'sys_password_expire_days',
+  'sys_login_max_attempts',
+  'sys_login_lock_minutes',
+  'sys_site_name',
+  'sys_mfa_enabled',
+  'sys_mfa_force',
+  'sys_passkey_enabled',
 ];
+
+/** 前端可回传该占位符表示“保持原值”，避免密文通过列表接口泄漏。 */
+export const MASKED_CONFIG_VALUE = '******';
+const SENSITIVE_KEY_PATTERN = /(password|secret|token|private[_-]?key|credential)/i;
+
+/** 通过 /configs/public 白名单暴露给未认证客户端的 key */
+const PUBLIC_CONFIG_KEYS = [
+  'sys_site_name',
+  'sys_dept_enabled',
+  'sys_mfa_enabled',
+  'sys_mfa_force',
+  'sys_passkey_enabled',
+  'sys_password_min_length',
+  'sys_password_complexity',
+];
+
+/** 配置敏感级别：security=敏感值必须掩码；public=公开白名单；business=普通业务配置 */
+export type ConfigSensitivity = 'security' | 'public' | 'business';
+
+export function isSensitiveConfigKey(key: string): boolean {
+  return SENSITIVE_KEY_PATTERN.test(key);
+}
+
+export function classifyConfigKey(key: string): ConfigSensitivity {
+  if (isSensitiveConfigKey(key)) return 'security';
+  if (PUBLIC_CONFIG_KEYS.includes(key)) return 'public';
+  return 'business';
+}
 
 /** 系统配置列表项 */
 export interface ConfigItem {
@@ -62,6 +93,7 @@ export interface ConfigItem {
   group: string;
   sort: number;
   remark: string;
+  sensitivity: ConfigSensitivity;
   createdAt: string;
 }
 
@@ -70,6 +102,8 @@ export interface ConfigListParams {
   page?: number;
   pageSize?: number;
   group?: string;
+  name?: string;
+  key?: string;
 }
 
 /** 系统配置服务接口 */
@@ -97,7 +131,7 @@ export function createConfigService(deps: {
   db: Database;
   cache: Cache;
   /** 租户 ID，启用多租户时传入以隔离缓存 */
-  tenantId?: string;
+  tenantId: string;
 }): ConfigService {
   const { db, cache } = deps;
   const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
@@ -110,11 +144,13 @@ export function createConfigService(deps: {
     const id = crypto.randomUUID();
     await db.query(ConfigModel).insert({
       id,
+      tenant_id: deps.tenantId,
       name: params.name,
       key: params.key,
       value: params.value,
       type: params.type ?? null,
       group: params.group ?? null,
+      sort: params.sort ?? 0,
       remark: params.remark ?? null,
     });
     return { id };
@@ -122,32 +158,56 @@ export function createConfigService(deps: {
 
   async function update(id: string, params: UpdateConfigParams): Promise<void> {
     // 先通过 ID 查出 key，用于缓存清理（与 deleteConfig 同一模式）
-    const row = await db.query(ConfigModel).where("id", "=", id).select("key").get();
-    if (!row) throw new Error("Config not found");
+    const row = await db
+      .query(ConfigModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('key')
+      .get();
+    if (!row) throw new NotFoundError('Config not found');
     const configKey = row.key as string;
 
     const updates: Record<string, unknown> = {};
     if (params.name !== undefined) updates.name = params.name;
-    if (params.value !== undefined) updates.value = params.value;
+    if (
+      params.value !== undefined &&
+      !(isSensitiveConfigKey(configKey) && params.value === MASKED_CONFIG_VALUE)
+    ) {
+      updates.value = params.value;
+    }
     if (params.type !== undefined) updates.type = params.type;
     if (params.group !== undefined) updates.group = params.group;
+    if (params.sort !== undefined) updates.sort = params.sort;
     if (params.remark !== undefined) updates.remark = params.remark;
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(ConfigModel).where("id", "=", id).update(updates);
+    await db
+      .query(ConfigModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .update(updates);
     await cache.del(cacheKey(configKey));
   }
 
   async function deleteConfig(id: string): Promise<void> {
     // 先查出 key，用于缓存清理和保护检查
-    const row = await db.query(ConfigModel).where("id", "=", id).select("key").get();
-    if (!row) return;
+    const row = await db
+      .query(ConfigModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('key')
+      .get();
+    if (!row) throw new NotFoundError('Config not found');
     const key = row.key as string;
     if (PROTECTED_KEYS.includes(key)) {
       throw new Error(`系统内置参数 ${key} 不允许删除`);
     }
-    await db.query(ConfigModel).where("id", "=", id).delete();
+    await db
+      .query(ConfigModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .delete();
     await cache.del(cacheKey(key));
   }
 
@@ -155,16 +215,18 @@ export function createConfigService(deps: {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
 
-    let query = db.query(ConfigModel);
+    let query = db.query(ConfigModel).where('tenant_id', '=', deps.tenantId);
     if (params?.group !== undefined) {
-      query = query.where("group", "=", params.group);
+      query = query.where('group', '=', params.group);
     }
+    if (params?.name) query = query.where('name', 'LIKE', `%${params.name}%`);
+    if (params?.key) query = query.where('key', 'LIKE', `%${params.key}%`);
 
     const total = await query.count();
 
     const rows = await query
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();
@@ -173,15 +235,16 @@ export function createConfigService(deps: {
       id: row.id,
       name: row.name,
       key: row.key,
-      value: row.value ?? "",
+      value: isSensitiveConfigKey(row.key) ? MASKED_CONFIG_VALUE : (row.value ?? ''),
       type: row.type ?? 0,
-      group: row.group ?? "",
+      group: row.group ?? '',
       sort: row.sort ?? 0,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
+      sensitivity: classifyConfigKey(row.key),
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
 
     return {
@@ -195,7 +258,12 @@ export function createConfigService(deps: {
 
   async function getValue(key: string): Promise<string | null> {
     return cache.remember<string | null>(cacheKey(key), 3600, async () => {
-      const row = await db.query(ConfigModel).where("key", "=", key).select("value").get();
+      const row = await db
+        .query(ConfigModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('key', '=', key)
+        .select('value')
+        .get();
       if (!row) return null;
       return row.value as string;
     });
@@ -206,8 +274,8 @@ export function createConfigService(deps: {
       await cache.del(cacheKey(key));
     } else {
       const adapter = (cache as unknown as { keys?: (pattern: string) => Promise<string[]> }).keys;
-      if (adapter && typeof adapter === "function") {
-        const allKeys = await adapter("config:*");
+      if (adapter && typeof adapter === 'function') {
+        const allKeys = await adapter(ns.key('config:*'));
         for (const k of allKeys) {
           await cache.del(k);
         }

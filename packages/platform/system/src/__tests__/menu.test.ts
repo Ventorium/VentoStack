@@ -10,7 +10,7 @@ function setup() {
   const mockExec = createMockExecutor();
   const { db, registerModel, calls } = createMockDatabase(mockExec);
   registerModel('sys_menu', 'sys_menu', true);
-  const menuService = createMenuService({ db });
+  const menuService = createMenuService({ db, tenantId: 'default' });
   return { menuService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 

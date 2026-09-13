@@ -93,7 +93,7 @@ export function createRoleService(deps: {
   db: Database;
   cache: Cache;
   /** 租户 ID，启用多租户时传入以隔离缓存 */
-  tenantId?: string;
+  tenantId: string;
 }): RoleService {
   const { db, cache } = deps;
   const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
@@ -111,6 +111,7 @@ export function createRoleService(deps: {
 
       await db.query(RoleModel).insert({
         id,
+        tenant_id: deps.tenantId,
         name,
         code,
         sort: sort ?? 0,
@@ -127,7 +128,12 @@ export function createRoleService(deps: {
     async update(id, params) {
       if (params.code !== undefined) throw new Error('角色编码不可修改');
       if (Object.keys(params).length === 0) return;
-      const current = await db.query(RoleModel).where('id', '=', id).select('code', 'status').get();
+      const current = await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .select('code', 'status')
+        .get();
       if (!current) throw new Error('角色不存在');
       if (current.code === 'admin' && params.status !== undefined && params.status !== 1) {
         throw new Error('超级管理员角色不可停用');
@@ -139,22 +145,47 @@ export function createRoleService(deps: {
       if (params.remark !== undefined) updates.remark = params.remark;
       if (params.status !== undefined) updates.status = params.status;
 
-      await db.query(RoleModel).where('id', '=', id).update(updates);
+      await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .update(updates);
 
       await cache.del(ns.detailKey('role', id));
       await cache.del(ns.listKey('role'));
     },
 
     async delete(id) {
-      const role = await db.query(RoleModel).where('id', '=', id).select('code').get();
+      const role = await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .select('code')
+        .get();
       if (!role) throw new Error('角色不存在');
       if (role.code === 'admin') throw new Error('超级管理员角色不可删除');
-      const assignedUsers = await db.query(UserRoleModel).where('role_id', '=', id).count();
+      const assignedUsers = await db
+        .query(UserRoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('role_id', '=', id)
+        .count();
       if (assignedUsers > 0) throw new Error('角色已分配给用户，不能删除');
       await db.transaction(async (tx) => {
-        await tx.query(RoleMenuModel).where('role_id', '=', id).hardDelete();
-        await tx.query(RoleDeptModel).where('role_id', '=', id).hardDelete();
-        await tx.query(RoleModel).where('id', '=', id).delete();
+        await tx
+          .query(RoleMenuModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('role_id', '=', id)
+          .hardDelete();
+        await tx
+          .query(RoleDeptModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('role_id', '=', id)
+          .hardDelete();
+        await tx
+          .query(RoleModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('id', '=', id)
+          .delete();
       });
 
       await cache.del(ns.detailKey('role', id));
@@ -167,6 +198,7 @@ export function createRoleService(deps: {
 
       const row = await db
         .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('id', '=', id)
         .select(
           'id',
@@ -205,7 +237,7 @@ export function createRoleService(deps: {
     async list(params) {
       const { page = 1, pageSize = 10, status } = params ?? {};
 
-      let query = db.query(RoleModel);
+      let query = db.query(RoleModel).where('tenant_id', '=', deps.tenantId);
       if (status !== undefined) {
         query = query.where('status', '=', status);
       }
@@ -246,11 +278,17 @@ export function createRoleService(deps: {
       if (normalized.some((id) => typeof id !== 'string' || id.length === 0 || id.length > 36)) {
         throw new Error('菜单 ID 列表格式错误');
       }
-      const role = await db.query(RoleModel).where('id', '=', roleId).select('id').get();
+      const role = await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', roleId)
+        .select('id')
+        .get();
       if (!role) throw new Error('角色不存在');
       if (normalized.length > 0) {
         const menus = await db
           .query(MenuModel)
+          .where('tenant_id', '=', deps.tenantId)
           .where('id', 'IN', normalized)
           .where('status', '=', 1)
           .select('id')
@@ -259,11 +297,21 @@ export function createRoleService(deps: {
       }
 
       await db.transaction(async (tx) => {
-        await tx.query(RoleMenuModel).where('role_id', '=', roleId).hardDelete();
+        await tx
+          .query(RoleMenuModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('role_id', '=', roleId)
+          .hardDelete();
         if (normalized.length > 0) {
           await tx
             .query(RoleMenuModel)
-            .batchInsert(normalized.map((menuId) => ({ role_id: roleId, menu_id: menuId })));
+            .batchInsert(
+              normalized.map((menuId) => ({
+                tenant_id: deps.tenantId,
+                role_id: roleId,
+                menu_id: menuId,
+              })),
+            );
         }
       });
 
@@ -277,6 +325,7 @@ export function createRoleService(deps: {
       if (cached) return JSON.parse(cached) as string[];
       const rows = await db
         .query(RoleMenuModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('role_id', '=', roleId)
         .select('menu_id')
         .list();
@@ -314,7 +363,12 @@ export function createRoleService(deps: {
       ) {
         throw new Error('不能选择自身数据权限范围外的部门');
       }
-      const role = await db.query(RoleModel).where('id', '=', roleId).select('code').get();
+      const role = await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', roleId)
+        .select('code')
+        .get();
       if (!role) throw new Error('角色不存在');
       if (role.code === 'admin' && scope !== DataScope.ALL) {
         throw new Error('超级管理员必须拥有全部数据权限');
@@ -323,6 +377,7 @@ export function createRoleService(deps: {
       if (normalizedDeptIds.length > 0) {
         const validDepartments = await db
           .query(DeptModel)
+          .where('tenant_id', '=', deps.tenantId)
           .where('id', 'IN', normalizedDeptIds)
           .where('status', '=', 1)
           .select('id')
@@ -333,12 +388,26 @@ export function createRoleService(deps: {
       }
 
       await db.transaction(async (tx) => {
-        await tx.query(RoleModel).where('id', '=', roleId).update({ data_scope: scope });
-        await tx.query(RoleDeptModel).where('role_id', '=', roleId).hardDelete();
+        await tx
+          .query(RoleModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('id', '=', roleId)
+          .update({ data_scope: scope });
+        await tx
+          .query(RoleDeptModel)
+          .where('tenant_id', '=', deps.tenantId)
+          .where('role_id', '=', roleId)
+          .hardDelete();
         if (normalizedDeptIds.length > 0) {
           await tx
             .query(RoleDeptModel)
-            .batchInsert(normalizedDeptIds.map((deptId) => ({ role_id: roleId, dept_id: deptId })));
+            .batchInsert(
+              normalizedDeptIds.map((deptId) => ({
+                tenant_id: deps.tenantId,
+                role_id: roleId,
+                dept_id: deptId,
+              })),
+            );
         }
       });
 
@@ -346,10 +415,16 @@ export function createRoleService(deps: {
     },
 
     async getDataScope(roleId) {
-      const role = await db.query(RoleModel).where('id', '=', roleId).select('data_scope').get();
+      const role = await db
+        .query(RoleModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', roleId)
+        .select('data_scope')
+        .get();
       if (!role) return null;
       const rows = await db
         .query(RoleDeptModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('role_id', '=', roleId)
         .select('dept_id')
         .list();

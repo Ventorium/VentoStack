@@ -3,8 +3,10 @@
  * 提供人员标签的 CRUD 与用户绑定管理
  */
 
+import { NotFoundError } from '@ventostack/core';
 import type { Database } from '@ventostack/database';
 import { TagModel, UserTagModel } from '../models/tag';
+import { UserModel } from '../models/user';
 
 /** 标签创建参数 */
 export interface CreateTagParams {
@@ -38,6 +40,7 @@ export interface TagItem {
 export interface TagListParams {
   page?: number;
   pageSize?: number;
+  name?: string;
   status?: number;
 }
 
@@ -79,13 +82,14 @@ export interface TagService {
  * @param deps 依赖注入
  * @returns TagService 实例
  */
-export function createTagService(deps: { db: Database }): TagService {
+export function createTagService(deps: { db: Database; tenantId: string }): TagService {
   const { db } = deps;
 
   async function create(params: CreateTagParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.query(TagModel).insert({
       id,
+      tenant_id: deps.tenantId,
       name: params.name,
       code: params.code,
       sort: params.sort ?? 0,
@@ -105,20 +109,39 @@ export function createTagService(deps: { db: Database }): TagService {
 
     if (Object.keys(updates).length === 0) return;
 
-    await db.query(TagModel).where('id', '=', id).update(updates);
+    const existing = await db
+      .query(TagModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('id')
+      .get();
+    if (!existing) throw new NotFoundError('标签不存在');
+
+    await db
+      .query(TagModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .update(updates);
   }
 
   async function deleteTag(id: string): Promise<void> {
-    await db.query(TagModel).where('id', '=', id).delete();
-    // 同时清理关联关系
-    await db.query(UserTagModel).where('tag_id', '=', id).delete();
+    // 标签软删除与用户关联清理在同一事务中完成，避免出现悬挂关联
+    await db.transaction(async (tx) => {
+      await tx.query(TagModel).where('tenant_id', '=', deps.tenantId).where('id', '=', id).delete();
+      await tx
+        .query(UserTagModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('tag_id', '=', id)
+        .hardDelete();
+    });
   }
 
   async function list(params?: TagListParams): Promise<PaginatedResult<TagItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
 
-    let query = db.query(TagModel);
+    let query = db.query(TagModel).where('tenant_id', '=', deps.tenantId);
+    if (params?.name) query = query.where('name', 'LIKE', `%${params.name}%`);
     if (params?.status !== undefined) {
       query = query.where('status', '=', params.status);
     }
@@ -158,6 +181,7 @@ export function createTagService(deps: { db: Database }): TagService {
   async function listAll(): Promise<TagItem[]> {
     const rows = await db
       .query(TagModel)
+      .where('tenant_id', '=', deps.tenantId)
       .where('status', '=', 1)
       .select('id', 'name', 'code', 'sort', 'status', 'remark', 'created_at')
       .orderBy('sort', 'desc')
@@ -179,19 +203,47 @@ export function createTagService(deps: { db: Database }): TagService {
   }
 
   async function assignUserTags(userId: string, tagIds: string[]): Promise<void> {
-    // 先删除旧关系
-    await db.query(UserTagModel).where('user_id', '=', userId).delete();
-    // 批量插入新关系
-    for (const tagId of tagIds) {
-      await db.query(UserTagModel).insert({
-        user_id: userId,
-        tag_id: tagId,
-      });
+    const ids = [...new Set(tagIds)];
+    const user = await db
+      .query(UserModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', userId)
+      .select('id')
+      .get();
+    if (!user) throw new Error('用户不存在');
+    if (ids.length > 0) {
+      const tags = await db
+        .query(TagModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', 'IN', ids)
+        .where('status', '=', 1)
+        .select('id')
+        .list();
+      if (tags.length !== ids.length) throw new Error('标签不存在或已停用');
     }
+    await db.transaction(async (tx) => {
+      await tx
+        .query(UserTagModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('user_id', '=', userId)
+        .hardDelete();
+      if (ids.length > 0) {
+        await tx
+          .query(UserTagModel)
+          .batchInsert(
+            ids.map((tagId) => ({ tenant_id: deps.tenantId, user_id: userId, tag_id: tagId })),
+          );
+      }
+    });
   }
 
   async function getUserTagIds(userId: string): Promise<string[]> {
-    const rows = await db.query(UserTagModel).where('user_id', '=', userId).select('tag_id').list();
+    const rows = await db
+      .query(UserTagModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('user_id', '=', userId)
+      .select('tag_id')
+      .list();
     return rows.map((r) => r.tag_id);
   }
 
@@ -199,10 +251,10 @@ export function createTagService(deps: { db: Database }): TagService {
     const rows = await db.raw(
       `SELECT t.id, t.name, t.code, t.sort, t.status, t.remark, t.created_at
        FROM sys_tag t
-       JOIN sys_user_tag ut ON ut.tag_id = t.id
-       WHERE ut.user_id = $1 AND t.status = 1 AND t.deleted_at IS NULL
+       JOIN sys_user_tag ut ON ut.tenant_id = t.tenant_id AND ut.tag_id = t.id
+       WHERE t.tenant_id = $1 AND ut.user_id = $2 AND t.status = 1 AND t.deleted_at IS NULL
        ORDER BY t.sort DESC, t.created_at DESC`,
-      [userId],
+      [deps.tenantId, userId],
     );
     return (rows as Record<string, unknown>[]).map((row) => ({
       id: row.id as string,
@@ -219,16 +271,21 @@ export function createTagService(deps: { db: Database }): TagService {
   }
 
   async function getUserIdsByTag(tagId: string): Promise<string[]> {
-    const rows = await db.query(UserTagModel).where('tag_id', '=', tagId).select('user_id').list();
+    const rows = await db
+      .query(UserTagModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('tag_id', '=', tagId)
+      .select('user_id')
+      .list();
     return rows.map((r) => r.user_id);
   }
 
   async function getUserIdsByTagCode(tagCode: string): Promise<string[]> {
     const rows = await db.raw(
       `SELECT ut.user_id FROM sys_user_tag ut
-       JOIN sys_tag t ON t.id = ut.tag_id
-       WHERE t.code = $1 AND t.status = 1 AND t.deleted_at IS NULL`,
-      [tagCode],
+       JOIN sys_tag t ON t.tenant_id = ut.tenant_id AND t.id = ut.tag_id
+       WHERE t.tenant_id = $1 AND t.code = $2 AND t.status = 1 AND t.deleted_at IS NULL`,
+      [deps.tenantId, tagCode],
     );
     return (rows as Array<{ user_id: string }>).map((r) => r.user_id);
   }

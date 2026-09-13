@@ -51,6 +51,7 @@ const DEFAULT_SENSITIVE_FIELDS = [
   "token",
   "secret",
   "key",
+  "value",
   "cookie",
   "authorization",
   "phone",

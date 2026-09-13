@@ -18,7 +18,7 @@ function setup() {
   registerModel('sys_role_dept', 'sys_role_dept', false);
   registerModel('sys_dept', 'sys_dept', true);
   const cache = createTestCache();
-  const roleService = createRoleService({ db, cache });
+  const roleService = createRoleService({ db, cache, tenantId: 'default' });
   mockExec.results.set('SELECT code FROM sys_role', [{ code: 'editor' }]);
   return { roleService, executor: mockExec.executor, calls, results: mockExec.results, cache };
 }

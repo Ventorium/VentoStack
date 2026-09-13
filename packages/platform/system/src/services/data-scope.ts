@@ -62,20 +62,23 @@ export interface DataScopeResolver {
   resolve(user: AuthUser): Promise<ResolvedDataScope>;
   canAccessUser(user: AuthUser, targetUserId: string): Promise<boolean>;
   canMutateUser(user: AuthUser, targetUserId: string): Promise<boolean>;
+  filterAccessibleUserIds(user: AuthUser, targetUserIds: string[]): Promise<Set<string>>;
   filterMutableUserIds(user: AuthUser, targetUserIds: string[]): Promise<Set<string>>;
   canAssignDepartment(user: AuthUser, departmentId: string | undefined): Promise<boolean>;
 }
 
-export function createDataScopeResolver(db: Database): DataScopeResolver {
+export function createDataScopeResolver(db: Database, tenantId: string): DataScopeResolver {
   async function hasActiveAdminRole(userId: string): Promise<boolean> {
     const links = await db
       .query(UserRoleModel)
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', userId)
       .select('role_id')
       .list();
     if (links.length === 0) return false;
     const roles = await db
       .query(RoleModel)
+      .where('tenant_id', '=', tenantId)
       .where(
         'id',
         'IN',
@@ -88,10 +91,16 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
   }
 
   async function resolveUnchecked(user: AuthUser): Promise<ResolvedDataScope> {
-    const principal = await db.query(UserModel).where('id', '=', user.id).select('dept_id').get();
+    const principal = await db
+      .query(UserModel)
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', user.id)
+      .select('dept_id')
+      .get();
     if (!principal) return { all: false, departmentIds: [], self: false, userId: user.id };
     const links = await db
       .query(UserRoleModel)
+      .where('tenant_id', '=', tenantId)
       .where('user_id', '=', user.id)
       .select('role_id')
       .list();
@@ -100,6 +109,7 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
       return { all: false, departmentIds: [], self: false, userId: user.id };
     const roleRows = await db
       .query(RoleModel)
+      .where('tenant_id', '=', tenantId)
       .where('id', 'IN', roleIds)
       .where('status', '=', 1)
       .select('id', 'code', 'data_scope')
@@ -114,6 +124,7 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
     if (customRoleIds.length > 0) {
       const rows = await db
         .query(RoleDeptModel)
+        .where('tenant_id', '=', tenantId)
         .where('role_id', 'IN', customRoleIds)
         .select('role_id', 'dept_id')
         .list();
@@ -127,6 +138,7 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
     ) {
       const departments = await db
         .query(DeptModel)
+        .where('tenant_id', '=', tenantId)
         .where('status', '=', 1)
         .select('id', 'parent_id')
         .list();
@@ -167,7 +179,12 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
   async function canAccessUser(user: AuthUser, targetUserId: string): Promise<boolean> {
     const scope = await resolve(user);
     if (scope.all || (scope.self && scope.userId === targetUserId)) return true;
-    const target = await db.query(UserModel).where('id', '=', targetUserId).select('dept_id').get();
+    const target = await db
+      .query(UserModel)
+      .where('tenant_id', '=', tenantId)
+      .where('id', '=', targetUserId)
+      .select('dept_id')
+      .get();
     return !!target?.dept_id && scope.departmentIds.includes(target.dept_id);
   }
 
@@ -187,12 +204,14 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
         if (await hasActiveAdminRole(user.id)) return true;
         const targetLinks = await db
           .query(UserRoleModel)
+          .where('tenant_id', '=', tenantId)
           .where('user_id', '=', targetUserId)
           .select('role_id')
           .list();
         if (targetLinks.length === 0) return true;
         const targetRoles = await db
           .query(RoleModel)
+          .where('tenant_id', '=', tenantId)
           .where(
             'id',
             'IN',
@@ -207,6 +226,34 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
         throw new DataScopeResolutionError(error);
       }
     },
+    async filterAccessibleUserIds(user, targetUserIds) {
+      try {
+        const ids = [...new Set(targetUserIds)];
+        if (ids.length === 0) return new Set();
+        const [scope, targets] = await Promise.all([
+          resolve(user),
+          db
+            .query(UserModel)
+            .where('tenant_id', '=', tenantId)
+            .where('id', 'IN', ids)
+            .select('id', 'dept_id')
+            .list(),
+        ]);
+        return new Set(
+          targets
+            .filter(
+              (target) =>
+                scope.all ||
+                (scope.self && target.id === scope.userId) ||
+                (!!target.dept_id && scope.departmentIds.includes(target.dept_id)),
+            )
+            .map((target) => target.id),
+        );
+      } catch (error) {
+        if (error instanceof DataScopeResolutionError) throw error;
+        throw new DataScopeResolutionError(error);
+      }
+    },
     async filterMutableUserIds(user, targetUserIds) {
       try {
         const ids = [...new Set(targetUserIds)];
@@ -214,7 +261,12 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
         const [scope, actorIsAdmin, targets] = await Promise.all([
           resolve(user),
           hasActiveAdminRole(user.id),
-          db.query(UserModel).where('id', 'IN', ids).select('id', 'dept_id').list(),
+          db
+            .query(UserModel)
+            .where('tenant_id', '=', tenantId)
+            .where('id', 'IN', ids)
+            .select('id', 'dept_id')
+            .list(),
         ]);
         const accessible = targets
           .filter(
@@ -228,6 +280,7 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
 
         const links = await db
           .query(UserRoleModel)
+          .where('tenant_id', '=', tenantId)
           .where('user_id', 'IN', accessible)
           .select('user_id', 'role_id')
           .list();
@@ -235,6 +288,7 @@ export function createDataScopeResolver(db: Database): DataScopeResolver {
         const roleIds = [...new Set(links.map((link) => link.role_id))];
         const adminRoles = await db
           .query(RoleModel)
+          .where('tenant_id', '=', tenantId)
           .where('id', 'IN', roleIds)
           .where('status', '=', 1)
           .where('code', '=', 'admin')

@@ -54,7 +54,11 @@ function extractToken(request: Request): string | null {
  * 创建认证中间件
  * 按 Header > HttpOnly Cookie > QueryString 的优先级提取 Token。
  */
-export function createAuthMiddleware(jwt: JWTManager, secret: string): Middleware {
+export function createAuthMiddleware(
+  jwt: JWTManager,
+  secret: string,
+  expectedTenantId?: string,
+): Middleware {
   return async (ctx, next) => {
     const token = extractToken(ctx.request);
     if (!token) {
@@ -74,14 +78,20 @@ export function createAuthMiddleware(jwt: JWTManager, secret: string): Middlewar
       if (typeof sessionId === 'string') user.sessionId = sessionId;
       const tenantId = (payload as Record<string, unknown>).tenantId;
       if (typeof tenantId === 'string') user.tenantId = tenantId;
+      if (expectedTenantId !== undefined && user.tenantId !== expectedTenantId) {
+        return new Response(JSON.stringify({ code: 401, message: '租户身份不匹配' }), {
+          status: 401,
+          headers: JSON_HEADERS,
+        });
+      }
       ctx.user = user;
-      return next();
     } catch {
       return new Response(JSON.stringify({ code: 401, message: '无效的认证令牌' }), {
         status: 401,
         headers: JSON_HEADERS,
       });
     }
+    return next();
   };
 }
 

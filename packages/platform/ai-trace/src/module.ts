@@ -5,25 +5,25 @@
  * 依赖注入：db + AI 事件发射器 + 配置读取提供者 + 认证/权限。
  */
 
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import { createTagLogger, type Router } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import { createTraceConfigService } from "./services/trace-config";
-import type { TraceConfigProvider, TraceConfigService } from "./services/trace-config";
-import { createTraceRecorder } from "./services/recorder";
-import type { TraceRecorder } from "./services/recorder";
-import { createTraceStore } from "./services/trace-store";
-import type { TraceStore } from "./services/trace-store";
-import { createTraceRoutes } from "./routes/trace";
-import type { TraceEventEmitter } from "./types";
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import { createTagLogger, type Router } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import { createTraceConfigService } from './services/trace-config';
+import type { TraceConfigProvider, TraceConfigService } from './services/trace-config';
+import { createTraceRecorder } from './services/recorder';
+import type { TraceRecorder } from './services/recorder';
+import { createTraceStore } from './services/trace-store';
+import type { TraceStore } from './services/trace-store';
+import { createTraceRoutes } from './routes/trace';
+import type { TraceEventEmitter } from './types';
 
 /** 陈旧 running 追踪的判定阈值（1 小时） */
 const STALE_THRESHOLD_MS = 60 * 60 * 1000;
 /** 陈旧清理周期（5 分钟） */
 const STALE_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
-const logger = createTagLogger("ai-trace");
+const logger = createTagLogger('ai-trace');
 
 export interface AiTraceModule {
   services: {
@@ -45,6 +45,7 @@ export interface AiTraceModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
 }
 
 export function createAiTraceModule(deps: AiTraceModuleDeps): AiTraceModule {
@@ -54,7 +55,7 @@ export function createAiTraceModule(deps: AiTraceModuleDeps): AiTraceModule {
   const config = createTraceConfigService({ db, configProvider });
   const recorder = createTraceRecorder({ emitter, store, toggle: config });
 
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
   const perm = createPermMiddleware(rbac);
   const router = createTraceRoutes(store, config, authMiddleware, perm);
 

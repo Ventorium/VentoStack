@@ -35,6 +35,7 @@ function setup(configOverrides: Record<string, string> = {}) {
     cache,
     configService,
     governance: allowRoleGrants,
+    tenantId: 'default',
   });
   return {
     userService,
@@ -84,7 +85,7 @@ describe('UserService', () => {
     // sys_user insert
     s.results.set('INSERT', [{ id: 'u-new' }]);
     // findInvalidRoleIds 校验角色存在
-    s.results.set('sys_role WHERE id IN', [{ id: 'r1' }, { id: 'r2' }]);
+    s.results.set('id IN', [{ id: 'r1' }, { id: 'r2' }]);
     const result = await s.userService.create({
       username: 'alice',
       password: 'pass123',
@@ -94,15 +95,15 @@ describe('UserService', () => {
     expect(result.id).toBeTruthy();
     const deleteCall = s.calls.find((c) => c.text.includes('DELETE FROM sys_user_role'));
     const insertCall = s.calls.find((c) => c.text.includes('INSERT INTO sys_user_role'));
-    expect(deleteCall?.params).toEqual([result.id]);
-    expect(insertCall?.params).toEqual([result.id, 'r1', result.id, 'r2']);
+    expect(deleteCall?.params).toEqual(['default', result.id]);
+    expect(insertCall?.params).toEqual(['default', result.id, 'r1', 'default', result.id, 'r2']);
   });
 
   test('create user rejects invalid roleIds', async () => {
     const s = setup();
     s.results.set('INSERT', [{ id: 'u-new' }]);
     // findInvalidRoleIds 只返回 r1，r-bad 不存在
-    s.results.set('sys_role WHERE id IN', [{ id: 'r1' }]);
+    s.results.set('id IN', [{ id: 'r1' }]);
     await expect(
       s.userService.create({
         username: 'alice',
@@ -122,12 +123,12 @@ describe('UserService', () => {
 
   test('update user atomically replaces roleIds with ORM operations', async () => {
     const s = setup();
-    s.results.set('sys_role WHERE id IN', [{ id: 'r9' }]);
+    s.results.set('id IN', [{ id: 'r9' }]);
     await s.userService.update('u1', { roleIds: ['r9'], actor: TEST_ACTOR });
     const deleteCall = s.calls.find((c) => c.text.includes('DELETE FROM sys_user_role'));
     const insertCall = s.calls.find((c) => c.text.includes('INSERT INTO sys_user_role'));
-    expect(deleteCall?.params).toEqual(['u1']);
-    expect(insertCall?.params).toEqual(['u1', 'r9']);
+    expect(deleteCall?.params).toEqual(['default', 'u1']);
+    expect(insertCall?.params).toEqual(['default', 'u1', 'r9']);
   });
 
   test('update user with empty roleIds clears roles', async () => {
@@ -135,13 +136,13 @@ describe('UserService', () => {
     await s.userService.update('u1', { roleIds: [], actor: TEST_ACTOR });
     const roleCall = s.calls.find((c) => c.text.includes('DELETE FROM sys_user_role'));
     expect(roleCall).toBeDefined();
-    expect(roleCall!.params).toEqual(['u1']);
+    expect(roleCall!.params).toEqual(['default', 'u1']);
   });
 
   test('getById returns roles list', async () => {
     const s = setup();
     // 用户基础查询：用 WHERE id 精确匹配（FROM sys_user 会误匹配 sys_user_role）
-    s.results.set('sys_user WHERE id', [
+    s.results.set('sys_user WHERE tenant_id', [
       {
         id: 'u1',
         username: 'admin',
@@ -272,6 +273,7 @@ describe('UserService', () => {
       cache: createTestCache(),
       configService: createMockConfigService(),
       governance: allowRoleGrants,
+      tenantId: 'default',
     });
     await userService.list({
       page: 1,
@@ -337,6 +339,7 @@ describe('用户导出权限（安全回归）', () => {
       cache,
       configService,
       governance: allowRoleGrants,
+      tenantId: 'default',
     });
 
     const jwt = createMockJWTManager();

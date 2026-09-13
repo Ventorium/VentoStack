@@ -86,7 +86,8 @@ const rawConfig = createConfig(
       type: 'boolean',
       env: 'COOKIE_SECURE',
       default: false,
-      description: '认证 Cookie 是否附加 Secure 属性。生产环境（反代 TLS 终结）必须设为 true，防止令牌 Cookie 明文传输',
+      description:
+        '认证 Cookie 是否附加 Secure 属性。生产环境（反代 TLS 终结）必须设为 true，防止令牌 Cookie 明文传输',
     },
     ADMIN_INIT_PASSWORD: {
       type: 'string',
@@ -100,7 +101,8 @@ const rawConfig = createConfig(
       type: 'string',
       env: 'TRUSTED_PROXIES',
       default: '',
-      description: '可信反向代理 IP/CIDR 列表（逗号分隔）。配置后登录审计/限流/操作日志将读取代理头提取真实客户端 IP；留空则仅使用直接连接 IP，防止伪造',
+      description:
+        '可信反向代理 IP/CIDR 列表（逗号分隔）。配置后登录审计/限流/操作日志将读取代理头提取真实客户端 IP；留空则仅使用直接连接 IP，防止伪造',
     },
     // ---- Storage ----
     STORAGE_DRIVER: {
@@ -138,7 +140,13 @@ const rawConfig = createConfig(
       type: 'boolean',
       env: 'TENANT_ENABLED',
       default: false,
-      description: '[实验性] 多租户隔离开关：数据模型层尚未实现租户列与查询过滤，开启仅影响 boot 预留配置，不提供真实隔离',
+      description: '启用 Admin 租户隔离；开启时必须配置 TENANT_ID',
+    },
+    TENANT_ID: {
+      type: 'string',
+      env: 'TENANT_ID',
+      default: 'default',
+      description: '当前 Admin 部署的可信租户标识，不从客户端请求中解析',
     },
     AI_ENABLED: {
       type: 'boolean',
@@ -176,9 +184,7 @@ if (rawConfig.CACHE_DRIVER === 'redis' && !rawConfig.REDIS_URL) {
 const JWT_SECRET_PLACEHOLDER = 'change-me-at-least-32-chars-long';
 if (rawConfig.NODE_ENV === 'production') {
   if (rawConfig.JWT_SECRET.includes(JWT_SECRET_PLACEHOLDER)) {
-    throw new Error(
-      'JWT_SECRET 仍为示例占位符，生产环境拒绝启动。请设置真实凭据后重新部署',
-    );
+    throw new Error('JWT_SECRET 仍为示例占位符，生产环境拒绝启动。请设置真实凭据后重新部署');
   }
   // DATABASE_URL 仅检查密码段是否为占位符，避免真实凭据中碰巧含占位子串被误杀
   let dbPassword: string;
@@ -224,6 +230,13 @@ if (rawConfig.AI_ENABLED) {
 if (Boolean(rawConfig.VENTO_RUNTIME_URL) !== Boolean(rawConfig.VENTO_RUNTIME_TOKEN)) {
   throw new Error('VENTO_RUNTIME_URL and VENTO_RUNTIME_TOKEN must be configured together');
 }
+const tenantId = rawConfig.TENANT_ID.trim();
+if (!tenantId || tenantId.length > 36) {
+  throw new Error('TENANT_ID must contain 1 to 36 characters');
+}
+if (rawConfig.TENANT_ENABLED && !Bun.env.TENANT_ID) {
+  throw new Error('TENANT_ID must be explicitly configured when TENANT_ENABLED=true');
+}
 
 // JWT_SECRET 密钥长度校验（256-bit = 32 字节）
 const jwtSecretBytes = new TextEncoder().encode(rawConfig.JWT_SECRET).length;
@@ -237,9 +250,9 @@ if (jwtSecretBytes < 32) {
 // ALLOWED_ORIGINS: 逗号分隔 → string[]
 export const env = {
   ...rawConfig,
+  TENANT_ID: tenantId,
   ALLOWED_ORIGINS: rawConfig.ALLOWED_ORIGINS.split(',').map((s) => s.trim()),
-  TRUSTED_PROXIES: rawConfig.TRUSTED_PROXIES
-    .split(',')
+  TRUSTED_PROXIES: rawConfig.TRUSTED_PROXIES.split(',')
     .map((s) => s.trim())
     .filter((s) => s.length > 0),
 };

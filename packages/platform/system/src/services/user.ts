@@ -126,8 +126,16 @@ export interface UserService {
 /**
  * 递归收集指定部门及其所有子部门 ID
  */
-async function collectDescendantDeptIds(db: Database, parentId: string): Promise<string[]> {
-  const rows = await db.query(DeptModel).select('id', 'parent_id').list();
+async function collectDescendantDeptIds(
+  db: Database,
+  tenantId: string,
+  parentId: string,
+): Promise<string[]> {
+  const rows = await db
+    .query(DeptModel)
+    .where('tenant_id', '=', tenantId)
+    .select('id', 'parent_id')
+    .list();
 
   const childrenMap = new Map<string, string[]>();
   for (const row of rows) {
@@ -163,7 +171,7 @@ export function createUserService(deps: {
   configService: ConfigService;
   governance: Pick<IdentityGovernanceService, 'assertCanAssignRoles'>;
   /** 租户 ID，启用多租户时传入以隔离缓存 */
-  tenantId?: string;
+  tenantId: string;
 }): UserService {
   const { db, passwordHasher, cache, configService, governance } = deps;
   const ns: CacheKeyNamespace = createCacheKeyNamespace(deps.tenantId);
@@ -174,6 +182,7 @@ export function createUserService(deps: {
     if (postIds.length > 100) throw new Error('岗位数量不能超过 100');
     const rows = await db
       .query(PostModel)
+      .where('tenant_id', '=', deps.tenantId)
       .where('id', 'IN', postIds)
       .where('status', '=', 1)
       .select('id')
@@ -188,11 +197,17 @@ export function createUserService(deps: {
     userId: string,
     postIds: string[],
   ): Promise<void> {
-    await database.query(UserPostModel).where('user_id', '=', userId).hardDelete();
+    await database
+      .query(UserPostModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('user_id', '=', userId)
+      .hardDelete();
     if (postIds.length > 0) {
       await database
         .query(UserPostModel)
-        .batchInsert(postIds.map((postId) => ({ user_id: userId, post_id: postId })));
+        .batchInsert(
+          postIds.map((postId) => ({ tenant_id: deps.tenantId, user_id: userId, post_id: postId })),
+        );
     }
   }
 
@@ -202,6 +217,7 @@ export function createUserService(deps: {
     if (roleIds.length > 100) throw new Error('角色数量不能超过 100');
     const rows = await db
       .query(RoleModel)
+      .where('tenant_id', '=', deps.tenantId)
       .where('id', 'IN', roleIds)
       .where('status', '=', 1)
       .select('id')
@@ -216,11 +232,17 @@ export function createUserService(deps: {
     userId: string,
     roleIds: string[],
   ): Promise<void> {
-    await database.query(UserRoleModel).where('user_id', '=', userId).hardDelete();
+    await database
+      .query(UserRoleModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('user_id', '=', userId)
+      .hardDelete();
     if (roleIds.length > 0) {
       await database
         .query(UserRoleModel)
-        .batchInsert(roleIds.map((roleId) => ({ user_id: userId, role_id: roleId })));
+        .batchInsert(
+          roleIds.map((roleId) => ({ tenant_id: deps.tenantId, user_id: userId, role_id: roleId })),
+        );
     }
   }
 
@@ -230,13 +252,13 @@ export function createUserService(deps: {
   ): Promise<Map<string, Array<{ id: string; name: string; code: string }>>> {
     const map = new Map<string, Array<{ id: string; name: string; code: string }>>();
     if (userIds.length === 0) return map;
-    const placeholders = userIds.map((_, i) => `$${i + 1}`);
+    const placeholders = userIds.map((_, i) => `$${i + 2}`);
     const rows = await db.raw(
       `SELECT ur.user_id, r.id, r.name, r.code
        FROM sys_user_role ur
-       JOIN sys_role r ON r.id = ur.role_id
-       WHERE ur.user_id IN (${placeholders.join(', ')}) AND r.deleted_at IS NULL`,
-      userIds,
+       JOIN sys_role r ON r.tenant_id = ur.tenant_id AND r.id = ur.role_id
+       WHERE ur.tenant_id = $1 AND ur.user_id IN (${placeholders.join(', ')}) AND r.deleted_at IS NULL`,
+      [deps.tenantId, ...userIds],
     );
     for (const row of rows as Array<{ user_id: string; id: string; name: string; code: string }>) {
       const arr = map.get(row.user_id) ?? [];
@@ -252,13 +274,13 @@ export function createUserService(deps: {
   ): Promise<Map<string, Array<{ id: string; name: string; code: string }>>> {
     const map = new Map<string, Array<{ id: string; name: string; code: string }>>();
     if (userIds.length === 0) return map;
-    const placeholders = userIds.map((_, i) => `$${i + 1}`);
+    const placeholders = userIds.map((_, i) => `$${i + 2}`);
     const rows = await db.raw(
       `SELECT up.user_id, p.id, p.name, p.code
        FROM sys_user_post up
-       JOIN sys_post p ON p.id = up.post_id
-       WHERE up.user_id IN (${placeholders.join(', ')}) AND p.deleted_at IS NULL`,
-      userIds,
+       JOIN sys_post p ON p.tenant_id = up.tenant_id AND p.id = up.post_id
+       WHERE up.tenant_id = $1 AND up.user_id IN (${placeholders.join(', ')}) AND p.deleted_at IS NULL`,
+      [deps.tenantId, ...userIds],
     );
     for (const r of rows as Array<{ user_id: string; id: string; name: string; code: string }>) {
       const arr = map.get(r.user_id) ?? [];
@@ -274,6 +296,7 @@ export function createUserService(deps: {
       const id = crypto.randomUUID();
       const duplicate = await db
         .query(UserModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('username', '=', username)
         .select('id')
         .get();
@@ -281,6 +304,7 @@ export function createUserService(deps: {
       if (deptId) {
         const department = await db
           .query(DeptModel)
+          .where('tenant_id', '=', deps.tenantId)
           .where('id', '=', deptId)
           .where('status', '=', 1)
           .select('id')
@@ -327,6 +351,7 @@ export function createUserService(deps: {
       await db.transaction(async (tx) => {
         await tx.query(UserModel).insert({
           id,
+          tenant_id: deps.tenantId,
           username,
           password_hash: passwordHash,
           email: email ?? null,
@@ -352,6 +377,7 @@ export function createUserService(deps: {
       if (params.deptId) {
         const department = await db
           .query(DeptModel)
+          .where('tenant_id', '=', deps.tenantId)
           .where('id', '=', params.deptId)
           .where('status', '=', 1)
           .select('id')
@@ -396,7 +422,11 @@ export function createUserService(deps: {
 
       await db.transaction(async (tx) => {
         if (Object.keys(updates).length > 0) {
-          await tx.query(UserModel).where('id', '=', id).update(updates);
+          await tx
+            .query(UserModel)
+            .where('tenant_id', '=', deps.tenantId)
+            .where('id', '=', id)
+            .update(updates);
         }
         if (dedupPostIds !== undefined) await assignUserPosts(tx, id, dedupPostIds);
         if (dedupRoleIds !== undefined) await assignUserRoles(tx, id, dedupRoleIds);
@@ -409,7 +439,11 @@ export function createUserService(deps: {
 
     async delete(id) {
       // 软删除
-      await db.query(UserModel).where('id', '=', id).delete();
+      await db
+        .query(UserModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .delete();
 
       // 清除缓存
       await cache.del(ns.detailKey('user', id));
@@ -423,6 +457,7 @@ export function createUserService(deps: {
 
       const row = await db
         .query(UserModel)
+        .where('tenant_id', '=', deps.tenantId)
         .where('id', '=', id)
         .select(
           'id',
@@ -474,7 +509,7 @@ export function createUserService(deps: {
     async list(params) {
       const { page = 1, pageSize = 10, username, status, deptId, dataScope } = params;
 
-      let query = db.query(UserModel);
+      let query = db.query(UserModel).where('tenant_id', '=', deps.tenantId);
 
       if (username) {
         query = query.where('username', 'LIKE', `%${username}%`);
@@ -485,7 +520,7 @@ export function createUserService(deps: {
       if (deptId === '__none__') {
         query = query.where('dept_id', 'IS NULL');
       } else if (deptId) {
-        const deptIds = await collectDescendantDeptIds(db, deptId);
+        const deptIds = await collectDescendantDeptIds(db, deps.tenantId, deptId);
         query = query.where('dept_id', 'IN', deptIds);
       }
       if (dataScope && !dataScope.all) {
@@ -541,13 +576,13 @@ export function createUserService(deps: {
       let roleMap = new Map<string, Array<{ id: string; name: string; code: string }>>();
       if (list.length > 0) {
         const userIds = list.map((u) => u.id);
-        const placeholders = userIds.map((_, i) => `$${i + 1}`);
+        const placeholders = userIds.map((_, i) => `$${i + 2}`);
         const tagRows = await db.raw(
           `SELECT ut.user_id, t.id, t.name, t.code
            FROM sys_user_tag ut
-           JOIN sys_tag t ON t.id = ut.tag_id
-           WHERE ut.user_id IN (${placeholders.join(', ')}) AND t.status = 1 AND t.deleted_at IS NULL`,
-          userIds,
+           JOIN sys_tag t ON t.tenant_id = ut.tenant_id AND t.id = ut.tag_id
+           WHERE ut.tenant_id = $1 AND ut.user_id IN (${placeholders.join(', ')}) AND t.status = 1 AND t.deleted_at IS NULL`,
+          [deps.tenantId, ...userIds],
         );
         for (const tr of tagRows as Array<{
           user_id: string;
@@ -590,7 +625,7 @@ export function createUserService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await db.query(UserModel).where('id', '=', id).update({
+      await db.query(UserModel).where('tenant_id', '=', deps.tenantId).where('id', '=', id).update({
         password_hash: passwordHash,
         password_changed_at: new Date(),
       });
@@ -600,7 +635,11 @@ export function createUserService(deps: {
     },
 
     async updateStatus(id, status) {
-      await db.query(UserModel).where('id', '=', id).update({ status });
+      await db
+        .query(UserModel)
+        .where('tenant_id', '=', deps.tenantId)
+        .where('id', '=', id)
+        .update({ status });
 
       // 清除缓存
       await cache.del(ns.detailKey('user', id));
@@ -610,7 +649,7 @@ export function createUserService(deps: {
     async export(params) {
       const { username, status, deptId, dataScope } = params ?? {};
 
-      let query = db.query(UserModel);
+      let query = db.query(UserModel).where('tenant_id', '=', deps.tenantId);
 
       if (username) {
         query = query.where('username', 'LIKE', `%${username}%`);

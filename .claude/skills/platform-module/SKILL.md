@@ -192,3 +192,13 @@ modules: {
 
 - 模块中涉及数据行级过滤的场景，必须使用 `createRowFilter()` + `buildWhereClause()` 参数化查询
 - 禁止在 Row Filter 中使用字符串拼接生成 SQL 条件
+
+### 数据权限与身份治理（2026-09 审查）
+
+- **system 管理面路由必须用实时认证**：使用 `createLiveSystemAuthMiddleware` 包装 JWT 中间件（session 存在性 + 账号状态/黑名单 + 数据库实时角色覆盖 JWT 快照），不得直接裸用 JWT 快照做角色判断。
+- **用户关联资源接入 DataScopeResolver**：模块内任何返回用户 ID 或按用户维度聚合的查询，必须与操作者数据范围取交集；`ALL` 以外 fail-closed，解析异常 503。
+- **控制面操作要 admin 守卫**：角色/菜单/部门/敏感配置等授权控制面，除 RBAC 权限外加 `governance.adminOnlyMiddleware`（数据库实时 admin）。
+- **个人/管理端点分离**：自助端点强制 `ctx.user.id`，管理端点走权限 + 数据范围，禁止双视角复用。
+- **状态机与事务下沉 service**：条件更新 + affected rows 检查；全量覆盖写入（先校验目标，同事务 delete + batchInsert）；关联表补外键（脏数据阻断迁移），软删除时 service 显式清理关联。
+- **输入边界**：string max、sort 0—9999、status enum、批量 IDs `uuid + min 1 + max 100`；listQuery 白名单与前端搜索字段对齐。
+- **OpenAPI 同步**：每个端点描述权限标识、数据范围与租户语义（租户由认证上下文确定、跨租户 404），功能变更同步 `apps/docs` 模块文档。

@@ -288,3 +288,15 @@ describe("XxxService", () => {
 - ❌ 模型中缺少 `deletedAt` 软删除字段
 - ❌ 迁移文件缺少 `down()`
 - ❌ 种子数据不用 `ON CONFLICT DO NOTHING`
+
+## 安全契约（2026-09 模块交叉审查）
+
+新增模块除租户隔离与权限中间件外，必须满足以下约束（详见 CLAUDE.md §26 与 admin-backend-entity skill）：
+
+- **system 管理面实时认证**：使用 `createLiveSystemAuthMiddleware` 包装 JWT（session 存在性 + 账号状态/黑名单 + 数据库实时角色覆盖 JWT 快照），不裸信 JWT 角色快照。
+- **用户关联资源接入 DataScopeResolver**：返回用户 ID 或按用户维度聚合的查询必须与操作者数据范围取交集；`ALL` 以外 fail-closed，解析异常 503。
+- **控制面操作加 admin 守卫**：角色/菜单/部门/敏感配置等授权控制面，除 RBAC 权限外加 `governance.adminOnlyMiddleware`（数据库实时 admin）。
+- **个人/管理端点分离**：自助端点强制 `ctx.user.id`，管理端点走权限 + 数据范围。
+- **状态机与事务下沉 service**：条件更新 + affected rows；全量覆盖写入先校验目标，同事务 delete + batchInsert；关联表补外键（脏数据阻断迁移），软删除显式清理关联。
+- **输入边界**：string max、sort 0—9999、status enum、批量 IDs `uuid + min 1 + max 100`；listQuery 白名单与前端搜索字段对齐。
+- **OpenAPI 同步**：每个端点描述权限标识、数据范围与租户语义（租户由认证上下文确定、跨租户 404），功能变更同步 `apps/docs` 模块文档。

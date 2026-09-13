@@ -11,7 +11,7 @@ function setup() {
   const { db, registerModel, calls } = createMockDatabase(mockExec);
   registerModel('sys_dept', 'sys_dept', true);
   registerModel('sys_role_dept', 'sys_role_dept', false);
-  const deptService = createDeptService({ db });
+  const deptService = createDeptService({ db, tenantId: 'default' });
   return { deptService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 

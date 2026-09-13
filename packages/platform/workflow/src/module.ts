@@ -2,14 +2,14 @@
  * @ventostack/workflow — 模块聚合
  */
 
-import type { JWTManager, RBAC } from "@ventostack/auth";
-import type { Router } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import type { EventBus } from "@ventostack/events";
-import { createAuthMiddleware, createPermMiddleware } from "@ventostack/auth";
-import { createWorkflowRoutes } from "./routes/workflow";
-import { createWorkflowService } from "./services";
-import type { WorkflowService } from "./services";
+import type { JWTManager, RBAC } from '@ventostack/auth';
+import type { Router } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import type { EventBus } from '@ventostack/events';
+import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
+import { createWorkflowRoutes } from './routes/workflow';
+import { createWorkflowService } from './services';
+import type { WorkflowService } from './services';
 
 export interface WorkflowModule {
   services: { workflow: WorkflowService };
@@ -23,6 +23,7 @@ export interface WorkflowModuleDeps {
   jwtSecret: string;
   /** RBAC 管理器实例（必填，避免权限校验被静默跳过） */
   rbac: RBAC;
+  tenantId: string;
   eventBus?: EventBus;
 }
 
@@ -32,7 +33,7 @@ export function createWorkflowModule(deps: WorkflowModuleDeps): WorkflowModule {
   const serviceDeps: Parameters<typeof createWorkflowService>[0] = { db };
   if (eventBus) serviceDeps.eventBus = eventBus;
   const workflowService = createWorkflowService(serviceDeps);
-  const authMiddleware = createAuthMiddleware(jwt, jwtSecret);
+  const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);
   const perm = createPermMiddleware(rbac);
 
   const router = createWorkflowRoutes(workflowService, authMiddleware, perm);

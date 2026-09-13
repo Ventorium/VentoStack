@@ -56,7 +56,8 @@ docker compose up -d
 | `LOG_LEVEL` | 否 | `info` | 日志级别 |
 | `ADMIN_PORT` | 否 | `9322` | 管理端点端口（`/health`、`/metrics`、`/docs`）；设为 `0` 则禁用独立端口，回退到主端口 |
 | `ADMIN_HOST` | 否 | `127.0.0.1` | 管理端口绑定地址，默认仅本地访问 |
-| `TENANT_ENABLED` | 否 | `false` | [实验性] 多租户隔离开关：数据模型层暂无租户列与查询过滤，开启仅启用 boot 预留配置，不提供真实隔离 |
+| `TENANT_ENABLED` | 否 | `false` | 启用 Admin 租户模式；System 数据始终按租户 SQL 隔离 |
+| `TENANT_ID` | 否 | `default` | 当前部署绑定的可信租户标识；不接受客户端覆盖 |
 
 ### 健康检查
 
@@ -167,6 +168,7 @@ server {
 - [ ] `ADMIN_PORT` 设置为非零值（默认 9322），管理端点不暴露在业务端口
 - [ ] `ADMIN_HOST` 设置为 `127.0.0.1`（默认），仅本地访问管理端点
 - [ ] `JWT_SECRET` 至少 32 字节随机字符串
+- [ ] `TENANT_ID` 与该部署的数据归属一致，且迁移 016 已执行
 - [ ] 如使用反向代理，配置 `trustedProxies` IP/CIDR 列表
 - [ ] `DATABASE_URL` 使用 SSL 连接（`sslmode=require`）
 - [ ] `REDIS_URL` 设置密码认证

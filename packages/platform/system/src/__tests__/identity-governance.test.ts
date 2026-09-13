@@ -8,7 +8,7 @@ function setup() {
   const { db, registerModel } = createMockDatabase(mockExec);
   registerModel('sys_user_role', 'sys_user_role', false);
   registerModel('sys_role', 'sys_role', true);
-  return { governance: createIdentityGovernanceService(db), results: mockExec.results };
+  return { governance: createIdentityGovernanceService(db, 'default'), results: mockExec.results };
 }
 
 const actor: AuthUser = { id: 'u1', username: 'operator', roles: ['admin'] };

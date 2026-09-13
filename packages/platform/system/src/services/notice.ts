@@ -3,8 +3,9 @@
  * 提供通知公告的 CRUD、发布/撤回、已读标记与未读计数
  */
 
-import type { Database } from "@ventostack/database";
-import { NoticeModel } from "../models/notice";
+import { NotFoundError, VentoStackError } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import { NoticeModel } from '../models/notice';
 
 /** 分页查询结果 */
 export interface PaginatedResult<T> {
@@ -53,6 +54,7 @@ export interface UserNoticeItem extends NoticeItem {
 export interface NoticeListParams {
   page?: number;
   pageSize?: number;
+  title?: string;
   type?: number;
   status?: number;
 }
@@ -89,13 +91,29 @@ export interface NoticeService {
  * @param deps 依赖注入
  * @returns NoticeService 实例
  */
-export function createNoticeService(deps: { db: Database }): NoticeService {
+export function createNoticeService(deps: { db: Database; tenantId: string }): NoticeService {
   const { db } = deps;
+
+  /** 条件更新 0 行后区分 404（不存在/跨租户）与 409（状态冲突） */
+  async function assertNoticeState(
+    id: string,
+    conflict: (status: number) => string,
+  ): Promise<never> {
+    const row = await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('status')
+      .get();
+    if (!row) throw new NotFoundError('通知不存在');
+    throw new VentoStackError(conflict(row.status ?? 0), 409, 'NOTICE_STATE_CONFLICT');
+  }
 
   async function create(params: CreateNoticeParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
     await db.query(NoticeModel).insert({
       id,
+      tenant_id: deps.tenantId,
       title: params.title,
       content: params.content,
       type: params.type,
@@ -111,46 +129,65 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
     if (params.title !== undefined) updates.title = params.title;
     if (params.content !== undefined) updates.content = params.content;
     if (params.type !== undefined) updates.type = params.type;
-    if (params.status !== undefined) updates.status = params.status;
 
     if (Object.keys(updates).length === 0) return;
-
-    await db.query(NoticeModel).where("id", "=", id).update(updates);
+    const updated = await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .where('status', '=', 0)
+      .update(updates, { returning: true });
+    if (!updated) await assertNoticeState(id, () => '仅草稿状态的通知可编辑');
   }
 
   async function deleteNotice(id: string): Promise<void> {
-    await db.query(NoticeModel).where("id", "=", id).delete();
+    const current = await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .select('status')
+      .get();
+    if (!current) throw new NotFoundError('通知不存在');
+    if (current.status === 1) {
+      throw new VentoStackError('已发布通知必须先撤回', 409, 'NOTICE_STATE_CONFLICT');
+    }
+    await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .delete();
   }
 
   async function list(params?: NoticeListParams): Promise<PaginatedResult<NoticeItem>> {
     const page = params?.page ?? 1;
     const pageSize = params?.pageSize ?? 10;
 
-    let query = db.query(NoticeModel);
+    let query = db.query(NoticeModel).where('tenant_id', '=', deps.tenantId);
+    if (params?.title) query = query.where('title', 'LIKE', `%${params.title}%`);
     if (params?.type !== undefined) {
-      query = query.where("type", "=", params.type);
+      query = query.where('type', '=', params.type);
     }
     if (params?.status !== undefined) {
-      query = query.where("status", "=", params.status);
+      query = query.where('status', '=', params.status);
     }
 
     const total = await query.count();
 
     const rows = await query
       .select(
-        "id",
-        "title",
-        "content",
-        "type",
-        "sort",
-        "status",
-        "publisher_id",
-        "publish_at",
-        "remark",
-        "created_at",
+        'id',
+        'title',
+        'content',
+        'type',
+        'sort',
+        'status',
+        'publisher_id',
+        'publish_at',
+        'remark',
+        'created_at',
       )
-      .orderBy("sort", "desc")
-      .orderBy("created_at", "desc")
+      .orderBy('sort', 'desc')
+      .orderBy('created_at', 'desc')
       .limit(pageSize)
       .offset((page - 1) * pageSize)
       .list();
@@ -162,13 +199,13 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
       type: row.type ?? 1,
       sort: row.sort ?? 0,
       status: row.status ?? 0,
-      publisherId: row.publisher_id ?? "",
+      publisherId: row.publisher_id ?? '',
       publishAt: row.publish_at ? String(row.publish_at) : null,
-      remark: row.remark ?? "",
+      remark: row.remark ?? '',
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
     }));
 
     return {
@@ -181,33 +218,44 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
   }
 
   async function publish(id: string, publisherId: string): Promise<void> {
-    await db.query(NoticeModel).where("id", "=", id).update({
-      status: 1,
-      publisher_id: publisherId,
-      publish_at: new Date(),
-    });
+    const updated = await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .where('status', 'IN', [0, 2])
+      .update(
+        { status: 1, publisher_id: publisherId, publish_at: new Date() },
+        { returning: true },
+      );
+    if (!updated) await assertNoticeState(id, () => '仅草稿或已撤回状态的通知可发布');
   }
 
   async function revoke(id: string): Promise<void> {
-    await db.query(NoticeModel).where("id", "=", id).update({
-      status: 2,
-      publish_at: null,
-    });
+    const updated = await db
+      .query(NoticeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('id', '=', id)
+      .where('status', '=', 1)
+      .update({ status: 2, publish_at: null }, { returning: true });
+    if (!updated) await assertNoticeState(id, () => '仅已发布状态的通知可撤回');
   }
 
   async function markRead(userId: string, noticeId: string): Promise<void> {
     // ON CONFLICT DO NOTHING — use db.raw for this pattern
     await db.raw(
-      `INSERT INTO sys_user_notice (user_id, notice_id, read_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-      [userId, noticeId, new Date()],
+      `INSERT INTO sys_user_notice (tenant_id, user_id, notice_id, read_at)
+       SELECT $1, $2, n.id, $4 FROM sys_notice n
+       WHERE n.tenant_id = $1 AND n.id = $3 AND n.status = 1 AND n.deleted_at IS NULL
+       ON CONFLICT DO NOTHING`,
+      [deps.tenantId, userId, noticeId, new Date()],
     );
   }
 
   async function getUnreadCount(userId: string): Promise<number> {
     // NOT EXISTS subquery — use db.raw
     const rows = (await db.raw(
-      `SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.deleted_at IS NULL AND n.status = 1 AND NOT EXISTS (SELECT 1 FROM sys_user_notice un WHERE un.user_id = $1 AND un.notice_id = n.id)`,
-      [userId],
+      'SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.tenant_id = $1 AND n.deleted_at IS NULL AND n.status = 1 AND NOT EXISTS (SELECT 1 FROM sys_user_notice un WHERE un.tenant_id = $1 AND un.user_id = $2 AND un.notice_id = n.id)',
+      [deps.tenantId, userId],
     )) as Array<Record<string, unknown>>;
     return Number(rows[0]?.cnt ?? 0);
   }
@@ -217,8 +265,11 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
     const now = new Date();
     for (const noticeId of noticeIds) {
       await db.raw(
-        `INSERT INTO sys_user_notice (user_id, notice_id, read_at) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
-        [userId, noticeId, now],
+        `INSERT INTO sys_user_notice (tenant_id, user_id, notice_id, read_at)
+         SELECT $1, $2, n.id, $4 FROM sys_notice n
+         WHERE n.tenant_id = $1 AND n.id = $3 AND n.status = 1 AND n.deleted_at IS NULL
+         ON CONFLICT DO NOTHING`,
+        [deps.tenantId, userId, noticeId, now],
       );
     }
   }
@@ -232,7 +283,8 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
 
     // 查询已发布通知总数
     const countRows = (await db.raw(
-      `SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.deleted_at IS NULL AND n.status = 1`,
+      'SELECT COUNT(*) AS cnt FROM sys_notice n WHERE n.tenant_id = $1 AND n.deleted_at IS NULL AND n.status = 1',
+      [deps.tenantId],
     )) as Array<Record<string, unknown>>;
     const total = Number(countRows[0]?.cnt ?? 0);
 
@@ -241,27 +293,27 @@ export function createNoticeService(deps: { db: Database }): NoticeService {
       `SELECT n.id, n.title, n.content, n.type, n.sort, n.status, n.publisher_id, n.publish_at, n.remark, n.created_at,
               (un.read_at IS NOT NULL) AS is_read
        FROM sys_notice n
-       LEFT JOIN sys_user_notice un ON un.user_id = $1 AND un.notice_id = n.id
-       WHERE n.deleted_at IS NULL AND n.status = 1
+       LEFT JOIN sys_user_notice un ON un.tenant_id = $1 AND un.user_id = $2 AND un.notice_id = n.id
+       WHERE n.tenant_id = $1 AND n.deleted_at IS NULL AND n.status = 1
        ORDER BY n.sort DESC, n.publish_at DESC
-       LIMIT $2 OFFSET $3`,
-      [userId, pageSize, (page - 1) * pageSize],
+       LIMIT $3 OFFSET $4`,
+      [deps.tenantId, userId, pageSize, (page - 1) * pageSize],
     )) as Array<Record<string, unknown>>;
 
     const items: UserNoticeItem[] = rows.map((row) => ({
       id: String(row.id),
-      title: String(row.title ?? ""),
-      content: String(row.content ?? ""),
+      title: String(row.title ?? ''),
+      content: String(row.content ?? ''),
       type: Number(row.type ?? 1),
       sort: Number(row.sort ?? 0),
       status: Number(row.status ?? 0),
-      publisherId: String(row.publisher_id ?? ""),
+      publisherId: String(row.publisher_id ?? ''),
       publishAt: row.publish_at ? String(row.publish_at) : null,
-      remark: String(row.remark ?? ""),
+      remark: String(row.remark ?? ''),
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()
-          : String(row.created_at ?? ""),
+          : String(row.created_at ?? ''),
       isRead: Boolean(row.is_read),
     }));
 

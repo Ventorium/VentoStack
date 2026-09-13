@@ -13,6 +13,7 @@ import {
   parseBody,
   safeErrorMessage,
   success,
+  VentoStackError,
 } from '@ventostack/core';
 import type { Middleware, RouteSchemaConfig, Router, SchemaField } from '@ventostack/core';
 
@@ -31,7 +32,13 @@ export interface CrudSchemas {
   /** 列表允许的筛选字段；未声明时只接受 page/pageSize */
   listQuery?: Record<string, SchemaField>;
   /** 列表项 Schema（会被 list 响应和 getById 响应复用） */
-  item?: Record<string, { type: string; description?: string; format?: string; example?: unknown }>;
+  item?: Record<string, {
+    type: string;
+    description?: string;
+    format?: string;
+    example?: unknown;
+    enum?: Array<string | number>;
+  }>;
   /** 创建请求体 Schema */
   createBody?: Record<
     string,
@@ -78,7 +85,12 @@ interface CrudRouteOptions {
   operationLogMiddleware?: Middleware;
   /** 授权控制面写操作的额外守卫（角色、菜单等高危实体使用） */
   mutationGuard?: Middleware;
+  /** 整组 CRUD（包括 extra routes）的额外访问守卫 */
+  accessGuard?: Middleware;
 }
+
+const TENANT_API_DESCRIPTION =
+  '租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。';
 
 export function createCrudRoutes(options: CrudRouteOptions): Router {
   const {
@@ -91,12 +103,14 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     schemas,
     operationLogMiddleware,
     mutationGuard,
+    accessGuard,
   } = options;
   const router = createRouter();
   const module = resource.split(':')[0]!;
 
   // Auth middleware applies to all CRUD routes
   router.use(authMiddleware);
+  if (accessGuard) router.use(accessGuard);
 
   // Operation log middleware (after auth, so ctx.user is available)
   if (operationLogMiddleware) {
@@ -131,7 +145,11 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
             totalPages: { type: 'int' as const, description: '总页数' },
           },
         },
-        openapi: { summary: `获取${resource}列表`, tags: [module] },
+        openapi: {
+          summary: `获取${resource}列表`,
+          description: TENANT_API_DESCRIPTION,
+          tags: [module],
+        },
       } as RouteSchemaConfig)
     : undefined;
 
@@ -155,7 +173,11 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     const getByIdConfig = schemas?.item
       ? ({
           responses: { 200: schemas.item },
-          openapi: { summary: `获取${resource}详情`, tags: [module] },
+          openapi: {
+            summary: `获取${resource}详情`,
+            description: TENANT_API_DESCRIPTION,
+            tags: [module],
+          },
         } as RouteSchemaConfig)
       : undefined;
     router.get(
@@ -176,7 +198,11 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     ? ({
         body: schemas.createBody,
         responses: { 200: { id: { type: 'uuid' as const, description: '创建的记录 ID' } } },
-        openapi: { summary: `创建${resource}`, tags: [module] },
+        openapi: {
+          summary: `创建${resource}`,
+          description: TENANT_API_DESCRIPTION,
+          tags: [module],
+        },
       } as RouteSchemaConfig)
     : undefined;
   router.post(
@@ -188,6 +214,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         const result = await service.create(body);
         return success(result);
       } catch (e) {
+        if (e instanceof VentoStackError) throw e;
         return fail(safeErrorMessage(e, 'Create failed'), 400);
       }
     },
@@ -199,7 +226,11 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
   const updateConfig = schemas?.updateBody
     ? ({
         body: schemas.updateBody,
-        openapi: { summary: `更新${resource}`, tags: [module] },
+        openapi: {
+          summary: `更新${resource}`,
+          description: TENANT_API_DESCRIPTION,
+          tags: [module],
+        },
       } as RouteSchemaConfig)
     : undefined;
   router.put(
@@ -212,6 +243,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         await service.update(id, body);
         return success(null);
       } catch (e) {
+        if (e instanceof VentoStackError) throw e;
         return fail(safeErrorMessage(e, 'Update failed'), 400);
       }
     },
@@ -224,7 +256,11 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
     `${basePath}/:id`,
     schemas?.item
       ? {
-          openapi: { summary: `删除${resource}`, tags: [module] },
+          openapi: {
+            summary: `删除${resource}`,
+            description: TENANT_API_DESCRIPTION,
+            tags: [module],
+          },
         }
       : {},
     async (ctx) => {
@@ -233,6 +269,7 @@ export function createCrudRoutes(options: CrudRouteOptions): Router {
         await service.delete(id);
         return success(null);
       } catch (e) {
+        if (e instanceof VentoStackError) throw e;
         return fail(safeErrorMessage(e, 'Delete failed'), 400);
       }
     },

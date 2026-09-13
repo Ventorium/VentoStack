@@ -4,20 +4,20 @@
  * 默认安全：速率限制、失败锁定、恒定时间密码校验
  */
 
-import type { JWTManager } from "@ventostack/auth";
-import type { PasswordHasher } from "@ventostack/auth";
-import type { TOTPManager } from "@ventostack/auth";
-import type { AuthSessionManager } from "@ventostack/auth";
-import type { Cache } from "@ventostack/cache";
-import { UnauthorizedError } from "@ventostack/core";
-import type { Database } from "@ventostack/database";
-import type { EventBus } from "@ventostack/events";
-import type { AuditStore } from "@ventostack/observability";
-import { LoginLogModel } from "../models/log";
-import { RoleModel, UserRoleModel } from "../models/role";
-import { UserModel } from "../models/user";
-import type { ConfigService } from "./config";
-import { validatePassword } from "./password-policy";
+import type { JWTManager } from '@ventostack/auth';
+import type { PasswordHasher } from '@ventostack/auth';
+import type { TOTPManager } from '@ventostack/auth';
+import type { AuthSessionManager } from '@ventostack/auth';
+import type { Cache } from '@ventostack/cache';
+import { UnauthorizedError } from '@ventostack/core';
+import type { Database } from '@ventostack/database';
+import type { EventBus } from '@ventostack/events';
+import type { AuditStore } from '@ventostack/observability';
+import { LoginLogModel } from '../models/log';
+import { RoleModel, UserRoleModel } from '../models/role';
+import { UserModel } from '../models/user';
+import type { ConfigService } from './config';
+import { validatePassword } from './password-policy';
 
 /** 登录结果 */
 export interface LoginResult {
@@ -86,18 +86,18 @@ export interface AuthService {
 
 /** 脱敏：截断 token / sessionId 等敏感字符串，仅保留前 8 位 */
 function redactToken(token: string | undefined): string {
-  if (!token) return "***";
-  return token.length > 8 ? token.slice(0, 8) + "***" : "***";
+  if (!token) return '***';
+  return token.length > 8 ? token.slice(0, 8) + '***' : '***';
 }
 
 /** 脱敏：email 只保留首字符 + ***@domain */
 function redactEmail(email: string | undefined): string {
-  if (!email) return "";
-  const atIndex = email.indexOf("@");
-  if (atIndex < 1) return "***";
+  if (!email) return '';
+  const atIndex = email.indexOf('@');
+  if (atIndex < 1) return '***';
   const local = email.slice(0, atIndex);
   const domain = email.slice(atIndex);
-  return local[0] + "***" + domain;
+  return local[0] + '***' + domain;
 }
 
 /** 登录失败最大次数（默认值，实际从 sys_config 读取） */
@@ -114,19 +114,21 @@ const MFA_TOKEN_TTL = 300;
 const RESET_TOKEN_TTL = 1800;
 
 /** 查询用户角色代码列表 */
-async function getUserRoleCodes(db: Database, userId: string): Promise<string[]> {
+async function getUserRoleCodes(db: Database, tenantId: string, userId: string): Promise<string[]> {
   const userRoles = await db
     .query(UserRoleModel)
-    .where("user_id", "=", userId)
-    .select("role_id")
+    .where('tenant_id', '=', tenantId)
+    .where('user_id', '=', userId)
+    .select('role_id')
     .list();
   if (userRoles.length === 0) return [];
   const roleIds = userRoles.map((r) => r.role_id);
   const roles = await db
     .query(RoleModel)
-    .where("id", "IN", roleIds)
-    .where("status", "=", 1)
-    .select("code")
+    .where('tenant_id', '=', tenantId)
+    .where('id', 'IN', roleIds)
+    .where('status', '=', 1)
+    .select('code')
     .list();
   return roles.map((r) => r.code);
 }
@@ -148,7 +150,7 @@ export function createAuthService(deps: {
   eventBus: EventBus;
   configService: ConfigService;
   /** 当前部署租户标识；未配置时回退 'default'（单租户默认命名空间） */
-  tenantId?: string;
+  tenantId: string;
 }): AuthService {
   const {
     db,
@@ -166,17 +168,17 @@ export function createAuthService(deps: {
 
   /** 解析 User-Agent 中的浏览器和 OS */
   function parseUA(ua: string): { browser: string; os: string } {
-    let browser = "Unknown";
-    let os = "Unknown";
-    if (/Edg\//.test(ua)) browser = "Edge";
-    else if (/Chrome\//.test(ua)) browser = "Chrome";
-    else if (/Firefox\//.test(ua)) browser = "Firefox";
-    else if (/Safari\//.test(ua)) browser = "Safari";
-    if (/Windows NT/.test(ua)) os = "Windows";
-    else if (/Mac OS X/.test(ua)) os = "macOS";
-    else if (/Linux/.test(ua)) os = "Linux";
-    else if (/Android/.test(ua)) os = "Android";
-    else if (/iPhone|iPad/.test(ua)) os = "iOS";
+    let browser = 'Unknown';
+    let os = 'Unknown';
+    if (/Edg\//.test(ua)) browser = 'Edge';
+    else if (/Chrome\//.test(ua)) browser = 'Chrome';
+    else if (/Firefox\//.test(ua)) browser = 'Firefox';
+    else if (/Safari\//.test(ua)) browser = 'Safari';
+    if (/Windows NT/.test(ua)) os = 'Windows';
+    else if (/Mac OS X/.test(ua)) os = 'macOS';
+    else if (/Linux/.test(ua)) os = 'Linux';
+    else if (/Android/.test(ua)) os = 'Android';
+    else if (/iPhone|iPad/.test(ua)) os = 'iOS';
     return { browser, os };
   }
 
@@ -191,9 +193,10 @@ export function createAuthService(deps: {
     loginMethod?: string;
   }) {
     const { browser, os } = parseUA(params.userAgent);
-    const method = params.loginMethod ?? "password";
+    const method = params.loginMethod ?? 'password';
     await db.query(LoginLogModel).insert({
       id: crypto.randomUUID(),
+      tenant_id: tenantId,
       user_id: params.userId ?? null,
       username: params.username,
       ip: params.ip,
@@ -213,39 +216,39 @@ export function createAuthService(deps: {
 
       // 1. 读取配置
       const maxAttempts =
-        Number(await configService.getValue("sys_login_max_attempts")) ||
+        Number(await configService.getValue('sys_login_max_attempts')) ||
         DEFAULT_MAX_LOGIN_FAILURES;
       const lockMinutes =
-        Number(await configService.getValue("sys_login_lock_minutes")) || DEFAULT_LOCK_MINUTES;
+        Number(await configService.getValue('sys_login_lock_minutes')) || DEFAULT_LOCK_MINUTES;
 
       // 2. 检查账号锁定（按 IP + 用户名组合）
-      const failKey = `login_fail:${ip}:${username}`;
+      const failKey = `tenant:${tenantId}:login_fail:${ip}:${username}`;
       const failCount = await cache.get<number>(failKey);
       if (failCount !== null && failCount >= maxAttempts) {
         await auditStore.append({
           actor: username,
-          action: "login.locked",
-          resource: "auth",
-          result: "denied",
-          metadata: { ip, reason: "account_locked" },
+          action: 'login.locked',
+          resource: 'auth',
+          result: 'denied',
+          metadata: { ip, reason: 'account_locked' },
         });
-        await recordLoginLog({ username, ip, userAgent, status: 0, message: "账号已锁定" });
-        throw new Error("账号登录失败次数过多，已锁定");
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: '账号已锁定' });
+        throw new Error('账号登录失败次数过多，已锁定');
       }
 
       // 3. 检查 IP 速率限制
-      const ipKey = `login_ip:${ip}`;
+      const ipKey = `tenant:${tenantId}:login_ip:${ip}`;
       const ipCount = await cache.get<number>(ipKey);
       if (ipCount !== null && ipCount >= MAX_IP_REQUESTS_PER_MINUTE) {
         await auditStore.append({
           actor: ip,
-          action: "login.rate_limited",
-          resource: "auth",
-          result: "denied",
-          metadata: { ip, reason: "ip_rate_limited" },
+          action: 'login.rate_limited',
+          resource: 'auth',
+          result: 'denied',
+          metadata: { ip, reason: 'ip_rate_limited' },
         });
-        await recordLoginLog({ username, ip, userAgent, status: 0, message: "请求过于频繁" });
-        throw new Error("请求过于频繁");
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: '请求过于频繁' });
+        throw new Error('请求过于频繁');
       }
 
       // 递增 IP 计数
@@ -255,18 +258,19 @@ export function createAuthService(deps: {
       // 3. 查询用户
       const user = await db
         .query(UserModel)
-        .where("username", "=", username)
+        .where('tenant_id', '=', tenantId)
+        .where('username', '=', username)
         .select(
-          "id",
-          "username",
-          "password_hash",
-          "status",
-          "mfa_enabled",
-          "mfa_secret",
-          "blacklisted",
-          "locked_until",
-          "login_attempts",
-          "password_changed_at",
+          'id',
+          'username',
+          'password_hash',
+          'status',
+          'mfa_enabled',
+          'mfa_secret',
+          'blacklisted',
+          'locked_until',
+          'login_attempts',
+          'password_changed_at',
         )
         .get();
 
@@ -275,23 +279,23 @@ export function createAuthService(deps: {
         await cache.set(failKey, (failCount ?? 0) + 1, { ttl: 900 });
         await auditStore.append({
           actor: username,
-          action: "login.failed",
-          resource: "auth",
-          result: "failure",
-          metadata: { ip, reason: "user_not_found" },
+          action: 'login.failed',
+          resource: 'auth',
+          result: 'failure',
+          metadata: { ip, reason: 'user_not_found' },
         });
-        await recordLoginLog({ username, ip, userAgent, status: 0, message: "用户不存在" });
-        throw new UnauthorizedError("用户名或密码错误");
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: '用户不存在' });
+        throw new UnauthorizedError('用户名或密码错误');
       }
 
       // 4. 检查用户状态
       if (user.status !== 1) {
         await auditStore.append({
           actor: username,
-          action: "login.disabled",
-          resource: "auth",
-          result: "denied",
-          metadata: { ip, userId: user.id, reason: "account_disabled" },
+          action: 'login.disabled',
+          resource: 'auth',
+          result: 'denied',
+          metadata: { ip, userId: user.id, reason: 'account_disabled' },
         });
         await recordLoginLog({
           userId: user.id,
@@ -299,19 +303,19 @@ export function createAuthService(deps: {
           ip,
           userAgent,
           status: 0,
-          message: "账号已禁用",
+          message: '账号已禁用',
         });
-        throw new Error("账号已禁用");
+        throw new Error('账号已禁用');
       }
 
       // 5. 检查黑名单
       if (user.blacklisted) {
         await auditStore.append({
           actor: username,
-          action: "login.blacklisted",
-          resource: "auth",
-          result: "denied",
-          metadata: { ip, userId: user.id, reason: "account_blacklisted" },
+          action: 'login.blacklisted',
+          resource: 'auth',
+          result: 'denied',
+          metadata: { ip, userId: user.id, reason: 'account_blacklisted' },
         });
         await recordLoginLog({
           userId: user.id,
@@ -319,22 +323,22 @@ export function createAuthService(deps: {
           ip,
           userAgent,
           status: 0,
-          message: "账号已被拉黑",
+          message: '账号已被拉黑',
         });
-        throw new Error("账号已被拉黑");
+        throw new Error('账号已被拉黑');
       }
 
       // 6. 检查 DB-based 锁定
       if (user.locked_until && new Date(user.locked_until) > new Date()) {
         await auditStore.append({
           actor: username,
-          action: "login.locked_db",
-          resource: "auth",
-          result: "denied",
+          action: 'login.locked_db',
+          resource: 'auth',
+          result: 'denied',
           metadata: {
             ip,
             userId: user.id,
-            reason: "account_locked_db",
+            reason: 'account_locked_db',
             lockedUntil: user.locked_until,
           },
         });
@@ -344,16 +348,17 @@ export function createAuthService(deps: {
           ip,
           userAgent,
           status: 0,
-          message: "账号已被锁定",
+          message: '账号已被锁定',
         });
-        throw new Error("账号已被锁定");
+        throw new Error('账号已被锁定');
       }
 
       // 7. 清除过期锁定
       if (user.locked_until && new Date(user.locked_until) <= new Date()) {
         await db
           .query(UserModel)
-          .where("id", "=", user.id)
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', user.id)
           .update({ locked_until: null, login_attempts: 0 });
       }
 
@@ -364,16 +369,16 @@ export function createAuthService(deps: {
         const newFailCount = (failCount ?? 0) + 1;
         await cache.set(failKey, newFailCount, { ttl: lockMinutes * 60 });
         await db.raw(
-          `UPDATE sys_user SET login_attempts = COALESCE(login_attempts, 0) + 1 WHERE id = $1`,
-          [user.id],
+          'UPDATE sys_user SET login_attempts = COALESCE(login_attempts, 0) + 1 WHERE tenant_id = $1 AND id = $2',
+          [tenantId, user.id],
         );
 
         await auditStore.append({
           actor: username,
-          action: "login.failed",
-          resource: "auth",
-          result: "failure",
-          metadata: { ip, userId: user.id, reason: "wrong_password", failCount: newFailCount },
+          action: 'login.failed',
+          resource: 'auth',
+          result: 'failure',
+          metadata: { ip, userId: user.id, reason: 'wrong_password', failCount: newFailCount },
         });
         await recordLoginLog({
           userId: user.id,
@@ -381,24 +386,28 @@ export function createAuthService(deps: {
           ip,
           userAgent,
           status: 0,
-          message: "密码错误",
+          message: '密码错误',
         });
 
-        throw new UnauthorizedError("用户名或密码错误");
+        throw new UnauthorizedError('用户名或密码错误');
       }
 
       // 10. 登录成功：清除失败计数（缓存 + DB）
       await cache.del(failKey);
-      await db.query(UserModel).where("id", "=", user.id).update({ login_attempts: 0 });
+      await db
+        .query(UserModel)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', user.id)
+        .update({ login_attempts: 0 });
 
       // 11. 检查密码是否过期
-      const expireDays = Number(await configService.getValue("sys_password_expire_days")) ?? 30;
+      const expireDays = Number(await configService.getValue('sys_password_expire_days')) ?? 30;
       if (expireDays !== -1 && user.password_changed_at) {
         const expiredAt = new Date(user.password_changed_at);
         expiredAt.setDate(expiredAt.getDate() + expireDays);
         if (expiredAt < new Date()) {
           const tempToken = await jwt.sign(
-            { sub: user.id, iss: "password-expired", username: user.username },
+            { sub: user.id, iss: 'password-expired', username: user.username, tenantId },
             jwtSecret,
             { expiresIn: 600 },
           );
@@ -408,32 +417,32 @@ export function createAuthService(deps: {
             ip,
             userAgent,
             status: 0,
-            message: "密码已过期",
+            message: '密码已过期',
           });
-          const err = new Error("密码已过期") as Error & {
+          const err = new Error('密码已过期') as Error & {
             code: string;
             data: { tempToken: string };
           };
-          err.code = "password_expired";
+          err.code = 'password_expired';
           err.data = { tempToken };
           throw err;
         }
       }
 
       // 12. 检查是否需要 MFA（受全局配置控制）
-      const mfaGloballyEnabled = (await configService.getValue("sys_mfa_enabled")) !== "false";
+      const mfaGloballyEnabled = (await configService.getValue('sys_mfa_enabled')) !== 'false';
       if (mfaGloballyEnabled && user.mfa_enabled) {
         const mfaToken = await jwt.sign(
-          { sub: user.id, iss: "mfa-pending", username: user.username },
+          { sub: user.id, iss: 'mfa-pending', username: user.username, tenantId },
           jwtSecret,
           { expiresIn: MFA_TOKEN_TTL },
         );
 
         await auditStore.append({
           actor: username,
-          action: "login.mfa_required",
-          resource: "auth",
-          result: "success",
+          action: 'login.mfa_required',
+          resource: 'auth',
+          result: 'success',
           metadata: { ip, userId: user.id },
         });
         await recordLoginLog({
@@ -442,43 +451,43 @@ export function createAuthService(deps: {
           ip,
           userAgent,
           status: 1,
-          message: "需要MFA验证",
+          message: '需要MFA验证',
         });
 
         return {
-          accessToken: "",
-          refreshToken: "",
+          accessToken: '',
+          refreshToken: '',
           expiresIn: 0,
           refreshExpiresIn: 0,
-          sessionId: "",
+          sessionId: '',
           mfaRequired: true,
           mfaToken,
         };
       }
 
       // 13. 调用统一会话管理器完成登录
-      const roleCodes = await getUserRoleCodes(db, user.id);
+      const roleCodes = await getUserRoleCodes(db, tenantId, user.id);
       const sessionResult = await authSessionManager.login({
         userId: user.id,
         device: {
-          sessionId: "",
+          sessionId: '',
           userId: user.id,
-          deviceType: deviceType ?? "web",
+          deviceType: deviceType ?? 'web',
           deviceName: userAgent,
         },
         tokenPayload: {
           username: user.username,
           roles: roleCodes,
           // 租户标识来自部署配置（tenantEnabled 时由系统模块注入），AI/多租户链路依赖 ctx.user.tenantId（memory 隔离、skill/KB 归属、审计）
-          tenantId: tenantId ?? 'default',
+          tenantId,
         },
       });
 
       await auditStore.append({
         actor: username,
-        action: "login.success",
-        resource: "auth",
-        result: "success",
+        action: 'login.success',
+        resource: 'auth',
+        result: 'success',
         metadata: { ip, userId: user.id, sessionId: redactToken(sessionResult.sessionId) },
       });
       await recordLoginLog({
@@ -487,12 +496,12 @@ export function createAuthService(deps: {
         ip,
         userAgent,
         status: 1,
-        message: "登录成功",
-        loginMethod: "password",
+        message: '登录成功',
+        loginMethod: 'password',
       });
 
       // 检查是否需要提示用户设置 MFA（全局启用 + 强制 + 用户未配置）
-      const mfaForce = (await configService.getValue("sys_mfa_force")) === "true";
+      const mfaForce = (await configService.getValue('sys_mfa_force')) === 'true';
       const mfaSetupRequired = mfaGloballyEnabled && mfaForce && !user.mfa_enabled;
 
       return {
@@ -511,9 +520,9 @@ export function createAuthService(deps: {
 
       await auditStore.append({
         actor: userId,
-        action: "logout",
-        resource: "auth",
-        result: "success",
+        action: 'logout',
+        resource: 'auth',
+        result: 'success',
         metadata: { sessionId: redactToken(sessionId) },
       });
     },
@@ -533,19 +542,19 @@ export function createAuthService(deps: {
       const { username, password, email, phone } = params;
 
       // 0. 注册开关：仅在配置显式为 true/1 时开启（fail-closed：缺失或其他任何值一律关闭）
-      const registerEnabled = await configService.getValue("sys_register_enabled");
+      const registerEnabled = await configService.getValue('sys_register_enabled');
       const registerFlag = registerEnabled?.trim().toLowerCase();
-      if (registerFlag !== "true" && registerFlag !== "1") {
-        const err = new Error("注册已关闭") as Error & { code?: string };
-        err.code = "register_disabled";
+      if (registerFlag !== 'true' && registerFlag !== '1') {
+        const err = new Error('注册已关闭') as Error & { code?: string };
+        err.code = 'register_disabled';
         throw err;
       }
 
       // 密码策略校验
-      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
       const complexity =
-        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
-        "low";
+        ((await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high') ||
+        'low';
       const validation = validatePassword(password, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -556,6 +565,7 @@ export function createAuthService(deps: {
 
       await db.query(UserModel).insert({
         id,
+        tenant_id: tenantId,
         username,
         password_hash: passwordHash,
         email: email ?? null,
@@ -565,11 +575,11 @@ export function createAuthService(deps: {
       });
 
       await auditStore.append({
-        actor: "system",
-        action: "user.register",
-        resource: "user",
+        actor: 'system',
+        action: 'user.register',
+        resource: 'user',
         resourceId: id,
-        result: "success",
+        result: 'success',
         metadata: { username },
       });
 
@@ -580,40 +590,42 @@ export function createAuthService(deps: {
       // 按 email 查找用户
       const user = await db
         .query(UserModel)
-        .where("email", "=", email)
-        .where("status", "=", 1)
-        .select("id", "username", "email")
+        .where('tenant_id', '=', tenantId)
+        .where('email', '=', email)
+        .where('status', '=', 1)
+        .select('id', 'username', 'email')
         .get();
 
       // 即使找不到用户也静默成功，防止邮箱枚举
       if (!user) {
         await auditStore.append({
           actor: redactEmail(email),
-          action: "password.forgot",
-          resource: "auth",
-          result: "failure",
+          action: 'password.forgot',
+          resource: 'auth',
+          result: 'failure',
           metadata: { email: redactEmail(email) },
         });
         return;
       }
 
       const resetToken = crypto.randomUUID();
-      const cacheKey = `pwd_reset:${resetToken}`;
+      const cacheKey = `tenant:${tenantId}:pwd_reset:${resetToken}`;
 
       // 将 token 存入缓存，关联 userId
       await cache.set(cacheKey, user.id, { ttl: RESET_TOKEN_TTL });
 
       await auditStore.append({
         actor: user.id,
-        action: "password.forgot",
-        resource: "auth",
+        action: 'password.forgot',
+        resource: 'auth',
         resourceId: user.id,
-        result: "success",
+        result: 'success',
         metadata: { email: redactEmail(email), username: user.username },
       });
 
       // 触发事件，通知层可监听并发送邮件（token 仅经事件通道投递，禁止进入 HTTP 响应）
-      await eventBus.emit("auth.password.reset_requested" as any, {
+      await eventBus.emit('auth.password.reset_requested' as any, {
+        tenantId,
         userId: user.id,
         email,
         username: user.username,
@@ -623,18 +635,18 @@ export function createAuthService(deps: {
     },
 
     async resetPasswordByToken(token, newPassword) {
-      const cacheKey = `pwd_reset:${token}`;
+      const cacheKey = `tenant:${tenantId}:pwd_reset:${token}`;
       const userId = await cache.get<string>(cacheKey);
 
       if (!userId) {
-        throw new Error("重置令牌无效或已过期");
+        throw new Error('重置令牌无效或已过期');
       }
 
       // 密码策略校验
-      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
       const complexity =
-        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
-        "low";
+        ((await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high') ||
+        'low';
       const validation = validatePassword(newPassword, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -642,7 +654,7 @@ export function createAuthService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await db.query(UserModel).where("id", "=", userId).update({
+      await db.query(UserModel).where('tenant_id', '=', tenantId).where('id', '=', userId).update({
         password_hash: passwordHash,
         password_changed_at: new Date(),
       });
@@ -651,20 +663,20 @@ export function createAuthService(deps: {
       await cache.del(cacheKey);
 
       await auditStore.append({
-        actor: "system",
-        action: "password.reset_by_token",
-        resource: "user",
+        actor: 'system',
+        action: 'password.reset_by_token',
+        resource: 'user',
         resourceId: userId,
-        result: "success",
+        result: 'success',
       });
     },
 
     async resetPassword(userId, newPassword) {
       // 密码策略校验
-      const minLength = Number(await configService.getValue("sys_password_min_length")) || 6;
+      const minLength = Number(await configService.getValue('sys_password_min_length')) || 6;
       const complexity =
-        ((await configService.getValue("sys_password_complexity")) as "low" | "medium" | "high") ||
-        "low";
+        ((await configService.getValue('sys_password_complexity')) as 'low' | 'medium' | 'high') ||
+        'low';
       const validation = validatePassword(newPassword, { minLength, complexity });
       if (!validation.valid) {
         throw new Error(validation.message);
@@ -672,17 +684,17 @@ export function createAuthService(deps: {
 
       const passwordHash = await passwordHasher.hash(newPassword);
 
-      await db.query(UserModel).where("id", "=", userId).update({
+      await db.query(UserModel).where('tenant_id', '=', tenantId).where('id', '=', userId).update({
         password_hash: passwordHash,
         password_changed_at: new Date(),
       });
 
       await auditStore.append({
-        actor: "system",
-        action: "user.reset_password",
-        resource: "user",
+        actor: 'system',
+        action: 'user.reset_password',
+        resource: 'user',
         resourceId: userId,
-        result: "success",
+        result: 'success',
       });
     },
 
@@ -690,11 +702,11 @@ export function createAuthService(deps: {
       const result = await authSessionManager.forceLogout(userId);
 
       await auditStore.append({
-        actor: "system",
-        action: "user.force_logout",
-        resource: "user",
+        actor: 'system',
+        action: 'user.force_logout',
+        resource: 'user',
         resourceId: userId,
-        result: "success",
+        result: 'success',
         metadata: { sessions: result.sessions, devices: result.devices },
       });
 
@@ -703,7 +715,7 @@ export function createAuthService(deps: {
 
     async enableMFA(userId) {
       const secret = totp.generateSecret();
-      const qrCodeUri = totp.generateURI(secret, "VentoStack", userId);
+      const qrCodeUri = totp.generateURI(secret, 'VentoStack', userId);
 
       // 生成恢复码
       const recoveryCodes: string[] = [];
@@ -711,20 +723,24 @@ export function createAuthService(deps: {
         const bytes = new Uint8Array(4);
         crypto.getRandomValues(bytes);
         const code = Array.from(bytes)
-          .map((b) => b.toString(16).padStart(2, "0"))
-          .join("");
+          .map((b) => b.toString(16).padStart(2, '0'))
+          .join('');
         recoveryCodes.push(code);
       }
 
       // 先存储密钥，但暂不启用（需验证后才真正启用）
-      await db.query(UserModel).where("id", "=", userId).update({ mfa_secret: secret });
+      await db
+        .query(UserModel)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', userId)
+        .update({ mfa_secret: secret });
 
       await auditStore.append({
         actor: userId,
-        action: "mfa.setup_initiated",
-        resource: "auth",
+        action: 'mfa.setup_initiated',
+        resource: 'auth',
         resourceId: userId,
-        result: "success",
+        result: 'success',
       });
 
       return { secret, qrCodeUri, recoveryCodes };
@@ -733,80 +749,90 @@ export function createAuthService(deps: {
     async verifyMFA(userId, code) {
       const mfaUser = await db
         .query(UserModel)
-        .where("id", "=", userId)
-        .select("mfa_secret", "mfa_enabled")
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', userId)
+        .select('mfa_secret', 'mfa_enabled')
         .get();
 
       if (!mfaUser) {
-        throw new Error("用户不存在");
+        throw new Error('用户不存在');
       }
 
       if (!mfaUser.mfa_secret) {
-        throw new Error("未配置 MFA");
+        throw new Error('未配置 MFA');
       }
 
       const valid = await totp.verifyAndConsume(mfaUser.mfa_secret, code);
       if (!valid) {
         await auditStore.append({
           actor: userId,
-          action: "mfa.verify_failed",
-          resource: "auth",
+          action: 'mfa.verify_failed',
+          resource: 'auth',
           resourceId: userId,
-          result: "failure",
+          result: 'failure',
         });
         return false;
       }
 
       // 如果是首次验证，正式启用 MFA
       if (!mfaUser.mfa_enabled) {
-        await db.query(UserModel).where("id", "=", userId).update({ mfa_enabled: true });
+        await db
+          .query(UserModel)
+          .where('tenant_id', '=', tenantId)
+          .where('id', '=', userId)
+          .update({ mfa_enabled: true });
       }
 
       await auditStore.append({
         actor: userId,
-        action: "mfa.verify_success",
-        resource: "auth",
+        action: 'mfa.verify_success',
+        resource: 'auth',
         resourceId: userId,
-        result: "success",
+        result: 'success',
       });
 
       return true;
     },
 
     async disableMFA(userId, code) {
-      const mfaUser = await db.query(UserModel).where("id", "=", userId).select("mfa_secret").get();
+      const mfaUser = await db
+        .query(UserModel)
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', userId)
+        .select('mfa_secret')
+        .get();
 
       if (!mfaUser) {
-        throw new Error("用户不存在");
+        throw new Error('用户不存在');
       }
 
       if (!mfaUser.mfa_secret) {
-        throw new Error("未配置 MFA");
+        throw new Error('未配置 MFA');
       }
 
       const valid = await totp.verify(mfaUser.mfa_secret, code);
       if (!valid) {
         await auditStore.append({
           actor: userId,
-          action: "mfa.disable_failed",
-          resource: "auth",
+          action: 'mfa.disable_failed',
+          resource: 'auth',
           resourceId: userId,
-          result: "failure",
+          result: 'failure',
         });
-        throw new Error("MFA 验证码错误");
+        throw new Error('MFA 验证码错误');
       }
 
-      await db.query(UserModel).where("id", "=", userId).update({
+      await db.query(UserModel).where('tenant_id', '=', tenantId).where('id', '=', userId).update({
         mfa_enabled: false,
         mfa_secret: null,
       });
 
       await auditStore.append({
         actor: userId,
-        action: "mfa.disabled",
-        resource: "auth",
+        action: 'mfa.disabled',
+        resource: 'auth',
         resourceId: userId,
-        result: "success",
+        result: 'success',
       });
     },
 
@@ -814,16 +840,17 @@ export function createAuthService(deps: {
       // 查找用户并验证 MFA 状态
       const mfaUser = await db
         .query(UserModel)
-        .where("id", "=", userId)
-        .select("mfa_secret", "mfa_enabled")
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', userId)
+        .select('mfa_secret', 'mfa_enabled')
         .get();
 
       if (!mfaUser) {
-        throw new Error("用户不存在");
+        throw new Error('用户不存在');
       }
 
       if (!mfaUser.mfa_enabled || !mfaUser.mfa_secret) {
-        throw new Error("MFA 未启用");
+        throw new Error('MFA 未启用');
       }
 
       // 验证 TOTP 码
@@ -831,30 +858,30 @@ export function createAuthService(deps: {
       if (!valid) {
         await auditStore.append({
           actor: userId,
-          action: "mfa.recover_failed",
-          resource: "auth",
+          action: 'mfa.recover_failed',
+          resource: 'auth',
           resourceId: userId,
-          result: "failure",
+          result: 'failure',
         });
-        throw new Error("验证码错误");
+        throw new Error('验证码错误');
       }
 
       // 生成临时 token，用户可用此 token 重新设置 MFA
-      const tempToken = await jwt.sign({ sub: userId, iss: "mfa-recovery" }, jwtSecret, {
+      const tempToken = await jwt.sign({ sub: userId, iss: 'mfa-recovery', tenantId }, jwtSecret, {
         expiresIn: 600,
       });
 
-      await db.query(UserModel).where("id", "=", userId).update({
+      await db.query(UserModel).where('tenant_id', '=', tenantId).where('id', '=', userId).update({
         mfa_enabled: false,
         mfa_secret: null,
       });
 
       await auditStore.append({
         actor: userId,
-        action: "mfa.recovered",
-        resource: "auth",
+        action: 'mfa.recovered',
+        resource: 'auth',
         resourceId: userId,
-        result: "success",
+        result: 'success',
       });
 
       return { tempToken };
@@ -866,22 +893,24 @@ export function createAuthService(deps: {
         sub?: string;
         iss?: string;
         username?: string;
+        tenantId?: string;
       };
-      if (!payload.sub || payload.iss !== "mfa-pending") {
-        throw new Error("MFA 令牌无效");
+      if (!payload.sub || payload.iss !== 'mfa-pending' || payload.tenantId !== tenantId) {
+        throw new Error('MFA 令牌无效');
       }
 
       const userId = payload.sub;
-      const username = payload.username ?? "";
+      const username = payload.username ?? '';
 
       // 2. 查询用户的 MFA 密钥
       const mfaUser = await db
         .query(UserModel)
-        .where("id", "=", userId)
-        .select("mfa_secret", "mfa_enabled")
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', userId)
+        .select('mfa_secret', 'mfa_enabled')
         .get();
       if (!mfaUser || !mfaUser.mfa_secret) {
-        throw new Error("未配置 MFA");
+        throw new Error('未配置 MFA');
       }
 
       // 3. 验证 TOTP 码
@@ -889,31 +918,31 @@ export function createAuthService(deps: {
       if (!valid) {
         await auditStore.append({
           actor: userId,
-          action: "login.mfa_failed",
-          resource: "auth",
-          result: "failure",
+          action: 'login.mfa_failed',
+          resource: 'auth',
+          result: 'failure',
           metadata: { ip },
         });
-        throw new Error("MFA 验证码错误");
+        throw new Error('MFA 验证码错误');
       }
 
       // 4. 创建会话，颁发真实 token
       const sessionResult = await authSessionManager.login({
         userId,
         device: {
-          sessionId: "",
+          sessionId: '',
           userId,
-          deviceType: deviceType ?? "web",
+          deviceType: deviceType ?? 'web',
           deviceName: userAgent,
         },
-        tokenPayload: { username, roles: await getUserRoleCodes(db, userId), tenantId: tenantId ?? 'default' },
+        tokenPayload: { username, roles: await getUserRoleCodes(db, tenantId, userId), tenantId },
       });
 
       await auditStore.append({
         actor: username,
-        action: "login.mfa_success",
-        resource: "auth",
-        result: "success",
+        action: 'login.mfa_success',
+        resource: 'auth',
+        result: 'success',
         metadata: { ip, userId, sessionId: redactToken(sessionResult.sessionId) },
       });
 
@@ -933,24 +962,25 @@ export function createAuthService(deps: {
       // 校验用户状态
       const passkeyUser = await db
         .query(UserModel)
-        .where("id", "=", userId)
-        .select("status", "blacklisted", "locked_until")
+        .where('tenant_id', '=', tenantId)
+        .where('id', '=', userId)
+        .select('status', 'blacklisted', 'locked_until')
         .get();
-      if (!passkeyUser) throw new Error("用户不存在");
-      if (passkeyUser.status !== 1) throw new Error("账号已禁用");
-      if (passkeyUser.blacklisted) throw new Error("账号已被拉黑");
+      if (!passkeyUser) throw new Error('用户不存在');
+      if (passkeyUser.status !== 1) throw new Error('账号已禁用');
+      if (passkeyUser.blacklisted) throw new Error('账号已被拉黑');
       if (passkeyUser.locked_until && new Date(passkeyUser.locked_until) > new Date())
-        throw new Error("账号已被锁定");
+        throw new Error('账号已被锁定');
 
       const sessionResult = await authSessionManager.login({
         userId,
         device: {
-          sessionId: "",
+          sessionId: '',
           userId,
-          deviceType: deviceType ?? "web",
+          deviceType: deviceType ?? 'web',
           deviceName: userAgent,
         },
-        tokenPayload: { username, roles: await getUserRoleCodes(db, userId), tenantId: tenantId ?? 'default' },
+        tokenPayload: { username, roles: await getUserRoleCodes(db, tenantId, userId), tenantId },
       });
 
       await recordLoginLog({
@@ -959,15 +989,15 @@ export function createAuthService(deps: {
         ip,
         userAgent,
         status: 1,
-        message: "通行密钥登录成功",
-        loginMethod: "passkey",
+        message: '通行密钥登录成功',
+        loginMethod: 'passkey',
       });
 
       await auditStore.append({
         actor: username,
-        action: "login.passkey_success",
-        resource: "auth",
-        result: "success",
+        action: 'login.passkey_success',
+        resource: 'auth',
+        result: 'success',
         metadata: { ip, userId, sessionId: redactToken(sessionResult.sessionId) },
       });
 

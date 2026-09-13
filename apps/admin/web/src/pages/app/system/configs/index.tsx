@@ -7,7 +7,7 @@ import { useTable } from "@/hooks/useTable";
 import { cleanParams } from "@/utils/cleanParams";
 import { fmtDate } from "@/utils/fmtDate";
 import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, Modal, Row, Space, Table } from "antd";
+import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Table } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
 
@@ -49,6 +49,7 @@ const ConfigPage = () => {
       value: r.value,
       type: r.type,
       group: r.group,
+      sort: r.sort,
       remark: r.remark,
     });
     setModalOpen(true);
@@ -64,6 +65,8 @@ const ConfigPage = () => {
             name: values.name,
             value: values.value,
             type: values.type,
+            group: values.group,
+            sort: values.sort,
             remark: values.remark,
           },
         });
@@ -242,6 +245,9 @@ const PROTECTED_KEYS = new Set([
               </Form.Item>
             </Col>
           </Row>
+          <Form.Item name="sort" label="排序" initialValue={0}>
+            <InputNumber className="w-full" min={0} max={9999} />
+          </Form.Item>
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={3} />
           </Form.Item>

@@ -53,7 +53,7 @@ describe('mergeDataScopes', () => {
         throw cause;
       },
     } as unknown as Database;
-    const resolver = createDataScopeResolver(db);
+    const resolver = createDataScopeResolver(db, 'default');
     try {
       await resolver.resolve({ id: 'u1', username: 'user', roles: ['user'] });
       throw new Error('expected resolver to fail');
@@ -77,7 +77,7 @@ describe('mergeDataScopes', () => {
       { id: 'r-user', code: 'user', data_scope: 4 },
     ]);
 
-    const scope = await createDataScopeResolver(db).resolve({
+    const scope = await createDataScopeResolver(db, 'default').resolve({
       id: 'u1',
       username: 'user',
       roles: ['admin'],
@@ -89,7 +89,7 @@ describe('mergeDataScopes', () => {
     const db = createDatabase({
       executor: async (text, params = []) => {
         if (text.includes('FROM sys_user_role')) {
-          return params[0] === 'target-admin' ? [{ role_id: 'r-admin' }] : [{ role_id: 'r-all' }];
+          return params[1] === 'target-admin' ? [{ role_id: 'r-admin' }] : [{ role_id: 'r-all' }];
         }
         if (text.includes('FROM sys_role')) {
           return params.includes('r-admin')
@@ -100,7 +100,7 @@ describe('mergeDataScopes', () => {
         return [];
       },
     });
-    const resolver = createDataScopeResolver(db);
+    const resolver = createDataScopeResolver(db, 'default');
     const allowed = await resolver.canMutateUser(
       { id: 'manager', username: 'manager', roles: ['manager'] },
       'target-admin',
@@ -142,7 +142,7 @@ describe('mergeDataScopes', () => {
       'admin-user',
       ...Array.from({ length: 98 }, (_, index) => `missing-${index}`),
     ];
-    const allowed = await createDataScopeResolver(db).filterMutableUserIds(
+    const allowed = await createDataScopeResolver(db, 'default').filterMutableUserIds(
       { id: 'manager', username: 'manager', roles: ['manager'] },
       ids,
     );

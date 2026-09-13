@@ -2,65 +2,68 @@
  * @ventostack/system - NoticeService 测试
  */
 
-import { describe, expect, test } from "bun:test";
-import { createNoticeService } from "../services/notice";
-import { createMockDatabase, createMockExecutor } from "./helpers";
+import { describe, expect, test } from 'bun:test';
+import { VentoStackError } from '@ventostack/core';
+import { createNoticeService } from '../services/notice';
+import { createMockDatabase, createMockExecutor } from './helpers';
 
 function setup() {
   const mockExec = createMockExecutor();
   const { db, registerModel, calls } = createMockDatabase(mockExec);
-  registerModel("sys_notice", "sys_notice", true);
-  const noticeService = createNoticeService({ db });
+  registerModel('sys_notice', 'sys_notice', true);
+  const noticeService = createNoticeService({ db, tenantId: 'default' });
   return { noticeService, executor: mockExec.executor, calls, results: mockExec.results };
 }
 
-describe("NoticeService", () => {
-  test("create inserts notice with generated id", async () => {
+describe('NoticeService', () => {
+  test('create inserts notice with generated id', async () => {
     const s = setup();
     const result = await s.noticeService.create({
-      title: "系统公告",
-      content: "测试内容",
+      title: '系统公告',
+      content: '测试内容',
       type: 1,
     });
     expect(result.id).toBeTruthy();
-    expect(s.calls.some((c) => c.text.includes("INSERT"))).toBe(true);
+    expect(s.calls.some((c) => c.text.includes('INSERT'))).toBe(true);
   });
 
-  test("update executes UPDATE with changed fields", async () => {
+  test('update executes UPDATE with changed fields', async () => {
     const s = setup();
-    await s.noticeService.update("n1", { title: "新标题", status: 1 });
-    expect(s.calls.some((c) => c.text.includes("UPDATE"))).toBe(true);
+    s.results.set('UPDATE sys_notice', [{ id: 'n1', status: 0 }]);
+    await s.noticeService.update('n1', { title: '新标题', status: 1 });
+    expect(s.calls.some((c) => c.text.includes('UPDATE'))).toBe(true);
   });
 
-  test("update with no fields does nothing", async () => {
+  test('update with no fields does nothing', async () => {
     const s = setup();
-    await s.noticeService.update("n1", {});
+    await s.noticeService.update('n1', {});
     expect(s.calls.length).toBe(0);
   });
 
-  test("delete performs soft delete", async () => {
+  test('delete performs soft delete', async () => {
     const s = setup();
-    await s.noticeService.delete("n1");
-    expect(s.calls.some((c) => c.text.includes("deleted_at"))).toBe(true);
+    s.results.set('SELECT status FROM sys_notice', [{ status: 0 }]);
+    await s.noticeService.delete('n1');
+    expect(s.calls.some((c) => c.text.includes('deleted_at'))).toBe(true);
   });
 
-  test("list returns paginated results", async () => {
+  test('list returns paginated results', async () => {
     const s = setup();
-    s.results.set("COUNT", [{ count: 2 }]);
-    s.results.set("SELECT", [
+    s.results.set('COUNT', [{ count: 2 }]);
+    s.results.set('SELECT', [
       {
-        id: "n1",
-        title: "公告1",
-        content: "内容1",
+        id: 'n1',
+        title: '公告1',
+        content: '内容1',
         type: 1,
         status: 1,
-        publisher_id: "u1",
-        publish_at: "2025-01-01",
+        publisher_id: 'u1',
+        publish_at: '2025-01-01',
       },
       {
-        id: "n2",
-        title: "公告2",
-        content: "内容2",
+        id: 'n2',
+        title: '公告2',
+        content: '内容2',
         type: 2,
         status: 0,
         publisher_id: null,
@@ -72,44 +75,168 @@ describe("NoticeService", () => {
     expect(result.total).toBe(2);
   });
 
-  test("list with empty result returns zero items", async () => {
+  test('list with empty result returns zero items', async () => {
     const s = setup();
-    s.results.set("COUNT", [{ count: 0 }]);
+    s.results.set('COUNT', [{ count: 0 }]);
     const result = await s.noticeService.list();
     expect(result.items.length).toBe(0);
     expect(result.total).toBe(0);
   });
 
-  test("publish updates status to 1", async () => {
+  test('publish updates status to 1', async () => {
     const s = setup();
-    await s.noticeService.publish("n1", "u1");
-    expect(s.calls.some((c) => c.text.includes("status") && c.text.includes("publisher_id"))).toBe(
+    s.results.set('UPDATE sys_notice', [{ id: 'n1', status: 1 }]);
+    await s.noticeService.publish('n1', 'u1');
+    expect(s.calls.some((c) => c.text.includes('status') && c.text.includes('publisher_id'))).toBe(
       true,
     );
   });
 
-  test("revoke updates status to 2", async () => {
+  test('revoke updates status to 2', async () => {
     const s = setup();
-    await s.noticeService.revoke("n1");
-    expect(s.calls.some((c) => c.text.includes("status"))).toBe(true);
+    s.results.set('UPDATE sys_notice', [{ id: 'n1', status: 2 }]);
+    await s.noticeService.revoke('n1');
+    expect(s.calls.some((c) => c.text.includes('status'))).toBe(true);
   });
 
-  test("markRead inserts user-notice record", async () => {
+  test('markRead inserts user-notice record', async () => {
     const s = setup();
-    await s.noticeService.markRead("u1", "n1");
-    expect(s.calls.some((c) => c.text.includes("sys_user_notice"))).toBe(true);
+    await s.noticeService.markRead('u1', 'n1');
+    expect(s.calls.some((c) => c.text.includes('sys_user_notice'))).toBe(true);
   });
 
-  test("getUnreadCount returns count", async () => {
+  test('getUnreadCount returns count', async () => {
     const s = setup();
-    s.results.set("COUNT", [{ cnt: 5 }]);
-    const count = await s.noticeService.getUnreadCount("u1");
+    s.results.set('COUNT', [{ cnt: 5 }]);
+    const count = await s.noticeService.getUnreadCount('u1');
     expect(count).toBe(5);
   });
 
-  test("getUnreadCount returns 0 when no unread", async () => {
+  test('getUnreadCount returns 0 when no unread', async () => {
     const s = setup();
-    const count = await s.noticeService.getUnreadCount("u1");
+    const count = await s.noticeService.getUnreadCount('u1');
     expect(count).toBe(0);
+  });
+
+  test('list filters by title', async () => {
+    const s = setup();
+    s.results.set('COUNT', [{ count: 1 }]);
+    s.results.set('SELECT', [{ id: 'n1', title: '维护公告', content: 'c', type: 1, status: 0 }]);
+    const result = await s.noticeService.list({ title: '维护' });
+    expect(result.total).toBe(1);
+    const selectCall = s.calls.find((c) => c.text.includes('COUNT'));
+    expect(selectCall?.params).toContain('%维护%');
+  });
+
+  // ===== 状态机错误码回归：不存在 → 404；状态冲突 → 409 =====
+
+  test('update on missing notice throws 404', async () => {
+    const s = setup();
+    s.results.set('UPDATE sys_notice', []);
+    let error: unknown;
+    try {
+      await s.noticeService.update('n404', { title: 'x' });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(404);
+  });
+
+  test('update on published notice throws 409', async () => {
+    const s = setup();
+    s.results.set('UPDATE sys_notice', []);
+    s.results.set('SELECT status FROM sys_notice', [{ status: 1 }]);
+    let error: unknown;
+    try {
+      await s.noticeService.update('n1', { title: 'x' });
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(409);
+    expect((error as VentoStackError).message).toBe('仅草稿状态的通知可编辑');
+  });
+
+  test('publish on published notice throws 409', async () => {
+    const s = setup();
+    s.results.set('UPDATE sys_notice', []);
+    s.results.set('SELECT status FROM sys_notice', [{ status: 1 }]);
+    let error: unknown;
+    try {
+      await s.noticeService.publish('n1', 'u1');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(409);
+  });
+
+  test('publish on missing notice throws 404', async () => {
+    const s = setup();
+    s.results.set('UPDATE sys_notice', []);
+    let error: unknown;
+    try {
+      await s.noticeService.publish('n404', 'u1');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(404);
+  });
+
+  test('revoke on draft notice throws 409', async () => {
+    const s = setup();
+    s.results.set('UPDATE sys_notice', []);
+    s.results.set('SELECT status FROM sys_notice', [{ status: 0 }]);
+    let error: unknown;
+    try {
+      await s.noticeService.revoke('n1');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(409);
+    expect((error as VentoStackError).message).toBe('仅已发布状态的通知可撤回');
+  });
+
+  test('revoke on missing notice throws 404', async () => {
+    const s = setup();
+    s.results.set('UPDATE sys_notice', []);
+    let error: unknown;
+    try {
+      await s.noticeService.revoke('n404');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(404);
+  });
+
+  test('delete published notice throws 409', async () => {
+    const s = setup();
+    s.results.set('SELECT status FROM sys_notice', [{ status: 1 }]);
+    let error: unknown;
+    try {
+      await s.noticeService.delete('n1');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(409);
+    expect((error as VentoStackError).message).toBe('已发布通知必须先撤回');
+  });
+
+  test('delete missing notice throws 404', async () => {
+    const s = setup();
+    s.results.set('SELECT status FROM sys_notice', []);
+    let error: unknown;
+    try {
+      await s.noticeService.delete('n404');
+    } catch (e) {
+      error = e;
+    }
+    expect(error).toBeInstanceOf(VentoStackError);
+    expect((error as VentoStackError).code).toBe(404);
   });
 });

@@ -16,3 +16,4 @@ title: Admin 导航
 | [测试指南](testing) | 测试框架、覆盖情况、测试模式 |
 | [状态管理](stores) | Zustand Stores 详解 |
 | [类型自动生成](type-generation) | OpenAPI → TypeScript 类型方案 |
+| [租户隔离](tenant-isolation) | Admin API 租户信任边界与数据隔离契约 |

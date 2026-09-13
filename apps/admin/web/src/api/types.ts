@@ -117,6 +117,7 @@ export interface ConfigItem {
   value: string;
   type: number;
   group: string;
+  sort: number;
   remark: string;
   createdAt: string;
 }

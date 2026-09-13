@@ -108,3 +108,14 @@ describe("Xxx管理页", () => {
 - ❌ 直接调用 `fetch` 而不是 `client`
 - ❌ 在组件中直接修改 Zustand 状态
 - ❌ 使用 `any` 类型（特殊情况需注释说明）
+
+## 前后端契约约束（2026-09 模块审查）
+
+配置页搜索被 strict 校验拒绝（前端传 `name`/`key`、后端只允许 `group`）、字典页 `dictType`/`typeCode` 不一致导致落库 undefined。新增或修改页面时逐条核对：
+
+- **搜索字段 ↔ listQuery 一一对应**：页面搜索栏每个字段，后端 `listQuery` 必须声明同名同类型字段，service 用 ORM 参数化实现；strict 校验下未声明字段直接 400。
+- **表单字段 ↔ createBody/updateBody 对齐**：前端实际提交的每个字段（含 `group`、`sort`）后端 Schema 必须声明；后端可更新字段前端应有入口。
+- **类型三端一致**：同一字段在前端、后端 Schema、数据库中类型一致（配置 `type` int/string 混用教训）。
+- **主键策略**：编辑/删除路径参数传 UUID `id`；按 code 操作走显式 `/by-code/:code` 端点，不把 code 塞进 `:id`。
+- **个人数据走自助端点**：个人中心类页面（登录日志、通知、资料）请求 `/api/system/user/**`，不请求管理端点，不传 userId。
+- **敏感值展示**：后端脱敏返回的配置值（如 `******`），编辑时空值提交表示"不修改"，禁止把掩码原样回传。

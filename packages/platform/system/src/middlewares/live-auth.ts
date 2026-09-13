@@ -13,44 +13,59 @@ export function createLiveSystemAuthMiddleware(deps: {
   tokenAuthMiddleware: Middleware;
   sessionManager: SessionManager;
   db: Database;
+  tenantId: string;
 }): Middleware {
   return async (ctx, next) =>
     deps.tokenAuthMiddleware(ctx, async () => {
-      const tokenUser = ctx.user as AuthUser | undefined;
-      if (!tokenUser?.id || !tokenUser.sessionId) return fail('无效的认证会话', 401, 401);
+      try {
+        const tokenUser = ctx.user as AuthUser | undefined;
+        if (!tokenUser?.id || !tokenUser.sessionId) return fail('无效的认证会话', 401, 401);
 
-      const [session, principal, links] = await Promise.all([
-        deps.sessionManager.get(tokenUser.sessionId),
-        deps.db
-          .query(UserModel)
-          .where('id', '=', tokenUser.id)
-          .select('status', 'blacklisted')
-          .get(),
-        deps.db.query(UserRoleModel).where('user_id', '=', tokenUser.id).select('role_id').list(),
-      ]);
-      if (
-        !session ||
-        session.data.userId !== tokenUser.id ||
-        !principal ||
-        principal.status !== 1 ||
-        principal.blacklisted
-      ) {
-        return fail('认证会话已失效', 401, 401);
+        const [session, principal, links] = await Promise.all([
+          deps.sessionManager.get(tokenUser.sessionId),
+          deps.db
+            .query(UserModel)
+            .where('tenant_id', '=', deps.tenantId)
+            .where('id', '=', tokenUser.id)
+            .select('status', 'blacklisted', 'tenant_id')
+            .get(),
+          deps.db
+            .query(UserRoleModel)
+            .where('tenant_id', '=', deps.tenantId)
+            .where('user_id', '=', tokenUser.id)
+            .select('role_id')
+            .list(),
+        ]);
+        if (
+          !session ||
+          session.data.userId !== tokenUser.id ||
+          !principal ||
+          principal.status !== 1 ||
+          principal.blacklisted ||
+          principal.tenant_id !== deps.tenantId ||
+          tokenUser.tenantId !== deps.tenantId
+        ) {
+          return fail('认证会话已失效', 401, 401);
+        }
+
+        const roles = links.length
+          ? await deps.db
+              .query(RoleModel)
+              .where('tenant_id', '=', deps.tenantId)
+              .where(
+                'id',
+                'IN',
+                links.map((link) => link.role_id),
+              )
+              .where('status', '=', 1)
+              .select('code')
+              .list()
+          : [];
+        tokenUser.roles = roles.map((role) => role.code);
+      } catch {
+        return fail('租户身份校验暂时不可用', 503, 503);
       }
-
-      const roles = links.length
-        ? await deps.db
-            .query(RoleModel)
-            .where(
-              'id',
-              'IN',
-              links.map((link) => link.role_id),
-            )
-            .where('status', '=', 1)
-            .select('code')
-            .list()
-        : [];
-      tokenUser.roles = roles.map((role) => role.code);
+      // 业务处理器的异常必须交给全局错误边界，不能伪装成租户校验失败。
       return next();
     });
 }

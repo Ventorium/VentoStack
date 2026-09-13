@@ -1,11 +1,12 @@
-import { column, defineModel } from "@ventostack/database";
+import { column, defineModel } from '@ventostack/database';
 
 export const TagModel = defineModel(
-  "sys_tag",
+  'sys_tag',
   {
     id: column.varchar({ primary: true, length: 36 }),
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     name: column.varchar({ length: 64 }),
-    code: column.varchar({ length: 64, unique: true }),
+    code: column.varchar({ length: 64 }),
     sort: column.int({ default: 0 }),
     status: column.int({ default: 1 }),
     remark: column.varchar({ length: 512, nullable: true }),
@@ -14,8 +15,9 @@ export const TagModel = defineModel(
 );
 
 export const UserTagModel = defineModel(
-  "sys_user_tag",
+  'sys_user_tag',
   {
+    tenant_id: column.varchar({ length: 36, default: 'default' }),
     user_id: column.varchar({ length: 36 }),
     tag_id: column.varchar({ length: 36 }),
   },

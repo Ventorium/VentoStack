@@ -82,6 +82,39 @@ description: |
 - [ ] 安装脚本、postinstall、动态下载二进制单独评估
 - [ ] 构建链支持依赖漏洞扫描与产物溯源
 
+## 模块契约审查（2026-09 模块交叉审查）
+
+第三轮模块审查（config / dict / notice / tag / post）后引入，审查 system 及业务模块时逐项确认：
+
+### 数据权限与端点语义
+
+- [ ] 返回用户 ID 列表或按用户聚合的接口接入 `DataScopeResolver` 取交集；`ALL` 以外 fail-closed，解析失败 503 不回退全量
+- [ ] 个人视角与管理视角端点分离：自助端点强制 `ctx.user.id`，管理端点权限 + 数据范围，无双视角复用
+- [ ] 认证安全配置键（初始密码、密码策略、MFA、Passkey、锁定策略）读改需数据库实时 admin；列表脱敏、空值不修改、变更写审计摘要；警惕"改默认密码 + 批量重置"账号接管链
+
+### Service 层真实契约
+
+- [ ] `getById` 用路径参数真实查询；列表第一条伪造详情判缺陷
+- [ ] HTTP body 与 service 参数字段名一致或显式映射；`as` 断言桥接 + 运行时 undefined 判缺陷；有真实 HTTP 集成测试断言落库
+- [ ] 状态机下沉 service：条件更新 `WHERE id = ? AND status = ?` + affected rows；路由层"先查后改"不算实现
+- [ ] 全量覆盖写入：先校验目标，同事务 delete + batchInsert；非事务先删后插判缺陷
+- [ ] update/delete 检查 affected rows；目标不存在 404，静默成功判缺陷
+
+### 数据库完整性
+
+- [ ] 关联表（用户标签、用户通知等）有外键；新增外键迁移先扫脏数据、发现即失败，不静默清理；软删除时 service 显式清理关联
+
+### 输入边界与契约
+
+- [ ] 字符串 max、`sort 0—9999`、status enum、批量 IDs `uuid + min 1 + max 100`；同一字段前后端与数据库类型一致
+- [ ] listQuery 白名单与前端搜索字段一一对应（strict 校验未声明直接 400）
+- [ ] OpenAPI 描述权限、数据范围、租户语义、脱敏行为；功能变更同步文档
+
+### 审计与 SQL
+
+- [ ] 清空审计/登录日志需实时 admin 守卫；保留期策略优先于全表 `TRUNCATE`
+- [ ] ORM 已能表达的 raw SQL（列表筛选、统计、状态查询）应迁移；ORM 缺能力时补结构化能力，不开字符串逃生口
+
 ## 输出格式
 
 - Findings first，按 P0 / P1 / P2 排序

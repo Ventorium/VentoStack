@@ -204,7 +204,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         const sql = `INSERT INTO ${state.tableName} (${cols.join(', ')}) VALUES ${allPlaceholders.join(', ')}`;
         await executor(sql, allVals);
       },
-      async update(data: Record<string, unknown>) {
+      async update(data: Record<string, unknown>, options?: { returning?: boolean }) {
         const entries = Object.entries(data);
         const setParts: string[] = [];
         const params: unknown[] = [];
@@ -215,7 +215,9 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         const conditions = buildConditions(params);
         let sql = `UPDATE ${state.tableName} SET ${setParts.join(', ')}`;
         if (conditions.length > 0) sql += ` WHERE ${conditions.join(' ')}`;
-        await executor(sql, params);
+        if (options?.returning) sql += ' RETURNING *';
+        const rows = await executor(sql, params);
+        return options?.returning ? rows[0] : undefined;
       },
       async hardDelete() {
         const params: unknown[] = [];
