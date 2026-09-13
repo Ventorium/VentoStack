@@ -91,6 +91,7 @@ export interface DictTypeItem {
   name: string;
   code: string;
   isSystem: boolean;
+  isPublic: boolean;
   sort: number;
   status: number;
   remark: string;
@@ -119,6 +120,8 @@ export interface ConfigItem {
   group: string;
   sort: number;
   remark: string;
+  sensitivity: 'security' | 'public' | 'business';
+  isSystem: boolean;
   createdAt: string;
 }
 
@@ -142,6 +145,7 @@ export interface OperationLogItem {
   method: string;
   url: string;
   ip: string;
+  location?: string;
   params: string;
   result: number;
   errorMsg: string;

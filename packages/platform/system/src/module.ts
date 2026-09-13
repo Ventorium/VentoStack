@@ -54,9 +54,14 @@ import type { UpdateUserParams } from './services/user';
 import { createAuthMiddleware, createPermMiddleware } from '@ventostack/auth';
 import { fail, pageOf, paginated, parseBody, safeErrorMessage, success } from '@ventostack/core';
 import { createLiveSystemAuthMiddleware } from './middlewares/live-auth';
-import { type OperationLogEntry, createOperationLogMiddleware } from './middlewares/operation-log';
+import {
+  type OperationLogEntry,
+  createOperationLogMiddleware,
+  resolveOperationAction,
+} from './middlewares/operation-log';
 import { createAuthRoutes } from './routes/auth';
 import { createCrudRoutes } from './routes/crud';
+import { createDictDataAccessMiddleware } from './routes/dict-access';
 import { createPasskeyRoutes } from './routes/passkey';
 import { createUserRoutes } from './routes/user';
 import { validatePassword } from './services/password-policy';
@@ -199,6 +204,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     tenantId,
   });
   const perm = createPermMiddleware(rbac);
+  const dictDataAccess = createDictDataAccessMiddleware(dictService, authMiddleware);
 
   // 操作日志数据库写入函数
   const saveOperationLog = async (entry: OperationLogEntry): Promise<void> => {
@@ -212,6 +218,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       method: entry.method,
       url: entry.url,
       ip: entry.ip,
+      location: entry.location,
       params: entry.params,
       result: entry.result,
       error_msg: entry.error_msg,
@@ -240,6 +247,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           mfaEnabled: { type: 'boolean' as const, description: '是否启用 MFA' },
           mfaForce: { type: 'boolean' as const, description: '是否强制 MFA' },
           passkeyEnabled: { type: 'boolean' as const, description: '是否启用 Passkey' },
+          registerEnabled: { type: 'boolean' as const, description: '是否允许用户自注册' },
           passwordMinLength: { type: 'number' as const, description: '密码最小长度' },
           passwordComplexity: {
             type: 'string' as const,
@@ -256,6 +264,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         mfaEnabled,
         mfaForce,
         passkeyEnabled,
+        registerEnabled,
         passwordMinLength,
         passwordComplexity,
       ] = await Promise.all([
@@ -264,6 +273,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         configService.getValue('sys_mfa_enabled'),
         configService.getValue('sys_mfa_force'),
         configService.getValue('sys_passkey_enabled'),
+        configService.getValue('sys_register_enabled'),
         configService.getValue('sys_password_min_length'),
         configService.getValue('sys_password_complexity'),
       ]);
@@ -273,6 +283,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         mfaEnabled: mfaEnabled !== 'false',
         mfaForce: mfaForce === 'true',
         passkeyEnabled: passkeyEnabled !== 'false',
+        registerEnabled: registerEnabled === 'true' || registerEnabled === '1',
         passwordMinLength: Number(passwordMinLength) || 6,
         passwordComplexity:
           passwordComplexity === 'medium' || passwordComplexity === 'high'
@@ -280,6 +291,26 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             : 'low',
       });
     },
+  );
+
+  router.get(
+    '/api/system/dict/types/:code/data',
+    {
+      params: { code: { type: 'string' as const, max: 64, description: '字典类型编码' } },
+      responses: { 200: { type: 'array' as const, description: '启用的字典数据列表' } },
+      openapi: {
+        summary: '获取字典数据',
+        description:
+          '租户由服务端部署配置确定。字典类型启用且配置为公开时允许匿名访问；否则必须提供有效登录会话。客户端不得提交 tenantId。',
+        tags: ['dict'],
+        operationId: 'getDictData',
+      },
+    },
+    async (ctx) => {
+      const code = (ctx.params as Record<string, string>).code!;
+      return success(await dictService.listDataByType(code));
+    },
+    dictDataAccess,
   );
 
   router.merge(
@@ -848,6 +879,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           name: { type: 'string' as const, description: '字典名称' },
           code: { type: 'string' as const, description: '字典编码' },
           isSystem: { type: 'boolean' as const, description: '是否系统内置' },
+          isPublic: { type: 'boolean' as const, description: '是否允许未登录用户访问字典数据' },
           sort: { type: 'int' as const, description: '排序' },
           status: { type: 'int' as const, description: '状态' },
           remark: { type: 'string' as const, description: '备注' },
@@ -855,39 +887,25 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         createBody: {
           name: { type: 'string' as const, required: true, max: 64, description: '字典名称' },
           code: { type: 'string' as const, required: true, max: 64, description: '字典编码' },
+          isPublic: {
+            type: 'boolean' as const,
+            default: false,
+            description: '是否允许未登录用户访问字典数据，默认否',
+          },
           sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
           status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
           remark: { type: 'string' as const, max: 512, description: '备注' },
         },
         updateBody: {
           name: { type: 'string' as const, max: 64, description: '字典名称' },
+          isPublic: {
+            type: 'boolean' as const,
+            description: '是否允许未登录用户访问字典数据',
+          },
           sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
           status: { type: 'int' as const, enum: [0, 1], description: '状态' },
           remark: { type: 'string' as const, max: 512, description: '备注' },
         },
-      },
-      extraRoutes: (r) => {
-        r.get(
-          '/api/system/dict/types/:code/data',
-          {
-            params: {
-              code: { type: 'string' as const, description: '字典类型编码' },
-            },
-            responses: {
-              200: {
-                type: 'array',
-                description: '字典数据列表',
-              },
-            },
-            openapi: { summary: '获取字典数据', tags: ['dict'], operationId: 'getDictData' },
-          },
-          async (ctx) => {
-            const code = (ctx.params as Record<string, string>).code!;
-            const data = await dictService.listDataByType(code);
-            return success(data);
-          },
-          perm('system:dict', 'list'),
-        );
       },
     }),
   );
@@ -924,6 +942,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
             type: 'string' as const,
             enum: ['security', 'public', 'business'],
             description: '敏感级别：security=值已掩码；public=公开白名单；business=普通配置',
+          },
+          isSystem: {
+            type: 'boolean' as const,
+            description: '是否系统预设参数；系统预设参数不可删除',
           },
         },
         createBody: {
@@ -1355,7 +1377,8 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       },
       openapi: {
         summary: '获取当前用户登录日志（个人视角）',
-        description: '租户作用域由服务端根据当前部署与认证会话确定；仅返回当前认证用户自己的登录记录。',
+        description:
+          '租户作用域由服务端根据当前部署与认证会话确定；仅返回当前认证用户自己的登录记录。',
         tags: ['user'],
         operationId: 'getMyLoginLogs',
       },
@@ -1552,7 +1575,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         label: { type: 'string' as const, required: true, max: 128, description: '字典标签' },
         value: { type: 'string' as const, required: true, max: 128, description: '字典值' },
         sort: { type: 'int' as const, min: 0, max: 9999, default: 0, description: '排序' },
+        cssClass: {
+          type: 'string' as const,
+          max: 64,
+          description: '标签颜色，推荐使用十六进制 CSS 颜色值',
+        },
         status: { type: 'int' as const, enum: [0, 1], default: 1, description: '状态' },
+        remark: { type: 'string' as const, max: 512, description: '备注' },
       },
       responses: { 200: { id: { type: 'uuid' as const, description: '字典数据 ID' } } },
       openapi: { summary: '创建字典数据', tags: ['dict'], operationId: 'createDictData' },
@@ -1565,7 +1594,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           label: body.label as string,
           value: body.value as string,
           sort: body.sort as number | undefined,
+          cssClass: body.cssClass as string | undefined,
           status: body.status as number | undefined,
+          remark: body.remark as string | undefined,
         });
         return success(result);
       } catch (e) {
@@ -1581,7 +1612,13 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         label: { type: 'string' as const, max: 128, description: '字典标签' },
         value: { type: 'string' as const, max: 128, description: '字典值' },
         sort: { type: 'int' as const, min: 0, max: 9999, description: '排序' },
+        cssClass: {
+          type: 'string' as const,
+          max: 64,
+          description: '标签颜色，推荐使用十六进制 CSS 颜色值',
+        },
         status: { type: 'int' as const, enum: [0, 1], description: '状态' },
+        remark: { type: 'string' as const, max: 512, description: '备注' },
       },
       openapi: { summary: '更新字典数据', tags: ['dict'], operationId: 'updateDictData' },
     },
@@ -1929,7 +1966,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
           totalPages: { type: 'int' as const, description: '总页数' },
         },
       },
-      openapi: { summary: '获取操作日志', tags: ['log'], operationId: 'listOperationLogs' },
+      openapi: {
+        summary: '获取操作日志',
+        description: '按当前租户查询操作审计日志，包含可信客户端 IP 和位置描述。',
+        tags: ['log'],
+        operationId: 'listOperationLogs',
+      },
     },
     async (ctx) => {
       const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
@@ -1944,6 +1986,10 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         rows.map((row) => ({
           ...row,
           userId: row.user_id,
+          // 历史日志 action 可能是原始 "METHOD /path" 形式，读取时解析为可读描述
+          action: /^[A-Z]+\s+\//.test(row.action)
+            ? resolveOperationAction(row.method, row.url)
+            : row.action,
           errorMsg: row.error_msg,
           createdAt: row.created_at,
         })),

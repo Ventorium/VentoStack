@@ -1,6 +1,6 @@
 import { useDict } from "@/hooks/useDict";
 import type { SelectProps } from "antd";
-import { Select, Spin } from "antd";
+import { Select } from "antd";
 
 export interface DictSelectProps extends Omit<SelectProps, "options" | "loading"> {
   typeCode: string;
@@ -15,14 +15,7 @@ const DictSelect = ({ typeCode, autoload = true, ...rest }: DictSelectProps) => 
     value: /^-?\d+$/.test(item.value) ? Number(item.value) : item.value,
   }));
 
-  return (
-    <Select
-      {...rest}
-      loading={loading}
-      options={loading ? [] : selectOptions}
-      suffixIcon={loading ? <Spin size="small" /> : null}
-    />
-  );
+  return <Select {...rest} loading={loading} options={loading ? [] : selectOptions} />;
 };
 
 export default DictSelect;

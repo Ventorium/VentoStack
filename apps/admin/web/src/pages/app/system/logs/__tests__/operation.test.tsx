@@ -28,6 +28,7 @@ describe("操作日志页", () => {
       method: "POST",
       url: "/api/system/users",
       ip: "192.168.1.1",
+      location: "内网",
       result: 1,
       duration: 120,
       createdAt: "2024-01-01T00:00:00Z",
@@ -36,6 +37,7 @@ describe("操作日志页", () => {
     expect(log.username).toBeTruthy();
     expect(log.module).toBeTruthy();
     expect(log.action).toBeTruthy();
+    expect(log.location).toBe("内网");
     expect(["GET", "POST", "PUT", "DELETE"]).toContain(log.method);
     expect([0, 1]).toContain(log.result);
     expect(log.duration).toBeGreaterThanOrEqual(0);

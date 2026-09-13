@@ -53,7 +53,52 @@ const PROTECTED_KEYS = [
   'sys_mfa_enabled',
   'sys_mfa_force',
   'sys_passkey_enabled',
+  'sys_register_enabled',
+  'ai_trace_enabled',
 ];
+
+export function isProtectedConfigKey(key: string): boolean {
+  return PROTECTED_KEYS.includes(key);
+}
+
+const BOOLEAN_CONFIG_KEYS = new Set([
+  'sys_dept_enabled',
+  'sys_mfa_enabled',
+  'sys_mfa_force',
+  'sys_passkey_enabled',
+  'sys_register_enabled',
+  'ai_trace_enabled',
+]);
+
+/** 系统预设参数的值域校验，避免错误文本导致安全开关被意外放开或失效。 */
+export function validatePresetConfigValue(key: string, value: string): void {
+  if (BOOLEAN_CONFIG_KEYS.has(key) && value !== 'true' && value !== 'false') {
+    throw new Error(`系统参数 ${key} 仅允许 true 或 false`);
+  }
+  if (key === 'sys_password_complexity' && !['low', 'medium', 'high'].includes(value)) {
+    throw new Error('密码复杂度仅允许 low、medium 或 high');
+  }
+  const integerRanges: Record<string, readonly [number, number]> = {
+    sys_password_min_length: [6, 128],
+    sys_password_expire_days: [-1, 3650],
+    sys_login_max_attempts: [1, 100],
+    sys_login_lock_minutes: [1, 1440],
+  };
+  const range = integerRanges[key];
+  if (range) {
+    const parsed = Number(value);
+    const validExpireValue = key !== 'sys_password_expire_days' || parsed === -1 || parsed >= 1;
+    if (!Number.isInteger(parsed) || parsed < range[0] || parsed > range[1] || !validExpireValue) {
+      throw new Error(`系统参数 ${key} 必须是 ${range[0]} 到 ${range[1]} 范围内的整数`);
+    }
+  }
+  if (key === 'sys_site_name' && (value.trim().length === 0 || value.length > 128)) {
+    throw new Error('系统名称长度必须为 1 到 128 个字符');
+  }
+  if (key === 'sys_user_init_password' && (value.length < 6 || value.length > 128)) {
+    throw new Error('用户初始密码长度必须为 6 到 128 个字符');
+  }
+}
 
 /** 前端可回传该占位符表示“保持原值”，避免密文通过列表接口泄漏。 */
 export const MASKED_CONFIG_VALUE = '******';
@@ -94,6 +139,7 @@ export interface ConfigItem {
   sort: number;
   remark: string;
   sensitivity: ConfigSensitivity;
+  isSystem: boolean;
   createdAt: string;
 }
 
@@ -141,6 +187,7 @@ export function createConfigService(deps: {
   }
 
   async function create(params: CreateConfigParams): Promise<{ id: string }> {
+    if (isProtectedConfigKey(params.key)) validatePresetConfigValue(params.key, params.value);
     const id = crypto.randomUUID();
     await db.query(ConfigModel).insert({
       id,
@@ -166,19 +213,24 @@ export function createConfigService(deps: {
       .get();
     if (!row) throw new NotFoundError('Config not found');
     const configKey = row.key as string;
+    if (params.value !== undefined && params.value !== MASKED_CONFIG_VALUE) {
+      validatePresetConfigValue(configKey, params.value);
+    }
 
     const updates: Record<string, unknown> = {};
-    if (params.name !== undefined) updates.name = params.name;
+    if (!isProtectedConfigKey(configKey) && params.name !== undefined) updates.name = params.name;
     if (
       params.value !== undefined &&
       !(isSensitiveConfigKey(configKey) && params.value === MASKED_CONFIG_VALUE)
     ) {
       updates.value = params.value;
     }
-    if (params.type !== undefined) updates.type = params.type;
-    if (params.group !== undefined) updates.group = params.group;
+    if (!isProtectedConfigKey(configKey) && params.type !== undefined) updates.type = params.type;
+    if (!isProtectedConfigKey(configKey) && params.group !== undefined)
+      updates.group = params.group;
     if (params.sort !== undefined) updates.sort = params.sort;
-    if (params.remark !== undefined) updates.remark = params.remark;
+    if (!isProtectedConfigKey(configKey) && params.remark !== undefined)
+      updates.remark = params.remark;
 
     if (Object.keys(updates).length === 0) return;
 
@@ -200,7 +252,7 @@ export function createConfigService(deps: {
       .get();
     if (!row) throw new NotFoundError('Config not found');
     const key = row.key as string;
-    if (PROTECTED_KEYS.includes(key)) {
+    if (isProtectedConfigKey(key)) {
       throw new Error(`系统内置参数 ${key} 不允许删除`);
     }
     await db
@@ -241,6 +293,7 @@ export function createConfigService(deps: {
       sort: row.sort ?? 0,
       remark: row.remark ?? '',
       sensitivity: classifyConfigKey(row.key),
+      isSystem: isProtectedConfigKey(row.key),
       createdAt:
         row.created_at instanceof Date
           ? row.created_at.toISOString()

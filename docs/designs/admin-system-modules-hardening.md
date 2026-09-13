@@ -131,6 +131,7 @@ OpenAPI 生成需增加共享 metadata，避免在每个 handler 中复制文案
 - 认证与实时身份中间件不再捕获 `next()` 的业务异常，避免将下游错误伪装为 401/503。
 - 敏感配置列表只返回掩码，掩码回传表示保持原值；字典/配置全量缓存刷新使用 tenant namespace pattern。
 - 公告修改、发布和撤回使用带前置状态的原子 `UPDATE ... RETURNING`；字典类型删除改为事务，用户标签分配改为单次 `batchInsert`。
+- 启动 seed 已对齐 016 迁移后的租户复合唯一键：`sys_config`/`sys_dict_type`/`sys_dict_data` 的幂等 `ON CONFLICT` 必须使用 `(tenant_id, ...)` 冲突目标（引用已删除的旧单列约束会触发 42P10 启动失败），且 INSERT 显式写入 `env.TENANT_ID`；菜单类 seed（004/005/007/011）的 `sys_menu`/`sys_role_menu` 写入与幂等 SELECT 同样限定租户，避免非默认租户新库被复合外键 `(tenant_id, id)` 拒绝。ai-trace 追踪开关 upsert（`trace-config.ts`）同步改为租户作用域，UPDATE/INSERT 均携带 `tenant_id`，禁止跨租户写入。
 
 需要区分两层保障：上述所有 Admin 模块已完成“入口租户绑定”；本文本轮数据库改造的范围是 System 模块。Notification/I18n/Scheduler/Gen 等独立平台模块若要在同一数据库内供多个租户共享，还必须分别增加 tenant 列、租户唯一键和逐查询条件；在该表级改造完成前，不得将多个租户部署指向同一组这些模块的表。
 

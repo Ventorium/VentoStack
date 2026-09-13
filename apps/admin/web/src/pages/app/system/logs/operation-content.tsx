@@ -69,7 +69,12 @@ const OperationLogPage = () => {
       dataIndex: "ip",
       key: "ip",
       width: 160,
-      render: (v: string) => <span className="font-mono text-sm">{v}</span>,
+      render: (_: unknown, r: OperationLogItem) => (
+        <div>
+          <div className="font-mono text-sm">{r.ip}</div>
+          <div className="text-xs text-gray-500">{r.location || "-"}</div>
+        </div>
+      ),
     },
     {
       title: "结果",
@@ -165,6 +170,7 @@ const OperationLogPage = () => {
               <span className="font-mono text-sm break-all">{detailRecord.method} {detailRecord.url}</span>
             </Descriptions.Item>
             <Descriptions.Item label="IP"><span className="font-mono text-sm">{detailRecord.ip}</span></Descriptions.Item>
+            <Descriptions.Item label="位置">{detailRecord.location || "-"}</Descriptions.Item>
             <Descriptions.Item label="结果">
               {(() => {
                 const s = resultMap[detailRecord.result];

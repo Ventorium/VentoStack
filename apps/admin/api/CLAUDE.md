@@ -47,6 +47,7 @@ return new Response(JSON.stringify({ ... }));
 
 - Migration：`{ name, up(executor), down(executor) }`，纯 SQL
 - Seed：`{ name, run(executor) }`，用 `ON CONFLICT DO NOTHING` 保证幂等
+- Seed 写 system 表必须显式携带 `tenant_id = env.TENANT_ID`（SELECT/INSERT 均限定租户）；幂等 `ON CONFLICT` 的冲突目标必须是迁移 016 之后的租户复合唯一键（如 `(tenant_id, key)`、`(tenant_id, code)`），引用已删除的单列唯一约束会导致启动失败（42P10）
 - 新增 Migration/Seed 后必须在 `apps/admin/api/src/database/` 对应目录下添加文件并注册
 
 ## 禁止

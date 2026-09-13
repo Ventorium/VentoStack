@@ -17,6 +17,7 @@ import { LoginLogModel } from '../models/log';
 import { RoleModel, UserRoleModel } from '../models/role';
 import { UserModel } from '../models/user';
 import type { ConfigService } from './config';
+import { describeIPLocation } from './ip-location';
 import { validatePassword } from './password-policy';
 
 /** 登录结果 */
@@ -200,6 +201,7 @@ export function createAuthService(deps: {
       user_id: params.userId ?? null,
       username: params.username,
       ip: params.ip,
+      location: describeIPLocation(params.ip),
       browser,
       os,
       status: params.status,
@@ -401,7 +403,12 @@ export function createAuthService(deps: {
         .update({ login_attempts: 0 });
 
       // 11. 检查密码是否过期
-      const expireDays = Number(await configService.getValue('sys_password_expire_days')) ?? 30;
+      const expireDaysValue = await configService.getValue('sys_password_expire_days');
+      const parsedExpireDays = expireDaysValue === null ? Number.NaN : Number(expireDaysValue);
+      const expireDays =
+        Number.isInteger(parsedExpireDays) && (parsedExpireDays === -1 || parsedExpireDays > 0)
+          ? parsedExpireDays
+          : 30;
       if (expireDays !== -1 && user.password_changed_at) {
         const expiredAt = new Date(user.password_changed_at);
         expiredAt.setDate(expiredAt.getDate() + expireDays);

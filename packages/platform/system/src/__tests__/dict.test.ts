@@ -22,6 +22,15 @@ describe('DictService', () => {
     s.results.set('INSERT', [{ id: 'dt1' }]);
     const result = await s.dictService.createType({ name: '状态', code: 'status' });
     expect(result.id).toBeTruthy();
+    const insert = s.calls.find((call) => call.text.includes('INSERT INTO sys_dict_type'));
+    expect(insert?.params).toContain(false);
+  });
+
+  test('createType can explicitly enable public access', async () => {
+    const s = setup();
+    await s.dictService.createType({ name: '公开状态', code: 'public_status', isPublic: true });
+    const insert = s.calls.find((call) => call.text.includes('INSERT INTO sys_dict_type'));
+    expect(insert?.params).toContain(true);
   });
 
   test('createData inserts dict data', async () => {
@@ -33,6 +42,33 @@ describe('DictService', () => {
       value: '1',
     });
     expect(result.id).toBeTruthy();
+  });
+
+  test('createData persists color style and remark', async () => {
+    const s = setup();
+    s.results.set('sys_dict_type WHERE tenant_id', [{ is_system: false }]);
+    await s.dictService.createData({
+      typeCode: 'status',
+      label: '启用',
+      value: '1',
+      cssClass: '#52c41a',
+      remark: '启用状态',
+    });
+    const insert = s.calls.find((call) => call.text.includes('INSERT INTO sys_dict_data'));
+    expect(insert?.params).toContain('#52c41a');
+    expect(insert?.params).toContain('启用状态');
+  });
+
+  test('updateData persists color style and remark', async () => {
+    const s = setup();
+    s.results.set('SELECT', [{ type_code: 'status', is_system: false }]);
+    await s.dictService.updateData('dd1', {
+      cssClass: '#1677ff',
+      remark: '主色',
+    });
+    const update = s.calls.find((call) => call.text.includes('UPDATE sys_dict_data'));
+    expect(update?.params).toContain('#1677ff');
+    expect(update?.params).toContain('主色');
   });
 
   test('listDataByType returns cached data', async () => {
@@ -77,6 +113,24 @@ describe('DictService', () => {
     expect(s.dictService.updateType('sys_status', { name: '状态v2' })).rejects.toThrow(
       '系统内置字典类型不可修改',
     );
+  });
+
+  test('system dict type allows updating only its public access policy', async () => {
+    const s = setup();
+    s.results.set('SELECT', [{ is_system: true }]);
+    await s.dictService.updateType('sys_status', { isPublic: true });
+    const update = s.calls.find((call) => call.text.includes('UPDATE sys_dict_type'));
+    expect(update?.params).toContain(true);
+  });
+
+  test('isTypePublic requires same tenant, enabled status and explicit public flag', async () => {
+    const s = setup();
+    s.results.set('SELECT', [{ is_public: true }]);
+    expect(await s.dictService.isTypePublic('public_status')).toBe(true);
+    const select = s.calls.find((call) => call.text.includes('FROM sys_dict_type'));
+    expect(select?.text).toContain('tenant_id');
+    expect(select?.text).toContain('status');
+    expect(select?.params).toContain('default');
   });
 
   test('deleteType removes dict type', async () => {

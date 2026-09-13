@@ -1,5 +1,6 @@
 import { generateUUID } from "@ventostack/core";
 import type { Seed } from "@ventostack/database";
+import { env } from "../../config";
 
 /**
  * AI 智能菜单 + 权限种子数据
@@ -11,14 +12,22 @@ export const addAIMenusSeed: Seed = {
   name: "007_ai_menus",
 
   async run(executor) {
+    const tenantId = env.TENANT_ID;
+
     // 幂等检查：AI 智能目录已存在则跳过
-    const existing = await executor(`SELECT id FROM sys_menu WHERE path = '/app/ai' AND type = 1`);
+    const existing = await executor(
+      `SELECT id FROM sys_menu WHERE tenant_id = $1 AND path = '/app/ai' AND type = 1`,
+      [tenantId],
+    );
     if ((existing as unknown[]).length > 0) {
       return;
     }
 
     // 查询 admin 角色 ID（用于权限绑定）
-    const adminRole = await executor(`SELECT id FROM sys_role WHERE code = 'admin'`);
+    const adminRole = await executor(
+      `SELECT id FROM sys_role WHERE tenant_id = $1 AND code = 'admin'`,
+      [tenantId],
+    );
     const adminRoleId = (adminRole as unknown as Array<{ id: string }>)?.[0]?.id;
 
     async function insertMenu(
@@ -32,14 +41,14 @@ export const addAIMenusSeed: Seed = {
     ): Promise<string> {
       const id = generateUUID();
       await executor(
-        `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, NULL, NULL, $5, $6, $7, $8, TRUE, 1, NOW(), NOW())`,
-        [id, parentId, name, path, type, permission, icon, sort],
+        `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, NULL, NULL, $6, $7, $8, $9, TRUE, 1, NOW(), NOW())`,
+        [id, tenantId, parentId, name, path, type, permission, icon, sort],
       );
       if (adminRoleId) {
         await executor(
-          `INSERT INTO sys_role_menu (role_id, menu_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [adminRoleId, id],
+          `INSERT INTO sys_role_menu (role_id, menu_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [adminRoleId, id, tenantId],
         );
       }
       return id;
@@ -54,14 +63,14 @@ export const addAIMenusSeed: Seed = {
     ): Promise<void> {
       const id = generateUUID();
       await executor(
-        `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-         VALUES ($1, $2, $3, NULL, NULL, NULL, 3, $4, NULL, $5, TRUE, 1, NOW(), NOW())`,
-        [id, parentId, name, permission, sort],
+        `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, NULL, NULL, NULL, 3, $5, NULL, $6, TRUE, 1, NOW(), NOW())`,
+        [id, tenantId, parentId, name, permission, sort],
       );
       if (adminRoleId) {
         await executor(
-          `INSERT INTO sys_role_menu (role_id, menu_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-          [adminRoleId, id],
+          `INSERT INTO sys_role_menu (role_id, menu_id, tenant_id) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING`,
+          [adminRoleId, id, tenantId],
         );
       }
     }

@@ -1,6 +1,20 @@
 import { describe, expect, mock, test } from "bun:test";
+import { buildDictTypeUpdateBody } from "../dict-form";
 
 describe("字典管理页", () => {
+  test("编辑字典类型时不提交只读 code 字段", () => {
+    expect(
+      buildDictTypeUpdateBody({
+        name: "啊啊",
+        code: "aa",
+        sort: 0,
+        status: 1,
+        isPublic: false,
+        remark: "",
+      }),
+    ).toEqual({ name: "啊啊", sort: 0, status: 1, isPublic: false, remark: "" });
+  });
+
   test("状态列渲染逻辑", () => {
     const getStatusTag = (status: number) => ({
       color: status === 1 ? "green" : "red",
@@ -83,6 +97,11 @@ describe("字典管理页", () => {
     expect(defaults.status).toBe(1);
   });
 
+  test("新增字典类型默认不可公开访问", () => {
+    const defaults = { isPublic: false };
+    expect(defaults.isPublic).toBe(false);
+  });
+
   test("编辑字典数据后应刷新当前字典数据列表", () => {
     const currentTypeCode = "sys_status";
     const currentTypeName = "系统状态";
@@ -156,31 +175,49 @@ describe("字典管理页", () => {
     expect(options.body.label).toBe("正常");
   });
 
-  test("字典数据创建 body 包含 label, value, sort, status, dictType（不含 cssClass, remark）", () => {
+  test("字典数据创建 body 包含样式和备注", () => {
     const currentTypeCode = "sys_status";
-    const values = { label: "正常", value: "1", sort: 0, status: 1 };
+    const values = {
+      label: "正常",
+      value: "1",
+      sort: 0,
+      cssClass: "#52c41a",
+      status: 1,
+      remark: "正常状态",
+    };
     const body = {
       label: values.label,
       value: values.value,
       sort: values.sort,
+      cssClass: values.cssClass,
       status: values.status,
+      remark: values.remark,
       dictType: currentTypeCode,
     };
-    expect(body).toEqual({ label: "正常", value: "1", sort: 0, status: 1, dictType: "sys_status" });
-    expect(body).not.toHaveProperty("cssClass");
-    expect(body).not.toHaveProperty("remark");
+    expect(body.cssClass).toBe("#52c41a");
+    expect(body.remark).toBe("正常状态");
+    expect(body.dictType).toBe("sys_status");
   });
 
   test("字典数据 CRUD: 更新 API PUT /api/system/dict/data/:id", () => {
     const client = { put: mock(() => Promise.resolve({ error: null })) };
     client.put("/api/system/dict/data/:id", {
       params: { id: "dd1" },
-      body: { label: "正常(新)", value: "1", sort: 1, status: 1 },
+      body: {
+        label: "正常(新)",
+        value: "1",
+        sort: 1,
+        cssClass: "#52c41a",
+        status: 1,
+        remark: "正常状态",
+      },
     });
     expect(client.put).toHaveBeenCalledTimes(1);
     const [url, options] = client.put.mock.calls[0];
     expect(url).toBe("/api/system/dict/data/:id");
     expect(options.params.id).toBe("dd1");
+    expect(options.body.cssClass).toBe("#52c41a");
+    expect(options.body.remark).toBe("正常状态");
   });
 
   test("字典数据 CRUD: 删除 API DELETE /api/system/dict/data/:id", () => {
@@ -241,6 +278,12 @@ describe("字典管理页", () => {
     expect(formValues.label).toBe("正常");
     expect(formValues.value).toBe("1");
     expect(formValues.cssClass).toBe("green");
+  });
+
+  test("颜色选择器输出 CSS 颜色字符串", () => {
+    const getValueFromEvent = (_color: unknown, css: string) => css ?? "";
+    expect(getValueFromEvent({}, "#52c41a")).toBe("#52c41a");
+    expect(getValueFromEvent({}, "")).toBe("");
   });
 
   test("字典类型列表搜索参数: name, code", () => {

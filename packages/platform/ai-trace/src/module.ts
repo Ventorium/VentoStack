@@ -52,7 +52,7 @@ export function createAiTraceModule(deps: AiTraceModuleDeps): AiTraceModule {
   const { db, emitter, configProvider, jwt, jwtSecret, rbac } = deps;
 
   const store = createTraceStore({ db });
-  const config = createTraceConfigService({ db, configProvider });
+  const config = createTraceConfigService({ db, configProvider, tenantId: deps.tenantId });
   const recorder = createTraceRecorder({ emitter, store, toggle: config });
 
   const authMiddleware = createAuthMiddleware(jwt, jwtSecret, deps.tenantId);

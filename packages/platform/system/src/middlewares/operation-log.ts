@@ -7,6 +7,7 @@
 import type { Middleware } from "@ventostack/core";
 import { isSensitiveFieldName } from "@ventostack/observability";
 import type { AuditStore } from "@ventostack/observability";
+import { describeIPLocation } from "../services/ip-location";
 
 /** 操作日志中间件配置 */
 export interface OperationLogOptions {
@@ -36,6 +37,7 @@ export interface OperationLogEntry {
   method: string;
   url: string;
   ip: string;
+  location: string;
   params: string | null;
   result: number;
   error_msg: string | null;
@@ -98,6 +100,10 @@ const MODULE_MAP: Array<{ prefix: string; name: string }> = [
   { prefix: "/api/system/oss", name: "文件管理" },
   { prefix: "/api/system/gen", name: "代码生成" },
   { prefix: "/api/system/notification", name: "消息通知" },
+  { prefix: "/api/system/tags", name: "标签管理" },
+  { prefix: "/api/i18n", name: "国际化管理" },
+  { prefix: "/api/workflow", name: "工作流管理" },
+  { prefix: "/api/ai/trace", name: "AI链路配置" },
 ];
 
 /**
@@ -135,6 +141,18 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
   "POST /api/auth/register": "注册",
   "POST /api/auth/refresh": "刷新令牌",
   "POST /api/auth/logout": "退出登录",
+  "POST /api/auth/forgot-password": "申请找回密码",
+  "POST /api/auth/reset-password": "重置密码",
+  "POST /api/auth/reset-password-by-token": "通过令牌重置密码",
+  "POST /api/auth/mfa/login": "多因素认证登录",
+  "POST /api/auth/mfa/enable": "启用MFA",
+  "POST /api/auth/mfa/verify": "验证MFA",
+  "POST /api/auth/mfa/disable": "禁用MFA",
+  "POST /api/auth/passkey/login-begin": "开始通行密钥登录",
+  "POST /api/auth/passkey/login-finish": "完成通行密钥登录",
+  "POST /api/auth/passkey/register-begin": "开始注册通行密钥",
+  "POST /api/auth/passkey/register-finish": "完成注册通行密钥",
+  "DELETE /api/auth/passkey/:id": "删除通行密钥",
   "PUT /api/auth/password": "修改密码",
   "PUT /api/auth/profile": "更新资料",
 
@@ -142,13 +160,23 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
   "POST /api/system/users": "新增用户",
   "PUT /api/system/users/:id": "编辑用户",
   "DELETE /api/system/users/:id": "删除用户",
-  "PUT /api/system/users/:id/reset-password": "重置密码",
+  "PUT /api/system/users/:id/reset-pwd": "重置密码",
   "PUT /api/system/users/:id/status": "更新状态",
+  "PUT /api/system/users/:id/unlock": "解锁用户",
+  "PUT /api/system/users/:id/blacklist": "更新用户黑名单",
+  "PUT /api/system/users/:id/tags": "分配用户标签",
+  "POST /api/system/users/batch-delete": "批量删除用户",
+  "POST /api/system/users/batch-status": "批量更新用户状态",
+  "POST /api/system/users/batch-reset-pwd": "批量重置密码",
+  "POST /api/system/users/export": "导出用户",
 
   // ── 角色管理 ──
   "POST /api/system/roles": "新增角色",
   "PUT /api/system/roles/:id": "编辑角色",
   "DELETE /api/system/roles/:id": "删除角色",
+  "PUT /api/system/roles/:id/menus": "分配角色菜单",
+  "PUT /api/system/roles/:id/data-scope": "分配角色数据权限",
+  "POST /api/system/roles/batch-delete": "批量删除角色",
 
   // ── 菜单管理 ──
   "POST /api/system/menus": "新增菜单",
@@ -159,19 +187,22 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
   "POST /api/system/depts": "新增部门",
   "PUT /api/system/depts/:id": "编辑部门",
   "DELETE /api/system/depts/:id": "删除部门",
+  "POST /api/system/depts/batch-delete": "批量删除部门",
 
   // ── 岗位管理 ──
   "POST /api/system/posts": "新增岗位",
   "PUT /api/system/posts/:id": "编辑岗位",
   "DELETE /api/system/posts/:id": "删除岗位",
+  "POST /api/system/posts/batch-delete": "批量删除岗位",
 
   // ── 字典管理 ──
   "POST /api/system/dict/types": "新增字典类型",
   "PUT /api/system/dict/types/:id": "编辑字典类型",
   "DELETE /api/system/dict/types/:id": "删除字典类型",
-  "POST /api/system/dict/types/:id/data": "新增字典数据",
+  "POST /api/system/dict/data": "新增字典数据",
   "PUT /api/system/dict/data/:id": "编辑字典数据",
   "DELETE /api/system/dict/data/:id": "删除字典数据",
+  "POST /api/system/dict/data/batch-delete": "批量删除字典数据",
 
   // ── 参数配置 ──
   "POST /api/system/configs": "新增参数",
@@ -188,22 +219,77 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
   "POST /api/system/notices/batch-publish": "批量上架公告",
   "POST /api/system/notices/batch-revoke": "批量下架公告",
   "POST /api/system/notices/batch-delete": "批量删除公告",
+  "POST /api/system/notices/batch-read": "批量标记已读",
+
+  // ── 标签管理 ──
+  "POST /api/system/tags": "新增标签",
+  "PUT /api/system/tags/:id": "编辑标签",
+  "DELETE /api/system/tags/:id": "删除标签",
 
   // ── 文件管理 ──
   "POST /api/system/oss/upload": "上传文件",
   "DELETE /api/system/oss/:id": "删除文件",
 
+  // ── 消息通知 ──
+  "POST /api/system/notification/send": "发送通知",
+  "POST /api/system/notification/send-by-posts": "按岗位发送通知",
+  "PUT /api/system/notification/messages/:id/read": "标记通知已读",
+  "POST /api/system/notification/messages/read-batch": "批量标记通知已读",
+  "POST /api/system/notification/messages/:id/retry": "重试发送通知",
+  "DELETE /api/system/notification/messages/:id": "删除通知消息",
+  "POST /api/system/notification/templates": "新增通知模板",
+  "PUT /api/system/notification/templates/:id": "编辑通知模板",
+  "DELETE /api/system/notification/templates/:id": "删除通知模板",
+
   // ── 定时任务 ──
-  "POST /api/system/scheduler": "新增任务",
-  "PUT /api/system/scheduler/:id": "编辑任务",
-  "DELETE /api/system/scheduler/:id": "删除任务",
-  "PUT /api/system/scheduler/:id/toggle": "启停任务",
-  "POST /api/system/scheduler/:id/execute": "立即执行",
+  "POST /api/system/scheduler/jobs": "新增任务",
+  "PUT /api/system/scheduler/jobs/:id": "编辑任务",
+  "DELETE /api/system/scheduler/jobs/:id": "删除任务",
+  "PUT /api/system/scheduler/jobs/:id/start": "启动任务",
+  "PUT /api/system/scheduler/jobs/:id/stop": "停止任务",
+  "POST /api/system/scheduler/jobs/:id/execute": "立即执行任务",
+
+  // ── 代码生成 ──
+  "POST /api/system/gen/tables/import": "导入数据表",
+  "PUT /api/system/gen/tables/:id": "编辑生成表配置",
+  "PUT /api/system/gen/columns/:id": "编辑生成字段配置",
+  "POST /api/system/gen/tables/:id/generate": "生成代码",
+
+  // ── 在线用户 ──
+  "DELETE /api/system/monitor/online/:sessionId": "强制用户下线",
+
+  // ── 国际化 ──
+  "POST /api/i18n/locales": "新增语言",
+  "PUT /api/i18n/locales/:id": "编辑语言",
+  "DELETE /api/i18n/locales/:id": "删除语言",
+  "POST /api/i18n/messages/set": "设置国际化文案",
+  "POST /api/i18n/messages/import": "导入国际化文案",
+  "DELETE /api/i18n/messages/:id": "删除国际化文案",
+
+  // ── 工作流 ──
+  "POST /api/workflow/definitions": "新增流程定义",
+  "PUT /api/workflow/definitions/:id": "编辑流程定义",
+  "DELETE /api/workflow/definitions/:id": "删除流程定义",
+  "POST /api/workflow/definitions/:id/publish": "发布流程定义",
+  "POST /api/workflow/definitions/:id/disable": "停用流程定义",
+  "POST /api/workflow/definitions/:id/clone": "克隆流程定义",
+  "PUT /api/workflow/definitions/:id/graph": "保存流程图",
+  "POST /api/workflow/definitions/:id/graph/validate": "校验流程图",
+  "POST /api/workflow/instances": "发起流程",
+  "POST /api/workflow/instances/:id/withdraw": "撤回流程",
+  "POST /api/workflow/tasks/:id/approve": "审批通过",
+  "POST /api/workflow/tasks/:id/reject": "审批驳回",
+  "POST /api/workflow/tasks/:id/transfer": "转办任务",
+  "POST /api/workflow/tasks/:id/add-sign": "任务加签",
+  "POST /api/workflow/tasks/:id/urge": "催办任务",
+
+  // ── AI 链路 ──
+  "PUT /api/ai/trace/config": "更新AI链路配置",
 
   // ── 个人中心 ──
   "PUT /api/system/user/profile": "更新个人资料",
-  "PUT /api/system/user/password": "修改个人密码",
-  "PUT /api/system/user/avatar": "更新头像",
+  "PUT /api/system/user/profile/password": "修改个人密码",
+  "POST /api/system/user/profile/avatar": "更新头像",
   "POST /api/system/user/mfa/enable": "启用MFA",
   "POST /api/system/user/mfa/disable": "禁用MFA",
   "POST /api/system/user/mfa/verify": "验证MFA",
@@ -212,13 +298,31 @@ const ACTION_DESCRIPTIONS: Record<string, string> = {
   "DELETE /api/system/user/passkey/:id": "删除通行密钥",
 };
 
+function matchesActionTemplate(template: string, actual: string): boolean {
+  const templateParts = template.split("/");
+  const actualParts = actual.split("/");
+  return (
+    templateParts.length === actualParts.length &&
+    templateParts.every((part, index) => part.startsWith(":") || part === actualParts[index])
+  );
+}
+
 /**
  * 根据 HTTP 方法和路径生成业务操作描述
  */
-function resolveAction(method: string, path: string): string {
+export function resolveOperationAction(method: string, path: string): string {
   const normalized = normalizePath(path);
   const key = `${method} ${normalized}`;
-  return ACTION_DESCRIPTIONS[key] ?? `${method} ${path}`;
+  const exact = ACTION_DESCRIPTIONS[key];
+  if (exact) return exact;
+
+  for (const [templateKey, description] of Object.entries(ACTION_DESCRIPTIONS)) {
+    const separator = templateKey.indexOf(" ");
+    if (separator < 0 || templateKey.slice(0, separator) !== method) continue;
+    if (matchesActionTemplate(templateKey.slice(separator + 1), path)) return description;
+  }
+
+  return `${resolveModule(path)}操作`;
 }
 
 /**
@@ -297,20 +401,10 @@ function stripIPv6Mapping(ip: string): string {
 function extractClientIP(request: Request, trustedProxies: string[]): string {
   // 获取直接连接 IP
   const rawIP =
-    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ?? "unknown";
+    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ??
+    request.headers.get("x-real-ip") ??
+    "unknown";
   const directIP = stripIPv6Mapping(rawIP);
-
-  // 尝试从 header 读取真实客户端 IP 的辅助函数
-  const fromHeaders = (): string | null => {
-    const realIP = request.headers.get("x-real-ip");
-    if (realIP) return stripIPv6Mapping(realIP.trim());
-    const forwarded = request.headers.get("x-forwarded-for");
-    if (forwarded) {
-      const first = forwarded.split(",")[0]?.trim();
-      if (first) return stripIPv6Mapping(first);
-    }
-    return null;
-  };
 
   // 没有可信代理配置，返回直接连接 IP
   if (trustedProxies.length === 0) {
@@ -453,7 +547,7 @@ export function createOperationLogMiddleware(
       auditLog
         .append({
           actor,
-          action: resolveAction(method, ctx.path),
+          action: resolveOperationAction(method, ctx.path),
           resource: "operation",
           result: responseStatus < 400 ? "success" : "failure",
           metadata: {
@@ -476,10 +570,11 @@ export function createOperationLogMiddleware(
           user_id: user?.id ?? null,
           username: actor,
           module,
-          action: resolveAction(method, ctx.path),
+          action: resolveOperationAction(method, ctx.path),
           method,
           url: ctx.path,
           ip: clientIP,
+          location: describeIPLocation(clientIP),
           params: paramsStr,
           result: resultValue,
           error_msg: errorMsg,

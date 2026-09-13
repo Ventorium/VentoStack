@@ -72,11 +72,13 @@ const NotificationPage = () => {
     sendForm.resetFields();
     sendForm.setFieldsValue({ channel: "in_app" });
     const { error, data } = (await client.get("/api/system/posts", {
-      query: { pageSize: 999 },
+      query: { pageSize: 100 },
     })) as { error?: unknown; data?: { list?: PostItem[] } };
-    if (!error && data?.list) {
-      setPostOptions(data.list.map((p) => ({ label: p.name, value: p.id })));
+    if (error) {
+      msg.error("岗位列表加载失败");
+      return;
     }
+    setPostOptions((data?.list ?? []).map((p) => ({ label: p.name, value: p.id })));
   };
 
   const handleSend = async () => {

@@ -8,6 +8,7 @@ export const DictTypeModel = defineModel(
     name: column.varchar({ length: 64 }),
     code: column.varchar({ length: 64 }),
     is_system: column.boolean({ default: false }),
+    is_public: column.boolean({ default: false }),
     sort: column.int({ default: 0 }),
     status: column.int({ default: 1 }),
     remark: column.varchar({ length: 512, nullable: true }),

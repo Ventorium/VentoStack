@@ -5,9 +5,16 @@
  * 需认证端点（logout/reset-password/MFA）在子 router 上通过 use(authMiddleware) 保护。
  */
 
-import { createRouter, VentoStackError, fail, parseBody, safeErrorMessage, success } from "@ventostack/core";
-import type { Middleware, Router } from "@ventostack/core";
-import type { AuthService } from "../services/auth";
+import {
+  VentoStackError,
+  createRouter,
+  fail,
+  parseBody,
+  safeErrorMessage,
+  success,
+} from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
+import type { AuthService } from '../services/auth';
 
 /**
  * 从请求中提取客户端 IP（安全版本）
@@ -16,7 +23,9 @@ import type { AuthService } from "../services/auth";
 function extractClientIP(request: Request, trustedProxies: string[] = []): string {
   // 获取直接连接 IP
   const directIP =
-    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ?? "unknown";
+    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ??
+    request.headers.get('x-real-ip') ??
+    'unknown';
 
   // 没有可信代理配置，返回直接连接 IP
   if (trustedProxies.length === 0) {
@@ -29,22 +38,22 @@ function extractClientIP(request: Request, trustedProxies: string[] = []): strin
   }
 
   // 来自可信代理，读取代理头获取真实客户端 IP
-  const forwarded = request.headers.get("x-forwarded-for");
+  const forwarded = request.headers.get('x-forwarded-for');
   if (forwarded) {
-    const first = forwarded.split(",")[0]?.trim();
+    const first = forwarded.split(',')[0]?.trim();
     if (first) return first;
   }
-  const realIP = request.headers.get("x-real-ip");
+  const realIP = request.headers.get('x-real-ip');
   if (realIP) return realIP.trim();
 
   return directIP;
 }
 
 const tokenPairSchema = {
-  accessToken: { type: "string" as const, description: "访问令牌" },
-  refreshToken: { type: "string" as const, description: "刷新令牌" },
-  expiresIn: { type: "int" as const, description: "过期时间（秒）" },
-  tokenType: { type: "string" as const, description: "令牌类型" },
+  accessToken: { type: 'string' as const, description: '访问令牌' },
+  refreshToken: { type: 'string' as const, description: '刷新令牌' },
+  expiresIn: { type: 'int' as const, description: '过期时间（秒）' },
+  tokenType: { type: 'string' as const, description: '令牌类型' },
 };
 
 interface TokenCookiePair {
@@ -57,51 +66,82 @@ interface TokenCookiePair {
 function parseCookieHeader(cookieHeader: string | null): Record<string, string> {
   if (!cookieHeader) return {};
   const cookies: Record<string, string> = {};
-  for (const part of cookieHeader.split(";")) {
-    const [rawName, ...rawValue] = part.trim().split("=");
+  for (const part of cookieHeader.split(';')) {
+    const [rawName, ...rawValue] = part.trim().split('=');
     if (!rawName || rawValue.length === 0) continue;
-    cookies[rawName] = decodeURIComponent(rawValue.join("="));
+    cookies[rawName] = decodeURIComponent(rawValue.join('='));
   }
   return cookies;
 }
 
 function getCookie(request: Request, name: string): string | undefined {
-  return parseCookieHeader(request.headers.get("Cookie"))[name];
+  return parseCookieHeader(request.headers.get('Cookie'))[name];
 }
 
 function cookieSecureAttribute(secureCookies: boolean): string {
-  return secureCookies ? "; Secure" : "";
+  return secureCookies ? '; Secure' : '';
 }
 
-function appendCookie(response: Response, request: Request, name: string, value: string, maxAge: number, secureCookies: boolean): Response {
+function appendCookie(
+  response: Response,
+  request: Request,
+  name: string,
+  value: string,
+  maxAge: number,
+  secureCookies: boolean,
+): Response {
   response.headers.append(
-    "Set-Cookie",
+    'Set-Cookie',
     `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${cookieSecureAttribute(secureCookies)}`,
   );
   return response;
 }
 
-function appendClearedCookie(response: Response, request: Request, name: string, secureCookies: boolean): Response {
+function appendClearedCookie(
+  response: Response,
+  request: Request,
+  name: string,
+  secureCookies: boolean,
+): Response {
   response.headers.append(
-    "Set-Cookie",
+    'Set-Cookie',
     `${name}=; Path=/; Max-Age=0; HttpOnly; SameSite=Strict${cookieSecureAttribute(secureCookies)}`,
   );
   return response;
 }
 
-function withTokenCookies(response: Response, request: Request, pair: TokenCookiePair, secureCookies: boolean): Response {
+function withTokenCookies(
+  response: Response,
+  request: Request,
+  pair: TokenCookiePair,
+  secureCookies: boolean,
+): Response {
   if (pair.accessToken) {
-    appendCookie(response, request, "vs_access_token", pair.accessToken, pair.expiresIn ?? 900, secureCookies);
+    appendCookie(
+      response,
+      request,
+      'vs_access_token',
+      pair.accessToken,
+      pair.expiresIn ?? 900,
+      secureCookies,
+    );
   }
   if (pair.refreshToken) {
-    appendCookie(response, request, "vs_refresh_token", pair.refreshToken, pair.refreshExpiresIn ?? 604800, secureCookies);
+    appendCookie(
+      response,
+      request,
+      'vs_refresh_token',
+      pair.refreshToken,
+      pair.refreshExpiresIn ?? 604800,
+      secureCookies,
+    );
   }
   return response;
 }
 
 function clearTokenCookies(response: Response, request: Request, secureCookies: boolean): Response {
-  appendClearedCookie(response, request, "vs_access_token", secureCookies);
-  appendClearedCookie(response, request, "vs_refresh_token", secureCookies);
+  appendClearedCookie(response, request, 'vs_access_token', secureCookies);
+  appendClearedCookie(response, request, 'vs_refresh_token', secureCookies);
   return response;
 }
 
@@ -122,45 +162,45 @@ export function createAuthRoutes(
 
   // ---- 公开端点 ----
   router.post(
-    "/api/auth/login",
+    '/api/auth/login',
     {
       body: {
-        username: { type: "string" as const, required: true, description: "用户名" },
-        password: { type: "string" as const, required: true, description: "密码" },
-        remember: { type: "boolean" as const, description: "记住登录" },
-        deviceType: { type: "string" as const, description: "设备类型" },
+        username: { type: 'string' as const, required: true, description: '用户名' },
+        password: { type: 'string' as const, required: true, description: '密码' },
+        remember: { type: 'boolean' as const, description: '记住登录' },
+        deviceType: { type: 'string' as const, description: '设备类型' },
       },
       responses: {
         200: {
-          accessToken: { type: "string" as const, description: "访问令牌" },
-          refreshToken: { type: "string" as const, description: "刷新令牌" },
-          expiresIn: { type: "int" as const, description: "过期时间（秒）" },
-          tokenType: { type: "string" as const, description: "令牌类型" },
+          accessToken: { type: 'string' as const, description: '访问令牌' },
+          refreshToken: { type: 'string' as const, description: '刷新令牌' },
+          expiresIn: { type: 'int' as const, description: '过期时间（秒）' },
+          tokenType: { type: 'string' as const, description: '令牌类型' },
         },
       },
-      openapi: { summary: "用户登录", tags: ["auth"], operationId: "login" },
+      openapi: { summary: '用户登录', tags: ['auth'], operationId: 'login' },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const loginParams: Parameters<AuthService["login"]>[0] = {
+        const loginParams: Parameters<AuthService['login']>[0] = {
           username: body.username as string,
           password: body.password as string,
           ip: extractClientIP(ctx.request, trustedProxies),
-          userAgent: ctx.request.headers.get("user-agent") ?? "unknown",
+          userAgent: ctx.request.headers.get('user-agent') ?? 'unknown',
         };
-        if (typeof body.deviceType === "string") loginParams.deviceType = body.deviceType;
+        if (typeof body.deviceType === 'string') loginParams.deviceType = body.deviceType;
         const result = await authService.login(loginParams);
         return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e: unknown) {
         const err = e as Error & { code?: string; data?: { tempToken?: string } };
-        if (err.code === "password_expired" && err.data?.tempToken) {
-          return fail("密码已过期", 403, 403, {
-            code: "password_expired",
+        if (err.code === 'password_expired' && err.data?.tempToken) {
+          return fail('密码已过期', 403, 403, {
+            code: 'password_expired',
             tempToken: err.data.tempToken,
           });
         }
-        const msg = safeErrorMessage(e, "登录失败");
+        const msg = safeErrorMessage(e, '登录失败');
         const loginStatus = errorStatus(e, 401);
         return fail(msg, loginStatus, loginStatus);
       }
@@ -168,41 +208,48 @@ export function createAuthRoutes(
   );
 
   router.post(
-    "/api/auth/register",
+    '/api/auth/register',
     {
       body: {
         username: {
-          type: "string" as const,
+          type: 'string' as const,
           required: true,
           min: 3,
           max: 50,
-          description: "用户名",
+          description: '用户名',
         },
-        password: { type: "string" as const, required: true, min: 6, description: "密码" },
-        email: { type: "string" as const, format: "email", description: "邮箱" },
-        phone: { type: "string" as const, format: "phone", description: "手机号" },
+        password: { type: 'string' as const, required: true, min: 6, description: '密码' },
+        email: { type: 'string' as const, format: 'email', description: '邮箱' },
+        phone: { type: 'string' as const, format: 'phone', description: '手机号' },
       },
-      responses: { 200: tokenPairSchema },
-      openapi: { summary: "用户注册", tags: ["auth"], operationId: "register" },
+      responses: {
+        200: { userId: { type: 'uuid' as const, description: '新注册用户 ID' } },
+      },
+      openapi: {
+        summary: '用户注册',
+        description: '仅当系统参数 sys_register_enabled 开启时可用',
+        tags: ['auth'],
+        operationId: 'register',
+      },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const registerParams: Parameters<AuthService["register"]>[0] = {
+        const registerParams: Parameters<AuthService['register']>[0] = {
           username: body.username as string,
           password: body.password as string,
         };
-        if (typeof body.email === "string") registerParams.email = body.email;
-        if (typeof body.phone === "string") registerParams.phone = body.phone;
+        if (typeof body.email === 'string') registerParams.email = body.email;
+        if (typeof body.phone === 'string') registerParams.phone = body.phone;
         const result = await authService.register(registerParams);
         return success(result);
       } catch (e) {
         // 注册开关关闭时返回 403，并附带明确错误码便于前端识别
         const err = e as Error & { code?: string };
-        if (err.code === "register_disabled") {
-          return fail("注册已关闭", 403, 403, { code: "register_disabled" });
+        if (err.code === 'register_disabled') {
+          return fail('注册已关闭', 403, 403, { code: 'register_disabled' });
         }
-        const msg = safeErrorMessage(e, "注册失败");
+        const msg = safeErrorMessage(e, '注册失败');
         const regStatus = errorStatus(e, 400);
         return fail(msg, regStatus, regStatus);
       }
@@ -210,29 +257,36 @@ export function createAuthRoutes(
   );
 
   router.post(
-    "/api/auth/forgot-password",
+    '/api/auth/forgot-password',
     {
       body: {
         email: {
-          type: "string" as const,
+          type: 'string' as const,
           required: true,
-          format: "email",
-          description: "注册邮箱",
+          format: 'email',
+          description: '注册邮箱',
         },
       },
-      responses: { 200: { message: { type: "string" as const, description: "固定提示（不区分邮箱是否存在，防枚举）" } } },
-      openapi: { summary: "忘记密码", tags: ["auth"], operationId: "forgotPassword" },
+      responses: {
+        200: {
+          message: {
+            type: 'string' as const,
+            description: '固定提示（不区分邮箱是否存在，防枚举）',
+          },
+        },
+      },
+      openapi: { summary: '忘记密码', tags: ['auth'], operationId: 'forgotPassword' },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
         const email = body.email as string;
-        if (!email) return fail("请输入邮箱", 400);
+        if (!email) return fail('请输入邮箱', 400);
         // 重置令牌仅经事件通道投递给通知层（邮件），禁止进入 HTTP 响应
         await authService.forgotPassword(email);
-        return success({ message: "如果该邮箱已注册，密码重置链接将发送至邮箱" });
+        return success({ message: '如果该邮箱已注册，密码重置链接将发送至邮箱' });
       } catch (e) {
-        const msg = safeErrorMessage(e, "找回密码失败");
+        const msg = safeErrorMessage(e, '找回密码失败');
         const forgotStatus = errorStatus(e, 400);
         return fail(msg, forgotStatus, forgotStatus);
       }
@@ -240,13 +294,13 @@ export function createAuthRoutes(
   );
 
   router.post(
-    "/api/auth/reset-password-by-token",
+    '/api/auth/reset-password-by-token',
     {
       body: {
-        token: { type: "string" as const, required: true, description: "重置令牌" },
-        newPassword: { type: "string" as const, required: true, min: 6, description: "新密码" },
+        token: { type: 'string' as const, required: true, description: '重置令牌' },
+        newPassword: { type: 'string' as const, required: true, min: 6, description: '新密码' },
       },
-      openapi: { summary: "通过令牌重置密码", tags: ["auth"], operationId: "resetPasswordByToken" },
+      openapi: { summary: '通过令牌重置密码', tags: ['auth'], operationId: 'resetPasswordByToken' },
     },
     async (ctx) => {
       try {
@@ -254,7 +308,7 @@ export function createAuthRoutes(
         await authService.resetPasswordByToken(body.token as string, body.newPassword as string);
         return success(null);
       } catch (e) {
-        const msg = safeErrorMessage(e, "重置失败");
+        const msg = safeErrorMessage(e, '重置失败');
         const status = errorStatus(e, 400);
         return fail(msg, status, status);
       }
@@ -262,60 +316,64 @@ export function createAuthRoutes(
   );
 
   router.post(
-    "/api/auth/refresh",
+    '/api/auth/refresh',
     {
       body: {
-        refreshToken: { type: "string" as const, description: "刷新令牌；浏览器端可省略并使用 HttpOnly Cookie" },
+        refreshToken: {
+          type: 'string' as const,
+          description: '刷新令牌；浏览器端可省略并使用 HttpOnly Cookie',
+        },
       },
       responses: { 200: tokenPairSchema },
-      openapi: { summary: "刷新令牌", tags: ["auth"], operationId: "refreshToken" },
+      openapi: { summary: '刷新令牌', tags: ['auth'], operationId: 'refreshToken' },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const refreshToken = (body.refreshToken as string | undefined) ?? getCookie(ctx.request, "vs_refresh_token");
-        if (!refreshToken) return fail("缺少刷新令牌", 401, 401);
+        const refreshToken =
+          (body.refreshToken as string | undefined) ?? getCookie(ctx.request, 'vs_refresh_token');
+        if (!refreshToken) return fail('缺少刷新令牌', 401, 401);
         const result = await authService.refreshToken(refreshToken);
         return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e) {
-        const msg = safeErrorMessage(e, "刷新令牌失败");
+        const msg = safeErrorMessage(e, '刷新令牌失败');
         return fail(msg, 401, 401);
       }
     },
   );
 
   router.post(
-    "/api/auth/mfa/login",
+    '/api/auth/mfa/login',
     {
       body: {
-        mfaToken: { type: "string" as const, required: true, description: "MFA 临时令牌" },
-        code: { type: "string" as const, required: true, description: "TOTP 验证码" },
-        deviceType: { type: "string" as const, description: "设备类型" },
+        mfaToken: { type: 'string' as const, required: true, description: 'MFA 临时令牌' },
+        code: { type: 'string' as const, required: true, description: 'TOTP 验证码' },
+        deviceType: { type: 'string' as const, description: '设备类型' },
       },
       responses: { 200: tokenPairSchema },
-      openapi: { summary: "MFA 登录验证", tags: ["auth"], operationId: "mfaLogin" },
+      openapi: { summary: 'MFA 登录验证', tags: ['auth'], operationId: 'mfaLogin' },
     },
     async (ctx) => {
       try {
         const body = await parseBody(ctx.request);
-        const deviceType = typeof body.deviceType === "string" ? body.deviceType : undefined;
+        const deviceType = typeof body.deviceType === 'string' ? body.deviceType : undefined;
         const result = deviceType
           ? await authService.completeMFALogin(
               body.mfaToken as string,
               body.code as string,
               extractClientIP(ctx.request, trustedProxies),
-              ctx.request.headers.get("user-agent") ?? "unknown",
+              ctx.request.headers.get('user-agent') ?? 'unknown',
               deviceType,
             )
           : await authService.completeMFALogin(
               body.mfaToken as string,
               body.code as string,
               extractClientIP(ctx.request, trustedProxies),
-              ctx.request.headers.get("user-agent") ?? "unknown",
+              ctx.request.headers.get('user-agent') ?? 'unknown',
             );
         return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e) {
-        const msg = safeErrorMessage(e, "MFA 验证失败");
+        const msg = safeErrorMessage(e, 'MFA 验证失败');
         const status = errorStatus(e, 401);
         return fail(msg, status, status);
       }
@@ -327,13 +385,13 @@ export function createAuthRoutes(
   protectedRouter.use(authMiddleware);
 
   protectedRouter.post(
-    "/api/auth/logout",
+    '/api/auth/logout',
     {
       body: {
-        refreshToken: { type: "string" as const, description: "刷新令牌" },
-        sessionId: { type: "string" as const, description: "会话 ID" },
+        refreshToken: { type: 'string' as const, description: '刷新令牌' },
+        sessionId: { type: 'string' as const, description: '会话 ID' },
       },
-      openapi: { summary: "退出登录", tags: ["auth"], operationId: "logout" },
+      openapi: { summary: '退出登录', tags: ['auth'], operationId: 'logout' },
     },
     async (ctx) => {
       const user = ctx.user as { id: string } | undefined;
@@ -342,12 +400,12 @@ export function createAuthRoutes(
           const body = await parseBody(ctx.request);
           await authService.logout(
             user.id,
-            (body.sessionId as string) || "",
+            (body.sessionId as string) || '',
             (body.refreshToken as string) || undefined,
           );
         } catch {
           // 即使 refreshToken 解析失败也要执行基本登出
-          await authService.logout(user.id, "");
+          await authService.logout(user.id, '');
         }
       }
       return clearTokenCookies(success(null), ctx.request, secureCookies);
@@ -356,13 +414,13 @@ export function createAuthRoutes(
 
   // 管理员重置密码（需认证 + 权限校验）
   protectedRouter.post(
-    "/api/auth/reset-password",
+    '/api/auth/reset-password',
     {
       body: {
-        userId: { type: "uuid" as const, required: true, description: "用户 ID" },
-        newPassword: { type: "string" as const, required: true, min: 6, description: "新密码" },
+        userId: { type: 'uuid' as const, required: true, description: '用户 ID' },
+        newPassword: { type: 'string' as const, required: true, min: 6, description: '新密码' },
       },
-      openapi: { summary: "重置密码（管理员）", tags: ["auth"], operationId: "resetPassword" },
+      openapi: { summary: '重置密码（管理员）', tags: ['auth'], operationId: 'resetPassword' },
     },
     async (ctx) => {
       try {
@@ -370,25 +428,25 @@ export function createAuthRoutes(
         await authService.resetPassword(body.userId as string, body.newPassword as string);
         return success(null);
       } catch (e) {
-        const msg = safeErrorMessage(e, "重置失败");
+        const msg = safeErrorMessage(e, '重置失败');
         return fail(msg, 400);
       }
     },
-    perm("system:user", "resetPwd"),
+    perm('system:user', 'resetPwd'),
   );
 
   // MFA
   protectedRouter.post(
-    "/api/auth/mfa/enable",
+    '/api/auth/mfa/enable',
     {
       responses: {
         200: {
-          secret: { type: "string" as const, description: "TOTP 密钥" },
-          qrCodeUri: { type: "string" as const, description: "二维码数据 URL" },
-          recoveryCodes: { type: "array" as const, description: "备用恢复码" },
+          secret: { type: 'string' as const, description: 'TOTP 密钥' },
+          qrCodeUri: { type: 'string' as const, description: '二维码数据 URL' },
+          recoveryCodes: { type: 'array' as const, description: '备用恢复码' },
         },
       },
-      openapi: { summary: "启用 MFA", tags: ["auth"], operationId: "enableMFA" },
+      openapi: { summary: '启用 MFA', tags: ['auth'], operationId: 'enableMFA' },
     },
     async (ctx) => {
       const user = ctx.user as { id: string };
@@ -398,13 +456,13 @@ export function createAuthRoutes(
   );
 
   protectedRouter.post(
-    "/api/auth/mfa/verify",
+    '/api/auth/mfa/verify',
     {
       body: {
-        code: { type: "string" as const, required: true, description: "TOTP 验证码" },
+        code: { type: 'string' as const, required: true, description: 'TOTP 验证码' },
       },
-      responses: { 200: { valid: { type: "boolean" as const, description: "验证结果" } } },
-      openapi: { summary: "验证 MFA 码", tags: ["auth"], operationId: "verifyMFA" },
+      responses: { 200: { valid: { type: 'boolean' as const, description: '验证结果' } } },
+      openapi: { summary: '验证 MFA 码', tags: ['auth'], operationId: 'verifyMFA' },
     },
     async (ctx) => {
       const user = ctx.user as { id: string };
@@ -415,12 +473,12 @@ export function createAuthRoutes(
   );
 
   protectedRouter.post(
-    "/api/auth/mfa/disable",
+    '/api/auth/mfa/disable',
     {
       body: {
-        code: { type: "string" as const, required: true, description: "TOTP 验证码" },
+        code: { type: 'string' as const, required: true, description: 'TOTP 验证码' },
       },
-      openapi: { summary: "禁用 MFA", tags: ["auth"], operationId: "disableMFA" },
+      openapi: { summary: '禁用 MFA', tags: ['auth'], operationId: 'disableMFA' },
     },
     async (ctx) => {
       const user = ctx.user as { id: string };

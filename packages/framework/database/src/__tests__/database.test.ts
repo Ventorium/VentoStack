@@ -28,6 +28,27 @@ function createMockExecutor() {
 }
 
 describe("createDatabase", () => {
+  test("uses the driver transaction runner instead of issuing BEGIN on a pooled executor", async () => {
+    const poolExecutor = mock(async () => {
+      throw new Error("pooled executor must not receive transaction statements");
+    });
+    const transactionExecutor = mock(async () => [] as unknown[]);
+    const transactionRunner = mock(
+      async <T>(fn: (executor: SqlExecutor) => Promise<T>): Promise<T> => fn(transactionExecutor),
+    );
+    const db = createDatabase({ executor: poolExecutor, transactionRunner });
+
+    await db.transaction(async (tx) => {
+      await tx.raw("UPDATE users SET name = $1 WHERE id = $2", ["Alice", "u1"]);
+    });
+
+    expect(transactionRunner).toHaveBeenCalledTimes(1);
+    expect(poolExecutor).not.toHaveBeenCalled();
+    expect(transactionExecutor).toHaveBeenCalledWith("UPDATE users SET name = $1 WHERE id = $2", [
+      "Alice",
+      "u1",
+    ]);
+  });
   test("creates database with mock executor", () => {
     const { executor } = createMockExecutor();
     const db = createDatabase({ executor });

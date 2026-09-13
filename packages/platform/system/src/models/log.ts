@@ -32,6 +32,7 @@ export const OperationLogModel = defineModel(
     method: column.varchar({ length: 10 }),
     url: column.varchar({ length: 512 }),
     ip: column.varchar({ length: 45 }),
+    location: column.varchar({ length: 128, nullable: true }),
     params: column.text({ nullable: true }),
     result: column.int({ nullable: true }),
     error_msg: column.text({ nullable: true }),

@@ -17,6 +17,12 @@ import type { QueryBuilder, WhereOp } from "./query-builder";
 export type SqlExecutor = (text: string, params?: unknown[]) => Promise<unknown[]>;
 
 /**
+ * 在驱动固定的同一连接上执行事务回调。
+ * 连接池驱动必须提供此能力，不能用普通池 executor 分别发送 BEGIN/COMMIT。
+ */
+export type SqlTransactionRunner = <T>(fn: (executor: SqlExecutor) => Promise<T>) => Promise<T>;
+
+/**
  * 数据库连接配置项。
  */
 export interface DatabaseConfig {
@@ -40,6 +46,8 @@ export interface DatabaseConfig {
   timeout?: number;
   /** 自定义 SQL 执行器（用于测试或代理场景） */
   executor?: SqlExecutor;
+  /** 驱动原生事务执行器（连接池场景必填，以保证事务内查询固定在同一连接） */
+  transactionRunner?: SqlTransactionRunner;
 }
 
 /**
@@ -333,6 +341,22 @@ export interface SqlExecutorOptions {
   timeout?: number;
 }
 
+interface BunSqlClient {
+  unsafe: (text: string, params?: unknown[]) => Promise<unknown>;
+}
+
+interface BunSqlConnection extends BunSqlClient {
+  begin: <T>(fn: (transaction: BunSqlClient) => Promise<T>) => Promise<T>;
+  close: () => void;
+}
+
+type BunSqlConstructor = new (options: {
+  url: string;
+  max?: number;
+  idle?: number;
+  timeout?: number;
+}) => BunSqlConnection;
+
 /**
  * 基于 Bun.SQL 创建原生 SQL 执行器。
  * Bun 1.2+ 的 SQL 类同时支持 PostgreSQL 与 SQLite URL。
@@ -343,13 +367,17 @@ export interface SqlExecutorOptions {
 export function createSqlExecutor(
   url: string,
   options?: SqlExecutorOptions,
-): { executor: SqlExecutor; close: () => Promise<void> } {
+): {
+  executor: SqlExecutor;
+  transactionRunner: SqlTransactionRunner;
+  close: () => Promise<void>;
+} {
   // Bun 1.2+ 将 SQL 暴露为全局类（Bun.SQL 或 globalThis.SQL）
-  // @ts-ignore - Bun.SQL is only available in Bun 1.2+ runtime
-  const SQLClass: new (options: { url: string; max?: number; idle?: number; timeout?: number }) => {
-    unsafe: (text: string, params?: unknown[]) => Promise<unknown>;
-    close: () => void;
-  } = (globalThis as any).SQL ?? (globalThis as any).Bun?.SQL;
+  const runtime = globalThis as typeof globalThis & {
+    SQL?: BunSqlConstructor;
+    Bun?: { SQL?: BunSqlConstructor };
+  };
+  const SQLClass = runtime.SQL ?? runtime.Bun?.SQL;
 
   if (typeof SQLClass !== "function") {
     throw new Error(
@@ -365,17 +393,20 @@ export function createSqlExecutor(
     ...(options?.timeout != null ? { timeout: options.timeout } : {}),
   });
 
-  const executor: SqlExecutor = async (text, params) => {
-    const result =
-      params && params.length > 0
-        ? await sql.unsafe(text, params as any[])
-        : await sql.unsafe(text);
+  const toExecutor =
+    (client: BunSqlClient): SqlExecutor =>
+    async (text, params) => {
+      const result =
+        params && params.length > 0 ? await client.unsafe(text, params) : await client.unsafe(text);
 
-    return Array.isArray(result) ? result : [];
-  };
+      return Array.isArray(result) ? result : [];
+    };
+  const executor = toExecutor(sql);
 
   return {
     executor,
+    transactionRunner: async <T>(fn: (transactionExecutor: SqlExecutor) => Promise<T>) =>
+      sql.begin(async (transaction) => fn(toExecutor(transaction))),
     async close() {
       sql.close();
     },
@@ -399,6 +430,7 @@ function createBunSqlExecutor(url: string): SqlExecutor {
  */
 export function createDatabase(config: DatabaseConfig): Database {
   let sqlClose: (() => Promise<void>) | undefined;
+  let transactionRunner = config.transactionRunner;
 
   const executor: SqlExecutor =
     config.executor ??
@@ -414,6 +446,7 @@ export function createDatabase(config: DatabaseConfig): Database {
       if (config.timeout !== undefined) options.timeout = config.timeout;
       const result = createSqlExecutor(config.url, options);
       sqlClose = result.close;
+      transactionRunner = result.transactionRunner;
       return result.executor;
     })();
 
@@ -432,6 +465,11 @@ export function createDatabase(config: DatabaseConfig): Database {
 
     async transaction<T>(fn: (tx: Database) => Promise<T>): Promise<T> {
       if (closed) throw new Error("Database connection is closed");
+      if (transactionRunner) {
+        return transactionRunner(async (transactionExecutor) =>
+          fn(createTransactionDatabase(transactionExecutor)),
+        );
+      }
       await executor("BEGIN");
       try {
         // 创建与外层共享 executor 的事务数据库实例

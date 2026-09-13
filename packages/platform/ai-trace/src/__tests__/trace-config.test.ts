@@ -15,6 +15,7 @@ function setup() {
   const config = createTraceConfigService({
     db,
     configProvider: { getValue, refreshCache },
+    tenantId: "default",
   });
   return { config, calls: mockExec.calls, results: mockExec.results, state, refreshCache };
 }
@@ -44,7 +45,8 @@ describe("TraceConfigService", () => {
     const update = s.calls.find((c) => c.text.includes("UPDATE sys_config"));
     expect(update).toBeDefined();
     expect(update!.params![0]).toBe("false");
-    expect(update!.params![1]).toBe(TRACE_CONFIG_KEY);
+    expect(update!.params![1]).toBe("default");
+    expect(update!.params![2]).toBe(TRACE_CONFIG_KEY);
     expect(s.calls.some((c) => c.text.includes("INSERT INTO sys_config"))).toBe(false);
     expect(s.refreshCache).toHaveBeenCalledWith(TRACE_CONFIG_KEY);
   });
@@ -54,8 +56,8 @@ describe("TraceConfigService", () => {
 
     const insert = s.calls.find((c) => c.text.includes("INSERT INTO sys_config"));
     expect(insert).toBeDefined();
-    expect(insert!.text).toContain("ON CONFLICT (key) DO UPDATE");
-    expect(insert!.params![3]).toBe("true");
+    expect(insert!.text).toContain("ON CONFLICT (tenant_id, key) DO UPDATE");
+    expect(insert!.params![4]).toBe("true");
     expect(s.refreshCache).toHaveBeenCalledWith(TRACE_CONFIG_KEY);
   });
 });

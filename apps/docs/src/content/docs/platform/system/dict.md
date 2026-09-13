@@ -12,7 +12,7 @@ description: '数据字典模块提供字典类型与字典数据的管理、缓
 
 数据字典由两部分组成：
 
-- **字典类型 (sys_dict_type)** — 定义字典的分类
+- **字典类型 (sys_dict_type)** — 定义字典的分类及匿名访问策略 `is_public`
 - **字典数据 (sys_dict_data)** — 定义字典的具体选项
 
 ```
@@ -31,14 +31,23 @@ sys_dict_type
 
 ## 字典类型管理
 
+每个字典类型都包含 `isPublic` 配置：
+
+- `false`：默认值，仅有效登录会话可以读取该类型的字典数据。
+- `true`：字典类型处于启用状态时，未登录用户也可以读取其启用的字典数据。
+
+存量字典升级后全部保持 `false`，不会因为迁移自动暴露。系统内置字典禁止修改结构和数据，
+但管理员仍可独立调整其公开访问策略。
+
 ### 创建字典类型
 
 ```typescript
-POST /api/system/dict/type
+POST /api/system/dict/types
 {
-  "name": "sys_user_sex",
-  "label": "用户性别",
-  "status": 0,
+  "name": "用户性别",
+  "code": "sys_user_sex",
+  "isPublic": false,
+  "status": 1,
   "remark": "用户性别列表"
 }
 ```
@@ -79,6 +88,22 @@ DELETE /api/system/dict/type/{id}
 ```
 
 ## 字典数据管理
+
+### 访问控制
+
+统一读取端点为：
+
+```http
+GET /api/system/dict/types/{code}/data
+```
+
+访问规则：
+
+1. 服务端使用部署绑定的 `tenantId` 查询字典类型和数据，不接受客户端传入 `tenantId`。
+2. 类型为启用状态且 `isPublic=true` 时允许匿名访问。
+3. `isPublic=false`、类型停用或类型不存在时，匿名请求返回 `401`；有效登录用户仍可读取。
+4. 公开策略查询异常返回 `503`，不会降级为匿名放行。
+5. 响应只包含状态为启用的字典数据。
 
 ### 创建字典数据
 

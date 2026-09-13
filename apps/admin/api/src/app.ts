@@ -81,7 +81,17 @@ export async function buildApp(opts?: {
   const tracingExecutor = wrapExecutorWithTracing(rawConn.executor, tracer, {
     getSpanContext: () => traceStore.getStore(),
   });
-  const tracedDb = createDatabase({ executor: tracingExecutor });
+  const tracedDb = createDatabase({
+    executor: tracingExecutor,
+    transactionRunner: (fn) =>
+      rawConn.transactionRunner((transactionExecutor) =>
+        fn(
+          wrapExecutorWithTracing(transactionExecutor, tracer, {
+            getSpanContext: () => traceStore.getStore(),
+          }),
+        ),
+      ),
+  });
   serverLogger.info('数据库已连接');
 
   // 1c. 运行迁移（使用单连接 executor，不经过 tracing）

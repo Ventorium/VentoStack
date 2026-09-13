@@ -30,8 +30,10 @@ export interface TraceConfigService {
 export function createTraceConfigService(deps: {
   db: Database;
   configProvider: TraceConfigProvider;
+  /** 租户 ID：sys_config 唯一约束为 (tenant_id, key)，读写必须限定租户 */
+  tenantId: string;
 }): TraceConfigService {
-  const { db, configProvider } = deps;
+  const { db, configProvider, tenantId } = deps;
 
   async function isEnabled(): Promise<boolean> {
     const value = await configProvider.getValue(TRACE_CONFIG_KEY);
@@ -42,23 +44,22 @@ export function createTraceConfigService(deps: {
   async function setEnabled(enabled: boolean): Promise<void> {
     const value = enabled ? "true" : "false";
     const updated = (await db.raw(
-      `UPDATE sys_config SET value = $1, updated_at = NOW() WHERE key = $2 RETURNING id`,
-      [value, TRACE_CONFIG_KEY],
+      `UPDATE sys_config SET value = $1, updated_at = NOW() WHERE tenant_id = $2 AND key = $3 RETURNING id`,
+      [value, tenantId, TRACE_CONFIG_KEY],
     )) as unknown[];
 
-    // key 不存在时插入（幂等：并发写入由 unique(key) 约束兜底）
+    // key 不存在时插入（幂等：并发写入由 unique(tenant_id, key) 约束兜底）
     if (updated.length === 0) {
       await db.raw(
-        `INSERT INTO sys_config (id, name, key, value, type, "group", sort, remark, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, 0, $7, NOW(), NOW())
-         ON CONFLICT (key) DO UPDATE SET value = $4, updated_at = NOW()`,
+        `INSERT INTO sys_config (id, tenant_id, name, key, value, type, "group", sort, remark, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, 1, 'ai', 0, $6, NOW(), NOW())
+         ON CONFLICT (tenant_id, key) DO UPDATE SET value = $5, updated_at = NOW()`,
         [
           crypto.randomUUID(),
+          tenantId,
           "AI 链路追踪开关",
           TRACE_CONFIG_KEY,
           value,
-          1,
-          "ai",
           "是否记录 AI 请求的完整调用链路",
         ],
       );

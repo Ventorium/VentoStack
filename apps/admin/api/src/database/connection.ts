@@ -6,12 +6,13 @@
  */
 
 import { createDatabase, createSqlExecutor } from "@ventostack/database";
-import type { Database, SqlExecutor } from "@ventostack/database";
+import type { Database, SqlExecutor, SqlTransactionRunner } from "@ventostack/database";
 import { env } from "../config";
 
 export interface DatabaseContext {
   db: Database;
   executor: SqlExecutor;
+  transactionRunner: SqlTransactionRunner;
   /** 迁移专用单连接 executor */
   migrationExecutor: SqlExecutor;
   /** 关闭数据库连接 */
@@ -25,7 +26,10 @@ export interface DatabaseContext {
 export function createDatabaseConnection(tracedExecutor?: SqlExecutor): DatabaseContext {
   // 生产连接池 — 并发处理请求
   const pool = createSqlExecutor(env.DATABASE_URL, { max: env.DB_POOL_SIZE });
-  const db = createDatabase({ executor: tracedExecutor ?? pool.executor });
+  const db = createDatabase({
+    executor: tracedExecutor ?? pool.executor,
+    transactionRunner: pool.transactionRunner,
+  });
 
   // 迁移 单连接 — 允许手动 BEGIN/COMMIT
   const migration = createSqlExecutor(env.DATABASE_URL, { max: 1 });
@@ -33,6 +37,7 @@ export function createDatabaseConnection(tracedExecutor?: SqlExecutor): Database
   return {
     db,
     executor: pool.executor,
+    transactionRunner: pool.transactionRunner,
     migrationExecutor: migration.executor,
     async close() {
       await pool.close();

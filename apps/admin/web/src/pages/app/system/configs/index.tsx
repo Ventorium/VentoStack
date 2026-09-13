@@ -1,18 +1,30 @@
-import { client } from "@/api";
-import type { ConfigItem, PaginatedData } from "@/api/types";
-import ActionColumn from "@/components/ActionColumn";
-import DictSelect from "@/components/DictSelect";
-import { msg } from "@/components/GlobalMessage";
-import { useTable } from "@/hooks/useTable";
-import { cleanParams } from "@/utils/cleanParams";
-import { fmtDate } from "@/utils/fmtDate";
-import { PlusOutlined, ReloadOutlined, SearchOutlined } from "@ant-design/icons";
-import { Button, Card, Col, Form, Input, InputNumber, Modal, Row, Space, Table } from "antd";
-import type { ColumnsType } from "antd/es/table";
-import { useState } from "react";
+import { client } from '@/api';
+import type { ConfigItem, PaginatedData } from '@/api/types';
+import ActionColumn from '@/components/ActionColumn';
+import DictSelect from '@/components/DictSelect';
+import { msg } from '@/components/GlobalMessage';
+import { useTable } from '@/hooks/useTable';
+import { cleanParams } from '@/utils/cleanParams';
+import { fmtDate } from '@/utils/fmtDate';
+import { PlusOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import {
+  Button,
+  Card,
+  Col,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Row,
+  Space,
+  Switch,
+  Table,
+} from 'antd';
+import type { ColumnsType } from 'antd/es/table';
+import { useState } from 'react';
 
 const fetcher = (params: Record<string, unknown>) =>
-  client.get("/api/system/configs", { query: cleanParams(params) }) as Promise<{
+  client.get('/api/system/configs', { query: cleanParams(params) }) as Promise<{
     error?: unknown;
     data?: PaginatedData<ConfigItem>;
   }>;
@@ -25,6 +37,7 @@ const ConfigPage = () => {
   const [editingConfig, setEditingConfig] = useState<ConfigItem | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [form] = Form.useForm();
+  const selectedType = Form.useWatch('type', form);
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
@@ -46,7 +59,7 @@ const ConfigPage = () => {
     form.setFieldsValue({
       name: r.name,
       key: r.key,
-      value: r.value,
+      value: r.type === 2 ? r.value === 'true' : r.type === 1 ? Number(r.value) : r.value,
       type: r.type,
       group: r.group,
       sort: r.sort,
@@ -56,29 +69,30 @@ const ConfigPage = () => {
   };
   const handleOk = async () => {
     const values = await form.validateFields();
+    const requestValues = { ...values, value: String(values.value) };
     setModalLoading(true);
     try {
       if (editingConfig) {
-        const { error } = await client.put("/api/system/configs/:id", {
+        const { error } = await client.put('/api/system/configs/:id', {
           params: { id: editingConfig.id },
           body: {
-            name: values.name,
-            value: values.value,
-            type: values.type,
-            group: values.group,
-            sort: values.sort,
-            remark: values.remark,
+            name: requestValues.name,
+            value: requestValues.value,
+            type: requestValues.type,
+            group: requestValues.group,
+            sort: requestValues.sort,
+            remark: requestValues.remark,
           },
         });
         if (!error) {
-          msg.success("更新成功");
+          msg.success('更新成功');
           setModalOpen(false);
           refresh();
         }
       } else {
-        const { error } = await client.post("/api/system/configs", { body: values });
+        const { error } = await client.post('/api/system/configs', { body: requestValues });
         if (!error) {
-          msg.success("创建成功");
+          msg.success('创建成功');
           setModalOpen(false);
           refresh();
         }
@@ -88,72 +102,58 @@ const ConfigPage = () => {
     }
   };
   const handleDelete = async (id: string) => {
-    const { error } = await client.delete("/api/system/configs/:id", { params: { id } });
+    const { error } = await client.delete('/api/system/configs/:id', { params: { id } });
     if (!error) {
-      msg.success("删除成功");
+      msg.success('删除成功');
       refresh();
     }
   };
 
-  const typeMap: Record<number, string> = { 0: "字符串", 1: "数字", 2: "布尔", 3: "JSON" };
+  const typeMap: Record<number, string> = { 0: '字符串', 1: '数字', 2: '布尔', 3: 'JSON' };
 
-/** 受保护的系统参数 key — 不允许删除 */
-const PROTECTED_KEYS = new Set([
-  "sys_dept_enabled",
-  "sys_user_init_password",
-  "sys_password_min_length",
-  "sys_password_complexity",
-  "sys_password_expire_days",
-  "sys_login_max_attempts",
-  "sys_login_lock_minutes",
-  "sys_site_name",
-  "sys_mfa_enabled",
-  "sys_mfa_force",
-  "sys_passkey_enabled",
-]);
   const columns: ColumnsType<ConfigItem> = [
-    { title: "参数名称", dataIndex: "name", key: "name", width: 160 },
-    { title: "参数键名", dataIndex: "key", key: "key", width: 160 },
+    { title: '参数名称', dataIndex: 'name', key: 'name', width: 160 },
+    { title: '参数键名', dataIndex: 'key', key: 'key', width: 160 },
     {
-      title: "参数键值",
-      dataIndex: "value",
-      key: "value",
+      title: '参数键值',
+      dataIndex: 'value',
+      key: 'value',
       ellipsis: true,
       render: (_: unknown, r: ConfigItem) => <span className="font-mono text-sm">{r.value}</span>,
     },
     {
-      title: "类型",
-      dataIndex: "type",
-      key: "type",
+      title: '类型',
+      dataIndex: 'type',
+      key: 'type',
       width: 80,
       render: (_: unknown, r: ConfigItem) => typeMap[r.type] ?? r.type,
     },
-    { title: "分组", dataIndex: "group", key: "group", width: 100 },
-    { title: "备注", dataIndex: "remark", key: "remark", ellipsis: true },
+    { title: '分组', dataIndex: 'group', key: 'group', width: 100 },
+    { title: '备注', dataIndex: 'remark', key: 'remark', ellipsis: true },
     {
-      title: "创建时间",
-      dataIndex: "createdAt",
-      key: "createdAt",
+      title: '创建时间',
+      dataIndex: 'createdAt',
+      key: 'createdAt',
       width: 180,
       render: (_: unknown, r: ConfigItem) => fmtDate(r.createdAt),
     },
     {
-      title: "操作",
-      key: "action",
+      title: '操作',
+      key: 'action',
       width: 130,
-      fixed: "right" as const,
+      fixed: 'right' as const,
       render: (_: unknown, r: ConfigItem) => (
         <ActionColumn
           items={[
-            { label: "编辑", onClick: () => openEdit(r) },
-            ...(PROTECTED_KEYS.has(r.key)
+            { label: '编辑', onClick: () => openEdit(r) },
+            ...(r.isSystem
               ? []
               : [
                   {
-                    label: "删除",
+                    label: '删除',
                     onClick: () => handleDelete(r.id),
                     danger: true as const,
-                    confirm: "确定删除该参数？",
+                    confirm: '确定删除该参数？',
                   },
                 ]),
           ]}
@@ -209,7 +209,7 @@ const PROTECTED_KEYS = new Set([
         />
       </Card>
       <Modal
-        title={editingConfig ? "编辑参数" : "新增参数"}
+        title={editingConfig ? '编辑参数' : '新增参数'}
         open={modalOpen}
         onOk={handleOk}
         onCancel={() => setModalOpen(false)}
@@ -221,7 +221,7 @@ const PROTECTED_KEYS = new Set([
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="name" label="参数名称" rules={[{ required: true }]}>
-                <Input />
+                <Input disabled={editingConfig?.isSystem} />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -230,18 +230,29 @@ const PROTECTED_KEYS = new Set([
               </Form.Item>
             </Col>
           </Row>
-          <Form.Item name="value" label="参数键值" rules={[{ required: true }]}>
-            <Input.TextArea rows={3} />
+          <Form.Item
+            name="value"
+            label="参数键值"
+            valuePropName={selectedType === 2 ? 'checked' : 'value'}
+            rules={[{ required: selectedType !== 2 }]}
+          >
+            {selectedType === 2 ? (
+              <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+            ) : selectedType === 1 ? (
+              <InputNumber className="w-full" />
+            ) : (
+              <Input.TextArea rows={3} />
+            )}
           </Form.Item>
           <Row gutter={16}>
             <Col span={12}>
               <Form.Item name="type" label="类型" initialValue={0}>
-                <DictSelect typeCode="sys_config_type" />
+                <DictSelect typeCode="sys_config_type" disabled={editingConfig?.isSystem} />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item name="group" label="分组">
-                <Input placeholder="system" />
+                <Input placeholder="system" disabled={editingConfig?.isSystem} />
               </Form.Item>
             </Col>
           </Row>
@@ -249,7 +260,7 @@ const PROTECTED_KEYS = new Set([
             <InputNumber className="w-full" min={0} max={9999} />
           </Form.Item>
           <Form.Item name="remark" label="备注">
-            <Input.TextArea rows={3} />
+            <Input.TextArea rows={3} disabled={editingConfig?.isSystem} />
           </Form.Item>
         </Form>
       </Modal>

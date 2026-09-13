@@ -65,6 +65,35 @@ function setup(configOverrides: Record<string, string> = {}) {
 
 describe('AuthService', () => {
   describe('login', () => {
+    test('missing password expiry config uses 30-day default instead of zero days', async () => {
+      const s = setup();
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      s.results.set('SELECT', [
+        {
+          id: 'u1',
+          username: 'admin',
+          password_hash: 'hashed_admin123',
+          status: 1,
+          mfa_enabled: false,
+          mfa_secret: null,
+          blacklisted: false,
+          locked_until: null,
+          login_attempts: 0,
+          password_changed_at: yesterday,
+        },
+      ]);
+      s.passwordHasher.verify.mockResolvedValue(true as any);
+
+      const result = await s.authService.login({
+        username: 'admin',
+        password: 'admin123',
+        ip: '127.0.0.1',
+        userAgent: 'test',
+      });
+
+      expect(result.accessToken).toBeTruthy();
+    });
+
     test('successful login returns tokens', async () => {
       const s = setup();
       s.results.set('SELECT', [
@@ -86,7 +115,7 @@ describe('AuthService', () => {
       const result = await s.authService.login({
         username: 'admin',
         password: 'admin123',
-        ip: '1.2.3.4',
+        ip: '127.0.0.1',
         userAgent: 'test',
       });
 
@@ -94,6 +123,9 @@ describe('AuthService', () => {
       expect(result.refreshToken).toBeTruthy();
       expect(result.mfaRequired).toBe(false);
       expect(s.authSessionManager.login).toHaveBeenCalledTimes(1);
+      const loginLog = s.calls.find((call) => call.text.includes('INSERT INTO sys_login_log'));
+      expect(loginLog?.params).toContain('127.0.0.1');
+      expect(loginLog?.params).toContain('本机');
     });
 
     test('wrong password increments fail counter', async () => {

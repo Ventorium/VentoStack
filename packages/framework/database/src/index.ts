@@ -25,6 +25,7 @@ export type {
   QueryExecutor,
   SqlExecutor,
   SqlExecutorOptions,
+  SqlTransactionRunner,
 } from "./database";
 
 // 模型定义：列类型、模型工厂与类型推导

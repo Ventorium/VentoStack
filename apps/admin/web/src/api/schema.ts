@@ -37,6 +37,10 @@ export type OpenAPIs = {
          */
         passkeyEnabled?: boolean,
         /**
+         * @description 是否允许用户自注册
+         */
+        registerEnabled?: boolean,
+        /**
          * @description 密码最小长度
          */
         passwordMinLength?: number,
@@ -45,6 +49,19 @@ export type OpenAPIs = {
          */
         passwordComplexity?: string
       }
+    },
+    /**
+     * 获取字典数据
+     * @description 租户由服务端部署配置确定。字典类型启用且配置为公开时允许匿名访问；否则必须提供有效登录会话。客户端不得提交 tenantId。
+     */
+    '/api/system/dict/types/:code/data': {
+      query: never,
+      params: {
+        code: string
+      },
+      headers: never,
+      body: never,
+      response: any[]
     },
     /**
      * 获取 Passkey 列表
@@ -181,11 +198,13 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:role列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/roles': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        status?: number
       },
       params: never,
       headers: never,
@@ -244,6 +263,7 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:role详情
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/roles/:id': {
       query: never,
@@ -301,7 +321,29 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 获取角色数据范围
+     */
+    '/api/system/roles/:id/data-scope': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 数据范围
+         */
+        scope?: number,
+        /**
+         * @description 自定义部门 ID 列表
+         */
+        deptIds?: any[]
+      }
+    },
+    /**
      * 获取system:menu列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/menus': {
       query: {
@@ -381,6 +423,7 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:menu详情
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/menus/:id': {
       query: never,
@@ -403,6 +446,7 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:dept列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/depts': {
       query: {
@@ -476,11 +520,15 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:post列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/posts': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        name?: string,
+        code?: string,
+        status?: number
       },
       params: never,
       headers: never,
@@ -535,11 +583,15 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:dict列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/dict/types': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        name?: string,
+        code?: string,
+        status?: number
       },
       params: never,
       headers: never,
@@ -565,6 +617,10 @@ export type OpenAPIs = {
            * @description 是否系统内置
            */
           isSystem?: boolean,
+          /**
+           * @description 是否允许未登录用户访问字典数据
+           */
+          isPublic?: boolean,
           /**
            * @description 排序
            */
@@ -598,6 +654,7 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:dict详情
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/dict/types/:id': {
       query: never,
@@ -624,6 +681,10 @@ export type OpenAPIs = {
          */
         isSystem?: boolean,
         /**
+         * @description 是否允许未登录用户访问字典数据
+         */
+        isPublic?: boolean,
+        /**
          * @description 排序
          */
         sort?: number,
@@ -638,24 +699,16 @@ export type OpenAPIs = {
       }
     },
     /**
-     * 获取字典数据
-     */
-    '/api/system/dict/types/:code/data': {
-      query: never,
-      params: {
-        code: string
-      },
-      headers: never,
-      body: never,
-      response: any[]
-    },
-    /**
      * 获取system:config列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/configs': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        name?: string,
+        key?: string,
+        group?: string
       },
       params: never,
       headers: never,
@@ -678,17 +731,34 @@ export type OpenAPIs = {
            */
           key?: string,
           /**
-           * @description 配置值
+           * @description 配置值（敏感配置返回掩码）
            */
           value?: string,
           /**
            * @description 配置类型
            */
-          type?: string,
+          type?: number,
+          /**
+           * @description 配置分组
+           */
+          group?: string,
+          /**
+           * @description 排序
+           */
+          sort?: number,
           /**
            * @description 备注
            */
-          remark?: string
+          remark?: string,
+          /**
+           * @description 敏感级别：security=值已掩码；public=公开白名单；business=普通配置
+           * @enum security,public,business
+           */
+          sensitivity?: string,
+          /**
+           * @description 是否系统预设参数；系统预设参数不可删除
+           */
+          isSystem?: boolean
         }[],
         /**
          * @description 总数
@@ -731,11 +801,15 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:notice列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/notices': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        title?: string,
+        type?: number,
+        status?: number
       },
       params: never,
       headers: never,
@@ -760,7 +834,7 @@ export type OpenAPIs = {
           /**
            * @description 通知类型
            */
-          type?: string,
+          type?: number,
           /**
            * @description 状态
            */
@@ -790,11 +864,14 @@ export type OpenAPIs = {
     },
     /**
      * 获取system:tag列表
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/tags': {
       query: {
         page?: number,
-        pageSize?: number
+        pageSize?: number,
+        name?: string,
+        status?: number
       },
       params: never,
       headers: never,
@@ -949,6 +1026,41 @@ export type OpenAPIs = {
       response: any[]
     },
     /**
+     * 获取当前用户登录日志（个人视角）
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；仅返回当前认证用户自己的登录记录。
+     */
+    '/api/system/user/login-logs': {
+      query: {
+        page?: number,
+        pageSize?: number
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 当前用户登录日志列表
+         */
+        list?: {}[],
+        /**
+         * @description 总数
+         */
+        total?: number,
+        /**
+         * @description 当前页
+         */
+        page?: number,
+        /**
+         * @description 每页数量
+         */
+        pageSize?: number,
+        /**
+         * @description 总页数
+         */
+        totalPages?: number
+      }
+    },
+    /**
      * 获取 MFA 状态
      */
     '/api/auth/mfa/status': {
@@ -977,6 +1089,7 @@ export type OpenAPIs = {
     },
     /**
      * 获取操作日志
+     * @description 按当前租户查询操作审计日志，包含可信客户端 IP 和位置描述。
      */
     '/api/system/operation-logs': {
       query: {
@@ -1664,32 +1777,43 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 获取会话产物文件列表
+     */
     '/api/ai/conversations/:id/artifacts': {
       query: never,
-      params: { id: string },
+      params: {
+        id: string
+      },
       headers: never,
       body: never,
-      response: Array<{ path: string, size: number, modifiedAt: string }>
+      response: any
     },
-    '/api/ai/conversations/:id/artifact': {
-      query: { path: string },
-      params: { id: string },
-      headers: never,
-      body: never,
-      response: { path: string, content: string }
-    },
+    /**
+     * 获取会话记忆
+     */
     '/api/ai/conversations/:id/memory': {
       query: never,
-      params: { id: string },
+      params: {
+        id: string
+      },
       headers: never,
       body: never,
-      response: {
-        content: string,
-        events: Array<{ id: string, type: string, content: string, sourceMessageIds: string[], createdAt: string }>,
-        status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed',
-        error?: string,
-        processedEventIds: string[]
-      }
+      response: any
+    },
+    /**
+     * 预览会话产物文件
+     */
+    '/api/ai/conversations/:id/artifact': {
+      query: {
+        path: string
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
     },
     '/api/ai/providers/presets': {
       query: never,
@@ -1956,6 +2080,7 @@ export type OpenAPIs = {
     },
     /**
      * 用户注册
+     * @description 仅当系统参数 sys_register_enabled 开启时可用
      */
     '/api/auth/register': {
       query: never,
@@ -1981,21 +2106,9 @@ export type OpenAPIs = {
       },
       response: {
         /**
-         * @description 访问令牌
+         * @description 新注册用户 ID
          */
-        accessToken?: string,
-        /**
-         * @description 刷新令牌
-         */
-        refreshToken?: string,
-        /**
-         * @description 过期时间（秒）
-         */
-        expiresIn?: number,
-        /**
-         * @description 令牌类型
-         */
-        tokenType?: string
+        userId?: string
       }
     },
     /**
@@ -2355,13 +2468,14 @@ export type OpenAPIs = {
         /**
          * @description 角色 ID 列表
          */
-        roleIds?: any[],
+        roleIds?: string[],
         /**
          * @description 岗位 ID 列表
          */
-        postIds?: any[],
+        postIds?: string[],
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number
       },
@@ -2397,6 +2511,7 @@ export type OpenAPIs = {
     },
     /**
      * 创建system:role
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/roles': {
       query: never,
@@ -2417,6 +2532,7 @@ export type OpenAPIs = {
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -2442,12 +2558,13 @@ export type OpenAPIs = {
         /**
          * @description 角色 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
     /**
      * 创建system:menu
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/menus': {
       query: never,
@@ -2489,6 +2606,7 @@ export type OpenAPIs = {
         visible?: boolean,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -2505,6 +2623,7 @@ export type OpenAPIs = {
     },
     /**
      * 创建system:dept
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/depts': {
       query: never,
@@ -2529,6 +2648,7 @@ export type OpenAPIs = {
         leaderUserId?: string,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number
       },
@@ -2550,12 +2670,13 @@ export type OpenAPIs = {
         /**
          * @description 部门 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
     /**
      * 创建system:post
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/posts': {
       query: never,
@@ -2576,6 +2697,7 @@ export type OpenAPIs = {
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -2601,12 +2723,13 @@ export type OpenAPIs = {
         /**
          * @description 岗位 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
     /**
      * 创建system:dict
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/dict/types': {
       query: never,
@@ -2622,11 +2745,16 @@ export type OpenAPIs = {
          */
         code: string,
         /**
+         * @description 是否允许未登录用户访问字典数据，默认否
+         */
+        isPublic?: boolean,
+        /**
          * @description 排序
          */
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -2643,6 +2771,7 @@ export type OpenAPIs = {
     },
     /**
      * 创建system:config
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/configs': {
       query: never,
@@ -2663,8 +2792,17 @@ export type OpenAPIs = {
         value: string,
         /**
          * @description 配置类型
+         * @enum 0,1,2,3
          */
-        type?: string,
+        type?: number,
+        /**
+         * @description 配置分组
+         */
+        group?: string,
+        /**
+         * @description 排序
+         */
+        sort?: number,
         /**
          * @description 备注
          */
@@ -2679,6 +2817,7 @@ export type OpenAPIs = {
     },
     /**
      * 创建system:notice
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/notices': {
       query: never,
@@ -2696,7 +2835,7 @@ export type OpenAPIs = {
         /**
          * @description 通知类型
          */
-        type: string
+        type: number
       },
       response: {
         /**
@@ -2716,7 +2855,7 @@ export type OpenAPIs = {
         /**
          * @description 通知 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
@@ -2731,7 +2870,7 @@ export type OpenAPIs = {
         /**
          * @description 通知 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
@@ -2746,12 +2885,13 @@ export type OpenAPIs = {
         /**
          * @description 通知 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
     /**
      * 创建system:tag
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/tags': {
       query: never,
@@ -2827,9 +2967,18 @@ export type OpenAPIs = {
          */
         sort?: number,
         /**
-         * @description 状态
+         * @description 标签颜色，推荐使用十六进制 CSS 颜色值
          */
-        status?: number
+        cssClass?: string,
+        /**
+         * @description 状态
+         * @enum 0,1
+         */
+        status?: number,
+        /**
+         * @description 备注
+         */
+        remark?: string
       },
       response: {
         /**
@@ -2849,7 +2998,7 @@ export type OpenAPIs = {
         /**
          * @description 字典数据 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
@@ -2864,7 +3013,7 @@ export type OpenAPIs = {
         /**
          * @description 用户 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
@@ -2879,9 +3028,10 @@ export type OpenAPIs = {
         /**
          * @description 用户 ID 列表
          */
-        ids: any[],
+        ids: string[],
         /**
          * @description 目标状态 0=停用 1=正常
+         * @enum 0,1
          */
         status: number
       },
@@ -2898,7 +3048,7 @@ export type OpenAPIs = {
         /**
          * @description 用户 ID 列表
          */
-        ids: any[]
+        ids: string[]
       },
       response: any
     },
@@ -3260,6 +3410,10 @@ export type OpenAPIs = {
          */
         description?: string,
         /**
+         * @description 新会话欢迎词，为空时使用默认文案
+         */
+        welcomeMessage?: string,
+        /**
          * @description 可用模型 ID 列表（至少 1 个）
          */
         model: string[],
@@ -3374,6 +3528,18 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 异步整理会话记忆
+     */
+    '/api/ai/conversations/:id/memory/consolidate': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 分叉会话
      */
     '/api/ai/conversations/:id/fork': {
@@ -3404,13 +3570,6 @@ export type OpenAPIs = {
          */
         sessionId?: string
       }
-    },
-    '/api/ai/conversations/:id/memory/consolidate': {
-      query: never,
-      params: { id: string },
-      headers: never,
-      body: never,
-      response: { status: 'pending' }
     },
     /**
      * 发送消息（非流式）
@@ -3735,6 +3894,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:role
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/roles/:id': {
       query: never,
@@ -3747,6 +3907,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:menu
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/menus/:id': {
       query: never,
@@ -3759,6 +3920,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:dept
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/depts/:id': {
       query: never,
@@ -3771,6 +3933,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:post
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/posts/:id': {
       query: never,
@@ -3783,6 +3946,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:dict
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/dict/types/:id': {
       query: never,
@@ -3795,6 +3959,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:config
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/configs/:id': {
       query: never,
@@ -3807,6 +3972,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:notice
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/notices/:id': {
       query: never,
@@ -3819,6 +3985,7 @@ export type OpenAPIs = {
     },
     /**
      * 删除system:tag
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/tags/:id': {
       query: never,
@@ -4040,13 +4207,14 @@ export type OpenAPIs = {
         /**
          * @description 角色 ID 列表
          */
-        roleIds?: any[],
+        roleIds?: string[],
         /**
          * @description 岗位 ID 列表
          */
-        postIds?: any[],
+        postIds?: string[],
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number
       },
@@ -4089,6 +4257,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:role
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/roles/:id': {
       query: never,
@@ -4102,15 +4271,12 @@ export type OpenAPIs = {
          */
         name?: string,
         /**
-         * @description 角色编码
-         */
-        code?: string,
-        /**
          * @description 排序
          */
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -4133,7 +4299,7 @@ export type OpenAPIs = {
         /**
          * @description 菜单 ID 列表
          */
-        menuIds: any[]
+        menuIds: string[]
       },
       response: any
     },
@@ -4154,12 +4320,13 @@ export type OpenAPIs = {
         /**
          * @description 部门 ID 列表
          */
-        deptIds?: any[]
+        deptIds?: string[]
       },
       response: any
     },
     /**
      * 更新system:menu
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/menus/:id': {
       query: never,
@@ -4203,6 +4370,7 @@ export type OpenAPIs = {
         visible?: boolean,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -4214,6 +4382,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:dept
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/depts/:id': {
       query: never,
@@ -4240,6 +4409,7 @@ export type OpenAPIs = {
         leaderUserId?: string,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number
       },
@@ -4247,6 +4417,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:post
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/posts/:id': {
       query: never,
@@ -4269,6 +4440,7 @@ export type OpenAPIs = {
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -4280,6 +4452,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:dict
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/dict/types/:id': {
       query: never,
@@ -4293,11 +4466,16 @@ export type OpenAPIs = {
          */
         name?: string,
         /**
+         * @description 是否允许未登录用户访问字典数据
+         */
+        isPublic?: boolean,
+        /**
          * @description 排序
          */
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -4309,6 +4487,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:config
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/configs/:id': {
       query: never,
@@ -4327,8 +4506,17 @@ export type OpenAPIs = {
         value?: string,
         /**
          * @description 配置类型
+         * @enum 0,1,2,3
          */
-        type?: string,
+        type?: number,
+        /**
+         * @description 配置分组
+         */
+        group?: string,
+        /**
+         * @description 排序
+         */
+        sort?: number,
         /**
          * @description 备注
          */
@@ -4338,6 +4526,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:notice
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/notices/:id': {
       query: never,
@@ -4357,7 +4546,7 @@ export type OpenAPIs = {
         /**
          * @description 通知类型
          */
-        type?: string
+        type?: number
       },
       response: any
     },
@@ -4387,6 +4576,7 @@ export type OpenAPIs = {
     },
     /**
      * 更新system:tag
+     * @description 租户作用域由服务端根据当前部署与认证会话确定；客户端不得提交 tenantId。跨租户资源按不存在处理。
      */
     '/api/system/tags/:id': {
       query: never,
@@ -4409,6 +4599,7 @@ export type OpenAPIs = {
         sort?: number,
         /**
          * @description 状态
+         * @enum 0,1
          */
         status?: number,
         /**
@@ -4487,9 +4678,18 @@ export type OpenAPIs = {
          */
         sort?: number,
         /**
-         * @description 状态
+         * @description 标签颜色，推荐使用十六进制 CSS 颜色值
          */
-        status?: number
+        cssClass?: string,
+        /**
+         * @description 状态
+         * @enum 0,1
+         */
+        status?: number,
+        /**
+         * @description 备注
+         */
+        remark?: string
       },
       response: any
     },
@@ -4547,7 +4747,7 @@ export type OpenAPIs = {
         /**
          * @description 标签 ID 列表
          */
-        tagIds: any[]
+        tagIds: string[]
       },
       response: any
     },

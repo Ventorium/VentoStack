@@ -128,3 +128,17 @@ await db.transaction(async (tx) => {
 ```
 
 `db.transaction` 自动处理 BEGIN / COMMIT / ROLLBACK，嵌套事务自动使用 SAVEPOINT。`createTransactionManager` 则提供更细粒度的显式控制（隔离级别、savepoint 命名、深度查询等）。
+
+## 连接池事务
+
+通过 `createSqlExecutor()` 使用 Bun SQL 连接池时，应把返回的 `transactionRunner` 一并传给 `createDatabase()`。框架会调用 Bun 原生 `sql.begin()`，保证事务内的全部 ORM 与 raw 查询固定使用同一数据库连接；不能在普通池 executor 上分别发送 `BEGIN`、业务 SQL 和 `COMMIT`。
+
+```typescript
+const sql = createSqlExecutor(databaseUrl, { max: 10 });
+const db = createDatabase({
+  executor: sql.executor,
+  transactionRunner: sql.transactionRunner,
+});
+```
+
+若 executor 被 tracing 等能力包装，事务 executor 也必须用同样的包装器处理后再交给事务回调。自定义的单连接 executor 可以不提供 `transactionRunner`，此时保留显式 `BEGIN / COMMIT / ROLLBACK` 的兼容行为。

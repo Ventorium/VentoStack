@@ -23,6 +23,7 @@ export interface PaginatedResult<T> {
 export interface CreateDictTypeParams {
   name: string;
   code: string;
+  isPublic?: boolean;
   sort?: number;
   status?: number;
   remark?: string;
@@ -31,6 +32,7 @@ export interface CreateDictTypeParams {
 /** 字典类型更新参数 */
 export interface UpdateDictTypeParams {
   name?: string;
+  isPublic?: boolean;
   sort?: number;
   status?: number;
   remark?: string;
@@ -42,6 +44,7 @@ export interface DictTypeItem {
   name: string;
   code: string;
   isSystem: boolean;
+  isPublic: boolean;
   sort: number;
   status: number;
   remark: string;
@@ -108,6 +111,8 @@ export interface DictService {
   deleteData(id: string): Promise<void>;
   /** 按字典类型查询字典数据（带缓存） */
   listDataByType(typeCode: string): Promise<DictDataItem[]>;
+  /** 字典类型是否允许匿名访问（仅启用状态可公开） */
+  isTypePublic(typeCode: string): Promise<boolean>;
   /** 刷新字典缓存 */
   refreshCache(typeCode?: string): Promise<void>;
 }
@@ -140,6 +145,7 @@ export function createDictService(deps: {
       name: params.name,
       code: params.code,
       is_system: false,
+      is_public: params.isPublic ?? false,
       sort: params.sort ?? 0,
       status: params.status ?? 1,
       remark: params.remark ?? null,
@@ -156,12 +162,18 @@ export function createDictService(deps: {
       .select('is_system')
       .get();
     if (!existing) throw new NotFoundError('字典类型不存在');
-    if (existing.is_system) {
+    const structuralFieldsChanged =
+      params.name !== undefined ||
+      params.sort !== undefined ||
+      params.status !== undefined ||
+      params.remark !== undefined;
+    if (existing.is_system && structuralFieldsChanged) {
       throw new Error('系统内置字典类型不可修改');
     }
 
     const updates: Record<string, unknown> = {};
     if (params.name !== undefined) updates.name = params.name;
+    if (params.isPublic !== undefined) updates.is_public = params.isPublic;
     if (params.sort !== undefined) updates.sort = params.sort;
     if (params.status !== undefined) updates.status = params.status;
     if (params.remark !== undefined) updates.remark = params.remark;
@@ -218,6 +230,7 @@ export function createDictService(deps: {
       name: row.name,
       code: row.code,
       isSystem: Boolean(row.is_system),
+      isPublic: Boolean(row.is_public),
       sort: row.sort ?? 0,
       status: row.status ?? 1,
       remark: row.remark ?? '',
@@ -245,7 +258,17 @@ export function createDictService(deps: {
     const total = await query.count();
 
     const rows = await query
-      .select('id', 'name', 'code', 'is_system', 'sort', 'status', 'remark', 'created_at')
+      .select(
+        'id',
+        'name',
+        'code',
+        'is_system',
+        'is_public',
+        'sort',
+        'status',
+        'remark',
+        'created_at',
+      )
       .orderBy('sort', 'desc')
       .orderBy('created_at', 'desc')
       .limit(pageSize)
@@ -257,6 +280,7 @@ export function createDictService(deps: {
       name: row.name,
       code: row.code,
       isSystem: Boolean(row.is_system),
+      isPublic: Boolean(row.is_public),
       sort: row.sort ?? 0,
       status: row.status ?? 1,
       remark: row.remark ?? '',
@@ -409,6 +433,17 @@ export function createDictService(deps: {
     );
   }
 
+  async function isTypePublic(typeCode: string): Promise<boolean> {
+    const type = await db
+      .query(DictTypeModel)
+      .where('tenant_id', '=', deps.tenantId)
+      .where('code', '=', typeCode)
+      .where('status', '=', 1)
+      .select('is_public')
+      .get();
+    return Boolean(type?.is_public);
+  }
+
   async function refreshCache(typeCode?: string): Promise<void> {
     if (typeCode) {
       await cache.del(cacheKey(typeCode));
@@ -436,6 +471,7 @@ export function createDictService(deps: {
     updateData,
     deleteData,
     listDataByType,
+    isTypePublic,
     refreshCache,
   };
 }

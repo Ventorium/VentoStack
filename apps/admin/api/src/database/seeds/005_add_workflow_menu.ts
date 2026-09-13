@@ -1,5 +1,6 @@
 import { generateUUID } from '@ventostack/core';
 import type { Seed } from '@ventostack/database';
+import { env } from '../../config';
 
 /**
  * 添加审批流程菜单组。
@@ -15,8 +16,11 @@ export const addWorkflowMenuSeed: Seed = {
   name: '005_add_workflow_menu',
 
   async run(executor) {
+    const tenantId = env.TENANT_ID;
+
     const existing = await executor(
-      `SELECT id FROM sys_menu WHERE path = '/workflow' AND type = 1`,
+      `SELECT id FROM sys_menu WHERE tenant_id = $1 AND path = '/workflow' AND type = 1`,
+      [tenantId],
     );
     if ((existing as unknown[]).length > 0) return;
 
@@ -27,17 +31,18 @@ export const addWorkflowMenuSeed: Seed = {
 
     // 目录
     await executor(
-      `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, NULL, $2, $3, $4, $5, $6, NULL, $7, $8, TRUE, 1, NOW(), NOW())`,
-      [dirId, '审批流程', '/workflow', 'LAYOUT', '/workflow/definitions', 1, 'AuditOutlined', 3],
+      `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+       VALUES ($1, $2, NULL, $3, $4, $5, $6, NULL, $7, 3, TRUE, 1, NOW(), NOW())`,
+      [dirId, tenantId, '审批流程', '/workflow', 'LAYOUT', '/workflow/definitions', 1, 'AuditOutlined'],
     );
 
     // 流程定义
     await executor(
-      `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, TRUE, 1, NOW(), NOW())`,
+      `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 1, TRUE, 1, NOW(), NOW())`,
       [
         defMenuId,
+        tenantId,
         dirId,
         '流程定义',
         '/workflow/definitions',
@@ -45,16 +50,16 @@ export const addWorkflowMenuSeed: Seed = {
         2,
         'workflow:definition:list',
         'NodeIndexOutlined',
-        1,
       ],
     );
 
     // 我的申请
     await executor(
-      `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, TRUE, 1, NOW(), NOW())`,
+      `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 2, TRUE, 1, NOW(), NOW())`,
       [
         instanceMenuId,
+        tenantId,
         dirId,
         '我的申请',
         '/workflow/instances',
@@ -62,16 +67,16 @@ export const addWorkflowMenuSeed: Seed = {
         2,
         'workflow:instance:list',
         'FileTextOutlined',
-        2,
       ],
     );
 
     // 我的审批
     await executor(
-      `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, TRUE, 1, NOW(), NOW())`,
+      `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 3, TRUE, 1, NOW(), NOW())`,
       [
         taskMenuId,
+        tenantId,
         dirId,
         '我的审批',
         '/workflow/tasks',
@@ -79,7 +84,6 @@ export const addWorkflowMenuSeed: Seed = {
         2,
         'workflow:task:list',
         'CheckSquareOutlined',
-        3,
       ],
     );
 
@@ -123,34 +127,37 @@ export const addWorkflowMenuSeed: Seed = {
     for (const { menuId, buttons } of buttonPermissions) {
       for (const btn of buttons) {
         await executor(
-          `INSERT INTO sys_menu (id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-           VALUES ($1, $2, $3, NULL, NULL, NULL, 3, $4, NULL, $5, TRUE, 1, NOW(), NOW())`,
-          [generateUUID(), menuId, btn.name, btn.permission, btn.sort],
+          `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, NULL, NULL, NULL, 3, $5, NULL, $6, TRUE, 1, NOW(), NOW())`,
+          [generateUUID(), tenantId, menuId, btn.name, btn.permission, btn.sort],
         );
       }
     }
 
     // 绑定到 admin 角色
-    const adminRole = await executor(`SELECT id FROM sys_role WHERE code = 'admin'`);
+    const adminRole = await executor(
+      `SELECT id FROM sys_role WHERE tenant_id = $1 AND code = 'admin'`,
+      [tenantId],
+    );
     const [admin] = adminRole as unknown as Array<{ id: string }>;
     if (admin) {
       const adminRoleId = admin.id;
       for (const menuId of [dirId, defMenuId, instanceMenuId, taskMenuId]) {
-        await executor('INSERT INTO sys_role_menu (role_id, menu_id) VALUES ($1, $2)', [
-          adminRoleId,
-          menuId,
-        ]);
+        await executor(
+          'INSERT INTO sys_role_menu (role_id, menu_id, tenant_id) VALUES ($1, $2, $3)',
+          [adminRoleId, menuId, tenantId],
+        );
       }
       // 绑定按钮权限到 admin 角色
       const allChildMenuIds = await executor(
-        `SELECT id FROM sys_menu WHERE parent_id IN ($1, $2, $3)`,
-        [defMenuId, instanceMenuId, taskMenuId],
+        `SELECT id FROM sys_menu WHERE tenant_id = $1 AND parent_id IN ($2, $3, $4)`,
+        [tenantId, defMenuId, instanceMenuId, taskMenuId],
       );
       for (const row of allChildMenuIds as unknown as Array<{ id: string }>) {
-        await executor('INSERT INTO sys_role_menu (role_id, menu_id) VALUES ($1, $2)', [
-          adminRoleId,
-          row.id,
-        ]);
+        await executor(
+          'INSERT INTO sys_role_menu (role_id, menu_id, tenant_id) VALUES ($1, $2, $3)',
+          [adminRoleId, row.id, tenantId],
+        );
       }
     }
   },

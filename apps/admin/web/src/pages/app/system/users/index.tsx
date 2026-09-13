@@ -121,11 +121,13 @@ const UserPage = () => {
   useEffect(() => {
     const fetchPosts = async () => {
       const { error, data } = (await client.get("/api/system/posts", {
-        query: { pageSize: 999 },
+        query: { pageSize: 100 },
       })) as { error?: unknown; data?: PaginatedData<PostItem> };
-      if (!error && data?.list) {
-        setPostOptions(data.list.map((p) => ({ label: p.name, value: p.id })));
+      if (error) {
+        msg.error("岗位列表加载失败");
+        return;
       }
+      setPostOptions((data?.list ?? []).map((p) => ({ label: p.name, value: p.id })));
     };
     fetchPosts();
   }, []);
@@ -134,11 +136,13 @@ const UserPage = () => {
   useEffect(() => {
     const fetchRoles = async () => {
       const { error, data } = (await client.get("/api/system/roles", {
-        query: { pageSize: 999 },
+        query: { pageSize: 100 },
       })) as { error?: unknown; data?: PaginatedData<RoleItem> };
-      if (!error && data?.list) {
-        setRoleOptions(data.list.map((r) => ({ label: r.name, value: r.id })));
+      if (error) {
+        msg.error("角色列表加载失败");
+        return;
       }
+      setRoleOptions((data?.list ?? []).map((r) => ({ label: r.name, value: r.id })));
     };
     fetchRoles();
   }, []);

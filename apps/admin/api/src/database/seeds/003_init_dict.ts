@@ -1,5 +1,6 @@
 import { createTagLogger, generateUUID } from "@ventostack/core";
 import type { Seed } from "@ventostack/database";
+import { env } from "../../config";
 
 const log = createTagLogger("seeds");
 
@@ -51,23 +52,24 @@ export const initDictSeed: Seed = {
       ],
     };
 
+    const tenantId = env.TENANT_ID;
     for (const type of types) {
       const typeId = generateUUID();
       await executor(
-        `INSERT INTO sys_dict_type (id, name, code, is_system, status, remark, created_at, updated_at)
-         VALUES ($1, $2, $3, TRUE, 1, $4, NOW(), NOW())
-         ON CONFLICT (code) DO NOTHING`,
-        [typeId, type.name, type.code, type.remark],
+        `INSERT INTO sys_dict_type (id, tenant_id, name, code, is_system, is_public, status, remark, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, TRUE, FALSE, 1, $5, NOW(), NOW())
+         ON CONFLICT (tenant_id, code) DO NOTHING`,
+        [typeId, tenantId, type.name, type.code, type.remark],
       );
 
       const items = dataMap[type.code] ?? [];
       for (const item of items) {
         const dataId = generateUUID();
         await executor(
-          `INSERT INTO sys_dict_data (id, type_code, label, value, sort, css_class, is_system, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, TRUE, 1, NOW(), NOW())
-           ON CONFLICT (type_code, value) DO NOTHING`,
-          [dataId, type.code, item.label, item.value, item.sort, item.cssClass ?? ""],
+          `INSERT INTO sys_dict_data (id, tenant_id, type_code, label, value, sort, css_class, is_system, status, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, TRUE, 1, NOW(), NOW())
+           ON CONFLICT (tenant_id, type_code, value) DO NOTHING`,
+          [dataId, tenantId, type.code, item.label, item.value, item.sort, item.cssClass ?? ""],
         );
       }
     }

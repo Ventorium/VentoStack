@@ -3,7 +3,11 @@
  */
 
 import { describe, expect, test } from 'bun:test';
-import { MASKED_CONFIG_VALUE, createConfigService } from '../services/config';
+import {
+  MASKED_CONFIG_VALUE,
+  createConfigService,
+  validatePresetConfigValue,
+} from '../services/config';
 import { createMockDatabase, createMockExecutor, createTestCache } from './helpers';
 
 function setup() {
@@ -16,6 +20,14 @@ function setup() {
 }
 
 describe('ConfigService', () => {
+  test('validates preset config value domains', () => {
+    expect(() => validatePresetConfigValue('sys_register_enabled', 'yes')).toThrow('true 或 false');
+    expect(() => validatePresetConfigValue('ai_trace_enabled', '1')).toThrow('true 或 false');
+    expect(() => validatePresetConfigValue('sys_login_max_attempts', '0')).toThrow('范围');
+    expect(() => validatePresetConfigValue('sys_password_expire_days', '0')).toThrow('范围');
+    expect(() => validatePresetConfigValue('sys_password_expire_days', '-1')).not.toThrow();
+  });
+
   test('create inserts config', async () => {
     const s = setup();
     s.results.set('INSERT', [{ id: 'cfg1' }]);
@@ -67,6 +79,15 @@ describe('ConfigService', () => {
     expect(s.configService.delete('cfg-protected')).rejects.toThrow('不允许删除');
   });
 
+  test.each(['sys_register_enabled', 'ai_trace_enabled'])(
+    'delete rejects newly added preset config %s',
+    async (key) => {
+      const s = setup();
+      s.results.set('SELECT', [{ key }]);
+      expect(s.configService.delete('cfg-protected')).rejects.toThrow('不允许删除');
+    },
+  );
+
   test('update rejects when config not found', async () => {
     const s = setup();
     // mock SELECT 返回空
@@ -115,7 +136,9 @@ describe('ConfigService', () => {
       'security',
     );
     expect(result.items.find((i) => i.key === 'sys_site_name')?.sensitivity).toBe('public');
+    expect(result.items.find((i) => i.key === 'sys_site_name')?.isSystem).toBe(true);
     expect(result.items.find((i) => i.key === 'biz_page_size')?.sensitivity).toBe('business');
+    expect(result.items.find((i) => i.key === 'biz_page_size')?.isSystem).toBe(false);
   });
 
   test('masked sensitive value means keep the existing secret', async () => {

@@ -5,12 +5,12 @@
  * 受保护端点：register-begin, register-finish, list, delete
  */
 
-import type { Cache } from "@ventostack/cache";
-import { createRouter, fail, parseBody, safeErrorMessage, success } from "@ventostack/core";
-import type { Middleware, Router } from "@ventostack/core";
-import type { AuthService } from "../services/auth";
-import type { ConfigService } from "../services/config";
-import type { PasskeyService } from "../services/passkey";
+import type { Cache } from '@ventostack/cache';
+import { createRouter, fail, parseBody, safeErrorMessage, success } from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
+import type { AuthService } from '../services/auth';
+import type { ConfigService } from '../services/config';
+import type { PasskeyService } from '../services/passkey';
 
 /** IP 每分钟最大请求次数 */
 const MAX_IP_REQUESTS_PER_MINUTE = 20;
@@ -20,13 +20,15 @@ const IP_RATE_WINDOW = 60;
 /** 从请求中提取客户端 IP。仅可信代理可传递代理头。 */
 function getClientIP(request: Request, trustedProxies: string[] = []): string {
   const directIP =
-    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ?? "unknown";
+    (request as Request & { conn?: { remoteAddress?: string } }).conn?.remoteAddress ??
+    request.headers.get('x-real-ip') ??
+    'unknown';
   if (trustedProxies.length === 0 || !trustedProxies.includes(directIP)) {
     return directIP;
   }
-  const forwarded = request.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0]!.trim();
-  const realIP = request.headers.get("x-real-ip");
+  const forwarded = request.headers.get('x-forwarded-for');
+  if (forwarded) return forwarded.split(',')[0]!.trim();
+  const realIP = request.headers.get('x-real-ip');
   if (realIP) return realIP.trim();
   return directIP;
 }
@@ -39,27 +41,41 @@ interface TokenCookiePair {
 }
 
 function cookieSecureAttribute(request: Request): string {
-  return new URL(request.url).protocol === "https:" ? "; Secure" : "";
+  return new URL(request.url).protocol === 'https:' ? '; Secure' : '';
 }
 
-function appendCookie(response: Response, request: Request, name: string, value: string, maxAge: number): Response {
+function appendCookie(
+  response: Response,
+  request: Request,
+  name: string,
+  value: string,
+  maxAge: number,
+): Response {
   response.headers.append(
-    "Set-Cookie",
+    'Set-Cookie',
     `${name}=${encodeURIComponent(value)}; Path=/; Max-Age=${maxAge}; HttpOnly; SameSite=Strict${cookieSecureAttribute(request)}`,
   );
   return response;
 }
 
 function withTokenCookies(response: Response, request: Request, pair: TokenCookiePair): Response {
-  if (pair.accessToken) appendCookie(response, request, "vs_access_token", pair.accessToken, pair.expiresIn ?? 900);
-  if (pair.refreshToken) appendCookie(response, request, "vs_refresh_token", pair.refreshToken, pair.refreshExpiresIn ?? 604800);
+  if (pair.accessToken)
+    appendCookie(response, request, 'vs_access_token', pair.accessToken, pair.expiresIn ?? 900);
+  if (pair.refreshToken)
+    appendCookie(
+      response,
+      request,
+      'vs_refresh_token',
+      pair.refreshToken,
+      pair.refreshExpiresIn ?? 604800,
+    );
   return response;
 }
 
 const passkeyItemSchema = {
-  id: { type: "uuid" as const, description: "Passkey ID" },
-  name: { type: "string" as const, description: "Passkey 名称" },
-  createdAt: { type: "date" as const, description: "创建时间" },
+  id: { type: 'uuid' as const, description: 'Passkey ID' },
+  name: { type: 'string' as const, description: 'Passkey 名称' },
+  createdAt: { type: 'date' as const, description: '创建时间' },
 };
 
 export function createPasskeyRoutes(
@@ -74,29 +90,29 @@ export function createPasskeyRoutes(
 
   // ---- 公开端点 ----
   router.post(
-    "/api/auth/passkey/login-begin",
+    '/api/auth/passkey/login-begin',
     {
       body: {
-        username: { type: "string" as const, description: "用户名（可选，用于识别用户）" },
+        username: { type: 'string' as const, description: '用户名（可选，用于识别用户）' },
       },
       responses: {
         200: {
-          challengeId: { type: "string" as const, description: "挑战 ID" },
-          challenge: { type: "string" as const, description: "WebAuthn 挑战数据" },
+          challengeId: { type: 'string' as const, description: '挑战 ID' },
+          challenge: { type: 'string' as const, description: 'WebAuthn 挑战数据' },
         },
       },
       openapi: {
-        summary: "开始 Passkey 登录",
-        tags: ["auth", "passkey"],
-        operationId: "passkeyLoginBegin",
+        summary: '开始 Passkey 登录',
+        tags: ['auth', 'passkey'],
+        operationId: 'passkeyLoginBegin',
       },
     },
     async (ctx) => {
       try {
         // 检查 Passkey 是否全局启用
-        const enabled = (await configService.getValue("sys_passkey_enabled")) !== "false";
+        const enabled = (await configService.getValue('sys_passkey_enabled')) !== 'false';
         if (!enabled) {
-          return fail("通行密钥登录未启用", 403);
+          return fail('通行密钥登录未启用', 403);
         }
 
         // IP 速率限制
@@ -104,46 +120,46 @@ export function createPasskeyRoutes(
         const ipKey = `passkey_ip:${ip}`;
         const ipCount = await cache.increment(ipKey, IP_RATE_WINDOW);
         if (ipCount > MAX_IP_REQUESTS_PER_MINUTE) {
-          return fail("请求过于频繁，请稍后再试", 429);
+          return fail('请求过于频繁，请稍后再试', 429);
         }
 
         const body = await parseBody(ctx.request);
         const result = await passkeyService.beginAuthentication(body.username as string);
         return success(result);
       } catch (e) {
-        const msg = safeErrorMessage(e, "通行密钥登录失败");
+        const msg = safeErrorMessage(e, '通行密钥登录失败');
         return fail(msg, 400);
       }
     },
   );
 
   router.post(
-    "/api/auth/passkey/login-finish",
+    '/api/auth/passkey/login-finish',
     {
       body: {
-        challengeId: { type: "string" as const, required: true, description: "挑战 ID" },
-        assertion: { type: "object" as const, required: true, description: "WebAuthn 断言数据" },
-        deviceType: { type: "string" as const, description: "设备类型" },
+        challengeId: { type: 'string' as const, required: true, description: '挑战 ID' },
+        assertion: { type: 'object' as const, required: true, description: 'WebAuthn 断言数据' },
+        deviceType: { type: 'string' as const, description: '设备类型' },
       },
       responses: {
         200: {
-          accessToken: { type: "string" as const, description: "访问令牌" },
-          refreshToken: { type: "string" as const, description: "刷新令牌" },
-          expiresIn: { type: "int" as const, description: "过期时间（秒）" },
+          accessToken: { type: 'string' as const, description: '访问令牌' },
+          refreshToken: { type: 'string' as const, description: '刷新令牌' },
+          expiresIn: { type: 'int' as const, description: '过期时间（秒）' },
         },
       },
       openapi: {
-        summary: "完成 Passkey 登录",
-        tags: ["auth", "passkey"],
-        operationId: "passkeyLoginFinish",
+        summary: '完成 Passkey 登录',
+        tags: ['auth', 'passkey'],
+        operationId: 'passkeyLoginFinish',
       },
     },
     async (ctx) => {
       try {
         // 检查 Passkey 是否全局启用
-        const enabled = (await configService.getValue("sys_passkey_enabled")) !== "false";
+        const enabled = (await configService.getValue('sys_passkey_enabled')) !== 'false';
         if (!enabled) {
-          return fail("通行密钥登录未启用", 403);
+          return fail('通行密钥登录未启用', 403);
         }
 
         const body = await parseBody(ctx.request);
@@ -158,13 +174,13 @@ export function createPasskeyRoutes(
           userId,
           username,
           ip,
-          userAgent: ctx.request.headers.get("user-agent") ?? "unknown",
+          userAgent: ctx.request.headers.get('user-agent') ?? 'unknown',
           ...(body.deviceType ? { deviceType: body.deviceType as string } : {}),
         });
 
         return withTokenCookies(success(loginResult), ctx.request, loginResult);
       } catch (e) {
-        const msg = safeErrorMessage(e, "通行密钥验证失败");
+        const msg = safeErrorMessage(e, '通行密钥验证失败');
         return fail(msg, 401, 401);
       }
     },
@@ -175,52 +191,56 @@ export function createPasskeyRoutes(
   protectedRouter.use(authMiddleware);
 
   protectedRouter.post(
-    "/api/auth/passkey/register-begin",
+    '/api/auth/passkey/register-begin',
     {
       responses: {
         200: {
-          challengeId: { type: "string" as const, description: "挑战 ID" },
-          challenge: { type: "string" as const, description: "WebAuthn 挑战数据" },
+          challengeId: { type: 'string' as const, description: '挑战 ID' },
+          challenge: { type: 'string' as const, description: 'WebAuthn 挑战数据' },
         },
       },
       openapi: {
-        summary: "开始 Passkey 注册",
-        tags: ["auth", "passkey"],
-        operationId: "passkeyRegisterBegin",
+        summary: '开始 Passkey 注册',
+        tags: ['auth', 'passkey'],
+        operationId: 'passkeyRegisterBegin',
       },
     },
     async (ctx) => {
       try {
+        const enabled = (await configService.getValue('sys_passkey_enabled')) !== 'false';
+        if (!enabled) return fail('通行密钥未启用', 403);
         const user = ctx.user as { id: string } | undefined;
-        if (!user?.id) return fail("未登录", 401, 401);
+        if (!user?.id) return fail('未登录', 401, 401);
         const result = await passkeyService.beginRegistration(user.id);
         return success(result);
       } catch (e) {
-        const msg = safeErrorMessage(e, "通行密钥注册失败");
+        const msg = safeErrorMessage(e, '通行密钥注册失败');
         return fail(msg, 400);
       }
     },
   );
 
   protectedRouter.post(
-    "/api/auth/passkey/register-finish",
+    '/api/auth/passkey/register-finish',
     {
       body: {
-        name: { type: "string" as const, required: true, description: "Passkey 名称" },
-        challengeId: { type: "string" as const, required: true, description: "挑战 ID" },
-        credential: { type: "object" as const, required: true, description: "WebAuthn 凭证数据" },
+        name: { type: 'string' as const, required: true, description: 'Passkey 名称' },
+        challengeId: { type: 'string' as const, required: true, description: '挑战 ID' },
+        credential: { type: 'object' as const, required: true, description: 'WebAuthn 凭证数据' },
       },
       responses: { 200: passkeyItemSchema },
       openapi: {
-        summary: "完成 Passkey 注册",
-        tags: ["auth", "passkey"],
-        operationId: "passkeyRegisterFinish",
+        summary: '完成 Passkey 注册',
+        tags: ['auth', 'passkey'],
+        operationId: 'passkeyRegisterFinish',
       },
     },
     async (ctx) => {
       try {
+        const enabled = (await configService.getValue('sys_passkey_enabled')) !== 'false';
+        if (!enabled) return fail('通行密钥未启用', 403);
         const user = ctx.user as { id: string } | undefined;
-        if (!user?.id) return fail("未登录", 401, 401);
+        if (!user?.id) return fail('未登录', 401, 401);
         const body = await parseBody(ctx.request);
         const result = await passkeyService.finishRegistration(
           user.id,
@@ -230,38 +250,38 @@ export function createPasskeyRoutes(
         );
         return success(result);
       } catch (e) {
-        const msg = safeErrorMessage(e, "通行密钥注册完成失败");
+        const msg = safeErrorMessage(e, '通行密钥注册完成失败');
         return fail(msg, 400);
       }
     },
   );
 
   protectedRouter.get(
-    "/api/auth/passkey/list",
+    '/api/auth/passkey/list',
     {
-      responses: { 200: { type: "array" as const, description: "Passkey 列表" } },
+      responses: { 200: { type: 'array' as const, description: 'Passkey 列表' } },
       openapi: {
-        summary: "获取 Passkey 列表",
-        tags: ["auth", "passkey"],
-        operationId: "listPasskeys",
+        summary: '获取 Passkey 列表',
+        tags: ['auth', 'passkey'],
+        operationId: 'listPasskeys',
       },
     },
     async (ctx) => {
       const user = ctx.user as { id: string } | undefined;
-      if (!user?.id) return fail("未登录", 401, 401);
+      if (!user?.id) return fail('未登录', 401, 401);
       const passkeys = await passkeyService.listPasskeys(user.id);
       return success(passkeys);
     },
   );
 
   protectedRouter.delete(
-    "/api/auth/passkey/:id",
+    '/api/auth/passkey/:id',
     {
-      openapi: { summary: "删除 Passkey", tags: ["auth", "passkey"], operationId: "deletePasskey" },
+      openapi: { summary: '删除 Passkey', tags: ['auth', 'passkey'], operationId: 'deletePasskey' },
     },
     async (ctx) => {
       const user = ctx.user as { id: string } | undefined;
-      if (!user?.id) return fail("未登录", 401, 401);
+      if (!user?.id) return fail('未登录', 401, 401);
       const passkeyId = (ctx.params as Record<string, string>).id!;
       await passkeyService.removePasskey(user.id, passkeyId);
       return success(null);

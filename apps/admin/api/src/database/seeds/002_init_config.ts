@@ -1,5 +1,6 @@
 import { createTagLogger, generateUUID } from "@ventostack/core";
 import type { Seed } from "@ventostack/database";
+import { env } from "../../config";
 
 const log = createTagLogger("seeds");
 
@@ -106,13 +107,14 @@ export const initConfigSeed: Seed = {
       },
     ];
 
+    const tenantId = env.TENANT_ID;
     for (const cfg of configs) {
       const id = generateUUID();
       await executor(
-        `INSERT INTO sys_config (id, name, key, value, type, "group", remark, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())
-         ON CONFLICT (key) DO NOTHING`,
-        [id, cfg.name, cfg.key, cfg.value, cfg.type, cfg.group, cfg.remark],
+        `INSERT INTO sys_config (id, tenant_id, name, key, value, type, "group", remark, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+         ON CONFLICT (tenant_id, key) DO NOTHING`,
+        [id, tenantId, cfg.name, cfg.key, cfg.value, cfg.type, cfg.group, cfg.remark],
       );
     }
 

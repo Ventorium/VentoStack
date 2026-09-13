@@ -11,6 +11,7 @@ import {
   Button,
   Card,
   Col,
+  ColorPicker,
   Drawer,
   Form,
   Input,
@@ -18,11 +19,13 @@ import {
   Modal,
   Row,
   Space,
+  Switch,
   Table,
   Tag,
 } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { useState } from "react";
+import { buildDictTypeUpdateBody } from "./dict-form";
 
 const typeFetcher = (params: Record<string, unknown>) =>
   client.get("/api/system/dict/types", { query: cleanParams(params) }) as Promise<{
@@ -78,7 +81,14 @@ const DictPage = () => {
   };
   const openEditType = (r: DictTypeItem) => {
     setEditingType(r);
-    typeForm.setFieldsValue({ name: r.name, code: r.code, sort: r.sort, remark: r.remark, status: r.status });
+    typeForm.setFieldsValue({
+      name: r.name,
+      code: r.code,
+      isPublic: r.isPublic,
+      sort: r.sort,
+      remark: r.remark,
+      status: r.status,
+    });
     setTypeModalOpen(true);
   };
 
@@ -89,7 +99,7 @@ const DictPage = () => {
       if (editingType) {
         const { error } = await client.put("/api/system/dict/types/:id", {
           params: { id: editingType.code },
-          body: values,
+          body: buildDictTypeUpdateBody(values),
         });
         if (!error) {
           msg.success("更新成功");
@@ -112,6 +122,17 @@ const DictPage = () => {
     const { error } = await client.delete("/api/system/dict/types/:id", { params: { id: code } });
     if (!error) {
       msg.success("删除成功");
+      refresh();
+    }
+  };
+
+  const handlePublicChange = async (record: DictTypeItem, isPublic: boolean) => {
+    const { error } = await client.put("/api/system/dict/types/:id", {
+      params: { id: record.code },
+      body: { isPublic },
+    });
+    if (!error) {
+      msg.success(isPublic ? "已允许匿名访问" : "已关闭匿名访问");
       refresh();
     }
   };
@@ -174,7 +195,9 @@ const DictPage = () => {
             label: values.label,
             value: values.value,
             sort: values.sort,
+            cssClass: values.cssClass,
             status: values.status,
+            remark: values.remark,
           },
         });
         if (!error) {
@@ -188,7 +211,9 @@ const DictPage = () => {
             label: values.label,
             value: values.value,
             sort: values.sort,
+            cssClass: values.cssClass,
             status: values.status,
+            remark: values.remark,
             dictType: currentTypeCode,
           },
         });
@@ -250,6 +275,20 @@ const DictPage = () => {
         r.isSystem ? <Tag color="blue">是</Tag> : <Tag>否</Tag>,
     },
     {
+      title: "公开访问",
+      dataIndex: "isPublic",
+      key: "isPublic",
+      width: 100,
+      render: (_: unknown, r: DictTypeItem) => (
+        <Switch
+          checked={r.isPublic}
+          checkedChildren="是"
+          unCheckedChildren="否"
+          onChange={(checked) => handlePublicChange(r, checked)}
+        />
+      ),
+    },
+    {
       title: "状态",
       dataIndex: "status",
       key: "status",
@@ -294,7 +333,13 @@ const DictPage = () => {
   const dataColumns: ColumnsType<DictDataItem> = [
     { title: "标签", dataIndex: "label", key: "label", width: 140 },
     { title: "值", dataIndex: "value", key: "value", width: 140 },
-    { title: "样式", dataIndex: "cssClass", key: "cssClass", width: 100 },
+    {
+      title: "样式",
+      dataIndex: "cssClass",
+      key: "cssClass",
+      width: 120,
+      render: (color: string) => (color ? <Tag color={color}>{color}</Tag> : "-"),
+    },
     {
       title: "状态",
       dataIndex: "status",
@@ -413,6 +458,17 @@ const DictPage = () => {
                 <DictSelect typeCode="sys_status" />
               </Form.Item>
             </Col>
+            <Col span={8}>
+              <Form.Item
+                name="isPublic"
+                label="公开访问"
+                valuePropName="checked"
+                initialValue={false}
+                tooltip="开启后，未登录用户也可以读取该字典的启用数据"
+              >
+                <Switch checkedChildren="是" unCheckedChildren="否" />
+              </Form.Item>
+            </Col>
           </Row>
           <Form.Item name="remark" label="备注">
             <Input.TextArea rows={3} />
@@ -510,8 +566,12 @@ const DictPage = () => {
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item name="cssClass" label="样式">
-                <Input placeholder="Tag 颜色" />
+              <Form.Item
+                name="cssClass"
+                label="样式"
+                getValueFromEvent={(_color, css: string) => css ?? ""}
+              >
+                <ColorPicker format="hex" disabledAlpha allowClear showText />
               </Form.Item>
             </Col>
             <Col span={8}>
