@@ -1,6 +1,7 @@
 // @ventostack/core - Schema 类型推导与运行时校验
 // 为路由配置提供统一的类型声明、编译期推导和运行时转换/校验
 
+import { getMaxBodySize } from "./response";
 import { VALIDATION_PATTERNS } from "./validation-rules";
 
 /** 支持的 schema 字段类型 */
@@ -92,7 +93,7 @@ const DEFAULT_MAX_JSON_DEPTH = 10;
 const DEFAULT_MAX_FORM_FIELDS = 200;
 const DEFAULT_MAX_FORM_FILES = 20;
 
-function checkBodySize(request: Request, maxSize = DEFAULT_MAX_BODY_SIZE): string | null {
+function checkBodySize(request: Request, maxSize = getMaxBodySize()): string | null {
   const contentLength = request.headers.get("content-length");
   if (contentLength && Number.parseInt(contentLength, 10) > maxSize) {
     return `Body exceeds max size of ${maxSize} bytes`;
@@ -100,7 +101,7 @@ function checkBodySize(request: Request, maxSize = DEFAULT_MAX_BODY_SIZE): strin
   return null;
 }
 
-async function readLimitedText(request: Request, maxSize = DEFAULT_MAX_BODY_SIZE): Promise<string | { error: string }> {
+async function readLimitedText(request: Request, maxSize = getMaxBodySize()): Promise<string | { error: string }> {
   const sizeError = checkBodySize(request, maxSize);
   if (sizeError) return { error: sizeError };
   const text = await request.clone().text();
@@ -691,6 +692,23 @@ export async function coerceAndValidateFormBody(
 }
 
 /**
+ * 计算 multipart body 的整体大小上限。
+ * 基线取应用配置（getMaxBodySize）；当 schema 声明了文件字段的 maxSize 时，
+ * 上限扩展为声明的文件配额（maxSize × maxFiles）加 1MB 的文本字段与边界开销，
+ * 避免文件上传通道被面向 JSON 的全局默认值（1MB）拦截。
+ */
+function multipartBodyLimit(schema: Record<string, SchemaField>): number {
+  let declaredFilesTotal = 0;
+  for (const field of Object.values(schema)) {
+    if (field.type === "file" && field.maxSize !== undefined) {
+      declaredFilesTotal += field.maxSize * (field.maxFiles ?? 1);
+    }
+  }
+  if (declaredFilesTotal === 0) return getMaxBodySize();
+  return Math.max(getMaxBodySize(), declaredFilesTotal + DEFAULT_MAX_BODY_SIZE);
+}
+
+/**
  * 解析 FormData body 并校验
  * @param request - Request 对象
  * @param schema - Schema 定义
@@ -704,7 +722,7 @@ export async function coerceAndValidateFormDataBody(
 ): Promise<{ data: Record<string, unknown>; errors: string[] }> {
   let formData: globalThis.FormData;
   try {
-    const sizeError = checkBodySize(request);
+    const sizeError = checkBodySize(request, multipartBodyLimit(schema));
     if (sizeError) return { data: {}, errors: [sizeError] };
     formData = (await request.clone().formData()) as globalThis.FormData;
   } catch {

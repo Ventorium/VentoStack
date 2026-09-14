@@ -318,6 +318,66 @@ describe("OSS Service", () => {
       expect(result.items[0]!.tenantId).toBe("tenant-1");
     });
 
+    test("解析上传者显示名（nickname 优先，租户限定）", async () => {
+      const s = setup();
+      s.results.set("COUNT", [{ total: 2 }]);
+      // 插入顺序敏感：FROM sys_user 必须先于宽泛的 SELECT，避免 raw 查询误吞文件行
+      s.results.set("FROM sys_user", [
+        { id: "u1", display_name: "张三" },
+        { id: "u2", display_name: "李四" },
+      ]);
+      s.results.set("SELECT", [
+        {
+          id: "f1",
+          original_name: "a.png",
+          storage_path: "p1",
+          size: 100,
+          mime_type: "image/png",
+          extension: ".png",
+          bucket: "default",
+          tenant_id: "tenant-1",
+          uploader_id: "u1",
+          created_at: "2024-01-01",
+        },
+        {
+          id: "f2",
+          original_name: "b.jpg",
+          storage_path: "p2",
+          size: 200,
+          mime_type: "image/jpeg",
+          extension: ".jpg",
+          bucket: "default",
+          tenant_id: "tenant-1",
+          uploader_id: "u2",
+          created_at: "2024-01-02",
+        },
+        {
+          id: "f3",
+          original_name: "c.pdf",
+          storage_path: "p3",
+          size: 300,
+          mime_type: "application/pdf",
+          extension: ".pdf",
+          bucket: "default",
+          tenant_id: "tenant-1",
+          uploader_id: null,
+          created_at: "2024-01-03",
+        },
+      ]);
+
+      const result = await s.ossService.list({ tenantId: "tenant-1", page: 1, pageSize: 10 });
+      expect(result.items[0]!.uploaderName).toBe("张三");
+      expect(result.items[1]!.uploaderName).toBe("李四");
+      // 未知上传者（含 NULL）回退 null，不抛异常
+      expect(result.items[2]!.uploaderName).toBeNull();
+
+      // 用户解析查询必须参数化携带租户条件
+      const userCall = s.calls.find((c) => c.text.includes("FROM sys_user"))!;
+      expect(userCall.text).toContain("tenant_id = $1");
+      expect(userCall.text).toContain("id IN ($2, $3)");
+      expect(userCall.params).toEqual(["tenant-1", "u1", "u2"]);
+    });
+
     test("强制按 tenantId 过滤（无条件注入）", async () => {
       const s = setup();
       s.results.set("COUNT", [{ total: 0 }]);

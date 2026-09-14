@@ -1,1 +1,1 @@
-export { createMonitorRoutes } from "./monitor";
+export { createMonitorRoutes } from './monitor';

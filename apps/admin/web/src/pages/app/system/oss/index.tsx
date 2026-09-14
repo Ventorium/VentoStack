@@ -84,10 +84,10 @@ const OSSPage = () => {
     }
   };
 
-  const isImage = (contentType: string) => contentType?.startsWith('image/');
+  const isImage = (mimeType: string | null) => mimeType?.startsWith('image/') ?? false;
 
   const columns: ColumnsType<OSSFile> = [
-    { title: '文件名', dataIndex: 'filename', key: 'filename', width: 200, ellipsis: true },
+    { title: '文件名', dataIndex: 'originalName', key: 'originalName', width: 200, ellipsis: true },
     {
       title: '大小',
       dataIndex: 'size',
@@ -97,13 +97,19 @@ const OSSPage = () => {
     },
     {
       title: '类型',
-      dataIndex: 'contentType',
-      key: 'contentType',
+      dataIndex: 'mimeType',
+      key: 'mimeType',
       width: 120,
-      render: (v: string) => <Tag>{v}</Tag>,
+      render: (v: string | null) => (v ? <Tag>{v}</Tag> : <Tag>-</Tag>),
     },
     { title: '存储桶', dataIndex: 'bucket', key: 'bucket', width: 120 },
-    { title: '上传者', dataIndex: 'uploaderName', key: 'uploaderName', width: 120 },
+    {
+      title: '上传者',
+      dataIndex: 'uploaderName',
+      key: 'uploaderName',
+      width: 120,
+      render: (v: string | null, r: OSSFile) => v ?? r.uploaderId ?? '-',
+    },
     {
       title: '上传时间',
       dataIndex: 'createdAt',
@@ -118,7 +124,7 @@ const OSSPage = () => {
       fixed: 'right' as const,
       render: (_: unknown, r: OSSFile) => (
         <Space size="small">
-          {isImage(r.contentType) && (
+          {isImage(r.mimeType) && (
             <Button
               type="link"
               size="small"

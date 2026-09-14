@@ -1,6 +1,7 @@
 import { client } from '@/api';
-import type { ScheduleJob } from '@/api/types';
+import type { RegisteredJobHandler, ScheduleJob } from '@/api/types';
 import ActionColumn from '@/components/ActionColumn';
+import CronExpressionPicker from '@/components/CronExpressionPicker';
 import { msg } from '@/components/GlobalMessage';
 import { SearchField, SearchToolbar } from '@/components/SearchToolbar';
 import { SCHEDULER_API } from '@/constants';
@@ -10,7 +11,7 @@ import { fmtDate } from '@/utils/fmtDate';
 import { PlusOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Card, Col, Form, Input, Modal, Row, Select, Table, Tag } from 'antd';
 import type { ColumnsType } from 'antd/es/table';
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router';
 
 const fetcher = (params: Record<string, unknown>) =>
@@ -24,7 +25,25 @@ const SchedulerPage = () => {
   const [modalOpen, setModalOpen] = useState(false);
   const [editingJob, setEditingJob] = useState<ScheduleJob | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
+  const [handlerLoading, setHandlerLoading] = useState(false);
+  const [handlers, setHandlers] = useState<RegisteredJobHandler[]>([]);
   const [form] = Form.useForm();
+
+  const fetchHandlers = useCallback(async () => {
+    setHandlerLoading(true);
+    try {
+      const { error, data: result } = await client.get(SCHEDULER_API.HANDLERS);
+      if (!error && Array.isArray(result)) {
+        setHandlers(result as RegisteredJobHandler[]);
+      }
+    } finally {
+      setHandlerLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void fetchHandlers();
+  }, [fetchHandlers]);
 
   const handleSearch = () => {
     const values = searchForm.getFieldsValue();
@@ -38,6 +57,8 @@ const SchedulerPage = () => {
   const openCreate = () => {
     setEditingJob(null);
     form.resetFields();
+    form.setFieldValue('cron', '*/5 * * * *');
+    void fetchHandlers();
     setModalOpen(true);
   };
   const openEdit = (r: ScheduleJob) => {
@@ -49,6 +70,7 @@ const SchedulerPage = () => {
       params: r.params,
       description: r.description,
     });
+    void fetchHandlers();
     setModalOpen(true);
   };
   const handleOk = async () => {
@@ -112,7 +134,7 @@ const SchedulerPage = () => {
       width: 140,
       render: (v: string) => <span className="font-mono text-sm">{v}</span>,
     },
-    { title: '处理器ID', dataIndex: 'handlerId', key: 'handlerId', width: 180 },
+    { title: '处理器', dataIndex: 'handlerId', key: 'handlerId', width: 180 },
     {
       title: '状态',
       dataIndex: 'status',
@@ -177,7 +199,13 @@ const SchedulerPage = () => {
       <Card
         title={`任务列表（${total}）`}
         extra={
-          <Button type="primary" icon={<PlusOutlined />} onClick={openCreate}>
+          <Button
+            type="primary"
+            icon={<PlusOutlined />}
+            onClick={openCreate}
+            disabled={handlerLoading || handlers.length === 0}
+            title={handlers.length === 0 ? '应用尚未注册任务处理器' : undefined}
+          >
             新增任务
           </Button>
         }
@@ -216,13 +244,22 @@ const SchedulerPage = () => {
               </Form.Item>
             </Col>
             <Col span={12}>
-              <Form.Item name="handlerId" label="处理器ID" rules={[{ required: true }]}>
-                <Input placeholder="请输入处理器ID" />
+              <Form.Item name="handlerId" label="处理器" rules={[{ required: true }]}>
+                <Select
+                  placeholder={handlers.length > 0 ? '请选择处理器' : '暂无已注册处理器'}
+                  loading={handlerLoading}
+                  showSearch
+                  optionFilterProp="label"
+                  options={handlers.map((handler) => ({
+                    value: handler.id,
+                    label: handler.label,
+                  }))}
+                />
               </Form.Item>
             </Col>
           </Row>
           <Form.Item name="cron" label="Cron表达式" rules={[{ required: true }]}>
-            <Input placeholder="0 0 2 * * ?" />
+            <CronExpressionPicker />
           </Form.Item>
           <Form.Item name="params" label="参数">
             <Input.TextArea rows={3} placeholder="JSON格式的任务参数" />

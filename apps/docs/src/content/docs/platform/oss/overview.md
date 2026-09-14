@@ -89,7 +89,7 @@ POST /api/system/oss/upload
 Content-Type: multipart/form-data
 
 // 文件字段名: file
-// 限制: 单文件最大 10MB（可通过 sys.upload.maxSize 配置）
+// 限制: 单文件最大 50MB；扩展名白名单 + magic bytes 校验（拒绝伪造 contentType）
 ```
 
 上传处理流程：
@@ -147,24 +147,29 @@ Content-Type: multipart/form-data
 
 ```typescript
 // 查询文件列表
-GET /api/system/oss?page=1&pageSize=10&name=report&storage=s3
+GET /api/system/oss?page=1&pageSize=10&filename=report
 
-// 响应
+// 响应（租户由认证上下文确定，bucket/uploaderId/filename 仅作租户内附加筛选）
 {
-  "total": 100,
-  "rows": [
+  "list": [
     {
       "id": "oss-001",
-      "name": "report.pdf",
-      "key": "tenant-001/2024/06/01/uuid.pdf",
+      "originalName": "report.pdf",
+      "storagePath": "default/tenant-001/20240601/uuid.pdf",
       "size": 1048576,
-      "contentType": "application/pdf",
-      "storage": "s3",
-      "url": "/api/system/oss/oss-001/download",
-      "createByName": "张三",
+      "mimeType": "application/pdf",
+      "extension": ".pdf",
+      "bucket": "default",
+      "tenantId": "tenant-001",
+      "uploaderId": "user-001",
+      "uploaderName": "张三",
       "createdAt": "2024-06-01T12:00:00Z"
     }
-  ]
+  ],
+  "total": 100,
+  "page": 1,
+  "pageSize": 10,
+  "totalPages": 10
 }
 ```
 

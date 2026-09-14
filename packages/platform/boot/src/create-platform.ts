@@ -253,6 +253,9 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         jwtSecret,
         rbac,
         db,
+        authSessionManager,
+        sessionManager,
+        multiDeviceManager,
         tenantId: normalizedTenantId,
       })
     : undefined;

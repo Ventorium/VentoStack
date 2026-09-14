@@ -7,6 +7,13 @@ export type OpenAPIComponents = {
 }
 export type OpenAPIs = {
   get: {
+    '/uploads/*': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: {}
+    },
     /**
      * 获取公开配置
      */
@@ -1592,27 +1599,43 @@ export type OpenAPIs = {
            */
           id?: string,
           /**
-           * @description 文件名
+           * @description 原始文件名
            */
-          filename?: string,
+          originalName?: string,
           /**
-           * @description MIME 类型
+           * @description 存储路径
            */
-          contentType?: string,
+          storagePath?: string,
           /**
            * @description 文件大小（字节）
            */
           size?: number,
           /**
+           * @description MIME 类型（识别失败时为 null）
+           */
+          mimeType?: string,
+          /**
+           * @description 扩展名（含 .）
+           */
+          extension?: string,
+          /**
            * @description 存储桶
            */
           bucket?: string,
+          /**
+           * @description 租户 ID
+           */
+          tenantId?: string,
           /**
            * @description 上传者 ID
            */
           uploaderId?: string,
           /**
-           * @description 创建时间
+           * @description 上传者显示名（nickname 优先，解析不到为 null）
+           */
+          uploaderName?: string,
+          /**
+           * @description 上传时间
            */
           createdAt?: string
         }[],
@@ -1650,27 +1673,43 @@ export type OpenAPIs = {
          */
         id?: string,
         /**
-         * @description 文件名
+         * @description 原始文件名
          */
-        filename?: string,
+        originalName?: string,
         /**
-         * @description MIME 类型
+         * @description 存储路径
          */
-        contentType?: string,
+        storagePath?: string,
         /**
          * @description 文件大小（字节）
          */
         size?: number,
         /**
+         * @description MIME 类型（识别失败时为 null）
+         */
+        mimeType?: string,
+        /**
+         * @description 扩展名（含 .）
+         */
+        extension?: string,
+        /**
          * @description 存储桶
          */
         bucket?: string,
+        /**
+         * @description 租户 ID
+         */
+        tenantId?: string,
         /**
          * @description 上传者 ID
          */
         uploaderId?: string,
         /**
-         * @description 创建时间
+         * @description 上传者显示名（nickname 优先，解析不到为 null）
+         */
+        uploaderName?: string,
+        /**
+         * @description 上传时间
          */
         createdAt?: string
       }
@@ -1716,6 +1755,17 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 获取已注册任务处理器
+     * @description 处理器由服务端应用注册，客户端只能选择，不能自行定义。
+     */
+    '/api/system/scheduler/handlers': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: {}[]
     },
     '/api/system/scheduler/jobs/:id': {
       query: never,
@@ -3374,27 +3424,43 @@ export type OpenAPIs = {
          */
         id?: string,
         /**
-         * @description 文件名
+         * @description 原始文件名
          */
-        filename?: string,
+        originalName?: string,
         /**
-         * @description MIME 类型
+         * @description 存储路径
          */
-        contentType?: string,
+        storagePath?: string,
         /**
          * @description 文件大小（字节）
          */
         size?: number,
         /**
+         * @description MIME 类型（识别失败时为 null）
+         */
+        mimeType?: string,
+        /**
+         * @description 扩展名（含 .）
+         */
+        extension?: string,
+        /**
          * @description 存储桶
          */
         bucket?: string,
+        /**
+         * @description 租户 ID
+         */
+        tenantId?: string,
         /**
          * @description 上传者 ID
          */
         uploaderId?: string,
         /**
-         * @description 创建时间
+         * @description 上传者显示名（nickname 优先，解析不到为 null）
+         */
+        uploaderName?: string,
+        /**
+         * @description 上传时间
          */
         createdAt?: string
       }
@@ -4134,11 +4200,10 @@ export type OpenAPIs = {
     },
     /**
      * 强制下线
+     * @description 按当前租户内最近活动记录定位用户，并撤销该用户的全部会话。
      */
     '/api/system/monitor/online/:sessionId': {
-      query: {
-        userId?: string
-      },
+      query: never,
       params: {
         sessionId: string
       },

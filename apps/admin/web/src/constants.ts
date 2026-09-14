@@ -5,9 +5,9 @@
 // ==================== localStorage Keys ====================
 
 export const STORAGE_KEYS = {
-  ACCESS_TOKEN: "user.access_token",
-  REFRESH_TOKEN: "user.refresh_token",
-  REMEMBERED_USERNAME: "user.remembered_username",
+  ACCESS_TOKEN: 'user.access_token',
+  REFRESH_TOKEN: 'user.refresh_token',
+  REMEMBERED_USERNAME: 'user.remembered_username',
 } as const;
 
 // ==================== API Paths ====================
@@ -16,38 +16,39 @@ export const STORAGE_KEYS = {
 
 /** 文件存储模块 */
 export const OSS_API = {
-  LIST: "/api/system/oss",
-  DETAIL: "/api/system/oss/:id",
-  UPLOAD: "/api/system/oss/upload",
-  DOWNLOAD: "/api/system/oss/:id/download",
-  SIGNED_URL: "/api/system/oss/:id/url",
-  DELETE: "/api/system/oss/:id",
+  LIST: '/api/system/oss',
+  DETAIL: '/api/system/oss/:id',
+  UPLOAD: '/api/system/oss/upload',
+  DOWNLOAD: '/api/system/oss/:id/download',
+  SIGNED_URL: '/api/system/oss/:id/url',
+  DELETE: '/api/system/oss/:id',
 } as const;
 
 /** 定时任务模块 */
 export const SCHEDULER_API = {
-  JOBS: "/api/system/scheduler/jobs",
-  JOB_DETAIL: "/api/system/scheduler/jobs/:id",
-  JOB_CREATE: "/api/system/scheduler/jobs",
-  JOB_UPDATE: "/api/system/scheduler/jobs/:id",
-  JOB_DELETE: "/api/system/scheduler/jobs/:id",
-  JOB_START: "/api/system/scheduler/jobs/:id/start",
-  JOB_STOP: "/api/system/scheduler/jobs/:id/stop",
-  JOB_EXECUTE: "/api/system/scheduler/jobs/:id/execute",
-  LOGS: "/api/system/scheduler/logs",
+  HANDLERS: '/api/system/scheduler/handlers',
+  JOBS: '/api/system/scheduler/jobs',
+  JOB_DETAIL: '/api/system/scheduler/jobs/:id',
+  JOB_CREATE: '/api/system/scheduler/jobs',
+  JOB_UPDATE: '/api/system/scheduler/jobs/:id',
+  JOB_DELETE: '/api/system/scheduler/jobs/:id',
+  JOB_START: '/api/system/scheduler/jobs/:id/start',
+  JOB_STOP: '/api/system/scheduler/jobs/:id/stop',
+  JOB_EXECUTE: '/api/system/scheduler/jobs/:id/execute',
+  LOGS: '/api/system/scheduler/logs',
 } as const;
 
 /** 消息通知模块 */
 export const NOTIFICATION_API = {
-  MESSAGES: "/api/system/notification/messages",
-  MESSAGE_DELETE: "/api/system/notification/messages/:id",
-  UNREAD_COUNT: "/api/system/notification/messages/unread-count",
-  MESSAGE_READ: "/api/system/notification/messages/:id/read",
-  MESSAGE_READ_BATCH: "/api/system/notification/messages/read-batch",
-  MESSAGE_RETRY: "/api/system/notification/messages/:id/retry",
-  TEMPLATES: "/api/system/notification/templates",
-  TEMPLATE_CREATE: "/api/system/notification/templates",
-  TEMPLATE_UPDATE: "/api/system/notification/templates/:id",
-  TEMPLATE_DELETE: "/api/system/notification/templates/:id",
-  SEND: "/api/system/notification/send",
+  MESSAGES: '/api/system/notification/messages',
+  MESSAGE_DELETE: '/api/system/notification/messages/:id',
+  UNREAD_COUNT: '/api/system/notification/messages/unread-count',
+  MESSAGE_READ: '/api/system/notification/messages/:id/read',
+  MESSAGE_READ_BATCH: '/api/system/notification/messages/read-batch',
+  MESSAGE_RETRY: '/api/system/notification/messages/:id/retry',
+  TEMPLATES: '/api/system/notification/templates',
+  TEMPLATE_CREATE: '/api/system/notification/templates',
+  TEMPLATE_UPDATE: '/api/system/notification/templates/:id',
+  TEMPLATE_DELETE: '/api/system/notification/templates/:id',
+  SEND: '/api/system/notification/send',
 } as const;

@@ -42,6 +42,28 @@ app.use(createStaticMiddleware({
 
 不在白名单中的文件返回 `403`。
 
+## 重要：必须注册匹配路由
+
+框架底层使用 Bun.serve 原生路由表，**全局中间件只会被组合进已注册的路由**。未注册的路径不会经过任何中间件，而是直接落入 `fetchFallback`（返回 404）。因此仅 `app.use(createStaticMiddleware(...))` 不够，必须同时注册一个覆盖该前缀的路由：
+
+```typescript
+import { createRouter, createStaticMiddleware } from "@ventostack/core";
+
+app.use(createStaticMiddleware({
+  root: "./uploads",
+  prefix: "/uploads",
+}));
+
+// 让 /uploads/* 进入中间件链：文件存在 → 静态中间件返回文件；不存在 → 落到 handler 返回 404
+const uploadsRouter = createRouter();
+uploadsRouter.get("/uploads/*", (ctx) =>
+  ctx.json({ error: "NOT_FOUND", message: "资源不存在" }, 404),
+);
+app.use(uploadsRouter);
+```
+
+不注册路由时，`/uploads/**` 请求会绕过静态中间件，永远返回 404。
+
 ## 安全特性
 
 - **路径遍历防护**：使用 `path.resolve()` 解析绝对路径后校验 `resolvedPath.startsWith(normalizedRoot)`，确保解析后的路径不逃逸根目录。同时校验 URL 路径以声明的 prefix 开头。

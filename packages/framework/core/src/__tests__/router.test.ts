@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import type { Middleware } from "../middleware";
+import { configureMaxBodySize } from "../response";
 import { createRouter, parseRoutePath } from "../router";
 
 type RouteHandler = (req: Request) => Response | Promise<Response>;
@@ -827,6 +828,117 @@ describe("Router - formData schema", () => {
     const res = await handler(req);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ title: "hello", hasFile: true, fileName: "test.txt" });
+  });
+});
+
+describe("Router - formData body size limits", () => {
+  const BOUNDARY = "----ventostacktest";
+
+  /** 构造带显式 Content-Length 的 multipart 请求（模拟浏览器/真实客户端） */
+  function multipartRequest(path: string, filename: string, fileSize: number): Request {
+    const fileBytes = "x".repeat(fileSize);
+    const raw =
+      `--${BOUNDARY}\r\n` +
+      `Content-Disposition: form-data; name="file"; filename="${filename}"\r\n` +
+      `Content-Type: application/octet-stream\r\n\r\n` +
+      `${fileBytes}\r\n` +
+      `--${BOUNDARY}--\r\n`;
+    const size = new TextEncoder().encode(raw).length;
+    return new Request(`http://localhost:3000${path}`, {
+      method: "POST",
+      headers: {
+        "content-type": `multipart/form-data; boundary=${BOUNDARY}`,
+        "content-length": String(size),
+      },
+      body: raw,
+    });
+  }
+
+  test("declared file maxSize lifts whole-body limit above global default", async () => {
+    const router = createRouter();
+    router.post(
+      "/upload",
+      {
+        formData: {
+          file: { type: "file", required: true, maxSize: 2 * 1024 * 1024 },
+        },
+      },
+      (ctx) => ctx.json({ size: (ctx.formData.file as File).size }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/upload"] as Record<string, RouteHandler>).POST!;
+    // 1MB+4KB 文件：超过全局默认 1MB，但低于声明的 maxSize，必须放行
+    const fileSize = 1024 * 1024 + 4096;
+    const res = await handler(multipartRequest("/upload", "big.pdf", fileSize));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ size: fileSize });
+  });
+
+  test("without declared file maxSize, global default limit still applies", async () => {
+    const router = createRouter();
+    router.post(
+      "/upload",
+      {
+        formData: {
+          file: { type: "file", required: true },
+        },
+      },
+      (ctx) => ctx.json({ ok: true }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/upload"] as Record<string, RouteHandler>).POST!;
+    const res = await handler(multipartRequest("/upload", "big.pdf", 1024 * 1024 + 4096));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors: string[] };
+    expect(body.errors[0]).toContain("Body exceeds max size");
+  });
+
+  test("per-file maxSize is enforced after whole-body check", async () => {
+    const router = createRouter();
+    router.post(
+      "/upload",
+      {
+        formData: {
+          file: { type: "file", required: true, maxSize: 512 * 1024 },
+        },
+      },
+      (ctx) => ctx.json({ ok: true }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/upload"] as Record<string, RouteHandler>).POST!;
+    // 768KB 文件：整体未超声明配额 + 1MB 开销，但单文件超过 maxSize 512KB
+    const res = await handler(multipartRequest("/upload", "big.pdf", 768 * 1024));
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { errors: string[] };
+    expect(body.errors.some((e) => e.includes("exceeds max size"))).toBe(true);
+  });
+
+  test("configureMaxBodySize is honored for multipart without declared file sizes", async () => {
+    configureMaxBodySize(1024 * 1024 + 64 * 1024);
+    try {
+      const router = createRouter();
+      router.post(
+        "/upload",
+        {
+          formData: {
+            file: { type: "file", required: true },
+          },
+        },
+        (ctx) => ctx.json({ size: (ctx.formData.file as File).size }),
+      );
+
+      const compiled = router.compile();
+      const handler = (compiled["/upload"] as Record<string, RouteHandler>).POST!;
+      const fileSize = 1024 * 1024 + 4096;
+      const res = await handler(multipartRequest("/upload", "big.pdf", fileSize));
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ size: fileSize });
+    } finally {
+      configureMaxBodySize(1024 * 1024);
+    }
   });
 });
 

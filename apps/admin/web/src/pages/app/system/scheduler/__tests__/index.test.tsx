@@ -53,6 +53,14 @@ describe('定时任务管理页', () => {
     expect(endpoints.logs).toBe('/api/system/scheduler/logs');
   });
 
+  test('处理器选项来自服务端注册表', () => {
+    expect('/api/system/scheduler/handlers').toBe('/api/system/scheduler/handlers');
+    const registered = [{ id: 'cleanup', label: 'cleanup' }];
+    expect(registered.map((handler) => ({ value: handler.id, label: handler.label }))).toEqual([
+      { value: 'cleanup', label: 'cleanup' },
+    ]);
+  });
+
   test('状态映射正确', () => {
     const statusMap: Record<string, { color: string; text: string }> = {
       RUNNING: { color: 'green', text: '运行中' },

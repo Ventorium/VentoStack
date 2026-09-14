@@ -212,6 +212,8 @@ router.post("/upload", {
 });
 ```
 
+multipart 整体大小上限默认取应用配置（`configureMaxBodySize`，缺省 1MB）。当文件字段声明了 `maxSize` 时，整体上限会扩展到声明配额（`maxSize × maxFiles`）加 1MB 的文本字段与边界开销，避免文件上传被面向 JSON 的全局默认值拦截；未声明 `maxSize` 的文件字段仍受全局上限约束。
+
 ## 响应类型推导
 
 `ctx.json(data)` 返回 `TypedResponse<T>`，可从 handler 的返回类型中推导响应结构：

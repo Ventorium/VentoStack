@@ -224,8 +224,9 @@ function createQueryExecutor<T>(
           .clearOffset();
         const { text, params } = countBuilder.toSQL();
         const rows = await executor(text, params);
-        const first = (rows as Array<{ count: number }>)[0];
-        return first?.count ?? 0;
+        const first = (rows as Array<{ count: number | string }>)[0];
+        // Postgres COUNT(*) 返回 bigint，驱动会以字符串形式给出，统一转为 number
+        return Number(first?.count ?? 0);
       },
 
       async sum(field: keyof T): Promise<number> {
@@ -233,8 +234,8 @@ function createQueryExecutor<T>(
         const aggBuilder = nextBuilder.select(`SUM(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
-        const first = (rows as Array<{ result: number | null }>)[0];
-        return first?.result ?? 0;
+        const first = (rows as Array<{ result: number | string | null }>)[0];
+        return Number(first?.result ?? 0);
       },
 
       async avg(field: keyof T): Promise<number> {
@@ -242,8 +243,8 @@ function createQueryExecutor<T>(
         const aggBuilder = nextBuilder.select(`AVG(${field as string}) as result` as keyof T);
         const { text, params } = aggBuilder.toSQL();
         const rows = await executor(text, params);
-        const first = (rows as Array<{ result: number | null }>)[0];
-        return first?.result ?? 0;
+        const first = (rows as Array<{ result: number | string | null }>)[0];
+        return Number(first?.result ?? 0);
       },
 
       async min(field: keyof T): Promise<number> {

@@ -5,8 +5,15 @@
  * 响应结构对齐前端类型定义。
  */
 
-import type { Database } from "@ventostack/database";
-import type { HealthStatus as FrameworkHealthStatus, HealthCheck } from "@ventostack/observability";
+import type { Database } from '@ventostack/database';
+import type { AuthSessionManager, MultiDeviceManager, SessionManager } from '@ventostack/auth';
+import { NotFoundError, ServerError } from '@ventostack/core';
+import type { HealthStatus as FrameworkHealthStatus, HealthCheck } from '@ventostack/observability';
+import {
+  calculateCpuUsage,
+  createSystemMetricsProvider,
+  type SystemMetricsProvider,
+} from './system-metrics';
 
 /** 在线用户 */
 export interface OnlineUser {
@@ -23,15 +30,25 @@ export interface OnlineUser {
 
 /** 服务器状态（对齐前端 ServerStatus） */
 export interface ServerStatus {
-  cpu: { usage: number; model: string; cores: number };
-  memory: { usage: number; total: number; used: number };
-  disk: { usage: number; total: number; used: number; mount: string };
+  cpu: { available: boolean; usage: number; model: string; cores: number };
+  memory: { available: boolean; usage: number; total: number; used: number };
+  disk: { available: boolean; usage: number; total: number; used: number; mount: string };
   os: { platform: string; arch: string; hostname: string };
-  process: { pid: number; uptime: number; bunVersion: string; nodeVersion: string };
+  process: {
+    pid: number;
+    uptime: number;
+    bunVersion: string;
+    nodeCompatibilityVersion: string;
+    rss: number;
+    heapUsed: number;
+    heapTotal: number;
+  };
+  collectedAt: string;
 }
 
 /** 缓存状态（对齐前端 CacheStatus） */
 export interface CacheStatus {
+  available: boolean;
   keyCount: number;
   hitRate?: number;
   memory: string;
@@ -42,6 +59,7 @@ export interface CacheStatus {
 /** 数据源状态（对齐前端 DataSourceStatus） */
 export interface DataSourceStatus {
   connected: boolean;
+  metricsAvailable: boolean;
   poolSize: number;
   activeConnections: number;
   idleConnections: number;
@@ -68,7 +86,7 @@ export interface MonitorService {
   getDataSourceStatus(): Promise<DataSourceStatus>;
   getHealthStatus(): Promise<HealthStatus>;
   getOnlineUsers(): Promise<OnlineUser[]>;
-  forceLogout(sessionId: string, userId: string): Promise<void>;
+  forceLogout(activityId: string): Promise<void>;
 }
 
 /** 缓存统计提供者 */
@@ -81,81 +99,67 @@ export interface CacheStatsProvider {
 /** 监控服务依赖 */
 export interface MonitorServiceDeps {
   healthCheck: HealthCheck;
+  tenantId: string;
   db?: Database;
+  authSessionManager?: AuthSessionManager;
+  sessionManager?: SessionManager;
+  multiDeviceManager?: MultiDeviceManager;
+  systemMetricsProvider?: SystemMetricsProvider;
   cacheStatsProvider?: () => Promise<CacheStatus>;
   dataSourceStatsProvider?: () => Promise<DataSourceStatus>;
 }
 
 export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
-  const { healthCheck, db, cacheStatsProvider, dataSourceStatsProvider } = deps;
+  const {
+    healthCheck,
+    tenantId,
+    db,
+    authSessionManager,
+    sessionManager,
+    multiDeviceManager,
+    cacheStatsProvider,
+    dataSourceStatsProvider,
+    systemMetricsProvider = createSystemMetricsProvider(),
+  } = deps;
 
   return {
     async getServerStatus(): Promise<ServerStatus> {
-      const mem = process.memoryUsage();
-
-      let systemTotal = 0;
-      let systemFree = 0;
-      let cpuModel = "unknown";
-      let cpuCores = 1;
-      let loadAvg: number[] = [0, 0, 0];
-      let platform = process.platform;
-      let arch = process.arch;
-      let hostname = "unknown";
-
-      try {
-        const os = await import("node:os");
-        systemTotal = os.totalmem();
-        systemFree = os.freemem();
-        const cpus = os.cpus();
-        cpuCores = cpus.length;
-        cpuModel = cpus[0]?.model ?? "unknown";
-        loadAvg = os.loadavg();
-        platform = os.platform();
-        arch = os.arch();
-        hostname = os.hostname();
-      } catch {
-        systemTotal = mem.heapTotal;
-        systemFree = mem.heapTotal - mem.heapUsed;
-      }
-
-      const systemUsed = systemTotal - systemFree;
-
-      // 磁盘信息（简化：使用根分区）
-      let diskTotal = 0;
-      let diskUsed = 0;
-      try {
-        const { execSync } = await import("node:child_process");
-        const df = execSync("df -B1 / | tail -1", { encoding: "utf8" }).trim().split(/\s+/);
-        diskTotal = Number(df[1]) || 0;
-        diskUsed = Number(df[2]) || 0;
-      } catch {
-        // ignore
-      }
+      const before = systemMetricsProvider.getCpuSnapshot();
+      const diskPromise = systemMetricsProvider.getDiskUsage();
+      await systemMetricsProvider.wait(100);
+      const after = systemMetricsProvider.getCpuSnapshot();
+      const cpuInfo = systemMetricsProvider.getCpuInfo();
+      const memoryInfo = systemMetricsProvider.getMemory();
+      const osInfo = systemMetricsProvider.getOsInfo();
+      const disk = await diskPromise;
+      const processMemory = process.memoryUsage();
+      const systemUsed = Math.max(0, memoryInfo.total - memoryInfo.free);
 
       return {
         cpu: {
-          usage: cpuCores > 0 ? loadAvg[0]! / cpuCores : 0,
-          model: cpuModel,
-          cores: cpuCores,
+          available: before.length > 0 && after.length > 0,
+          usage: calculateCpuUsage(before, after),
+          model: cpuInfo.model,
+          cores: cpuInfo.cores,
         },
         memory: {
-          usage: systemTotal > 0 ? systemUsed / systemTotal : 0,
-          total: systemTotal,
+          available: memoryInfo.total > 0,
+          usage: memoryInfo.total > 0 ? Math.min(1, systemUsed / memoryInfo.total) : 0,
+          total: memoryInfo.total,
           used: systemUsed,
         },
-        disk: {
-          usage: diskTotal > 0 ? diskUsed / diskTotal : 0,
-          total: diskTotal,
-          used: diskUsed,
-          mount: "/",
-        },
-        os: { platform, arch, hostname },
+        disk,
+        os: osInfo,
         process: {
           pid: process.pid,
           uptime: Math.floor(process.uptime()),
           bunVersion: Bun.version,
-          nodeVersion: process.versions.node ?? "",
+          nodeCompatibilityVersion: process.versions.node ?? '',
+          rss: processMemory.rss,
+          heapUsed: processMemory.heapUsed,
+          heapTotal: processMemory.heapTotal,
         },
+        collectedAt: new Date().toISOString(),
       };
     },
 
@@ -163,7 +167,7 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       if (cacheStatsProvider) {
         return cacheStatsProvider();
       }
-      return { keyCount: 0, memory: "0B" };
+      return { available: false, keyCount: 0, memory: '0B' };
     },
 
     async getDataSourceStatus(): Promise<DataSourceStatus> {
@@ -173,13 +177,31 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       // 默认通过 db 做简单探测
       if (db) {
         try {
-          await db.raw("SELECT 1");
-          return { connected: true, poolSize: 0, activeConnections: 1, idleConnections: 0 };
+          await db.raw('SELECT 1');
+          return {
+            connected: true,
+            metricsAvailable: false,
+            poolSize: 0,
+            activeConnections: 0,
+            idleConnections: 0,
+          };
         } catch {
-          return { connected: false, poolSize: 0, activeConnections: 0, idleConnections: 0 };
+          return {
+            connected: false,
+            metricsAvailable: false,
+            poolSize: 0,
+            activeConnections: 0,
+            idleConnections: 0,
+          };
         }
       }
-      return { connected: false, poolSize: 0, activeConnections: 0, idleConnections: 0 };
+      return {
+        connected: false,
+        metricsAvailable: false,
+        poolSize: 0,
+        activeConnections: 0,
+        idleConnections: 0,
+      };
     },
 
     async getHealthStatus(): Promise<HealthStatus> {
@@ -187,30 +209,38 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
       const checks: HealthCheckItem[] = Object.entries(raw.checks).map(([name, result]) => {
         const item: HealthCheckItem = {
           name,
-          status: result.status === "ok" ? "UP" : "DOWN",
+          status: result.status === 'ok' ? 'UP' : 'DOWN',
         };
         if (result.message !== undefined) item.details = result.message;
         if (result.duration !== undefined) item.duration = result.duration;
         return item;
       });
       return {
-        status: raw.status === "ok" ? "UP" : raw.status === "degraded" ? "DEGRADED" : "DOWN",
+        status: raw.status === 'ok' ? 'UP' : raw.status === 'degraded' ? 'DEGRADED' : 'DOWN',
         checks,
       };
     },
 
     async getOnlineUsers(): Promise<OnlineUser[]> {
-      if (!db) return [];
+      if (!db || !multiDeviceManager) return [];
 
       // 查询最近 30 分钟内成功登录的记录作为在线用户近似
       const rows = (await db.raw(
-        `SELECT l.id, l.user_id, l.username, l.ip, l.browser, l.os, l.login_at,
-                u.nickname
-         FROM sys_login_log l
-         LEFT JOIN sys_user u ON l.user_id = u.id AND u.deleted_at IS NULL
-         WHERE l.status = 1 AND l.login_at > NOW() - INTERVAL '30 minutes'
-         ORDER BY l.login_at DESC
+        `SELECT recent.id, recent.user_id, recent.username, recent.ip, recent.browser,
+                recent.os, recent.login_at, u.nickname
+         FROM (
+           SELECT DISTINCT ON (l.user_id)
+                  l.id, l.user_id, l.username, l.ip, l.browser, l.os, l.login_at
+           FROM sys_login_log l
+           WHERE l.tenant_id = $1 AND l.status = 1 AND l.user_id IS NOT NULL
+             AND l.login_at > NOW() - INTERVAL '30 minutes'
+           ORDER BY l.user_id, l.login_at DESC
+         ) recent
+         LEFT JOIN sys_user u
+           ON recent.user_id = u.id AND u.tenant_id = $1 AND u.deleted_at IS NULL
+         ORDER BY recent.login_at DESC
          LIMIT 100`,
+        [tenantId],
       )) as Array<{
         id: string;
         user_id: string;
@@ -222,23 +252,42 @@ export function createMonitorService(deps: MonitorServiceDeps): MonitorService {
         nickname: string;
       }>;
 
-      return rows.map((row) => ({
-        sessionId: row.id,
-        userId: row.user_id,
-        username: row.username,
-        nickname: row.nickname ?? "",
-        ip: row.ip ?? "",
-        browser: row.browser ?? "",
-        os: row.os ?? "",
-        loginAt: row.login_at,
-        lastAccessAt: row.login_at,
-      }));
+      return rows.flatMap((row) => {
+        const latestSession = multiDeviceManager
+          .getSessions(row.user_id)
+          .sort((left, right) => right.lastActiveAt - left.lastActiveAt)[0];
+        if (!latestSession) return [];
+        return [
+          {
+            sessionId: latestSession.sessionId,
+            userId: row.user_id,
+            username: row.username,
+            nickname: row.nickname ?? '',
+            ip: row.ip ?? '',
+            browser: row.browser ?? '',
+            os: row.os ?? '',
+            loginAt: new Date(latestSession.createdAt).toISOString(),
+            lastAccessAt: new Date(latestSession.lastActiveAt).toISOString(),
+          },
+        ];
+      });
     },
 
-    async forceLogout(sessionId: string, userId: string): Promise<void> {
-      // TODO: 接入 SessionManager.destroy(sessionId) 实现真正的强制下线
-      void sessionId;
-      void userId;
+    async forceLogout(sessionId: string): Promise<void> {
+      if (!db || !authSessionManager || !sessionManager) {
+        throw new ServerError('在线会话管理不可用', 503, 'ONLINE_SESSION_UNAVAILABLE');
+      }
+      const session = await sessionManager.get(sessionId);
+      const userId = typeof session?.data.userId === 'string' ? session.data.userId : undefined;
+      if (!userId) throw new NotFoundError('在线用户不存在');
+      const rows = (await db.raw(
+        `SELECT id FROM sys_user
+         WHERE id = $1 AND tenant_id = $2 AND deleted_at IS NULL
+         LIMIT 1`,
+        [userId, tenantId],
+      )) as Array<{ id: string }>;
+      if (rows.length === 0) throw new NotFoundError('在线用户不存在');
+      await authSessionManager.forceLogout(userId);
     },
   };
 }

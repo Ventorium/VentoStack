@@ -372,6 +372,16 @@ export async function buildApp(opts?: {
         allowedExtensions: STATIC_ALLOWED_EXTENSIONS,
       }),
     );
+
+    // Bun.serve 原生路由表中显式注册 /uploads/* 路由：
+    // 全局中间件只会被组合进已注册路由，未注册路径会直接落入 fetch fallback，
+    // 绕过上面的静态文件中间件导致永远 404。注册路由后：
+    // 文件存在 → 静态中间件返回文件；不存在 → 落到该 handler 返回 404。
+    const uploadsRouter = createRouter();
+    uploadsRouter.get('/uploads/*', (ctx) =>
+      ctx.json({ error: 'NOT_FOUND', message: '资源不存在' }, 404),
+    );
+    app.use(uploadsRouter);
   }
 
   // 4d-2. SPA 前端静态文件服务（生产模式：前端 dist 已复制到 public/）
@@ -380,10 +390,12 @@ export async function buildApp(opts?: {
   if (env.NODE_ENV === 'production' && !fetchFallback) {
     const { resolve } = await import('node:path');
     const publicDir = resolve(import.meta.dir, '../public');
-    const notFoundResponse = new Response(
-      JSON.stringify({ error: 'NOT_FOUND', message: '资源不存在' }),
-      { status: 404, headers: { 'Content-Type': 'application/json' } },
-    );
+    // Response body 只能被消费一次，每次请求都要创建新实例（不能复用单例）
+    const notFoundResponse = (): Response =>
+      new Response(
+        JSON.stringify({ error: 'NOT_FOUND', message: '资源不存在' }),
+        { status: 404, headers: { 'Content-Type': 'application/json' } },
+      );
     fetchFallback = (request: Request): Response => {
       const url = new URL(request.url);
       const pathname = url.pathname;
@@ -395,7 +407,7 @@ export async function buildApp(opts?: {
         pathname.startsWith('/docs') ||
         pathname.startsWith('/uploads/')
       ) {
-        return notFoundResponse;
+        return notFoundResponse();
       }
       const filePath = resolve(publicDir, pathname.slice(1) || 'index.html');
       const file = Bun.file(filePath);

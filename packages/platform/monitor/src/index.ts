@@ -5,7 +5,7 @@
  */
 
 // Services
-export { createMonitorService } from "./services/monitor";
+export { createMonitorService } from './services/monitor';
 export type {
   OnlineUser,
   ServerStatus,
@@ -15,11 +15,23 @@ export type {
   HealthStatus,
   MonitorService,
   MonitorServiceDeps,
-} from "./services/monitor";
+} from './services/monitor';
+export {
+  calculateCpuUsage,
+  collectDiskUsage,
+  createSystemMetricsProvider,
+} from './services/system-metrics';
+export type {
+  CpuSnapshot,
+  CpuSnapshotItem,
+  DiskUsage,
+  FileSystemStats,
+  SystemMetricsProvider,
+} from './services/system-metrics';
 
 // Routes
-export { createMonitorRoutes } from "./routes/monitor";
+export { createMonitorRoutes } from './routes/monitor';
 
 // Module
-export { createMonitorModule } from "./module";
-export type { MonitorModule, MonitorModuleDeps } from "./module";
+export { createMonitorModule } from './module';
+export type { MonitorModule, MonitorModuleDeps } from './module';

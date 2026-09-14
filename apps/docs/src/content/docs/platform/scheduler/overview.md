@@ -52,6 +52,7 @@ const schedulerModule = createSchedulerModule({
   jwt,
   jwtSecret,
   rbac,
+  tenantId,
 });
 
 // 注册路由
@@ -70,7 +71,8 @@ interface SchedulerModuleDeps {
   handlers: JobHandlerMap;         // 任务处理器映射
   jwt: JWTManager;                 // JWT 管理器
   jwtSecret: string;               // JWT 密钥
-  rbac?: RBAC;                     // 权限控制（可选）
+  rbac: RBAC;                      // 权限控制
+  tenantId: string;                // 服务端可信租户
 }
 ```
 
@@ -80,6 +82,7 @@ interface SchedulerModuleDeps {
 
 | 方法 | 路径 | 权限 | 说明 |
 |------|------|------|------|
+| GET | `/api/system/scheduler/handlers` | `scheduler:job:query` | 查询应用已注册处理器 |
 | GET | `/api/system/scheduler/jobs` | `scheduler:job:list` | 查询任务列表 |
 | GET | `/api/system/scheduler/jobs/:id` | `scheduler:job:query` | 查询任务详情 |
 | POST | `/api/system/scheduler/jobs` | `scheduler:job:create` | 创建任务 |
@@ -92,6 +95,10 @@ interface SchedulerModuleDeps {
 
 ### 创建任务
 
+管理端先调用 `GET /api/system/scheduler/handlers` 获取应用注册表，并以下拉框选择处理器。`handlerId` 不是用户可自由填写的执行入口；创建、编辑和启动时服务端都会再次校验注册状态，未注册处理器返回 400。
+
+Cron 字段通过执行频率生成器配置，当前调度引擎支持：每分钟、每 N 分钟、每小时、每 N 小时和每 24 小时。生成器会展示实际表达式和可读说明。当前不是 Quartz 调度器，因此不接受若依使用的六/七段表达式，也不支持指定星期、月份或每天固定钟点；服务端会拒绝这些表达式，不再静默降级为每分钟执行。
+
 ```typescript
 POST /api/system/scheduler/jobs
 {
@@ -102,6 +109,24 @@ POST /api/system/scheduler/jobs
   "description": "每天凌晨 3 点清理过期会话"
 }
 ```
+
+通过平台组合根注册处理器：
+
+```typescript
+await createPlatform({
+  // 其他依赖省略
+  jobHandlers: {
+    cleanExpiredSessions: async (params) => {
+      await cleanExpiredSessions(params);
+    },
+    syncDictCache: async (params) => {
+      await syncDictCache(params);
+    },
+  },
+});
+```
+
+未注册任何 `jobHandlers` 时，管理端处理器下拉为空并禁用“新增任务”，避免保存永远无法执行的任务。
 
 ### 查询任务列表
 

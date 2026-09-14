@@ -26,12 +26,16 @@ function getTenantId(ctx: { user?: unknown }): string {
 
 const fileItemSchema = {
   id: { type: "uuid" as const, description: "文件 ID" },
-  filename: { type: "string" as const, description: "文件名" },
-  contentType: { type: "string" as const, description: "MIME 类型" },
+  originalName: { type: "string" as const, description: "原始文件名" },
+  storagePath: { type: "string" as const, description: "存储路径" },
   size: { type: "int" as const, description: "文件大小（字节）" },
+  mimeType: { type: "string" as const, description: "MIME 类型（识别失败时为 null）" },
+  extension: { type: "string" as const, description: "扩展名（含 .）" },
   bucket: { type: "string" as const, description: "存储桶" },
+  tenantId: { type: "string" as const, description: "租户 ID" },
   uploaderId: { type: "uuid" as const, description: "上传者 ID" },
-  createdAt: { type: "date" as const, description: "创建时间" },
+  uploaderName: { type: "string" as const, description: "上传者显示名（nickname 优先，解析不到为 null）" },
+  createdAt: { type: "date" as const, description: "上传时间" },
 };
 
 const paginatedFileSchema = {
@@ -55,7 +59,7 @@ export function createOSSRoutes(
     "/api/system/oss/upload",
     {
       formData: {
-        file: { type: "file" as const, required: true, description: "上传文件" },
+        file: { type: "file" as const, required: true, maxSize: MAX_UPLOAD_SIZE, description: "上传文件" },
         bucket: { type: "string" as const, default: "default", description: "存储桶" },
       },
       responses: { 200: fileItemSchema },

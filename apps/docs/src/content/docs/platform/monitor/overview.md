@@ -1,215 +1,85 @@
 ---
 title: 系统监控概述
-description: '系统监控模块提供在线用户管理、服务器状态、缓存监控、数据源监控及健康检查聚合能力。'
+description: '系统监控模块提供跨平台运行指标、依赖健康状态和最近活动用户管理。'
 ---
 
-## 概述
+## 访问与租户边界
 
-系统监控模块提供运行时的系统状态观测能力，帮助管理员了解系统运行状况、排查问题并进行必要的运维操作。
-
-## 在线用户
-
-### 查询在线用户
-
-```typescript
-GET /api/system/monitor/online?page=1&pageSize=10&username=zhang
-
-// 响应
-{
-  "total": 50,
-  "rows": [
-    {
-      "sessionId": "sess-abc123",
-      "userId": "user-001",
-      "username": "zhangsan",
-      "nickname": "张三",
-      "deptName": "技术部",
-      "ip": "192.168.1.100",
-      "location": "北京市",
-      "browser": "Chrome 125",
-      "os": "macOS 14",
-      "loginAt": "2024-06-01T08:30:00Z",
-      "lastAccessAt": "2024-06-01T15:00:00Z"
-    }
-  ]
-}
-```
-
-在线用户信息存储在 Redis 中，以 Session 为维度：
-
-```
-Key:   session:online:{sessionId}
-Value: { userId, username, ip, browser, os, loginAt, lastAccessAt }
-TTL:   与 Session 过期时间一致
-```
-
-### 强制下线
-
-```typescript
-DELETE /api/system/monitor/online/{sessionId}
-
-// 效果：
-// 1. 删除 Session
-// 2. 撤销 Refresh Token
-// 3. AccessToken 加入黑名单
-// 4. 记录审计日志
-```
+所有监控接口都要求登录并校验对应权限。租户标识由服务端认证上下文确定，客户端不得提交 `tenantId`。最近活动用户的查询和强制下线定位均在 SQL 中限制当前租户，其他租户的数据不可见。
 
 ## 服务器状态
 
-### 获取服务器信息
+`GET /api/system/monitor/server` 返回 Bun 进程所在运行环境的信息：
 
-```typescript
-GET /api/system/monitor/server
-
-// 响应
+```json
 {
-  "hostname": "ventostack-prod-01",
-  "os": "Linux 5.15.0",
-  "arch": "x64",
-  "runtime": "Bun 1.1.0",
-  "uptime": 864000,                 // 秒
-  "cpu": {
-    "model": "AMD EPYC 7763",
-    "cores": 8,
-    "usage": 45.2                   // 百分比
+  "cpu": { "available": true, "model": "Apple M4", "cores": 10, "usage": 0.18 },
+  "memory": { "available": true, "total": 17179869184, "used": 8589934592, "usage": 0.5 },
+  "disk": { "available": true, "total": 245104738304, "used": 120000000000, "usage": 0.49, "mount": "/" },
+  "os": { "platform": "darwin", "arch": "arm64", "hostname": "admin-host" },
+  "process": {
+    "pid": 1234,
+    "uptime": 3600,
+    "bunVersion": "1.3.10",
+    "nodeCompatibilityVersion": "24.3.0",
+    "rss": 134217728,
+    "heapUsed": 67108864,
+    "heapTotal": 100663296
   },
-  "memory": {
-    "total": 16777216000,           // 16GB
-    "used": 8388608000,             // 8GB
-    "free": 8388608000,
-    "usage": 50.0                   // 百分比
-  },
-  "disk": {
-    "total": 107374182400,          // 100GB
-    "used": 53687091200,            // 50GB
-    "free": 53687091200,
-    "usage": 50.0
-  },
-  "nodeEnv": "production",
-  "startedAt": "2024-05-30T00:00:00Z"
+  "collectedAt": "2026-09-14T00:00:00.000Z"
 }
 ```
 
-## 缓存监控
+- `usage` 统一为 `0～1` 比率，不是百分数。
+- CPU 使用率通过两次 CPU time 快照差值计算，不使用 Windows 恒为零的 load average。
+- 磁盘通过 `statfs` 读取当前工作目录所在根卷，不执行 `df`/`tail`，兼容 macOS、Windows 和 Linux。
+- `process.uptime` 是应用进程运行时间，不是操作系统开机时间。
+- `nodeCompatibilityVersion` 是 Bun 提供的 Node.js 兼容层版本。
+- 指标无法采集时 `available=false`，数值零不得解释为真实的 0% 使用率。
+- 容器内展示的是容器可见的文件系统与系统资源，并不等同于宿主机指标。
 
-### 缓存概览
+## 缓存状态
 
-```typescript
-GET /api/system/monitor/cache
+`GET /api/system/monitor/cache` 返回缓存采集器提供的统计。当前框架 `Cache` 接口没有暴露 Redis INFO，因此未配置统计提供者时返回：
 
-// 响应
+```json
+{ "available": false, "keyCount": 0, "memory": "0B" }
+```
+
+页面会显示“暂不支持采集”，不会把占位零值当成真实统计。提供者返回的 `hitRate` 必须是 `0～1` 比率。
+
+## 数据源状态
+
+`GET /api/system/monitor/datasource` 始终通过参数化 `SELECT 1` 探测连通性。若数据库抽象没有提供连接池统计，响应会明确区分连接状态和指标能力：
+
+```json
 {
-  "adapter": "redis",
-  "version": "7.2.0",
   "connected": true,
-  "usedMemory": "256MB",
-  "maxMemory": "2GB",
-  "usedMemoryPercent": 12.5,
-  "totalKeys": 15000,
-  "expiresKeys": 8000,
-  "hitRate": 95.3,                  // 缓存命中率
-  "opsPerSecond": 1200,
-  "connectedClients": 5,
-  "uptime": 864000
+  "metricsAvailable": false,
+  "poolSize": 0,
+  "activeConnections": 0,
+  "idleConnections": 0
 }
 ```
 
-### 缓存 Key 管理
+`metricsAvailable=false` 时三个数值是协议占位值，页面不展示为真实连接池数据。
 
-```typescript
-// 查询缓存 Key 列表
-GET /api/system/monitor/cache/keys?pattern=dict:*&page=1&pageSize=20
+## 健康检查
 
-// 响应
-{
-  "total": 50,
-  "keys": [
-    {
-      "key": "dict:tenant-001:sys_user_sex",
-      "ttl": -1,                    // -1 表示永不过期
-      "type": "string",
-      "size": 256
-    }
-  ]
-}
+`GET /api/system/monitor/health` 聚合 readiness 检查，状态为 `UP`、`DEGRADED` 或 `DOWN`。页面分别使用绿色、橙色和红色展示。
 
-// 查看缓存值
-GET /api/system/monitor/cache/keys/{key}
+## 最近活动用户
 
-// 清除缓存 Key
-DELETE /api/system/monitor/cache/keys/{key}
-```
+`GET /api/system/monitor/online` 先在本租户最近 30 分钟的成功认证活动中按用户去重，再与当前进程的有效设备会话求交集。每个用户只返回最后活跃的一条会话；已退出或被强制下线的用户不会继续显示。
 
-缓存 Key 管理操作需要 `system:monitor:cache` 权限，且所有操作记录审计日志。
+`DELETE /api/system/monitor/online/{sessionId}` 会：
 
-## 数据源监控
+1. 从服务端 Session 存储读取会话归属，不信任客户端用户标识；
+2. 在数据库中确认用户属于当前租户，拒绝不存在或跨租户的会话；
+3. 调用统一认证会话管理器，撤销该用户的全部 Session、设备登录和已跟踪的刷新令牌。
 
-### 数据库连接池状态
+路径参数是服务端返回的真实 Session ID。客户端不需要也不能提交 `userId` 作为授权依据。
 
-```typescript
-GET /api/system/monitor/datasource
+## 平台接入扩展
 
-// 响应
-{
-  "adapter": "postgres",
-  "version": "16.2",
-  "connected": true,
-  "pool": {
-    "total": 20,
-    "active": 8,
-    "idle": 12,
-    "waiting": 0
-  },
-  "stats": {
-    "queriesPerSecond": 150,
-    "avgQueryTime": 5.2,            // 毫秒
-    "slowQueries": 3,               // 慢查询数量（> 1s）
-    "totalQueries": 1250000
-  },
-  "replication": {
-    "lag": 0,                       // 复制延迟（毫秒）
-    "status": "connected"
-  }
-}
-```
-
-## 健康检查聚合
-
-### 综合健康状态
-
-```typescript
-GET /api/system/monitor/health
-
-// 响应
-{
-  "status": "healthy",              // healthy | degraded | unhealthy
-  "checks": {
-    "database": {
-      "status": "healthy",
-      "latency": 2,                 // 毫秒
-      "message": null
-    },
-    "redis": {
-      "status": "healthy",
-      "latency": 1,
-      "message": null
-    },
-    "disk": {
-      "status": "degraded",
-      "usage": 85,                  // 磁盘使用率
-      "message": "磁盘使用率超过 80%"
-    },
-    "memory": {
-      "status": "healthy",
-      "usage": 50,
-      "message": null
-    }
-  },
-  "uptime": 864000,
-  "version": "1.0.0",
-  "checkedAt": "2024-06-01T15:00:00Z"
-}
-```
-
-健康检查聚合了 `@ventostack/core` 的 HealthCheck 能力，统一返回所有组件的健康状态。`status` 取所有检查项中最差的状态。
+monitor 模块允许在组合根注入 `systemMetricsProvider`、`cacheStatsProvider` 和 `dataSourceStatsProvider`。自定义提供者必须返回真实采集结果；不可用时应显式返回不可用状态，禁止用虚构的零值表示正常。

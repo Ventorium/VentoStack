@@ -4,9 +4,10 @@
  * 对接 @ventostack/events 的 Scheduler，提供 DB 持久化、任务 CRUD、执行日志。
  */
 
-import type { Database } from "@ventostack/database";
-import type { Scheduler } from "@ventostack/events";
-import { ScheduleJobLogModel, ScheduleJobModel } from "../models";
+import type { Database } from '@ventostack/database';
+import type { Scheduler } from '@ventostack/events';
+import { ValidationError } from '@ventostack/core';
+import { ScheduleJobLogModel, ScheduleJobModel } from '../models';
 
 /** 任务状态枚举 */
 export const JobStatus = { PAUSED: 0, RUNNING: 1 } as const;
@@ -65,6 +66,7 @@ export type JobHandlerMap = Record<
 
 /** 调度服务接口 */
 export interface SchedulerService {
+  listHandlers(): Array<{ id: string; label: string }>;
   create(params: CreateJobParams): Promise<{ id: string }>;
   update(id: string, params: Partial<CreateJobParams>): Promise<void>;
   delete(id: string): Promise<void>;
@@ -90,6 +92,28 @@ export function createSchedulerService(deps: {
   /** In-memory map of running scheduled tasks: jobId -> ScheduledTask */
   const runningTasks = new Map<string, { stop: () => void }>();
 
+  function assertRegisteredHandler(handlerId: string): void {
+    if (!Object.hasOwn(handlers, handlerId) || typeof handlers[handlerId] !== 'function') {
+      throw new ValidationError(`任务处理器未注册: ${handlerId}`);
+    }
+  }
+
+  function assertSupportedCron(cron: string): void {
+    const value = cron.trim();
+    const supportedFixed = value === '* * * * *' || value === '0 * * * *' || value === '0 0 * * *';
+    const minuteMatch = value.match(/^\*\/(\d{1,2}) \* \* \* \*$/);
+    const hourMatch = value.match(/^0 \*\/(\d{1,2}) \* \* \*$/);
+    const supportedMinutes = minuteMatch
+      ? Number(minuteMatch[1]) >= 1 && Number(minuteMatch[1]) <= 59
+      : false;
+    const supportedHours = hourMatch
+      ? Number(hourMatch[1]) >= 1 && Number(hourMatch[1]) <= 23
+      : false;
+    if (!supportedFixed && !supportedMinutes && !supportedHours) {
+      throw new ValidationError('Cron 表达式不受支持，请使用执行频率生成器');
+    }
+  }
+
   async function writeLog(
     jobId: string,
     status: number,
@@ -112,17 +136,17 @@ export function createSchedulerService(deps: {
   async function getByIdInternal(id: string): Promise<ScheduleJob | null> {
     const row = await db
       .query(ScheduleJobModel)
-      .where("id", "=", id)
+      .where('id', '=', id)
       .select(
-        "id",
-        "name",
-        "handler_id",
-        "cron",
-        "params",
-        "status",
-        "description",
-        "created_at",
-        "updated_at",
+        'id',
+        'name',
+        'handler_id',
+        'cron',
+        'params',
+        'status',
+        'description',
+        'created_at',
+        'updated_at',
       )
       .get();
     if (!row) return null;
@@ -145,23 +169,24 @@ export function createSchedulerService(deps: {
     const parts = cron.trim().split(/\s+/);
     if (parts.length !== 5) return 60_000;
     const [minute, hour] = parts;
-    if (minute?.startsWith("*/")) {
+    if (minute?.startsWith('*/')) {
       const n = Number.parseInt(minute.slice(2), 10);
       if (n > 0) return n * 60_000;
     }
-    if (minute === "0" && hour !== undefined && hour.startsWith("*/")) {
+    if (minute === '0' && hour !== undefined && hour.startsWith('*/')) {
       const n = Number.parseInt(hour.slice(2), 10);
       if (n > 0) return n * 3_600_000;
     }
-    if (minute === "*" && hour === "*") return 60_000;
-    if (minute === "0" && hour === "*") return 3_600_000;
-    if (minute === "0" && hour === "0") return 86_400_000;
+    if (minute === '*' && hour === '*') return 60_000;
+    if (minute === '0' && hour === '*') return 3_600_000;
+    if (minute === '0' && hour === '0') return 86_400_000;
     return 60_000;
   }
 
   async function scheduleJob(job: ScheduleJob) {
+    assertRegisteredHandler(job.handlerId);
     const handler = handlers[job.handlerId];
-    if (!handler) return;
+    if (!handler) throw new ValidationError(`任务处理器未注册: ${job.handlerId}`);
 
     const task = scheduler.schedule(
       {
@@ -196,15 +221,25 @@ export function createSchedulerService(deps: {
   }
 
   return {
+    listHandlers() {
+      return Object.keys(handlers)
+        .filter((id) => typeof handlers[id] === 'function')
+        .sort((left, right) => left.localeCompare(right))
+        .map((id) => ({ id, label: id }));
+    },
+
     async create(params) {
       const id = crypto.randomUUID();
       const { name, handlerId, cron, params: jobParams, description } = params;
+      assertRegisteredHandler(handlerId);
+      const normalizedCron = cron?.trim() || '* * * * *';
+      assertSupportedCron(normalizedCron);
 
       await db.query(ScheduleJobModel).insert({
         id,
         name,
         handler_id: handlerId,
-        cron: cron ?? null,
+        cron: normalizedCron,
         params: jobParams ? JSON.stringify(jobParams) : null,
         status: 0,
         description: description ?? null,
@@ -214,6 +249,8 @@ export function createSchedulerService(deps: {
     },
 
     async update(id, params) {
+      if (params.handlerId !== undefined) assertRegisteredHandler(params.handlerId);
+      if (params.cron !== undefined) assertSupportedCron(params.cron);
       const updates: Record<string, unknown> = {};
       if (params.name !== undefined) updates.name = params.name;
       if (params.handlerId !== undefined) updates.handler_id = params.handlerId;
@@ -222,7 +259,7 @@ export function createSchedulerService(deps: {
       if (params.description !== undefined) updates.description = params.description;
 
       if (Object.keys(updates).length === 0) return;
-      await db.query(ScheduleJobModel).where("id", "=", id).update(updates);
+      await db.query(ScheduleJobModel).where('id', '=', id).update(updates);
 
       // If running, restart with new config
       const existing = runningTasks.get(id);
@@ -242,8 +279,8 @@ export function createSchedulerService(deps: {
         existing.stop();
         runningTasks.delete(id);
       }
-      await db.query(ScheduleJobLogModel).where("job_id", "=", id).hardDelete();
-      await db.query(ScheduleJobModel).where("id", "=", id).hardDelete();
+      await db.query(ScheduleJobLogModel).where('job_id', '=', id).hardDelete();
+      await db.query(ScheduleJobModel).where('id', '=', id).hardDelete();
     },
 
     async getById(id) {
@@ -254,23 +291,23 @@ export function createSchedulerService(deps: {
       const { status, page = 1, pageSize = 10 } = params ?? {};
 
       let query = db.query(ScheduleJobModel);
-      if (status !== undefined) query = query.where("status", "=", status);
+      if (status !== undefined) query = query.where('status', '=', status);
 
       const total = await query.count();
 
       const rows = await query
         .select(
-          "id",
-          "name",
-          "handler_id",
-          "cron",
-          "params",
-          "status",
-          "description",
-          "created_at",
-          "updated_at",
+          'id',
+          'name',
+          'handler_id',
+          'cron',
+          'params',
+          'status',
+          'description',
+          'created_at',
+          'updated_at',
         )
-        .orderBy("created_at", "desc")
+        .orderBy('created_at', 'desc')
         .limit(pageSize)
         .offset((page - 1) * pageSize)
         .list();
@@ -297,14 +334,16 @@ export function createSchedulerService(deps: {
     },
 
     async start(id) {
-      await db.query(ScheduleJobModel).where("id", "=", id).update({ status: JobStatus.RUNNING });
-
       const job = await getByIdInternal(id);
-      if (job) await scheduleJob(job);
+      if (!job) throw new ValidationError('任务不存在');
+      assertRegisteredHandler(job.handlerId);
+      assertSupportedCron(job.cron ?? '* * * * *');
+      await db.query(ScheduleJobModel).where('id', '=', id).update({ status: JobStatus.RUNNING });
+      await scheduleJob({ ...job, status: JobStatus.RUNNING });
     },
 
     async stop(id) {
-      await db.query(ScheduleJobModel).where("id", "=", id).update({ status: JobStatus.PAUSED });
+      await db.query(ScheduleJobModel).where('id', '=', id).update({ status: JobStatus.PAUSED });
 
       const existing = runningTasks.get(id);
       if (existing) {
@@ -315,7 +354,7 @@ export function createSchedulerService(deps: {
 
     async executeNow(id) {
       const job = await getByIdInternal(id);
-      if (!job) throw new Error("任务不存在");
+      if (!job) throw new Error('任务不存在');
 
       const handler = handlers[job.handlerId];
       if (!handler) throw new Error(`Handler "${job.handlerId}" not registered`);
@@ -347,14 +386,14 @@ export function createSchedulerService(deps: {
       const { jobId, status, page = 1, pageSize = 10 } = params;
 
       let query = db.query(ScheduleJobLogModel);
-      if (jobId) query = query.where("job_id", "=", jobId);
-      if (status !== undefined) query = query.where("status", "=", status);
+      if (jobId) query = query.where('job_id', '=', jobId);
+      if (status !== undefined) query = query.where('status', '=', status);
 
       const total = await query.count();
 
       const rows = await query
-        .select("id", "job_id", "start_at", "end_at", "status", "result", "error", "duration_ms")
-        .orderBy("start_at", "desc")
+        .select('id', 'job_id', 'start_at', 'end_at', 'status', 'result', 'error', 'duration_ms')
+        .orderBy('start_at', 'desc')
         .limit(pageSize)
         .offset((page - 1) * pageSize)
         .list();

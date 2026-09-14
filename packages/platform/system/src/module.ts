@@ -1500,7 +1500,7 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
     '/api/system/user/profile/avatar',
     {
       formData: {
-        file: { type: 'file' as const, required: true, description: '头像文件' },
+        file: { type: 'file' as const, required: true, maxSize: 2 * 1024 * 1024, description: '头像文件' },
       },
       responses: { 200: { avatar: { type: 'string' as const, description: '头像 URL' } } },
       openapi: { summary: '上传头像', tags: ['user'], operationId: 'uploadAvatar' },

@@ -190,6 +190,18 @@ describe("Database.query - count", () => {
     expect(total).toBe(0);
   });
 
+  test("count coerces Postgres bigint string to number", async () => {
+    // pg 驱动对 COUNT(*)（bigint）返回字符串，count() 必须统一转为 number
+    const { executor } = createMockExecutor();
+    executor.mockResolvedValueOnce([{ count: "42" }]);
+
+    const db = createDatabase({ executor });
+    const total = await db.query(UserModel).count();
+
+    expect(total).toBe(42);
+    expect(typeof total).toBe("number");
+  });
+
   test("count strips limit and offset", async () => {
     const { executor } = createMockExecutor();
     executor.mockResolvedValueOnce([{ count: 5 }]);

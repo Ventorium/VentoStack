@@ -2,8 +2,8 @@
  * @ventostack/monitor - 测试辅助工具
  */
 
-import { mock } from "bun:test";
-import type { HealthCheck, HealthStatus } from "@ventostack/observability";
+import { mock } from 'bun:test';
+import type { HealthCheck, HealthStatus } from '@ventostack/observability';
 
 /** 创建 Mock SqlExecutor */
 export function createMockExecutor() {
@@ -11,7 +11,7 @@ export function createMockExecutor() {
   const results: Map<string, unknown[]> = new Map();
 
   const executor = mock(async (text: string, params?: unknown[]): Promise<unknown[]> => {
-    calls.push({ text, params });
+    calls.push(params === undefined ? { text } : { text, params });
     // Try exact match first
     for (const [pattern, result] of results) {
       if (text.includes(pattern)) return result;
@@ -19,24 +19,24 @@ export function createMockExecutor() {
     // Flexible match: for COUNT/WHERE queries, match on table name from patterns
     const fromMatch = text.match(/FROM\s+(\w+)/i);
     if (fromMatch) {
-      const tableName = fromMatch[1];
+      const tableName = fromMatch[1]!;
       for (const [pattern, result] of results) {
-        if (pattern.includes(tableName) && !pattern.includes("WHERE")) {
+        if (pattern.includes(tableName) && !pattern.includes('WHERE')) {
           if (
-            text.startsWith("SELECT COUNT") ||
-            (!text.includes("WHERE") && !text.includes("LIMIT"))
+            text.startsWith('SELECT COUNT') ||
+            (!text.includes('WHERE') && !text.includes('LIMIT'))
           ) {
             return result;
           }
         }
       }
       const stripped = text
-        .replace(/\$\d+/g, "?")
-        .replace(/\s+LIMIT\s+\d+/gi, "")
-        .replace(/\s+OFFSET\s+\d+/gi, "")
+        .replace(/\$\d+/g, '?')
+        .replace(/\s+LIMIT\s+\d+/gi, '')
+        .replace(/\s+OFFSET\s+\d+/gi, '')
         .trim();
       for (const [pattern, result] of results) {
-        const patternStripped = pattern.replace(/\$\d+/g, "?");
+        const patternStripped = pattern.replace(/\$\d+/g, '?');
         if (stripped.includes(patternStripped) || patternStripped.includes(stripped)) {
           return result;
         }
@@ -53,15 +53,15 @@ export function createMockJWTManager() {
   return {
     sign: mock(
       async (payload: any) =>
-        Buffer.from(JSON.stringify(payload)).toString("base64url") + ".mocksig",
+        Buffer.from(JSON.stringify(payload)).toString('base64url') + '.mocksig',
     ),
     verify: mock(async (token: string) => {
-      const payload = JSON.parse(Buffer.from(token.split(".")[0]!, "base64url").toString());
+      const payload = JSON.parse(Buffer.from(token.split('.')[0]!, 'base64url').toString());
       return payload;
     }),
     decode: mock((token: string) => {
       try {
-        return JSON.parse(Buffer.from(token.split(".")[0]!, "base64url").toString());
+        return JSON.parse(Buffer.from(token.split('.')[0]!, 'base64url').toString());
       } catch {
         return null;
       }
@@ -73,13 +73,13 @@ export function createMockJWTManager() {
 export function createMockHealthCheck(): HealthCheck {
   return {
     addCheck: mock((_name: string, _checker: () => Promise<boolean | string>) => {}),
-    live: mock(() => ({ status: "ok" as const })),
+    live: mock(() => ({ status: 'ok' as const })),
     ready: mock(
       async (): Promise<HealthStatus> => ({
-        status: "ok",
+        status: 'ok',
         checks: {
-          database: { status: "ok", duration: 5 },
-          cache: { status: "ok", duration: 2 },
+          database: { status: 'ok', duration: 5 },
+          cache: { status: 'ok', duration: 2 },
         },
         uptime: 12345,
       }),
@@ -112,9 +112,9 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     } = {
       wheres: [],
       selects: [],
-      tableName: "",
+      tableName: '',
       orderByField: null,
-      orderByDir: "ASC",
+      orderByDir: 'ASC',
       limitVal: null,
       offsetVal: null,
       isDeleted: false,
@@ -124,19 +124,19 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
     function buildConditions(params: unknown[]): string[] {
       const conditions: string[] = [];
       for (const w of state.wheres) {
-        if (w.op === "IN" && Array.isArray(w.value)) {
+        if (w.op === 'IN' && Array.isArray(w.value)) {
           const placeholders = w.value.map((v) => {
             params.push(v);
             return `$${params.length}`;
           });
-          conditions.push(`${w.field} IN (${placeholders.join(", ")})`);
+          conditions.push(`${w.field} IN (${placeholders.join(', ')})`);
         } else {
           params.push(w.value);
           conditions.push(`${w.field} ${w.op} $${params.length}`);
         }
       }
       if (state.softDelete && !state.isDeleted) {
-        conditions.push("deleted_at IS NULL");
+        conditions.push('deleted_at IS NULL');
       }
       return conditions;
     }
@@ -176,8 +176,8 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         let sql = `SELECT * FROM ${state.tableName}`;
         const params: unknown[] = [];
         const conditions = buildConditions(params);
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
-        sql += " LIMIT 1";
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
+        sql += ' LIMIT 1';
         const rows = await executor(sql, params);
         return rows.length > 0 ? rows[0] : null;
       },
@@ -185,7 +185,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         let sql = `SELECT * FROM ${state.tableName}`;
         const params: unknown[] = [];
         const conditions = buildConditions(params);
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
         if (state.orderByField) sql += ` ORDER BY ${state.orderByField} ${state.orderByDir}`;
         if (state.limitVal !== null) sql += ` LIMIT ${state.limitVal}`;
         if (state.offsetVal !== null) sql += ` OFFSET ${state.offsetVal}`;
@@ -195,7 +195,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         let sql = `SELECT COUNT(*) as count FROM ${state.tableName}`;
         const params: unknown[] = [];
         const conditions = buildConditions(params);
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
         const rows = (await executor(sql, params)) as any[];
         if (rows.length === 0) return 0;
         // Handle { count: N }, { total: N }, or { cnt: N } patterns
@@ -209,8 +209,8 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
       async insert(data: Record<string, unknown>) {
         const cols = Object.keys(data);
         const vals = Object.values(data);
-        const placeholders = vals.map((_, i) => `$${i + 1}`).join(", ");
-        const sql = `INSERT INTO ${state.tableName} (${cols.join(", ")}) VALUES (${placeholders})`;
+        const placeholders = vals.map((_, i) => `$${i + 1}`).join(', ');
+        const sql = `INSERT INTO ${state.tableName} (${cols.join(', ')}) VALUES (${placeholders})`;
         await executor(sql, vals);
       },
       async batchInsert(rows: Record<string, unknown>[]) {
@@ -221,10 +221,10 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
         for (const data of rows) {
           const vals = cols.map((c) => data[c]);
           const start = allVals.length;
-          allPlaceholders.push(`(${vals.map((_, i) => `$${start + i + 1}`).join(", ")})`);
+          allPlaceholders.push(`(${vals.map((_, i) => `$${start + i + 1}`).join(', ')})`);
           allVals.push(...vals);
         }
-        const sql = `INSERT INTO ${state.tableName} (${cols.join(", ")}) VALUES ${allPlaceholders.join(", ")}`;
+        const sql = `INSERT INTO ${state.tableName} (${cols.join(', ')}) VALUES ${allPlaceholders.join(', ')}`;
         await executor(sql, allVals);
       },
       async update(data: Record<string, unknown>) {
@@ -236,22 +236,22 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
           setParts.push(`${key} = $${params.length}`);
         }
         const conditions = buildConditions(params);
-        let sql = `UPDATE ${state.tableName} SET ${setParts.join(", ")}`;
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        let sql = `UPDATE ${state.tableName} SET ${setParts.join(', ')}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
         await executor(sql, params);
       },
       async hardDelete() {
         const params: unknown[] = [];
         const conditions = buildConditions(params);
         let sql = `DELETE FROM ${state.tableName}`;
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
         await executor(sql, params);
       },
       async delete() {
         const params: unknown[] = [];
         const conditions = buildConditions(params);
         let sql = `UPDATE ${state.tableName} SET deleted_at = NOW()`;
-        if (conditions.length > 0) sql += ` WHERE ${conditions.join(" AND ")}`;
+        if (conditions.length > 0) sql += ` WHERE ${conditions.join(' AND ')}`;
         await executor(sql, params);
       },
     };
@@ -261,7 +261,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
   const modelMeta = new Map<string, { tableName: string; softDelete: boolean }>();
 
   function registerModel(modelOrName: any, tableName?: string, softDelete = false) {
-    if (typeof modelOrName === "string") {
+    if (typeof modelOrName === 'string') {
       modelMeta.set(modelOrName, { tableName: tableName ?? modelOrName, softDelete });
     } else if (modelOrName?.tableName) {
       modelMeta.set(modelOrName.tableName, {
@@ -273,7 +273,7 @@ export function createMockDatabase(mockExecutor: ReturnType<typeof createMockExe
 
   const db = {
     query(model: any) {
-      const tableName = model?.tableName ?? "unknown";
+      const tableName = model?.tableName ?? 'unknown';
       const meta = modelMeta.get(tableName) ?? {
         tableName,
         softDelete: model?.options?.softDelete ?? false,

@@ -84,6 +84,25 @@ describe("App HTTP integration", () => {
     expect(body.error).toBe("NOT_FOUND");
   });
 
+  test("every unmatched request gets a full 404 body (Response not reused)", async () => {
+    // 回归：404 响应曾以单例 Response 复用，body 只能被消费一次，
+    // 第二个未匹配请求会拿到空 body
+    const app = createApp();
+    app.router.get("/exists", (ctx) => ctx.text("ok"));
+
+    const port = 40000 + Math.floor(Math.random() * 10000);
+    await app.listen(port);
+    appToClose = app;
+
+    for (let i = 0; i < 3; i++) {
+      const res = await fetch(`http://localhost:${port}/not-found-${i}`);
+      expect(res.status).toBe(404);
+      const body = (await res.json()) as { error: string; message: string };
+      expect(body.error).toBe("NOT_FOUND");
+      expect(body.message).toBe("资源不存在");
+    }
+  });
+
   test("handles route requests", async () => {
     const app = createApp();
     app.router.get("/hello", (ctx) => ctx.json({ message: "hello" }));

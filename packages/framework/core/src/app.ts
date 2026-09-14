@@ -255,29 +255,31 @@ export function createApp(config?: AppConfig): VentoStackApp {
       const listenPort = port ?? config?.port ?? 3000;
       const hostname = config?.hostname ?? '0.0.0.0';
 
-      // 预定义 404 响应
-      const notFoundResponse = new Response(
-        JSON.stringify({ error: 'NOT_FOUND', message: '资源不存在' }),
-        { status: 404, headers: { 'Content-Type': 'application/json', Server: 'VentoStack' } },
-      );
+      // 404 响应工厂：Response 的 body 只能被消费一次，
+      // 复用单例会让后续未匹配请求拿到空 body，必须每次创建新实例
+      const notFoundResponse = (): Response =>
+        new Response(
+          JSON.stringify({ error: 'NOT_FOUND', message: '资源不存在' }),
+          { status: 404, headers: { 'Content-Type': 'application/json', Server: 'VentoStack' } },
+        );
 
       server = Bun.serve({
         port: listenPort,
         hostname,
         routes: wrapped,
         fetch(req: Request, srv: Server<undefined>) {
-          if (!config?.fetchFallback) return notFoundResponse;
+          if (!config?.fetchFallback) return notFoundResponse();
           try {
             const result = config.fetchFallback(req, srv);
             if (result instanceof Promise) {
               return result.then(
-                (r) => r ?? notFoundResponse,
-                () => notFoundResponse,
+                (r) => r ?? notFoundResponse(),
+                () => notFoundResponse(),
               );
             }
-            return result ?? notFoundResponse;
+            return result ?? notFoundResponse();
           } catch {
-            return notFoundResponse;
+            return notFoundResponse();
           }
         },
       });

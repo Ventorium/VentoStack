@@ -177,6 +177,11 @@ export interface FrontendRoute {
 }
 
 // ===== 定时任务 =====
+export interface RegisteredJobHandler {
+  id: string;
+  label: string;
+}
+
 export interface ScheduleJob {
   id: string;
   name: string;
@@ -204,27 +209,33 @@ export interface ScheduleJobLog {
 // ===== 文件管理 =====
 export interface OSSFile {
   id: string;
-  filename: string;
+  originalName: string;
+  storagePath: string;
   size: number;
-  contentType: string;
-  uploaderId: string;
-  uploaderName?: string;
+  mimeType: string | null;
+  extension: string | null;
   bucket: string;
+  tenantId: string;
+  uploaderId: string | null;
+  uploaderName: string | null;
   createdAt: string;
 }
 
 // ===== 系统监控 =====
 export interface ServerCpuInfo {
+  available: boolean;
   model: string;
   cores: number;
   usage: number;
 }
 export interface ServerMemoryInfo {
+  available: boolean;
   total: number;
   used: number;
   usage: number;
 }
 export interface ServerDiskInfo {
+  available: boolean;
   total: number;
   used: number;
   usage: number;
@@ -239,7 +250,10 @@ export interface ServerProcessInfo {
   pid: number;
   uptime: number;
   bunVersion: string;
-  nodeVersion: string;
+  nodeCompatibilityVersion: string;
+  rss: number;
+  heapUsed: number;
+  heapTotal: number;
 }
 export interface ServerStatus {
   cpu: ServerCpuInfo;
@@ -247,9 +261,11 @@ export interface ServerStatus {
   disk: ServerDiskInfo;
   os: ServerOsInfo;
   process: ServerProcessInfo;
+  collectedAt: string;
 }
 
 export interface CacheStatus {
+  available: boolean;
   keyCount: number;
   hitRate?: number;
   memory: string;
@@ -259,6 +275,7 @@ export interface CacheStatus {
 
 export interface DataSourceStatus {
   connected: boolean;
+  metricsAvailable: boolean;
   poolSize: number;
   activeConnections: number;
   idleConnections: number;

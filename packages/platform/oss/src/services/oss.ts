@@ -27,6 +27,8 @@ export interface OSSFileRecord {
   bucket: string;
   tenantId: string;
   uploaderId: string | null;
+  /** 上传者显示名（nickname 优先，回退 username）；解析不到为 null */
+  uploaderName: string | null;
   createdAt: string;
 }
 
@@ -70,6 +72,30 @@ export function createOSSService(deps: {
 }): OSSService {
   const { db, storage } = deps;
 
+  /**
+   * 批量解析上传者显示名（nickname 优先，回退 username）。
+   * 参数化 + 租户限定，避免跨租户用户名泄露。
+   * 注：executor 基于 Bun SQL unsafe()，数组参数会被展开，故用生成占位符的 IN 而非 ANY($n)。
+   */
+  async function resolveUploaderNames(
+    tenantId: string,
+    uploaderIds: Array<string | null>,
+  ): Promise<Map<string, string>> {
+    const ids = [...new Set(uploaderIds.filter((id): id is string => id !== null))];
+    if (ids.length === 0) return new Map();
+    const placeholders = ids.map((_, i) => `$${i + 2}`).join(", ");
+    const rows = (await db.raw(
+      `SELECT id, COALESCE(NULLIF(nickname, ''), username) AS display_name
+       FROM sys_user WHERE tenant_id = $1 AND id IN (${placeholders})`,
+      [tenantId, ...ids],
+    )) as Array<{ id: string; display_name: string | null }>;
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.display_name !== null && row.display_name !== "") map.set(row.id, row.display_name);
+    }
+    return map;
+  }
+
   return {
     async upload(params, uploaderId, tenantId): Promise<OSSFileRecord> {
       const { filename, data, contentType, bucket = "default" } = params;
@@ -112,6 +138,7 @@ export function createOSSService(deps: {
         bucket,
         tenantId,
         uploaderId,
+        uploaderName: null,
         createdAt: new Date().toISOString(),
       };
     },
@@ -185,6 +212,8 @@ export function createOSSService(deps: {
         .get();
       if (!row) return null;
 
+      const names = await resolveUploaderNames(tenantId, [row.uploader_id ?? null]);
+
       return {
         id: row.id,
         originalName: row.original_name,
@@ -195,6 +224,7 @@ export function createOSSService(deps: {
         bucket: row.bucket,
         tenantId: row.tenant_id ?? "default",
         uploaderId: row.uploader_id ?? null,
+        uploaderName: names.get(row.uploader_id ?? "") ?? null,
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       };
@@ -229,6 +259,11 @@ export function createOSSService(deps: {
         .offset((page - 1) * pageSize)
         .list();
 
+      const names = await resolveUploaderNames(
+        tenantId,
+        rows.map((row) => row.uploader_id ?? null),
+      );
+
       const items: OSSFileRecord[] = rows.map((row) => ({
         id: row.id,
         originalName: row.original_name,
@@ -239,6 +274,7 @@ export function createOSSService(deps: {
         bucket: row.bucket,
         tenantId: row.tenant_id ?? "default",
         uploaderId: row.uploader_id ?? null,
+        uploaderName: names.get(row.uploader_id ?? "") ?? null,
         createdAt:
           row.created_at instanceof Date ? row.created_at.toISOString() : String(row.created_at),
       }));

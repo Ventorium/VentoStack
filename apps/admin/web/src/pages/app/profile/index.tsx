@@ -184,7 +184,12 @@ export default function ProfilePage() {
   const handleCropConfirm = async (blob: Blob) => {
     setCropperFile(null);
     const file = new File([blob], "avatar.png", { type: "image/png" });
-    const result = await client.post("/api/system/user/profile/avatar", { body: { file } });
+    // 文件上传必须走 multipart/form-data：传普通对象会被 JSON 序列化，File 变成 {}
+    const formData = new FormData();
+    formData.append("file", file);
+    const result = await client.post("/api/system/user/profile/avatar", {
+      body: formData,
+    } as never);
     if (!result.error) {
       msg.success("头像上传成功");
       fetchProfile();
