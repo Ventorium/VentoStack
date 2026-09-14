@@ -88,6 +88,7 @@ import { createAgentRuntimeClient } from './agent-runtime/client';
 import type { AgentRuntimeConfig } from './agent-runtime/client';
 import { createAgentRuntimeTools } from './agent-runtime/tools';
 import {
+  createReadDocumentTool,
   createBase64Tool,
   createCalculatorTool,
   createDatetimeTool,
@@ -493,6 +494,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       : join(storagePath, 'memories', tenantId);
     registry.register(createFileReadTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }));
     registry.register(createFileWriteTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }));
+    if (userId && sessionId) registry.register(createReadDocumentTool({ rootPath: artifactRoot }));
 
     return registry;
   }
@@ -726,7 +728,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           onFileWritten: persistArtifact,
           async onWorkspaceChanged() {
             const result = await agentRuntime.runCommand(
-              item.sandboxId!,
+              sandboxId,
               ['find', '.', '-type', 'f', '-size', '-2097153c', '-print0'],
               workspace,
             );
@@ -734,7 +736,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
             for (const path of paths) {
               const relative = path.replace(/^\.\//, '');
               if (!relative || relative.includes('\0') || relative.split('/').includes('..')) continue;
-              await persistArtifact(relative, await agentRuntime.readFile(item.sandboxId!, `${workspace}/${relative}`));
+              await persistArtifact(relative, await agentRuntime.readFile(sandboxId, `${workspace}/${relative}`));
             }
           },
         } : {}),

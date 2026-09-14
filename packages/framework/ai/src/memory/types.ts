@@ -80,6 +80,7 @@ export interface MemoryService {
     limit?: number,
   ): Promise<Array<{ role: string; content: string }>>;
   getArtifactRoot(sessionId: string, scope: MemoryScope): Promise<string | null>;
+  writeArtifact(sessionId: string, scope: MemoryScope, path: string, content: Uint8Array): Promise<void>;
   listArtifacts(sessionId: string, scope: MemoryScope): Promise<Array<{ path: string; size: number; modifiedAt: string }>>;
   readArtifact(sessionId: string, scope: MemoryScope, path: string): Promise<{ path: string; content: string } | null>;
   getSessionRuntimeSandbox(sessionId: string, scope: MemoryScope): Promise<string | null>;

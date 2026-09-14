@@ -34,6 +34,8 @@ export interface ChatStreamParams {
   skillIds?: string[];
   mcpServerIds?: string[];
   knowledgeBaseIds?: string[];
+  attachmentPaths?: string[];
+  thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 }
 
 /**

@@ -196,6 +196,21 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
       return root;
     },
 
+    async writeArtifact(sessionId, scope, path, content): Promise<void> {
+      if (!(await readMetadata(sessionId, scope)) || !path || path.includes('\0')) throw new Error('Session not found');
+      const root = artifactRoot(sessionId, scope);
+      const target = resolve(root, path);
+      if (!isWithin(resolve(root), target)) throw new Error('Invalid artifact path');
+      await mkdir(root, { recursive: true });
+      const resolvedRoot = await realpath(root);
+      await mkdir(dirname(target), { recursive: true });
+      const resolvedParent = await realpath(dirname(target));
+      if (!isWithin(resolvedRoot, resolvedParent)) throw new Error('Invalid artifact path');
+      const existing = await lstat(target).catch(() => null);
+      if (existing?.isSymbolicLink()) throw new Error('Invalid artifact path');
+      await writeFile(target, content);
+    },
+
     async listArtifacts(sessionId, scope): Promise<Array<{ path: string; size: number; modifiedAt: string }>> {
       if (!(await readMetadata(sessionId, scope))) return [];
       const root = artifactRoot(sessionId, scope);

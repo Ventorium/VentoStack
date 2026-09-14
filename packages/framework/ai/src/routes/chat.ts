@@ -7,6 +7,8 @@ import type { AgentLoop } from '../agent-engine/agent-loop';
 import type { MemoryService } from '../memory/types';
 import { createSSEResponse } from '../stream-engine/sse';
 import type { ToolRegistry } from '../tool-registry';
+import { createFileValidator } from '../knowledge-base/file-security';
+import type { ThinkingLevel } from '../llm-gateway/types';
 import { routeDoc } from './schema';
 
 export interface ConversationService {
@@ -59,6 +61,41 @@ export function createChatRoutes(
   },
 ): Router {
   const router = createRouter();
+  const attachmentValidator = createFileValidator({ maxFileSize: 20 * 1024 * 1024 });
+  const thinkingLevels = new Set<ThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+
+  function requestOptions(body: Record<string, unknown>): { thinkingLevel?: ThinkingLevel; attachmentPaths?: string[] } | Response {
+    const thinkingLevel = body.thinkingLevel;
+    if (thinkingLevel !== undefined && (typeof thinkingLevel !== 'string' || !thinkingLevels.has(thinkingLevel as ThinkingLevel))) {
+      return fail('thinkingLevel 不合法', 400, 400);
+    }
+    const attachmentPaths = body.attachmentPaths;
+    if (attachmentPaths !== undefined && (!Array.isArray(attachmentPaths) || attachmentPaths.length > 10 || attachmentPaths.some((path) => {
+      if (typeof path !== 'string' || !path || path.startsWith('/') || path.startsWith('\\') || path.includes('\0')) return true;
+      return path.split(/[/\\]/).includes('..');
+    }))) {
+      return fail('attachmentPaths 不合法', 400, 400);
+    }
+    return {
+      ...(thinkingLevel === undefined ? {} : { thinkingLevel: thinkingLevel as ThinkingLevel }),
+      ...(attachmentPaths === undefined ? {} : { attachmentPaths: attachmentPaths as string[] }),
+    };
+  }
+
+  async function validateAttachments(
+    sessionId: string,
+    tenantId: string,
+    userId: string,
+    attachmentPaths?: string[],
+  ): Promise<Response | undefined> {
+    if (!attachmentPaths?.length) return undefined;
+    const artifacts = await memoryService?.listArtifacts(sessionId, { tenantId, userId }) ?? [];
+    const available = new Set(artifacts.map((item) => item.path));
+    if (attachmentPaths.some((path) => !available.has(path))) {
+      return fail('附件不存在或不属于当前会话', 400, 400);
+    }
+    return undefined;
+  }
   router.use(authMiddleware);
 
   // 对话端点限流：按「租户:用户」维度限流（在认证之后执行，键来自已验证身份，不信任代理头）。
@@ -167,6 +204,32 @@ export function createChatRoutes(
         before: q.before as string | undefined,
       });
       return success(conversations);
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  router.post(
+    '/api/ai/conversations/:id/attachments',
+    routeDoc('上传会话附件'),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const form = await ctx.request.formData();
+        const file = form.get('file');
+        if (!(file instanceof File)) return fail('file 字段必填', 400, 400);
+        const validation = attachmentValidator.validateFile(file);
+        if (!validation.valid) return fail(validation.error ?? '附件不合法', 400, 400);
+        const fileName = attachmentValidator.sanitizeFileName(file.name);
+        if (!fileName) return fail('附件文件名不合法', 400, 400);
+        const path = `attachments/${fileName}`;
+        await memoryService.writeArtifact(id, { tenantId, userId }, path, new Uint8Array(await file.arrayBuffer()));
+        return success({ path, name: file.name, size: file.size });
+      } catch (e) {
+        return handleError(e);
+      }
     },
     perm('ai:chat', 'use'),
   );
@@ -342,6 +405,8 @@ export function createChatRoutes(
         skillIds: { type: 'array', items: { type: 'string' }, description: '技能过滤' },
         mcpServerIds: { type: 'array', items: { type: 'string' }, description: 'MCP 过滤' },
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
+        attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
+        thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
       },
       responses: {
         200: {
@@ -376,6 +441,15 @@ export function createChatRoutes(
           returnedSessionId = conv.id;
         }
         const toolRegistry = buildRequestToolRegistry(ctx, returnedSessionId);
+        const runOptions = requestOptions(body);
+        if (runOptions instanceof Response) return runOptions;
+        const attachmentError = await validateAttachments(
+          returnedSessionId,
+          tenantId,
+          userId,
+          runOptions.attachmentPaths,
+        );
+        if (attachmentError) return attachmentError;
 
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
@@ -390,6 +464,7 @@ export function createChatRoutes(
           mcpServerIds: body.mcpServerIds as string[] | undefined,
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
           model: body.model as string | undefined,
+          ...runOptions,
         });
 
         // 收集流式结果
@@ -422,6 +497,8 @@ export function createChatRoutes(
         skillIds: { type: 'array', items: { type: 'string' }, description: '技能过滤' },
         mcpServerIds: { type: 'array', items: { type: 'string' }, description: 'MCP 过滤' },
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
+        attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
+        thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
       },
       responses: {
         200: {
@@ -458,6 +535,15 @@ export function createChatRoutes(
           sessionId = conv.id;
         }
         const toolRegistry = buildRequestToolRegistry(ctx, sessionId);
+        const runOptions = requestOptions(body);
+        if (runOptions instanceof Response) return runOptions;
+        const attachmentError = await validateAttachments(
+          sessionId,
+          tenantId,
+          userId,
+          runOptions.attachmentPaths,
+        );
+        if (attachmentError) return attachmentError;
 
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
@@ -473,6 +559,7 @@ export function createChatRoutes(
           mcpServerIds: body.mcpServerIds as string[] | undefined,
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
           model: body.model as string | undefined,
+          ...runOptions,
         });
 
         // 在流开头下发 session 事件，前端据此绑定会话 ID（新建会话时前端无 sessionId）

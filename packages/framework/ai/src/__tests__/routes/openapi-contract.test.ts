@@ -81,6 +81,7 @@ describe('AI 路由 OpenAPI 契约', () => {
     expect(paths['/api/ai/chat/stream']?.post).toBeDefined();
     const streamOp = paths['/api/ai/chat/stream']?.post as { summary?: string };
     expect(streamOp.summary).toBe('发送消息（SSE 流式）');
+    expect(paths['/api/ai/conversations/:id/attachments']?.post).toBeDefined();
 
     // 聊天内确认
     expect(paths['/api/ai/chat/approvals/:id/confirm']?.post).toBeDefined();

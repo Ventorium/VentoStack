@@ -354,6 +354,7 @@ export interface AgentRunParams {
   skillIds?: string[];
   mcpServerIds?: string[];
   knowledgeBaseIds?: string[];
+  attachmentPaths?: string[];
   /** Runtime overrides used by higher-level harnesses. */
   systemPrompt?: string;
   model?: string;
@@ -848,9 +849,16 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       }
 
       // 知识库自主检索引导（替代自动注入：Agent 需主动使用 kb-* 工具检索）
-      const boundKbIds = params.knowledgeBaseIds ?? agentConfig?.knowledgeBaseIds ?? [];
+      const configuredKbIds = agentConfig?.knowledgeBaseIds ?? [];
+      const boundKbIds = params.knowledgeBaseIds
+        ? configuredKbIds.filter((id) => params.knowledgeBaseIds!.includes(id))
+        : configuredKbIds;
       if (boundKbIds.length > 0) {
-        systemPrompt = `${systemPrompt}\n\n## 知识库使用说明\n你已绑定 ${boundKbIds.length} 个知识库。回答涉及知识库内容的问题时，必须自主检索：先用 kb-browse / kb-outline 了解文档结构与标题大纲，再用 kb-search 定位相关内容，最后用 kb-read 阅读原文。禁止凭空回答知识库相关内容。`;
+        systemPrompt = `${systemPrompt}\n\n## 知识库使用说明\n你已绑定以下知识库 ID：${boundKbIds.join('、')}。回答涉及知识库内容的问题时，必须把其中一个 ID 作为 kbId 调用知识库工具：先用 kb-browse / kb-outline 了解文档结构与标题大纲，再用 kb-search 定位相关内容，最后用 kb-read 阅读原文。不要使用 ls/cat 等普通文件工具访问知识库。禁止凭空回答知识库相关内容。`;
+      }
+      const attachmentPaths = params.attachmentPaths ?? [];
+      if (attachmentPaths.length > 0) {
+        systemPrompt = `${systemPrompt}\n\n## 会话文件\n用户为本轮消息选择了以下会话级文件：${attachmentPaths.join('、')}。回答前必须调用“读取文档”（read_document）工具解析相关文件，不要猜测文件内容。`;
       }
 
       // 2. 根据 Agent 配置和过滤器获取工具（默认拒绝：Agent 未配置白名单时不暴露注册表工具）
@@ -872,6 +880,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           for (const name of kbToolNames) {
             if (!allowedTools.includes(name)) allowedTools.push(name);
           }
+        }
+        if (attachmentPaths.length > 0 && registry.get('read_document') && !allowedTools.includes('read_document')) {
+          allowedTools.push('read_document');
         }
         if (params.sessionId && memoryEnabled && registry.get('memory-candidate') && !allowedTools.includes('memory-candidate')) {
           allowedTools.push('memory-candidate');
@@ -1176,7 +1187,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         const trimmedMessages = fitMessagesToBudget(turnMessages, systemPrompt);
 
         // 动态 API Key（对齐参考实现 getApiKey；无 provider 前缀时回退网关默认 provider）
-        const apiKeyProvider = model.includes('/') ? (model.split('/')[0] ?? model) : deps.llmGateway.getDefaultProvider().name;
+        const apiKeyProvider = model.includes('/')
+          ? (model.split('/')[0] ?? model)
+          : (deps.llmGateway.listProviders()[0]?.name ?? model);
         const resolvedApiKey = deps.getApiKey ? await deps.getApiKey(apiKeyProvider) : undefined;
 
         // 调用 LLM

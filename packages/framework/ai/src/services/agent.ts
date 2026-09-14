@@ -192,7 +192,7 @@ export function createAgentService(deps: {
     }
     if (params.welcomeMessage !== undefined) {
       sets.push(`welcome_message = $${idx++}`);
-      values.push(params.welcomeMessage.trim() || null);
+      values.push(params.welcomeMessage?.trim() || null);
     }
     if (params.model !== undefined) {
       sets.push(`model = $${idx++}::text[]`);

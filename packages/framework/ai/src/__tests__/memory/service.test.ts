@@ -103,6 +103,13 @@ describe("tenant-scoped Memory", () => {
     });
     expect(await memory.readArtifact(first.sessionId, scope, "../outside.txt")).toBeNull();
     expect(await memory.readArtifact(first.sessionId, scope, "escape.txt")).toBeNull();
+
+    await memory.writeArtifact(first.sessionId, scope, 'attachments/input.txt', new TextEncoder().encode('attached'));
+    expect(await memory.readArtifact(first.sessionId, scope, 'attachments/input.txt')).toEqual({
+      path: 'attachments/input.txt',
+      content: 'attached',
+    });
+    await expect(memory.writeArtifact(first.sessionId, scope, '../escaped.txt', new Uint8Array())).rejects.toThrow('Invalid artifact path');
   });
 
   test("stores sourced session memory operations in MEMORY.md", async () => {

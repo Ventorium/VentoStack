@@ -21,6 +21,7 @@ interface AgentAbility {
 interface TopToolbarProps {
   agentName: string;
   agent?: {
+    requiresVirtualEnvironment: boolean;
     tools: string[];
     skills: Array<{ id: string; name: string; description: string | null }>;
     mcpServers: Array<{ id: string; name: string; description: string | null; toolCount: number }>;
@@ -92,8 +93,6 @@ export default function TopToolbar({
 }: TopToolbarProps) {
   const { token } = theme.useToken();
 
-  const totalEnabled = enabledTools.length + enabledSkills.length + enabledMcp.length + enabledKbs.length;
-
   return (
     <div
       className="flex items-center justify-between" style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
@@ -110,9 +109,6 @@ export default function TopToolbar({
         <Text strong className="text-sm">
           {agentName}
         </Text>
-        <Tag color="success" style={{ borderRadius: token.borderRadiusSM }}>
-          {totalEnabled} 能力已启用
-        </Tag>
       </Space>
 
       {/* Right: Ability Toggles */}
@@ -199,13 +195,15 @@ export default function TopToolbar({
             </Button>
           </Popover>
 
-          <Tag
-            icon={<SafetyOutlined />}
-            color="success"
-            className="ml-2" style={{ borderRadius: token.borderRadiusSM }}
-          >
-            沙箱
-          </Tag>
+          {agent.requiresVirtualEnvironment && (
+            <Tag
+              icon={<SafetyOutlined />}
+              color="success"
+              className="ml-2" style={{ borderRadius: token.borderRadiusSM }}
+            >
+              虚拟环境
+            </Tag>
+          )}
         </Space>
       )}
     </div>

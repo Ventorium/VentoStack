@@ -85,6 +85,7 @@ const MAX_LIST_LENGTH = 20;
 function validateAgentBody(body: Record<string, unknown>): string | null {
   if (
     body.welcomeMessage !== undefined &&
+    body.welcomeMessage !== null &&
     (typeof body.welcomeMessage !== 'string' || body.welcomeMessage.length > 500)
   ) {
     return 'welcomeMessage 必须是最多 500 字符的字符串';
@@ -270,6 +271,11 @@ export function createAgentRoutes(
       body: {
         name: { type: 'string', max: 128, description: 'Agent 名称' },
         description: { type: 'string', description: '描述' },
+        welcomeMessage: {
+          type: 'string',
+          max: 500,
+          description: '新会话欢迎词，为空时使用默认文案',
+        },
         model: {
           type: 'array',
           items: { type: 'string' },

@@ -1664,32 +1664,43 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 获取会话产物文件列表
+     */
     '/api/ai/conversations/:id/artifacts': {
       query: never,
-      params: { id: string },
+      params: {
+        id: string
+      },
       headers: never,
       body: never,
-      response: Array<{ path: string, size: number, modifiedAt: string }>
+      response: any
     },
-    '/api/ai/conversations/:id/artifact': {
-      query: { path: string },
-      params: { id: string },
-      headers: never,
-      body: never,
-      response: { path: string, content: string }
-    },
+    /**
+     * 获取会话记忆
+     */
     '/api/ai/conversations/:id/memory': {
       query: never,
-      params: { id: string },
+      params: {
+        id: string
+      },
       headers: never,
       body: never,
-      response: {
-        content: string,
-        events: Array<{ id: string, type: string, content: string, sourceMessageIds: string[], createdAt: string }>,
-        status: 'idle' | 'pending' | 'processing' | 'completed' | 'failed',
-        error?: string,
-        processedEventIds: string[]
-      }
+      response: any
+    },
+    /**
+     * 预览会话产物文件
+     */
+    '/api/ai/conversations/:id/artifact': {
+      query: {
+        path: string
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
     },
     '/api/ai/providers/presets': {
       query: never,
@@ -3260,6 +3271,10 @@ export type OpenAPIs = {
          */
         description?: string,
         /**
+         * @description 新会话欢迎词，为空时使用默认文案
+         */
+        welcomeMessage?: string,
+        /**
          * @description 可用模型 ID 列表（至少 1 个）
          */
         model: string[],
@@ -3374,6 +3389,30 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 上传会话附件
+     */
+    '/api/ai/conversations/:id/attachments': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 异步整理会话记忆
+     */
+    '/api/ai/conversations/:id/memory/consolidate': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 分叉会话
      */
     '/api/ai/conversations/:id/fork': {
@@ -3404,13 +3443,6 @@ export type OpenAPIs = {
          */
         sessionId?: string
       }
-    },
-    '/api/ai/conversations/:id/memory/consolidate': {
-      query: never,
-      params: { id: string },
-      headers: never,
-      body: never,
-      response: { status: 'pending' }
     },
     /**
      * 发送消息（非流式）
@@ -3451,7 +3483,16 @@ export type OpenAPIs = {
         /**
          * @description 知识库过滤
          */
-        knowledgeBaseIds?: string[]
+        knowledgeBaseIds?: string[],
+        /**
+         * @description 当前会话附件路径
+         */
+        attachmentPaths?: string[],
+        /**
+         * @description 思考强度
+         * @enum off,minimal,low,medium,high,xhigh
+         */
+        thinkingLevel?: string
       },
       response: {
         /**
@@ -3503,7 +3544,16 @@ export type OpenAPIs = {
         /**
          * @description 知识库过滤
          */
-        knowledgeBaseIds?: string[]
+        knowledgeBaseIds?: string[],
+        /**
+         * @description 当前会话附件路径
+         */
+        attachmentPaths?: string[],
+        /**
+         * @description 思考强度
+         * @enum off,minimal,low,medium,high,xhigh
+         */
+        thinkingLevel?: string
       },
       response: string
     },
@@ -4685,6 +4735,10 @@ export type OpenAPIs = {
          * @description 描述
          */
         description?: string,
+        /**
+         * @description 新会话欢迎词，为空时使用默认文案
+         */
+        welcomeMessage?: string,
         /**
          * @description 可用模型 ID 列表（至少 1 个）
          */
