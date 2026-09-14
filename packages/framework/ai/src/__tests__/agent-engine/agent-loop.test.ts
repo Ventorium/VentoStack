@@ -56,6 +56,51 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
 }
 
 describe("Agent loop conformance", () => {
+  test("runs with a database-resolved model when no static provider is registered", async () => {
+    const dynamicGateway = createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]]);
+    dynamicGateway.listProviders = () => [];
+    dynamicGateway.getDefaultProvider = () => { throw new Error("no static provider"); };
+    const loop = createAgentLoop({ llmGateway: dynamicGateway });
+
+    const chunks = await collect(loop.runStream({
+      agentId: "agent",
+      userId: "user",
+      tenantId: "tenant",
+      message: "hello",
+      model: "database-model",
+    }));
+
+    expect(chunks.some((chunk) => chunk.type === "content" && chunk.delta === "ok")).toBe(true);
+  });
+
+  test("includes bound knowledge base ids in the tool instructions", async () => {
+    const requests: ChatParams[] = [];
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
+      agentService: {
+        async getById() {
+          return {
+            id: "agent", name: "assistant", models: ["default"], systemPrompt: "base",
+            knowledgeBaseIds: ["kb-actual"], tenantId: "tenant", requiresVirtualEnvironment: false,
+          };
+        },
+      },
+    });
+
+    await collect(loop.runStream({
+      agentId: "agent",
+      userId: "user",
+      tenantId: "tenant",
+      message: "search",
+      knowledgeBaseIds: ["kb-actual", "kb-unbound"],
+    }));
+
+    const prompt = requests[0]?.messages.find((message) => message.role === "system")?.content;
+    expect(prompt).toContain("kb-actual");
+    expect(prompt).not.toContain("kb-unbound");
+    expect(prompt).toContain("作为 kbId");
+  });
+
   test("describes only environment, workspace, and terminal for virtual-environment agents", async () => {
     const requests: ChatParams[] = [];
     const loop = createAgentLoop({
@@ -478,6 +523,32 @@ describe("Agent loop tool policy（默认拒绝）", () => {
 
     expect(requests.length).toBe(1);
     expect(requests[0]!.tools).toBeUndefined();
+  });
+
+  test('automatically exposes read_document and instructs the model when attachments are present', async () => {
+    const requests: ChatParams[] = [];
+    const registry = createToolRegistry();
+    registry.register({
+      name: 'read_document',
+      description: 'parse attachment',
+      parameters: [{ name: 'path', type: 'string' as const, required: true }],
+      handler: async () => 'parsed',
+    });
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
+      toolRegistry: registry,
+    });
+
+    await collect(loop.runStream({
+      agentId: 'agent',
+      userId: 'user',
+      tenantId: 'tenant',
+      message: 'summarize',
+      attachmentPaths: ['attachments/report.pdf'],
+    }));
+
+    expect(requests[0]?.tools?.map((tool) => tool.name)).toContain('read_document');
+    expect(requests[0]?.messages.find((message) => message.role === 'system')?.content).toContain('attachments/report.pdf');
   });
 
   test("intersects the request filter with the agent whitelist", async () => {

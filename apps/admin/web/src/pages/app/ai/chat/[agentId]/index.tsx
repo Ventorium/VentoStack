@@ -1,7 +1,7 @@
 import { client } from '@/api';
 import { type ChatStreamParams, streamChat } from '@/api/sse-client';
 import { Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatMessage, ModelOption } from '../types';
 
@@ -18,6 +18,7 @@ const FALLBACK_MODEL: ModelOption = {
   name: '请先在 AI 配置中添加供应商和模型',
   provider: '',
   contextWindow: 128000,
+  supportsImage: false,
 };
 
 interface AgentInfo {
@@ -25,6 +26,7 @@ interface AgentInfo {
   name: string;
   description: string | null;
   welcomeMessage: string | null;
+  requiresVirtualEnvironment: boolean;
   /** 可用模型 ID 白名单（第一项为默认模型） */
   models: string[];
   systemPrompt: string;
@@ -57,6 +59,9 @@ function AgentConversation(): React.ReactElement {
   const [currentModel, setCurrentModel] = useState<ModelOption>(FALLBACK_MODEL);
   const [dbModels, setDbModels] = useState<ModelOption[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const [thinkingLevel, setThinkingLevel] = useState<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>('off');
+  const [attachments, setAttachments] = useState<Array<{ path: string; name: string }>>([]);
+  const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   useEffect(() => () => abortControllerRef.current?.abort(), []);
@@ -66,6 +71,7 @@ function AgentConversation(): React.ReactElement {
   const [enabledSkills, setEnabledSkills] = useState<string[]>([]);
   const [enabledMcp, setEnabledMcp] = useState<string[]>([]);
   const [enabledKbs, setEnabledKbs] = useState<string[]>([]);
+  const [boundKbIds, setBoundKbIds] = useState<string[]>([]);
 
   // Token 用量追踪
   const [totalTokens, setTotalTokens] = useState({ input: 0, output: 0 });
@@ -184,6 +190,7 @@ function AgentConversation(): React.ReactElement {
               skillIds: string[] | null;
               mcpServerIds: string[] | null;
               knowledgeBaseIds: string[] | null;
+              requiresVirtualEnvironment: boolean;
             }>;
           }
         )?.list;
@@ -195,6 +202,7 @@ function AgentConversation(): React.ReactElement {
             welcomeMessage: a.welcomeMessage,
             models: a.model ?? [],
             systemPrompt: a.systemPrompt,
+            requiresVirtualEnvironment: a.requiresVirtualEnvironment,
             tools: a.tools ?? [],
             skills: [], // Will be populated after matching
             mcpServers: [], // Will be populated after matching
@@ -218,6 +226,9 @@ function AgentConversation(): React.ReactElement {
               displayName: string | null;
               providerName: string;
               contextLength: number;
+              supportsImage: boolean;
+              supportsThinking: boolean;
+              reasoningOptions: ModelOption['reasoningOptions'];
             }>
           | undefined;
         if (models?.length) {
@@ -226,6 +237,9 @@ function AgentConversation(): React.ReactElement {
             name: m.displayName || m.modelId,
             provider: m.providerName,
             contextWindow: m.contextLength,
+            supportsImage: m.supportsImage,
+            supportsThinking: m.supportsThinking === true,
+            reasoningOptions: m.reasoningOptions ?? null,
           }));
           setDbModels(options);
         }
@@ -242,6 +256,18 @@ function AgentConversation(): React.ReactElement {
     }
   }, [selectedAgent, dbModels, currentModel.id]);
 
+  // 当前 Agent 可切换的模型（白名单内；白名单为空则不限制）
+  const availableModels = useMemo(() => {
+    if (!selectedAgent || selectedAgent.models.length === 0) return dbModels;
+    return dbModels.filter((m) => selectedAgent.models.includes(m.id));
+  }, [selectedAgent, dbModels]);
+
+  // 切换模型；新模型不支持思考时重置思考强度
+  const handleModelChange = useCallback((model: ModelOption) => {
+    setCurrentModel(model);
+    if (!model.supportsThinking) setThinkingLevel('off');
+  }, []);
+
   // Select agent and fetch its full details
   const handleSelectAgent = useCallback(
     async (agent: AgentInfo) => {
@@ -250,6 +276,8 @@ function AgentConversation(): React.ReactElement {
       setThreads([]);
       setActiveThreadId(null);
       setSessionId(undefined);
+      setAttachments([]);
+      setBoundKbIds([]);
       // 同步到路径参数，刷新后可恢复
       navigate(`/app/ai/chat/${agent.id}`, { replace: true });
 
@@ -269,6 +297,7 @@ function AgentConversation(): React.ReactElement {
             skillIds: string[] | null;
             mcpServerIds: string[] | null;
             knowledgeBaseIds: string[] | null;
+            requiresVirtualEnvironment: boolean;
           };
         };
 
@@ -285,6 +314,7 @@ function AgentConversation(): React.ReactElement {
 
           const fullAgent: AgentInfo = {
             ...agent,
+            requiresVirtualEnvironment: detail.requiresVirtualEnvironment,
             tools: toolList,
             skills: matchedSkills.map((s) => ({
               id: s.id,
@@ -309,6 +339,7 @@ function AgentConversation(): React.ReactElement {
           setEnabledSkills(skillIds);
           setEnabledMcp(mcpIds);
           setEnabledKbs(kbIds);
+          setBoundKbIds(kbIds);
         }
       } catch (e) {
         console.error('Failed to fetch agent details:', e);
@@ -316,6 +347,28 @@ function AgentConversation(): React.ReactElement {
     },
     [dbModels, allSkills, allMcpServers, allKnowledgeBases],
   );
+
+  // Agent 详情和知识库列表并行加载；列表后返回时重新完成 ID 到详情的匹配。
+  useEffect(() => {
+    if (allKnowledgeBases.length === 0) return;
+    const matchedKbs = allKnowledgeBases.filter((kb) => boundKbIds.includes(kb.id));
+    setSelectedAgent((current) => {
+      if (!current) return current;
+      const currentIds = current.knowledgeBases.map((kb) => kb.id);
+      const matchedIds = matchedKbs.map((kb) => kb.id);
+      if (currentIds.length === matchedIds.length && currentIds.every((id, index) => id === matchedIds[index])) {
+        return current;
+      }
+      return {
+        ...current,
+        knowledgeBases: matchedKbs.map((kb) => ({
+          id: kb.id,
+          name: kb.name,
+          description: kb.description,
+        })),
+      };
+    });
+  }, [allKnowledgeBases, boundKbIds]);
 
   // 路径参数自动选择 agent
   useEffect(() => {
@@ -400,6 +453,7 @@ function AgentConversation(): React.ReactElement {
       setActiveThreadId(threadId);
       setSessionId(threadId);
       setMessages([]);
+      setAttachments([]);
       setTotalTokens({ input: 0, output: 0 });
       // 重置能力开关为 agent 默认配置，避免上一个会话的开关状态残留
       if (selectedAgent) {
@@ -508,6 +562,8 @@ function AgentConversation(): React.ReactElement {
         skillIds: enabledSkills,
         mcpServerIds: enabledMcp,
         knowledgeBaseIds: enabledKbs,
+        thinkingLevel,
+        attachmentPaths: attachments.map((file) => file.path),
       };
       // 用户选择的模型：仅在真实模型且落在 Agent 白名单内时下发，否则由后端取默认模型
       const isRealModel = dbModels.some((m) => m.id === currentModel.id);
@@ -540,6 +596,7 @@ function AgentConversation(): React.ReactElement {
                           id: toolCall.id || crypto.randomUUID(),
                           type: 'tool' as const,
                           name: toolCall.name,
+                          ...(toolCall.name === 'read_document' ? { name: '读取文档' } : {}),
                           description: '执行工具调用',
                           durationMs: 0,
                           status: 'running' as const,
@@ -576,6 +633,7 @@ function AgentConversation(): React.ReactElement {
           onSession: (sid) => {
             // 新建会话时后端下发 sessionId，绑定以便后续消息延续同一会话
             setSessionId(sid);
+            setActiveThreadId(sid);
           },
           onApprovalRequired: (approval) => {
             // 高风险工具审批：在当前消息上挂审批卡片，等待用户在聊天内确认
@@ -628,6 +686,8 @@ function AgentConversation(): React.ReactElement {
               ),
             );
             setLoading(false);
+            void fetchThreads();
+            setAttachments([]);
           },
         },
         controller.signal,
@@ -642,8 +702,49 @@ function AgentConversation(): React.ReactElement {
       enabledSkills,
       enabledMcp,
       enabledKbs,
+      thinkingLevel,
+      attachments,
+      fetchThreads,
     ],
   );
+
+  const handleAttach = useCallback(async (files: File[]): Promise<void> => {
+    if (!selectedAgent || files.length === 0) return;
+    if (attachments.length + files.length > 10) {
+      msg.error('每次最多添加 10 个附件');
+      return;
+    }
+    setUploadingAttachment(true);
+    try {
+      let targetSessionId = sessionId;
+      if (!targetSessionId) {
+        const { data, error } = (await client.post('/api/ai/conversations', {
+          body: { agentId: selectedAgent.id },
+        })) as { data?: { id: string }; error?: unknown };
+        if (error || !data?.id) throw new Error('创建会话失败');
+        targetSessionId = data.id;
+        setSessionId(targetSessionId);
+        setActiveThreadId(targetSessionId);
+      }
+      const uploaded: Array<{ path: string; name: string }> = [];
+      for (const file of files) {
+        const form = new FormData();
+        form.append('file', file);
+        const { data, error } = (await client.post('/api/ai/conversations/:id/attachments', {
+          params: { id: targetSessionId },
+          body: form,
+        })) as { data?: { path: string; name: string }; error?: unknown };
+        if (error || !data) throw new Error(`${file.name} 上传失败`);
+        uploaded.push(data);
+      }
+      setAttachments((current) => [...current, ...uploaded]);
+      await fetchWorkspaceFiles(targetSessionId);
+    } catch (error) {
+      msg.error(error instanceof Error ? error.message : '附件上传失败');
+    } finally {
+      setUploadingAttachment(false);
+    }
+  }, [selectedAgent, attachments.length, sessionId, fetchWorkspaceFiles]);
 
   // 聊天内嵌审批：用户对高风险工具调用做出决定，成功后本地更新卡片状态，后端唤醒流继续执行
   const handleApprovalDecision = useCallback(
@@ -687,6 +788,7 @@ function AgentConversation(): React.ReactElement {
     setMessages([]);
     setSessionId(undefined);
     setActiveThreadId(null);
+    setAttachments([]);
     setTotalTokens({ input: 0, output: 0 });
     // 重置能力开关为 agent 默认配置
     if (selectedAgent) {
@@ -794,7 +896,7 @@ function AgentConversation(): React.ReactElement {
 
         {/* Chat Column */}
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 min-h-0 overflow-hidden">
+          <div className="flex-1 min-h-0 overflow-hidden flex">
             {activeTab === 'chat' && (
               <ChatArea
                 messages={messages}
@@ -805,7 +907,7 @@ function AgentConversation(): React.ReactElement {
               />
             )}
             {activeTab === 'files' && (
-              <div className="h-full overflow-auto p-5">
+              <div className={`h-full overflow-auto p-5 ${workspaceFiles.length === 0 ? 'flex items-center justify-center' : ''}`}>
                 {selectedAgent.name === 'Skill Creator' && workspaceFiles.some((file) => file.path === 'SKILL.md') && (
                   <Button type="primary" className="mb-3" onClick={() => setExportModalOpen(true)}>导出为 Skill</Button>
                 )}
@@ -842,14 +944,21 @@ function AgentConversation(): React.ReactElement {
             onStop={handleStop}
             loading={loading}
             currentModel={currentModel}
-            models={(() => {
-              // 白名单限制：Agent 配置了可用模型时，选择器只展示白名单内的模型
-              const base = dbModels.length > 0 ? dbModels : [FALLBACK_MODEL];
-              if (!selectedAgent || selectedAgent.models.length === 0) return base;
-              const allowed = base.filter((m) => selectedAgent.models.includes(m.id));
-              return allowed.length > 0 ? allowed : [FALLBACK_MODEL];
-            })()}
-            onModelChange={setCurrentModel}
+            models={availableModels}
+            onModelChange={handleModelChange}
+            attachments={attachments}
+            uploadingAttachment={uploadingAttachment}
+            thinkingLevel={thinkingLevel}
+            onAttach={(files) => void handleAttach(files)}
+            onAttachWorkspaceFile={(file) => {
+              setAttachments((current) => current.some((item) => item.path === file.path)
+                ? current
+                : [...current, { path: file.path, name: file.path.split('/').pop() ?? file.path }]);
+            }}
+            onRemoveAttachment={(path) => setAttachments((current) => current.filter((file) => file.path !== path))}
+            onThinkingLevelChange={setThinkingLevel}
+            skills={selectedAgent?.skills ?? []}
+            onSelectSkill={(id) => setEnabledSkills((current) => current.includes(id) ? current : [...current, id])}
             contextUsage={contextUsage}
             workspaceFiles={workspaceFiles}
           />

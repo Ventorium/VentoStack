@@ -52,9 +52,20 @@ export interface ChatMessage {
   isStreaming?: boolean;
 }
 
+/** 模型推理选项（与 ai_model.reasoning_options 兼容） */
+export interface ModelReasoningOption {
+  type: 'toggle' | 'effort' | 'budget_tokens';
+  values?: string[];
+  min?: number;
+  max?: number;
+}
+
 export interface ModelOption {
   id: string;
   name: string;
   provider: string;
   contextWindow: number;
+  supportsImage: boolean;
+  supportsThinking?: boolean;
+  reasoningOptions?: ModelReasoningOption[] | null;
 }

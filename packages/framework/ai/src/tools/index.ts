@@ -21,6 +21,7 @@ export { createKBOutlineTool } from "./kb-outline";
 export { createCalculatorTool } from "./calculator";
 export { createTerminalTool } from "./terminal";
 export { createFileReadTool, createFileWriteTool } from "./file-ops";
+export { createReadDocumentTool } from './read-document';
 export { createSQLQueryTool } from "./sql-query";
 
 // Web 工具

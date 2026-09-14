@@ -33,4 +33,47 @@ describe("OpenAI Chat streaming Adapter", () => {
       { type: "tool_call_start", toolCall: { id: "call-b", name: "second", arguments: { value: 2 } } },
     ]);
   });
+
+  test("keeps tool name and arguments when a compatible endpoint omits tool call id", async () => {
+    const frames = [
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { name: "kb-search", arguments: '{"query":' } }] } }] },
+      { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"业态评估"}' } }] }, finish_reason: "tool_calls" }] },
+    ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") + "data: [DONE]\n\n";
+    globalThis.fetch = (async () => new Response(frames)) as typeof fetch;
+    const chunks: StreamChunk[] = [];
+
+    for await (const chunk of createOpenAIProvider({ apiKey: "secret" }).chatStream({
+      model: "gpt",
+      messages: [{ role: "user", content: "search" }],
+    })) chunks.push(chunk);
+
+    const toolCall = chunks.find((chunk) => chunk.type === "tool_call_start");
+    expect(toolCall?.type).toBe("tool_call_start");
+    if (toolCall?.type === "tool_call_start") {
+      expect(toolCall.toolCall?.id).toStartWith("tool-call-");
+      expect(toolCall.toolCall?.name).toBe("kb-search");
+      expect(toolCall.toolCall?.arguments).toEqual({ query: "业态评估" });
+    }
+  });
+
+  test("serializes internal assistant tool calls to OpenAI message format", async () => {
+    let requestBody: Record<string, unknown> | undefined;
+    globalThis.fetch = (async (_input, init) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response("data: [DONE]\n\n");
+    }) as typeof fetch;
+
+    for await (const _chunk of createOpenAIProvider({ apiKey: "secret" }).chatStream({
+      model: "gpt",
+      messages: [
+        { role: "assistant", content: "", tool_calls: [{ id: "call-1", name: "kb-search", arguments: { query: "业态评估" } }] },
+        { role: "tool", content: "result", tool_call_id: "call-1" },
+      ],
+    })) { /* consume */ }
+
+    expect(requestBody?.messages).toEqual([
+      { role: "assistant", content: "", tool_calls: [{ id: "call-1", type: "function", function: { name: "kb-search", arguments: '{"query":"业态评估"}' } }] },
+      { role: "tool", content: "result", tool_call_id: "call-1" },
+    ]);
+  });
 });

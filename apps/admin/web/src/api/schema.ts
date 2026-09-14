@@ -1377,9 +1377,9 @@ export type OpenAPIs = {
       body: never,
       response: {
         /**
-         * @description Redis 信息
+         * @description 是否已配置真实缓存统计采集器
          */
-        info?: {},
+        available?: boolean,
         /**
          * @description Key 总数
          */
@@ -1403,6 +1403,10 @@ export type OpenAPIs = {
          * @description 是否连接
          */
         connected?: boolean,
+        /**
+         * @description 是否可以读取真实连接池统计
+         */
+        metricsAvailable?: boolean,
         /**
          * @description 连接池大小
          */
@@ -1437,19 +1441,17 @@ export type OpenAPIs = {
       }
     },
     /**
-     * 获取在线用户
+     * 获取最近活动用户
+     * @description 租户范围来自认证上下文；客户端不得提交 tenantId。
      */
     '/api/system/monitor/online': {
-      query: {
-        page?: number,
-        pageSize?: number
-      },
+      query: never,
       params: never,
       headers: never,
       body: never,
       response: {
         /**
-         * @description 在线用户列表
+         * @description 当前租户最近 30 分钟活动用户列表（按用户去重）
          */
         list?: {}[],
         /**
@@ -1749,13 +1751,6 @@ export type OpenAPIs = {
         expiresIn?: number
       }
     },
-    '/api/system/scheduler/jobs': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
     /**
      * 获取已注册任务处理器
      * @description 处理器由服务端应用注册，客户端只能选择，不能自行定义。
@@ -1766,6 +1761,13 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: {}[]
+    },
+    '/api/system/scheduler/jobs': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
     },
     '/api/system/scheduler/jobs/:id': {
       query: never,
@@ -4200,7 +4202,7 @@ export type OpenAPIs = {
     },
     /**
      * 强制下线
-     * @description 按当前租户内最近活动记录定位用户，并撤销该用户的全部会话。
+     * @description 校验当前租户内的有效会话，并撤销该用户的全部会话。
      */
     '/api/system/monitor/online/:sessionId': {
       query: never,

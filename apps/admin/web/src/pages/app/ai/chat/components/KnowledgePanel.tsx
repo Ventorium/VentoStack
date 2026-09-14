@@ -1,9 +1,9 @@
 import { client } from '@/api';
 import type { FileEntry } from '@/api/types';
 import MarkdownPreview from '@/components/MarkdownPreview';
-import { ArrowLeftOutlined, FileTextOutlined, FolderOutlined } from '@ant-design/icons';
-import { Button, Empty, Select, Spin, Table, Typography, theme } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { FileTextOutlined, FolderOutlined } from '@ant-design/icons';
+import { Empty, Select, Spin, Table, Typography, theme } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
 
 const { Text } = Typography;
 
@@ -53,11 +53,6 @@ export default function KnowledgePanel({
     [kbId],
   );
 
-  const parentPath = useMemo(() => {
-    const parts = path.split('/').filter((part) => part && part !== '.');
-    return parts.length <= 1 ? '.' : parts.slice(0, -1).join('/');
-  }, [path]);
-
   if (knowledgeBases.length === 0) {
     return (
       <div className="flex h-full items-center justify-center">
@@ -82,23 +77,12 @@ export default function KnowledgePanel({
           }}
           options={knowledgeBases.map((kb) => ({ value: kb.id, label: kb.name }))}
         />
-        <Text type="secondary">只读</Text>
       </div>
       <div className="flex flex-1 min-h-0">
         <div
           className="flex w-[360px] shrink-0 flex-col"
           style={{ borderRight: `1px solid ${token.colorBorderSecondary}` }}
         >
-          <div className="p-2">
-            <Button
-              size="small"
-              icon={<ArrowLeftOutlined />}
-              disabled={path === '.'}
-              onClick={() => setPath(parentPath)}
-            >
-              上一级
-            </Button>
-          </div>
           <Table<FileEntry>
             rowKey="path"
             size="small"

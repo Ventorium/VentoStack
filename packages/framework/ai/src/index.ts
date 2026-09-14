@@ -268,6 +268,7 @@ export {
   createTerminalTool,
   createFileReadTool,
   createFileWriteTool,
+  createReadDocumentTool,
   createSQLQueryTool,
 } from './tools';
 

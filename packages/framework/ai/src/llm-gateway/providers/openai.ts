@@ -30,6 +30,23 @@ const DEFAULT_CAPABILITIES: ProviderCapabilities = {
   supportsStructuredOutput: true,
 };
 
+function toOpenAIMessages(messages: ChatParams['messages']): unknown[] {
+  return messages.map((message) => ({
+    role: message.role,
+    content: message.content,
+    ...(message.tool_call_id ? { tool_call_id: message.tool_call_id } : {}),
+    ...(message.tool_calls?.length
+      ? {
+          tool_calls: message.tool_calls.map((call) => ({
+            id: call.id,
+            type: 'function',
+            function: { name: call.name, arguments: JSON.stringify(call.arguments) },
+          })),
+        }
+      : {}),
+  }));
+}
+
 function applyThinking(body: Record<string, unknown>, params: ChatParams): void {
   if (params.thinkingLevel && params.thinkingLevel !== 'off') {
     // OpenAI reasoning_effort 仅接受 low/medium/high；将 minimal 视为 low、xhigh 视为 high
@@ -51,7 +68,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
     async chat(params: ChatParams): Promise<ChatResult> {
       const body: Record<string, unknown> = {
         model: params.model,
-        messages: params.messages,
+        messages: toOpenAIMessages(params.messages),
         temperature: params.temperature,
         max_tokens: params.maxTokens,
         stream: false,
@@ -129,7 +146,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
     async *chatStream(params: ChatParams): AsyncIterable<StreamChunk> {
       const body: Record<string, unknown> = {
         model: params.model,
-        messages: params.messages,
+        messages: toOpenAIMessages(params.messages),
         temperature: params.temperature,
         max_tokens: params.maxTokens,
         stream: true,
@@ -259,14 +276,15 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
             if (choice.delta?.tool_calls) {
               for (const tc of choice.delta.tool_calls) {
                 const index = tc.index ?? 0;
-                if (tc.id) {
+                if (!currentToolCalls.has(index)) {
                   currentToolCalls.set(index, {
-                    id: tc.id,
+                    id: tc.id ?? `tool-call-${crypto.randomUUID()}`,
                     name: tc.function?.name ?? '',
                     arguments: '',
                   });
                 }
                 const currentToolCall = currentToolCalls.get(index);
+                if (tc.id && currentToolCall) currentToolCall.id = tc.id;
                 if (tc.function?.name && currentToolCall) currentToolCall.name = tc.function.name;
                 if (tc.function?.arguments) {
                   if (currentToolCall) currentToolCall.arguments += tc.function.arguments;
