@@ -146,6 +146,10 @@ function AgentConversation(): React.ReactElement {
   const [thinkingLevel, setThinkingLevel] = useState<
     'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   >('off');
+  // Agent 配置的默认思考强度：等模型列表就绪后由白名单同步 effect 应用（null 表示未暂存）
+  const pendingThinkingRef = useRef<
+    'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null
+  >(null);
   const [attachments, setAttachments] = useState<Array<{ path: string; name: string }>>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -355,13 +359,27 @@ function AgentConversation(): React.ReactElement {
       .catch(() => {});
   }, []);
 
-  // 模型白名单同步：当前模型不在所选 Agent 白名单内时，回退到白名单内第一个模型
+  // 模型白名单同步：当前模型不在所选 Agent 白名单内时，回退到白名单内第一个模型；
+  // 模型列表就绪后应用 Agent 配置的默认思考强度（仅当前模型支持思考时生效）
   useEffect(() => {
-    if (!selectedAgent || selectedAgent.models.length === 0 || dbModels.length === 0) return;
-    if (!selectedAgent.models.includes(currentModel.id)) {
+    if (!selectedAgent || dbModels.length === 0) return;
+    if (
+      selectedAgent.models.length > 0 &&
+      !selectedAgent.models.includes(currentModel.id)
+    ) {
       const found = dbModels.find((m) => selectedAgent.models.includes(m.id));
-      if (found) setCurrentModel(found);
+      if (found) {
+        setCurrentModel(found);
+        return; // 模型切换后 effect 会以新模型重新执行
+      }
     }
+    const pending = pendingThinkingRef.current;
+    if (pending === null) return;
+    pendingThinkingRef.current = null;
+    const model = dbModels.find((m) => m.id === currentModel.id);
+    setThinkingLevel(
+      pending !== 'off' && model?.supportsThinking ? pending : 'off',
+    );
   }, [selectedAgent, dbModels, currentModel.id]);
 
   // 当前 Agent 可切换的模型（白名单内；白名单为空则不限制）
@@ -416,19 +434,18 @@ function AgentConversation(): React.ReactElement {
           const mcpIds = detail.mcpServerIds ?? [];
           const kbIds = detail.knowledgeBaseIds ?? [];
 
-          // Agent 配置的默认思考强度：仅当默认模型支持思考时生效
-          const cfgDefault = detail.config?.defaultThinkingLevel;
-          const defaultModel = dbModels.find((m) => agent.models.includes(m.id));
-          setThinkingLevel(
-            (cfgDefault === 'minimal' ||
-              cfgDefault === 'low' ||
-              cfgDefault === 'medium' ||
-              cfgDefault === 'high' ||
-              cfgDefault === 'xhigh') &&
-              defaultModel?.supportsThinking
+          // Agent 配置的默认思考强度：暂存，等模型列表就绪后应用（见白名单同步 effect）
+          const cfgDefault =
+            (detail as { defaultThinkingLevel?: unknown }).defaultThinkingLevel ??
+            detail.config?.defaultThinkingLevel;
+          pendingThinkingRef.current =
+            cfgDefault === 'minimal' ||
+            cfgDefault === 'low' ||
+            cfgDefault === 'medium' ||
+            cfgDefault === 'high' ||
+            cfgDefault === 'xhigh'
               ? cfgDefault
-              : 'off',
-          );
+              : 'off';
 
           // Match IDs with full objects
           const matchedSkills = allSkills.filter((s) => skillIds.includes(s.id));
