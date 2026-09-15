@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { createAgentLoop } from "../../agent-engine/agent-loop";
+import { createAgentLoop, withStallTimeout } from "../../agent-engine/agent-loop";
 import { createEventEmitter } from "../../agent-engine/events";
 import { createToolRegistry } from "../../tool-registry";
 import type { AgentTool } from "../../agent-engine/types";
@@ -740,5 +740,128 @@ describe("in-stream tool approval handshake", () => {
 
     expect(executed).toBe(0);
     expect(chunks.some((c) => c.type === "approval_required")).toBe(true);
+  });
+});
+
+describe("iteration budget exhaustion finalize", () => {
+  test("forces a final tool-free answer when maxIterations is exhausted mid-tools", async () => {
+    const requests: ChatParams[] = [];
+    const gateway = createGateway(
+      [
+        [
+          { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
+          { type: "done" },
+        ],
+        [{ type: "content", delta: "最终结论" }, { type: "done" }],
+      ],
+      requests,
+    );
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      agentService: {
+        async getById() {
+          return {
+            id: "agent", name: "agent", systemPrompt: "base", models: ["default"], tenantId: "tenant",
+            maxIterations: 1,
+          };
+        },
+      },
+    });
+
+    const chunks = await collect(loop.runStream({
+      agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
+    }));
+
+    // 预算耗尽后必须产出收尾回答，而不是在 tool_result 后静默结束
+    expect(chunks.some((c) => c.type === "content" && c.delta === "最终结论")).toBe(true);
+    expect(requests.length).toBe(2);
+    // 收尾请求不携带工具定义，并注入收尾指令作为最后一条消息
+    expect(requests[1]?.tools).toBeUndefined();
+    const last = requests[1]?.messages.at(-1);
+    expect(last?.role).toBe("user");
+    expect(last?.content).toContain("工具调用次数上限");
+  });
+
+  test("does not run the finalize call when the loop ended with a regular answer", async () => {
+    const requests: ChatParams[] = [];
+    const gateway = createGateway(
+      [
+        [
+          { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
+          { type: "done" },
+        ],
+        [{ type: "content", delta: "常规回答" }, { type: "done" }],
+      ],
+      requests,
+    );
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+    });
+
+    const chunks = await collect(loop.runStream({
+      agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
+    }));
+
+    expect(chunks.some((c) => c.type === "content" && c.delta === "常规回答")).toBe(true);
+    // 第二轮是常规续轮（携带工具定义、以 tool 结果收尾），不是收尾调用
+    expect(requests.length).toBe(2);
+    expect(requests[1]?.tools?.length).toBeGreaterThan(0);
+    expect(requests[1]?.messages.at(-1)?.role).toBe("tool");
+  });
+});
+
+describe("tool_result output summary", () => {
+  test("carries a truncated tool output text on the tool_result chunk", async () => {
+    const longText = "x".repeat(3000);
+    const gateway = createGateway([
+      [
+        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
+        { type: "done" },
+      ],
+      [{ type: "content", delta: "done" }, { type: "done" }],
+    ]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createTool(async () => ({ content: [{ type: "text", text: longText }], details: {} }))],
+    });
+
+    const chunks = await collect(loop.runStream({
+      agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
+    }));
+
+    const toolResult = chunks.find((c) => c.type === "tool_result") as
+      | { type: "tool_result"; output?: string }
+      | undefined;
+    expect(toolResult?.output).toBeDefined();
+    expect(toolResult!.output!.length).toBeLessThanOrEqual(2020);
+    expect(toolResult!.output).toContain("已截断");
+  });
+});
+
+describe("withStallTimeout", () => {
+  test("passes chunks through for a healthy stream", async () => {
+    async function* healthy(): AsyncIterable<StreamChunk> {
+      yield { type: "content", delta: "a" };
+      yield { type: "done" };
+    }
+    const chunks: StreamChunk[] = [];
+    for await (const chunk of withStallTimeout(healthy(), 1000)) chunks.push(chunk);
+    expect(chunks.map((c) => c.type)).toEqual(["content", "done"]);
+  });
+
+  test("throws when the provider stream stalls beyond the timeout", async () => {
+    async function* stalled(): AsyncIterable<StreamChunk> {
+      yield { type: "content", delta: "partial" };
+      await new Promise(() => {}); // 永不返回，模拟供应商挂起
+    }
+    const chunks: StreamChunk[] = [];
+    await expect(
+      (async () => {
+        for await (const chunk of withStallTimeout(stalled(), 30)) chunks.push(chunk);
+      })(),
+    ).rejects.toThrow("无响应");
+    expect(chunks.map((c) => c.type)).toEqual(["content"]);
   });
 });

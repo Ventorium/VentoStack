@@ -6,6 +6,7 @@
  * - anthropic: x-api-key + anthropic-version，响应 { data: [{ id, display_name }], has_more, last_id }，按 after 翻页
  */
 
+import { VentoStackError } from '@ventostack/core';
 import type { FetchedModel } from './models-dev';
 
 /** anthropic 翻页上限，防止异常响应导致死循环 */
@@ -63,7 +64,9 @@ export async function fetchModelsFromProviderApi(
   apiFormat: string,
 ): Promise<FetchedModel[]> {
   if (!apiKey || apiKey.trim().length === 0) {
-    throw new Error('Provider has no API key configured for model fetch');
+    // 抛 VentoStackError（而非裸 Error），让路由 handleError 返回 4xx 与具体原因，
+    // 而不是统一 500 "服务器内部错误" 掩盖配置问题
+    throw new VentoStackError('供应商未配置 API Key，无法同步模型', 400, 'provider_no_api_key');
   }
 
   const base = baseUrl.replace(/\/+$/, '');
@@ -74,20 +77,39 @@ export async function fetchModelsFromProviderApi(
 
   const entries: RawModelEntry[] = [];
 
+  /** 拉取并解析响应，网络/上游异常统一转为 VentoStackError（4xx + 具体原因） */
+  async function fetchJson(url: string): Promise<unknown> {
+    let resp: Response;
+    try {
+      resp = await fetch(url, { headers, signal: AbortSignal.timeout(30000) });
+    } catch {
+      throw new VentoStackError(`无法连接供应商接口: ${base}`, 400, 'provider_api_unreachable');
+    }
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      // 供应商错误响应（如 401 invalid key）对管理员可读，帮助定位配置问题
+      throw new VentoStackError(
+        `供应商接口返回 ${resp.status}: ${text.slice(0, 200)}`,
+        400,
+        'provider_api_error',
+      );
+    }
+    const json = (await resp.json().catch(() => null)) as unknown;
+    if (json === null) {
+      throw new VentoStackError('供应商接口返回了无法解析的响应', 400, 'provider_api_invalid_response');
+    }
+    return json;
+  }
+
   if (apiFormat === 'anthropic') {
     let after = '';
     let lastId = '';
     for (let page = 0; page < MAX_ANTHROPIC_PAGES; page++) {
       const url = `${base}/models?limit=1000${after ? `&after=${encodeURIComponent(after)}` : ''}`;
-      const resp = await fetch(url, { headers, signal: AbortSignal.timeout(30000) });
-      if (!resp.ok) {
-        const text = await resp.text().catch(() => '');
-        throw new Error(`Provider API returned ${resp.status}: ${text.slice(0, 200)}`);
-      }
-      const json = (await resp.json().catch(() => null)) as
+      const json = (await fetchJson(url)) as
         | { data?: RawModelEntry[]; has_more?: boolean; last_id?: string }
         | null;
-      if (!json) throw new Error('Provider API returned invalid JSON');
+      if (!json) break;
       entries.push(...extractEntries(json));
       const nextLastId = typeof json.last_id === 'string' ? json.last_id : '';
       if (!json.has_more || !nextLastId || nextLastId === lastId || entries.length === 0) break;
@@ -95,14 +117,7 @@ export async function fetchModelsFromProviderApi(
       after = nextLastId;
     }
   } else {
-    const resp = await fetch(`${base}/models`, { headers, signal: AbortSignal.timeout(30000) });
-    if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      throw new Error(`Provider API returned ${resp.status}: ${text.slice(0, 200)}`);
-    }
-    const json = (await resp.json().catch(() => null)) as unknown;
-    if (json === null) throw new Error('Provider API returned invalid JSON');
-    entries.push(...extractEntries(json));
+    entries.push(...extractEntries(await fetchJson(`${base}/models`)));
   }
 
   // 去重（部分网关会返回重复条目）

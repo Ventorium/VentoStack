@@ -1,5 +1,5 @@
 import type { KnowledgeBaseService } from '../knowledge-base/types';
-import type { ChatMessage, LLMGateway, LLMToolDefinition, ResearchStage, StreamChunk, ThinkingLevel, ToolCall } from '../llm-gateway/types';
+import type { ChatMessage, LLMGateway, LLMToolDefinition, ResearchStage, StreamChunk, ThinkingLevel, ToolCall, ToolResultChunk } from '../llm-gateway/types';
 import type { Tracer, SpanHandle } from '@ventostack/observability';
 import type { MemoryService } from '../memory/types';
 import type { McpToolSource } from './mcp-tool-source';
@@ -62,12 +62,55 @@ export const RESEARCH_DEPTH_MAP: Record<
   deep: { maxIterations: 20, maxTokensPerTurn: 8192, searchCount: 8 },
 };
 
-/** 迭代轮数硬上限：无论 Agent 配置如何，单次运行不超过此轮数（防止成本放大攻击） */
-export const AGENT_MAX_ITERATIONS_LIMIT = 50;
 /** 单轮生成 Token 硬上限 */
 export const AGENT_MAX_TOKENS_PER_TURN_LIMIT = 100_000;
 /** 深度研究并行子任务数量上限 */
 export const MAX_RESEARCH_SUBTASKS = 10;
+
+/** 模型流无输出看门狗时长：超过该时长未收到任何 chunk 视为供应商挂起，中止并转为明确错误 */
+export const MODEL_STREAM_STALL_TIMEOUT_MS = 180_000;
+
+/**
+ * 包装模型流：无 chunk 超时抛错，避免供应商挂起导致 SSE 连接静默僵死
+ * （用户侧表现为"回复非正常结束"且无任何错误提示）
+ */
+export async function* withStallTimeout(
+  stream: AsyncIterable<StreamChunk>,
+  timeoutMs: number = MODEL_STREAM_STALL_TIMEOUT_MS,
+): AsyncIterable<StreamChunk> {
+  const iterator = stream[Symbol.asyncIterator]();
+  while (true) {
+    const nextPromise = iterator.next();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      timer = setTimeout(
+        () => reject(new Error(`模型流 ${Math.round(timeoutMs / 1000)} 秒无响应，已中止（供应商挂起）`)),
+        timeoutMs,
+      );
+    });
+    let result: IteratorResult<StreamChunk>;
+    try {
+      result = await Promise.race([nextPromise, timeoutPromise]);
+    } catch (err) {
+      void iterator.return?.(undefined).catch(() => undefined);
+      throw err;
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    if (result.done) return;
+    yield result.value;
+  }
+}
+
+/** 工具输出摘要：下发到 SSE 供前端展开查看（截断，避免超大结果撑爆流） */
+function summarizeToolOutput(result: AgentToolResult): string | undefined {
+  const text = result.content
+    .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+    .map((c) => c.text)
+    .join('\n');
+  if (!text) return undefined;
+  return text.length > 2000 ? `${text.slice(0, 2000)}\n...[已截断]` : text;
+}
 /** 深度研究单个子任务最大轮数上限 */
 export const MAX_RESEARCH_SUBTASK_TURNS = 8;
 
@@ -635,6 +678,7 @@ async function executePreparedToolCall(
   signal?: AbortSignal,
   tracer?: Tracer,
   parentSpanContext?: { traceId: string; spanId: string },
+  onToolResult?: (chunk: ToolResultChunk) => void,
 ): Promise<FinalizedToolCall> {
   const { toolCall, tool, args } = prepared;
   const start = Date.now();
@@ -688,7 +732,18 @@ async function executePreparedToolCall(
     result,
     isError,
   }, signal);
-  return { toolCall, result, durationMs: Date.now() - start, isError };
+  const durationMs = Date.now() - start;
+  // 同步下发 tool_result 到 SSE 流：前端据此实时收敛工具状态与真实耗时（不再等会话结束），
+  // 并携带截断输出摘要供前端展开查看
+  onToolResult?.({
+    type: 'tool_result',
+    toolCallId: toolCall.id,
+    toolName: toolCall.name,
+    durationMs,
+    isError,
+    ...(summarizeToolOutput(result) === undefined ? {} : { output: summarizeToolOutput(result) }),
+  });
+  return { toolCall, result, durationMs, isError };
 }
 
 async function executeToolCallsSequential(
@@ -701,6 +756,7 @@ async function executeToolCallsSequential(
   signal?: AbortSignal,
   tracer?: Tracer,
   parentSpanContext?: { traceId: string; spanId: string },
+  onToolResult?: (chunk: ToolResultChunk) => void,
 ): Promise<FinalizedToolCall[]> {
   const results: FinalizedToolCall[] = [];
   for (const [index, tc] of toolCalls.entries()) {
@@ -710,10 +766,11 @@ async function executeToolCallsSequential(
     if (prepared.kind === 'immediate') {
       await emit({ type: 'tool_execution_start', toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
       await emit({ type: 'tool_execution_end', toolCallId: tc.id, toolName: tc.name, result: prepared.result, isError: prepared.isError }, signal);
+      onToolResult?.({ type: 'tool_result', toolCallId: tc.id, toolName: tc.name, durationMs: 0, isError: prepared.isError, ...(summarizeToolOutput(prepared.result) === undefined ? {} : { output: summarizeToolOutput(prepared.result) }) });
       results.push({ toolCall: tc, result: prepared.result, durationMs: 0, isError: prepared.isError });
       continue;
     }
-    results.push(await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext));
+    results.push(await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext, onToolResult));
   }
   return results;
 }
@@ -728,17 +785,19 @@ async function executeToolCallsParallel(
   signal?: AbortSignal,
   tracer?: Tracer,
   parentSpanContext?: { traceId: string; spanId: string },
+  onToolResult?: (chunk: ToolResultChunk) => void,
 ): Promise<FinalizedToolCall[]> {
   const results = await Promise.all(preparedList.map(async (prepared, index) => {
     const toolCall = toolCalls[index]!;
     if (prepared.kind === 'immediate') {
       await emit({ type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments }, signal);
       await emit({ type: 'tool_execution_end', toolCallId: toolCall.id, toolName: toolCall.name, result: prepared.result, isError: prepared.isError }, signal);
+      onToolResult?.({ type: 'tool_result', toolCallId: toolCall.id, toolName: toolCall.name, durationMs: 0, isError: prepared.isError, ...(summarizeToolOutput(prepared.result) === undefined ? {} : { output: summarizeToolOutput(prepared.result) }) });
       return { index, finalized: { toolCall, result: prepared.result, durationMs: 0, isError: prepared.isError } };
     }
     return {
       index,
-      finalized: await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext),
+      finalized: await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext, onToolResult),
     };
   }));
   return results.sort((a, b) => a.index - b.index).map(({ finalized }) => finalized);
@@ -814,8 +873,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       } else {
         model = allowedModels[0] ?? 'default';
       }
-      // 硬封顶：Agent 配置的迭代/Token 预算不能超过平台上限（防成本放大）
-      let maxIterations = Math.min(agentConfig?.maxIterations ?? 10, AGENT_MAX_ITERATIONS_LIMIT);
+      // 迭代预算：默认 100，不设平台上限（由 Agent 配置自行约束）
+      let maxIterations = agentConfig?.maxIterations ?? 100;
       let maxTokensPerTurn = agentConfig?.maxTokensPerTurn === undefined
         ? undefined
         : Math.min(agentConfig.maxTokensPerTurn, AGENT_MAX_TOKENS_PER_TURN_LIMIT);
@@ -828,10 +887,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       const allSources: string[] = [];
       if (researchMode) {
         const preset = RESEARCH_DEPTH_MAP[researchConfig!.depth!];
-        maxIterations = Math.min(
-          researchConfig!.maxIterations ?? preset.maxIterations,
-          AGENT_MAX_ITERATIONS_LIMIT,
-        );
+        maxIterations = researchConfig!.maxIterations ?? preset.maxIterations;
         maxTokensPerTurn = Math.min(
           researchConfig!.maxTokensPerTurn ?? preset.maxTokensPerTurn,
           AGENT_MAX_TOKENS_PER_TURN_LIMIT,
@@ -1014,6 +1070,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       // 8. Agent 循环
       let iteration = 0;
       let fullContent = '';
+      // 迭代耗尽判定：最后一轮仍是工具调用且非工具显式终止时，循环结束后需补一次无工具收尾调用
+      let lastTurnHadToolCalls = false;
+      let terminatedByTool = false;
 
       // 运行元数据快照：解析后的配置（模型/能力绑定/研究模式），随 agent_start 事件下发
       const runMeta: AgentRunMeta = {
@@ -1215,7 +1274,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         const toolCalls: ToolCall[] = [];
         let turnUsage: { promptTokens: number; completionTokens: number } | undefined;
 
-        for await (const chunk of stream) {
+        for await (const chunk of withStallTimeout(stream)) {
           switch (chunk.type) {
             case 'content':
               assistantContent += chunk.delta ?? '';
@@ -1297,6 +1356,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
 
         // 如果没有工具调用，先处理 steering/follow-up，再决定是否结束
         if (toolCalls.length === 0) {
+          lastTurnHadToolCalls = false;
           await emit({ type: 'turn_end', message: assistantEventMsg, toolResults: [] }, signal);
           runSpan?.addEvent('ai.turn', { iteration, model, tool_calls: 0, output_chars: assistantContent.length });
           await applyPrepareNextTurn(assistantEventMsg, []);
@@ -1327,6 +1387,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           continue;
         }
 
+        lastTurnHadToolCalls = true;
         const validToolCalls = toolCalls.map((tc) => ({
           id: tc.id,
           name: tc.name,
@@ -1358,6 +1419,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         const hasSequentialTool = validToolCalls.some((call) =>
           runtimeTools.find((tool) => tool.name === call.name)?.executionMode === 'sequential',
         );
+        // 工具执行过程中实时收集 tool_result chunk，执行完成后按完成顺序下发到 SSE 流
+        const toolResultChunks: ToolResultChunk[] = [];
+        const collectToolResult = (chunk: ToolResultChunk): void => {
+          toolResultChunks.push(chunk);
+        };
         if (toolExecMode === 'parallel' && !hasSequentialTool) {
           finalized = await executeToolCallsParallel(
             context,
@@ -1369,6 +1435,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             signal,
             deps.tracer,
             runSpan?.context(),
+            collectToolResult,
           );
         } else {
           finalized = await executeToolCallsSequential(
@@ -1381,8 +1448,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             signal,
             deps.tracer,
             runSpan?.context(),
+            collectToolResult,
           );
         }
+        for (const chunk of toolResultChunks) yield chunk;
 
         // 将工具结果添加到消息
         const toolResultEvents: AgentToolResultEventMessage[] = [];
@@ -1413,8 +1482,19 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             content: truncated,
           });
 
-          // 增量持久化工具结果（保证会话内可追溯）
-          await persistMemoryMessage({ role: 'tool', content: `[${fin.toolCall.name}] ${truncated}` });
+          // 增量持久化工具结果（保证会话内可追溯）：JSON 信封携带参数/输出/耗时，
+          // 历史回显时前端据此重建可展开的工具块（role:'tool' 不会回放给 LLM）
+          await persistMemoryMessage({
+            role: 'tool',
+            content: JSON.stringify({
+              toolCallId: fin.toolCall.id,
+              name: fin.toolCall.name,
+              arguments: fin.toolCall.arguments,
+              output: truncated,
+              durationMs: fin.durationMs,
+              isError: fin.isError,
+            }),
+          });
 
           const toolMessage: AgentEventMessage = {
             role: 'tool',
@@ -1454,7 +1534,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         await applyPrepareNextTurn(assistantEventMsg, toolResultEvents);
 
         // 检查提前终止
-        if (isEarlyTermination(finalized)) break;
+        if (isEarlyTermination(finalized)) {
+          terminatedByTool = true;
+          break;
+        }
 
         // 深度研究：规划轮（有工具）→ 并行子任务 → 综合轮
         {
@@ -1478,6 +1561,77 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
 
         if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
+      }
+
+      // 迭代预算耗尽且最后一轮仍是工具调用：强制一次无工具收尾调用，保证用户总能拿到最终回答。
+      // 否则流会在最后一个 tool_result 后直接结束，用户看不到任何结论。
+      if (lastTurnHadToolCalls && !terminatedByTool && iteration >= maxIterations && !signal?.aborted) {
+        const finalizeNudge: ChatMessage = {
+          role: 'user',
+          content:
+            '已达本轮工具调用次数上限。请立即基于以上已获取的工具结果给出最终回答，不要再尝试调用工具；如信息不足，请说明已掌握的内容与缺失的部分。',
+        };
+        const finalizeMessages = fitMessagesToBudget([...messages, finalizeNudge], systemPrompt);
+        const finalizeProvider = model.includes('/')
+          ? (model.split('/')[0] ?? model)
+          : (deps.llmGateway.listProviders()[0]?.name ?? model);
+        const finalizeApiKey = deps.getApiKey ? await deps.getApiKey(finalizeProvider) : undefined;
+        const finalizeTemperature = params.temperature ?? agentConfig?.temperature;
+        const finalizeStream = deps.llmGateway.chatStream({
+          model,
+          tenantId,
+          messages: finalizeMessages,
+          ...(signal === undefined ? {} : { signal }),
+          ...(params.thinkingLevel === undefined ? {} : { thinkingLevel: params.thinkingLevel }),
+          ...(finalizeTemperature === undefined ? {} : { temperature: finalizeTemperature }),
+          ...(maxTokensPerTurn === undefined ? {} : { maxTokens: maxTokensPerTurn }),
+          ...(finalizeApiKey === undefined ? {} : { apiKey: finalizeApiKey }),
+        });
+        let finalizeContent = '';
+        for await (const chunk of withStallTimeout(finalizeStream)) {
+          if (chunk.type === 'content') {
+            finalizeContent += chunk.delta ?? '';
+            fullContent += chunk.delta ?? '';
+            yield chunk;
+          } else if (chunk.type === 'usage') {
+            yield chunk;
+          } else if (chunk.type === 'error' && chunk.error) {
+            await emit(
+              {
+                type: 'error',
+                error: {
+                  code: chunk.error.code,
+                  message: chunk.error.message,
+                  recoverable: chunk.error.recoverable,
+                },
+              },
+              signal,
+            );
+            yield chunk;
+            return;
+          }
+        }
+        if (finalizeContent.length > 0) {
+          messages.push({ role: 'assistant', content: finalizeContent });
+          await persistMemoryMessage({ role: 'assistant', content: finalizeContent });
+          const finalizeEventMsg: AgentEventMessage = {
+            role: 'assistant',
+            content: finalizeContent,
+            model,
+            provider: finalizeProvider,
+            stopReason: 'stop',
+            timestamp: Date.now(),
+          };
+          await emit({ type: 'message_start', message: finalizeEventMsg }, signal);
+          await emit({ type: 'message_end', message: finalizeEventMsg }, signal);
+          runSpan?.addEvent('ai.turn', {
+            iteration,
+            model,
+            finalize: true,
+            tool_calls: 0,
+            output_chars: finalizeContent.length,
+          });
+        }
       }
 
       // 深度研究：下发引用来源清单（供前端渲染来源卡片）

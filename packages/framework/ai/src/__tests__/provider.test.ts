@@ -194,7 +194,10 @@ describe('ProviderService', () => {
     const { db, mockRows } = createMockDb();
     mockRows.push([]); // getProviderById returns empty
     const service = createService(db);
-    await expect(service.syncModels('p1', 'default')).rejects.toThrow('Provider not found');
+    await expect(service.syncModels('p1', 'default')).rejects.toMatchObject({
+      code: 404,
+      errorCode: 'provider_not_found',
+    });
   });
 
   test('syncModels throws when provider has no preset', async () => {
@@ -218,9 +221,10 @@ describe('ProviderService', () => {
       },
     ]);
     const service = createService(db);
-    await expect(service.syncModels('p1', 'default')).rejects.toThrow(
-      'Provider has no models.dev slug configured',
-    );
+    await expect(service.syncModels('p1', 'default')).rejects.toMatchObject({
+      code: 400,
+      errorCode: 'provider_no_slug',
+    });
   });
 });
 
@@ -342,7 +346,7 @@ describe('fetchModelsFromProviderApi', () => {
     try {
       await expect(
         fetchModelsFromProviderApi('https://x.xx/v1', 'sk-bad', 'openai_chat'),
-      ).rejects.toThrow('Provider API returned 401');
+      ).rejects.toThrow('供应商接口返回 401');
     } finally {
       restore();
     }
@@ -350,7 +354,7 @@ describe('fetchModelsFromProviderApi', () => {
 
   test('throws when apiKey is empty', async () => {
     await expect(fetchModelsFromProviderApi('https://x.xx/v1', '', 'openai_chat')).rejects.toThrow(
-      'no API key',
+      '供应商未配置 API Key',
     );
   });
 });
@@ -443,10 +447,37 @@ describe('syncModelsFromApi', () => {
     }
   });
 
+  test('maps upstream auth failure to VentoStackError (4xx) instead of opaque 500', async () => {
+    // 回归：上游 401（API Key 无效）曾以裸 Error 抛出，被路由 handleError 吞成 500，
+    // 管理员无法看到真实原因
+    const { db, mockRows } = createMockDb();
+    mockRows.push([providerRow]);
+    mockRows.push([{ base_url: 'https://api.deepseek.com/v1', api_key: 'ENC:sk-bad', api_format: 'openai_chat' }]);
+
+    const { restore } = installFetchMock([
+      () =>
+        new Response(
+          JSON.stringify({ error: { message: 'Authentication Fails, Your api key is invalid' } }),
+          { status: 401 },
+        ),
+    ]);
+    try {
+      const service = createService(db);
+      const promise = service.syncModelsFromApi('p1', 'default');
+      await expect(promise).rejects.toMatchObject({ code: 400, errorCode: 'provider_api_error' });
+      await expect(promise).rejects.toThrow('401');
+    } finally {
+      restore();
+    }
+  });
+
   test('throws when provider not found', async () => {
     const { db, mockRows } = createMockDb();
     mockRows.push([]); // getProviderById returns empty
     const service = createService(db);
-    await expect(service.syncModelsFromApi('p1', 'default')).rejects.toThrow('Provider not found');
+    await expect(service.syncModelsFromApi('p1', 'default')).rejects.toMatchObject({
+      code: 404,
+      errorCode: 'provider_not_found',
+    });
   });
 });

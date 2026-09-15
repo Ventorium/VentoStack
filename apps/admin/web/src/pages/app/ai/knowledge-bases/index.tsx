@@ -18,10 +18,12 @@ import {
   Button,
   Card,
   Col,
+  Drawer,
   Empty,
   Form,
   Input,
   Modal,
+  Popconfirm,
   Row,
   Space,
   Tag,
@@ -29,20 +31,19 @@ import {
   Typography,
   theme,
 } from 'antd';
-import { Drawer } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import KnowledgeBaseBrowser from './components/KnowledgeBaseBrowser';
 
-// 知识库卡片 hover 显示删除按钮
-const kbCardStyle = document.createElement('style');
-kbCardStyle.textContent = `
-  .kb-card-btn { opacity: 0; transition: opacity 0.2s; }
-  .kb-grid-card:hover .kb-card-btn { opacity: 1; }
+// Drawer 标题栏 hover 时显示重命名铅笔
+const kbTitleStyle = document.createElement('style');
+kbTitleStyle.textContent = `
+  .kb-title-edit { opacity: 0; transition: opacity 0.2s; }
+  .ant-drawer-header:hover .kb-title-edit { opacity: 1; }
 `;
-if (!document.getElementById('kb-card-hover-style')) {
-  kbCardStyle.id = 'kb-card-hover-style';
-  document.head.appendChild(kbCardStyle);
+if (!document.getElementById('kb-title-hover-style')) {
+  kbTitleStyle.id = 'kb-title-hover-style';
+  document.head.appendChild(kbTitleStyle);
 }
 
 const { Text, Paragraph } = Typography;
@@ -66,6 +67,9 @@ export default function KnowledgeBasesPage() {
   const [editLoading, setEditLoading] = useState(false);
   const [drawerKbId, setDrawerKbId] = useState<string | null>(null);
   const [breadcrumb, setBreadcrumb] = useState<{ kbName: string; pathParts: string[] } | null>(null);
+  // 重命名后自增，驱动 Drawer 内浏览器重新拉取知识库元数据（标题随之刷新）
+  const [kbMetaTick, setKbMetaTick] = useState(0);
+  const drawerKb = drawerKbId ? data.find((kb) => kb.id === drawerKbId) ?? null : null;
 
   const refresh = useCallback(
     async (p?: number, ps?: number) => {
@@ -132,6 +136,7 @@ export default function KnowledgeBasesPage() {
       if (!error) {
         msg.success('更新成功');
         setEditModalOpen(false);
+        setKbMetaTick((t) => t + 1);
         refresh();
       }
     } catch {
@@ -153,6 +158,11 @@ export default function KnowledgeBasesPage() {
         });
         if (!error) {
           msg.success('删除成功');
+          // 删除的是当前打开的知识库时同步关闭 Drawer
+          if (drawerKbId === record.id) {
+            setDrawerKbId(null);
+            setBreadcrumb(null);
+          }
           refresh();
         }
       },
@@ -236,27 +246,6 @@ export default function KnowledgeBasesPage() {
                     >
                       <FolderOutlined />
                     </div>
-                    <div className="flex gap-1">
-                      <Tooltip title="编辑">
-                        <Button
-                          type="text"
-                          size="small"
-                          icon={<EditOutlined />}
-                          onClick={(e) => handleOpenEdit(kb, e)}
-                          className="kb-card-btn"
-                        />
-                      </Tooltip>
-                      <Tooltip title="删除">
-                        <Button
-                          type="text"
-                          size="small"
-                          danger
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => handleDelete(kb, e)}
-                          className="kb-card-btn"
-                        />
-                      </Tooltip>
-                    </div>
                   </div>
 
                   {/* Name & Description */}
@@ -298,25 +287,59 @@ export default function KnowledgeBasesPage() {
         )}
       </Card>
 
-      {/* 知识库文件浏览器 Drawer */}
+      {/* 知识库文件浏览器 Drawer：标题栏内联重命名（hover 铅笔）与删除（confirm） */}
       <Drawer
         title={
-          breadcrumb && (
-            <Breadcrumb
-              items={[
-                {
-                  title: (
-                    <span>
-                      <HomeOutlined /> {breadcrumb.kbName}
-                    </span>
-                  ),
-                },
-                ...breadcrumb.pathParts.map((part) => ({
-                  title: <span>{part}</span>,
-                })),
-              ]}
-            />
-          )
+          drawerKbId ? (
+            <div className="flex items-center gap-1 min-w-0">
+              {breadcrumb ? (
+                <Breadcrumb
+                  items={[
+                    {
+                      title: (
+                        <span>
+                          <HomeOutlined /> {breadcrumb.kbName}
+                        </span>
+                      ),
+                    },
+                    ...breadcrumb.pathParts.map((part) => ({
+                      title: <span>{part}</span>,
+                    })),
+                  ]}
+                />
+              ) : (
+                <span>
+                  <HomeOutlined /> {drawerKb?.name ?? ''}
+                </span>
+              )}
+              {drawerKb && (
+                <Tooltip title="重命名">
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<EditOutlined />}
+                    className="kb-title-edit"
+                    onClick={() => handleOpenEdit(drawerKb)}
+                  />
+                </Tooltip>
+              )}
+              <div className="flex-1" />
+              {drawerKb && (
+                <Popconfirm
+                  title="删除知识库"
+                  description={`确定要删除「${drawerKb.name}」吗？此操作不可恢复。`}
+                  okText="删除"
+                  okButtonProps={{ danger: true }}
+                  cancelText="取消"
+                  onConfirm={() => handleDelete(drawerKb)}
+                >
+                  <Button type="text" size="small" danger icon={<DeleteOutlined />}>
+                    删除
+                  </Button>
+                </Popconfirm>
+              )}
+            </div>
+          ) : null
         }
         open={!!drawerKbId}
         onClose={() => {
@@ -328,7 +351,13 @@ export default function KnowledgeBasesPage() {
         destroyOnClose
         styles={{ body: { padding: 0, display: 'flex', flexDirection: 'column' } }}
       >
-        {drawerKbId && <KnowledgeBaseBrowser kbId={drawerKbId} onBreadcrumb={setBreadcrumb} />}
+        {drawerKbId && (
+          <KnowledgeBaseBrowser
+            kbId={drawerKbId}
+            metaTick={kbMetaTick}
+            onBreadcrumb={setBreadcrumb}
+          />
+        )}
       </Drawer>
 
       <Modal

@@ -100,10 +100,12 @@ function isReadme(filePath: string): boolean {
 
 interface Props {
   kbId: string;
+  /** 自增值：父组件重命名知识库后自增，驱动重新拉取元数据以刷新标题 */
+  metaTick?: number;
   onBreadcrumb?: (items: { kbName: string; pathParts: string[] }) => void;
 }
 
-export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
+export default function KnowledgeBaseBrowser({ kbId, metaTick, onBreadcrumb }: Props) {
   const { token } = theme.useToken();
 
   const [kb, setKb] = useState<KnowledgeBaseItem | null>(null);
@@ -161,7 +163,8 @@ export default function KnowledgeBaseBrowser({ kbId, onBreadcrumb }: Props) {
     }
   }, [kbId, currentPath]);
 
-  useEffect(() => { fetchKb(); }, [fetchKb]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: metaTick 是父组件重命名后的外部刷新信号
+  useEffect(() => { fetchKb(); }, [fetchKb, metaTick]);
   useEffect(() => { fetchFiles(); }, [fetchFiles]);
 
   // ── 导航守卫：编辑态切换文件/目录时提示保存 ──

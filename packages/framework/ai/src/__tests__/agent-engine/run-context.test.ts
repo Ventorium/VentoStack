@@ -111,7 +111,7 @@ describe("run context injection", () => {
     expect(start.meta?.userMessage).toBe("hi");
     expect(start.meta?.toolNames).toEqual(["lookup"]);
     expect(start.meta?.researchMode).toBe(false);
-    expect(start.meta?.maxIterations).toBe(10);
+    expect(start.meta?.maxIterations).toBe(100);
 
     const context = events.find((e) => e.type === "context");
     expect(context?.type).toBe("context");

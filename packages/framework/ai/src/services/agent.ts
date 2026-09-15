@@ -155,7 +155,7 @@ export function createAgentService(deps: {
           params.modelOverrides ? JSON.stringify(params.modelOverrides) : null,
           params.memoryConfig ? JSON.stringify(params.memoryConfig) : null,
           params.config ? JSON.stringify(params.config) : null,
-          params.maxIterations ?? 10,
+          params.maxIterations ?? 100,
           params.maxTokensPerTurn ?? 4096,
           params.isPublic ?? false,
           params.tenantId,

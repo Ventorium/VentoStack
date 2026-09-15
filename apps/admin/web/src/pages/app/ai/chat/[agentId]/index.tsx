@@ -3,7 +3,7 @@ import { type ChatStreamParams, streamChat } from '@/api/sse-client';
 import { Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { ChatMessage, ModelOption } from '../types';
+import type { ChatMessage, ModelOption, ToolBlock } from '../types';
 
 import BottomInput from '../components/BottomInput';
 import ChatArea from '../components/ChatArea';
@@ -20,6 +20,80 @@ const FALLBACK_MODEL: ModelOption = {
   contextWindow: 128000,
   supportsImage: false,
 };
+
+/** 工具名到中文展示名的映射（与流式渲染保持一致） */
+const TOOL_NAME_MAP: Record<string, string> = {
+  'kb-browse': '浏览知识库',
+  'kb-search': '检索知识库',
+  'kb-read': '阅读文档',
+  'kb-outline': '文档大纲',
+  'kb-follow-link': '打开文档链接',
+  read_document: '读取文档',
+  web_search: '网页搜索',
+  calculator: '计算器',
+};
+
+function toolDisplayName(name: string): string {
+  return TOOL_NAME_MAP[name] ?? name;
+}
+
+/**
+ * 解析持久化的 assistant 消息：去掉末尾 `[工具调用: a, b]` 摘要行，返回正文。
+ * 工具块本身由紧随其后的 role:'tool' 消息（parsePersistedTool）重建。
+ */
+function parsePersistedAssistant(content: string): string {
+  const match = content.match(/\n?\[工具调用: ([^\]]*)\]\s*$/);
+  // match.index 为 0（空正文只有摘要行）时也要剥离，避免残留孤儿摘要文本
+  if (!match || match.index === undefined) return content;
+  return content.slice(0, match.index).trimEnd();
+}
+
+interface PersistedToolEnvelope {
+  toolCallId?: string;
+  name: string;
+  arguments?: Record<string, unknown>;
+  output?: string;
+  durationMs?: number;
+  isError?: boolean;
+}
+
+/**
+ * 解析持久化的 role:'tool' 消息：新格式为 JSON 信封（含参数/输出/耗时），
+ * 旧格式为 `[工具名] 输出`（仅含输出）。还原为可展开查看的工具块。
+ */
+function parsePersistedTool(content: string): ToolBlock | null {
+  if (content.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(content) as PersistedToolEnvelope;
+      if (typeof parsed.name === 'string' && parsed.name) {
+        return {
+          type: 'tool',
+          id: parsed.toolCallId || crypto.randomUUID(),
+          name: toolDisplayName(parsed.name),
+          status: parsed.isError ? 'error' : 'completed',
+          ...(parsed.durationMs === undefined ? {} : { durationMs: parsed.durationMs }),
+          ...(parsed.arguments === undefined
+            ? {}
+            : { arguments: JSON.stringify(parsed.arguments, null, 2) }),
+          ...(parsed.output === undefined ? {} : { output: parsed.output }),
+        };
+      }
+    } catch {
+      /* 非信封格式，回退旧格式解析 */
+    }
+  }
+  const legacy = content.match(/^\[([^\]]+)\]\s?([\s\S]*)$/);
+  if (legacy) {
+    return {
+      type: 'tool',
+      id: crypto.randomUUID(),
+      name: toolDisplayName(legacy[1]!),
+      status: 'completed',
+      ...(legacy[2] ? { output: legacy[2] } : {}),
+    };
+  }
+  return null;
+}
 
 interface AgentInfo {
   id: string;
@@ -59,7 +133,9 @@ function AgentConversation(): React.ReactElement {
   const [currentModel, setCurrentModel] = useState<ModelOption>(FALLBACK_MODEL);
   const [dbModels, setDbModels] = useState<ModelOption[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
-  const [thinkingLevel, setThinkingLevel] = useState<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>('off');
+  const [thinkingLevel, setThinkingLevel] = useState<
+    'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
+  >('off');
   const [attachments, setAttachments] = useState<Array<{ path: string; name: string }>>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -356,7 +432,10 @@ function AgentConversation(): React.ReactElement {
       if (!current) return current;
       const currentIds = current.knowledgeBases.map((kb) => kb.id);
       const matchedIds = matchedKbs.map((kb) => kb.id);
-      if (currentIds.length === matchedIds.length && currentIds.every((id, index) => id === matchedIds[index])) {
+      if (
+        currentIds.length === matchedIds.length &&
+        currentIds.every((id, index) => id === matchedIds[index])
+      ) {
         return current;
       }
       return {
@@ -466,14 +545,46 @@ function AgentConversation(): React.ReactElement {
         const { data } = (await client.get('/api/ai/conversations/:id/messages', {
           params: { id: threadId },
         })) as { data?: Array<{ role: string; content: string }> };
-        const history = (data ?? [])
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .map((m) => ({
-            id: crypto.randomUUID(),
-            role: m.role === 'user' ? ('user' as const) : ('assistant' as const),
-            content: m.content,
-            timestamp: '',
-          }));
+        // 历史回显与流式渲染对齐：同一轮运行中连续持久化的 assistant 消息（每轮迭代一条）
+        // 合并成一个气泡；role:'tool' 消息按持久化顺序还原为可展开的工具块
+        const history: ChatMessage[] = [];
+        for (const m of data ?? []) {
+          if (m.role === 'user') {
+            history.push({
+              id: crypto.randomUUID(),
+              role: 'user',
+              content: m.content,
+              timestamp: '',
+            });
+            continue;
+          }
+          if (m.role === 'tool') {
+            const block = parsePersistedTool(m.content);
+            const last = history[history.length - 1];
+            if (block && last?.role === 'assistant') {
+              last.blocks = [...(last.blocks ?? []), block];
+            }
+            continue;
+          }
+          if (m.role !== 'assistant') continue;
+          const text = parsePersistedAssistant(m.content);
+          const last = history[history.length - 1];
+          if (last?.role === 'assistant') {
+            last.blocks = [
+              ...(last.blocks ?? []),
+              ...(text ? [{ type: 'text' as const, text }] : []),
+            ];
+            last.content = text ? `${last.content}\n\n${text}` : last.content;
+          } else {
+            history.push({
+              id: crypto.randomUUID(),
+              role: 'assistant',
+              content: text,
+              timestamp: '',
+              blocks: [...(text ? [{ type: 'text' as const, text }] : [])],
+            });
+          }
+        }
         setMessages(history);
       } catch {
         /* 历史加载失败保持空 */
@@ -545,6 +656,7 @@ function AgentConversation(): React.ReactElement {
         timestamp: new Date().toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' }),
         isStreaming: true,
         model: currentModel.name,
+        blocks: [],
       };
 
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
@@ -578,9 +690,20 @@ function AgentConversation(): React.ReactElement {
         {
           onContent: (delta) => {
             setMessages((prev) =>
-              prev.map((msg) =>
-                msg.id === assistantMessage.id ? { ...msg, content: msg.content + delta } : msg,
-              ),
+              prev.map((msg) => {
+                if (msg.id !== assistantMessage.id) return msg;
+                // 文本增量追加到最后一个 text 块（与工具块按到达顺序交错）；
+                // 工具块之后新开的文本段剥掉模型输出的前导换行，避免块间出现空行
+                const blocks = [...(msg.blocks ?? [])];
+                const last = blocks[blocks.length - 1];
+                if (last?.type === 'text') {
+                  blocks[blocks.length - 1] = { type: 'text', text: last.text + delta };
+                } else {
+                  const trimmed = delta.replace(/^\n+/, '');
+                  if (trimmed) blocks.push({ type: 'text', text: trimmed });
+                }
+                return { ...msg, content: msg.content + delta, blocks };
+              }),
             );
           },
           onToolCall: (toolCall) => {
@@ -590,21 +713,50 @@ function AgentConversation(): React.ReactElement {
                 msg.id === assistantMessage.id
                   ? {
                       ...msg,
-                      steps: [
-                        ...(msg.steps ?? []),
+                      blocks: [
+                        ...(msg.blocks ?? []),
                         {
-                          id: toolCall.id || crypto.randomUUID(),
                           type: 'tool' as const,
-                          name: toolCall.name,
-                          ...(toolCall.name === 'read_document' ? { name: '读取文档' } : {}),
-                          description: '执行工具调用',
-                          durationMs: 0,
+                          id: toolCall.id || crypto.randomUUID(),
+                          name: toolDisplayName(toolCall.name),
                           status: 'running' as const,
+                          ...(toolCall.arguments === undefined
+                            ? {}
+                            : { arguments: JSON.stringify(toolCall.arguments, null, 2) }),
                         },
                       ],
                     }
                   : msg,
               ),
+            );
+          },
+          onToolResult: (result) => {
+            // 工具真实结束时立即收敛状态与耗时（后端 tool_result 事件，不等会话结束）
+            setMessages((prev) =>
+              prev.map((msg) => {
+                if (msg.id !== assistantMessage.id) return msg;
+                let looseMatched = false;
+                const blocks = msg.blocks?.map((b) => {
+                  if (b.type !== 'tool') return b;
+                  const idMatch = b.id === result.toolCallId;
+                  // provider 未返回 tool_call_id 时按「同名 + running」兜底匹配一次
+                  const looseMatch =
+                    !result.toolCallId &&
+                    !looseMatched &&
+                    b.status === 'running' &&
+                    b.name === toolDisplayName(result.toolName);
+                  if (looseMatch) looseMatched = true;
+                  return idMatch || looseMatch
+                    ? {
+                        ...b,
+                        status: result.isError ? ('error' as const) : ('completed' as const),
+                        durationMs: result.durationMs,
+                        ...(result.output === undefined ? {} : { output: result.output }),
+                      }
+                    : b;
+                });
+                return { ...msg, blocks };
+              }),
             );
           },
           onStage: (stage) => {
@@ -625,10 +777,24 @@ function AgentConversation(): React.ReactElement {
             );
           },
           onUsage: (usage) => {
+            // 双写：消息级 tokensUsed（消息下方展示）+ 全局累计（上下文用量）
             setTotalTokens((prev) => ({
               input: prev.input + usage.promptTokens,
               output: prev.output + usage.completionTokens,
             }));
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id
+                  ? {
+                      ...msg,
+                      tokensUsed: {
+                        input: (msg.tokensUsed?.input ?? 0) + usage.promptTokens,
+                        output: (msg.tokensUsed?.output ?? 0) + usage.completionTokens,
+                      },
+                    }
+                  : msg,
+              ),
+            );
           },
           onSession: (sid) => {
             // 新建会话时后端下发 sessionId，绑定以便后续消息延续同一会话
@@ -646,7 +812,7 @@ function AgentConversation(): React.ReactElement {
             );
           },
           onError: (error) => {
-            // 标记所有 running 步骤为 error
+            // 标记所有 running 工具块为 error
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantMessage.id
@@ -654,8 +820,10 @@ function AgentConversation(): React.ReactElement {
                       ...msg,
                       content: msg.content + `\n\n❌ 错误: ${error.message}`,
                       isStreaming: false,
-                      steps: msg.steps?.map((s) =>
-                        s.status === 'running' ? { ...s, status: 'error' as const } : s,
+                      blocks: msg.blocks?.map((b) =>
+                        b.type === 'tool' && b.status === 'running'
+                          ? { ...b, status: 'error' as const }
+                          : b,
                       ),
                     }
                   : msg,
@@ -665,21 +833,21 @@ function AgentConversation(): React.ReactElement {
           },
           onDone: () => {
             const now = Date.now();
-            // 标记所有 running 步骤为 completed，计算耗时
+            // 兜底：未收到 tool_result 的 running 工具块按本地计时收敛
             setMessages((prev) =>
               prev.map((msg) =>
                 msg.id === assistantMessage.id
                   ? {
                       ...msg,
                       isStreaming: false,
-                      steps: msg.steps?.map((s) =>
-                        s.status === 'running'
+                      blocks: msg.blocks?.map((b) =>
+                        b.type === 'tool' && b.status === 'running'
                           ? {
-                              ...s,
+                              ...b,
                               status: 'completed' as const,
-                              durationMs: now - (stepTimers.get(s.id) ?? now),
+                              durationMs: now - (stepTimers.get(b.id) ?? now),
                             }
-                          : s,
+                          : b,
                       ),
                     }
                   : msg,
@@ -708,43 +876,46 @@ function AgentConversation(): React.ReactElement {
     ],
   );
 
-  const handleAttach = useCallback(async (files: File[]): Promise<void> => {
-    if (!selectedAgent || files.length === 0) return;
-    if (attachments.length + files.length > 10) {
-      msg.error('每次最多添加 10 个附件');
-      return;
-    }
-    setUploadingAttachment(true);
-    try {
-      let targetSessionId = sessionId;
-      if (!targetSessionId) {
-        const { data, error } = (await client.post('/api/ai/conversations', {
-          body: { agentId: selectedAgent.id },
-        })) as { data?: { id: string }; error?: unknown };
-        if (error || !data?.id) throw new Error('创建会话失败');
-        targetSessionId = data.id;
-        setSessionId(targetSessionId);
-        setActiveThreadId(targetSessionId);
+  const handleAttach = useCallback(
+    async (files: File[]): Promise<void> => {
+      if (!selectedAgent || files.length === 0) return;
+      if (attachments.length + files.length > 10) {
+        msg.error('每次最多添加 10 个附件');
+        return;
       }
-      const uploaded: Array<{ path: string; name: string }> = [];
-      for (const file of files) {
-        const form = new FormData();
-        form.append('file', file);
-        const { data, error } = (await client.post('/api/ai/conversations/:id/attachments', {
-          params: { id: targetSessionId },
-          body: form,
-        })) as { data?: { path: string; name: string }; error?: unknown };
-        if (error || !data) throw new Error(`${file.name} 上传失败`);
-        uploaded.push(data);
+      setUploadingAttachment(true);
+      try {
+        let targetSessionId = sessionId;
+        if (!targetSessionId) {
+          const { data, error } = (await client.post('/api/ai/conversations', {
+            body: { agentId: selectedAgent.id },
+          })) as { data?: { id: string }; error?: unknown };
+          if (error || !data?.id) throw new Error('创建会话失败');
+          targetSessionId = data.id;
+          setSessionId(targetSessionId);
+          setActiveThreadId(targetSessionId);
+        }
+        const uploaded: Array<{ path: string; name: string }> = [];
+        for (const file of files) {
+          const form = new FormData();
+          form.append('file', file);
+          const { data, error } = (await client.post('/api/ai/conversations/:id/attachments', {
+            params: { id: targetSessionId },
+            body: form,
+          })) as { data?: { path: string; name: string }; error?: unknown };
+          if (error || !data) throw new Error(`${file.name} 上传失败`);
+          uploaded.push(data);
+        }
+        setAttachments((current) => [...current, ...uploaded]);
+        await fetchWorkspaceFiles(targetSessionId);
+      } catch (error) {
+        msg.error(error instanceof Error ? error.message : '附件上传失败');
+      } finally {
+        setUploadingAttachment(false);
       }
-      setAttachments((current) => [...current, ...uploaded]);
-      await fetchWorkspaceFiles(targetSessionId);
-    } catch (error) {
-      msg.error(error instanceof Error ? error.message : '附件上传失败');
-    } finally {
-      setUploadingAttachment(false);
-    }
-  }, [selectedAgent, attachments.length, sessionId, fetchWorkspaceFiles]);
+    },
+    [selectedAgent, attachments.length, sessionId, fetchWorkspaceFiles],
+  );
 
   // 聊天内嵌审批：用户对高风险工具调用做出决定，成功后本地更新卡片状态，后端唤醒流继续执行
   const handleApprovalDecision = useCallback(
@@ -907,10 +1078,19 @@ function AgentConversation(): React.ReactElement {
               />
             )}
             {activeTab === 'files' && (
-              <div className={`h-full overflow-auto p-5 ${workspaceFiles.length === 0 ? 'flex items-center justify-center' : ''}`}>
-                {selectedAgent.name === 'Skill Creator' && workspaceFiles.some((file) => file.path === 'SKILL.md') && (
-                  <Button type="primary" className="mb-3" onClick={() => setExportModalOpen(true)}>导出为 Skill</Button>
-                )}
+              <div
+                className={`h-full overflow-auto p-5 ${workspaceFiles.length === 0 ? 'flex items-center justify-center' : ''}`}
+              >
+                {selectedAgent.name === 'Skill Creator' &&
+                  workspaceFiles.some((file) => file.path === 'SKILL.md') && (
+                    <Button
+                      type="primary"
+                      className="mb-3"
+                      onClick={() => setExportModalOpen(true)}
+                    >
+                      导出为 Skill
+                    </Button>
+                  )}
                 {workspaceFiles.length === 0 ? (
                   <Empty description="当前会话暂无生成文件" />
                 ) : (
@@ -928,9 +1108,7 @@ function AgentConversation(): React.ReactElement {
                 )}
               </div>
             )}
-            {activeTab === 'memory' && (
-              <MemoryPanel sessionId={sessionId} />
-            )}
+            {activeTab === 'memory' && <MemoryPanel sessionId={sessionId} />}
             {activeTab === 'knowledge' && (
               <KnowledgePanel knowledgeBases={selectedAgent.knowledgeBases} />
             )}
@@ -951,14 +1129,23 @@ function AgentConversation(): React.ReactElement {
             thinkingLevel={thinkingLevel}
             onAttach={(files) => void handleAttach(files)}
             onAttachWorkspaceFile={(file) => {
-              setAttachments((current) => current.some((item) => item.path === file.path)
-                ? current
-                : [...current, { path: file.path, name: file.path.split('/').pop() ?? file.path }]);
+              setAttachments((current) =>
+                current.some((item) => item.path === file.path)
+                  ? current
+                  : [
+                      ...current,
+                      { path: file.path, name: file.path.split('/').pop() ?? file.path },
+                    ],
+              );
             }}
-            onRemoveAttachment={(path) => setAttachments((current) => current.filter((file) => file.path !== path))}
+            onRemoveAttachment={(path) =>
+              setAttachments((current) => current.filter((file) => file.path !== path))
+            }
             onThinkingLevelChange={setThinkingLevel}
             skills={selectedAgent?.skills ?? []}
-            onSelectSkill={(id) => setEnabledSkills((current) => current.includes(id) ? current : [...current, id])}
+            onSelectSkill={(id) =>
+              setEnabledSkills((current) => (current.includes(id) ? current : [...current, id]))
+            }
             contextUsage={contextUsage}
             workspaceFiles={workspaceFiles}
           />

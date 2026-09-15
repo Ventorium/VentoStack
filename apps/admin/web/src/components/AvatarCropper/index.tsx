@@ -6,7 +6,7 @@ import {
   ZoomOutOutlined,
 } from "@ant-design/icons";
 import { Button, Modal, Tooltip } from "antd";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Cropper from "react-easy-crop";
 import type { Area } from "react-easy-crop";
 
@@ -80,11 +80,26 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
-  const imageUrl = URL.createObjectURL(file);
+  // 对象 URL 每个 file 只能创建一次：写在组件体会让每次渲染生成新 URL，
+  // Cropper 收到新 image 就重新加载图片，拖拽时形成请求风暴并泄漏 blob URL
+  const [imageUrl, setImageUrl] = useState<string>("");
+  useEffect(() => {
+    const url = URL.createObjectURL(file);
+    setImageUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file]);
+
+  // 预览防抖：拖拽时 onCropComplete 高频触发，全量 canvas 重绘 + toBlob 开销大
+  const previewTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (previewTimer.current) clearTimeout(previewTimer.current);
+    };
+  }, []);
 
   // 打开时生成初始预览
   useEffect(() => {
-    if (!open) return;
+    if (!open || !imageUrl) return;
     let revoked = false;
     const generate = async () => {
       const img = await createImage(imageUrl);
@@ -110,13 +125,16 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
   const onCropComplete = useCallback(
     (_croppedArea: Area, croppedAreaPixels: Area) => {
       setCroppedAreaPixels(croppedAreaPixels);
-      getCroppedImg(imageUrl, croppedAreaPixels, rotation).then((blob) => {
-        const url = URL.createObjectURL(blob);
-        setPreviewUrl((prev) => {
-          if (prev) URL.revokeObjectURL(prev);
-          return url;
+      if (previewTimer.current) clearTimeout(previewTimer.current);
+      previewTimer.current = setTimeout(() => {
+        getCroppedImg(imageUrl, croppedAreaPixels, rotation).then((blob) => {
+          const url = URL.createObjectURL(blob);
+          setPreviewUrl((prev) => {
+            if (prev) URL.revokeObjectURL(prev);
+            return url;
+          });
         });
-      });
+      }, 200);
     },
     [imageUrl, rotation],
   );
@@ -133,7 +151,7 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
   };
 
   const handleCancel = () => {
-    URL.revokeObjectURL(imageUrl);
+    // imageUrl 由挂载 effect 的 cleanup 统一回收，这里只处理预览
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     onCancel();
   };
@@ -157,7 +175,7 @@ const AvatarCropper = ({ file, open, onConfirm, onCancel }: AvatarCropperProps) 
             className="relative w-full h-[340px] bg-[#1a1a1a] rounded-lg"
           >
             <Cropper
-              image={imageUrl}
+              image={imageUrl || undefined}
               crop={crop}
               zoom={zoom}
               rotation={rotation}

@@ -1,3 +1,4 @@
+import MarkdownPreview from '@/components/MarkdownPreview';
 import {
   CheckOutlined,
   CloseOutlined,
@@ -12,7 +13,7 @@ import {
 import { Avatar, Button, Space, Tooltip, Typography, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useRef } from 'react';
 import type { ChatApproval, ChatMessage } from '../types';
-import AgentSteps from './AgentSteps';
+import AgentSteps, { StepRow } from './AgentSteps';
 import { ResearchSources, ResearchStatus } from './ResearchStatus';
 
 const { Text, Paragraph } = Typography;
@@ -98,100 +99,6 @@ function ApprovalCard({
       )}
     </div>
   );
-}
-
-/** 行内渲染：加粗 */
-function renderInline(text: string): React.ReactNode {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g);
-  return parts.map((part, i) => {
-    if (part.startsWith('**') && part.endsWith('**')) {
-      return <strong key={i}>{part.slice(2, -2)}</strong>;
-    }
-    return <span key={i}>{part}</span>;
-  });
-}
-
-/** 简易 Markdown 风格渲染 */
-function renderContent(
-  content: string,
-  token: ReturnType<typeof theme.useToken>['token'],
-): React.ReactNode {
-  const lines = content.split('\n');
-  const elements: React.ReactNode[] = [];
-  let inTable = false;
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
-
-    if (/^\|[\s\-:|]+\|$/.test(line)) continue;
-
-    if (line.startsWith('|') && line.endsWith('|')) {
-      const cells = line
-        .slice(1, -1)
-        .split('|')
-        .map((c) => c.trim());
-      if (!inTable) {
-        inTable = true;
-        elements.push(
-          <div
-            key={`tbl-h-${i}`}
-            className="grid pb-1 mb-0.5"
-            style={{
-              gridTemplateColumns: `repeat(${cells.length}, 1fr)`,
-              borderBottom: `1px solid ${token.colorBorderSecondary}`,
-            }}
-          >
-            {cells.map((c, ci) => (
-              <Text key={ci} strong className="text-xs py-[2px] px-[8px]">
-                {renderInline(c)}
-              </Text>
-            ))}
-          </div>,
-        );
-      } else {
-        elements.push(
-          <div
-            key={`tbl-r-${i}`}
-            className="grid mb-0.5"
-            style={{ gridTemplateColumns: `repeat(${cells.length}, 1fr)` }}
-          >
-            {cells.map((c, ci) => (
-              <Text key={ci} className="text-[13px] py-[2px] px-[8px]">
-                {renderInline(c)}
-              </Text>
-            ))}
-          </div>,
-        );
-      }
-      continue;
-    }
-    inTable = false;
-
-    if (!line.trim()) {
-      elements.push(<div key={`br-${i}`} className="h-2" />);
-      continue;
-    }
-
-    if (line.startsWith('• ') || line.startsWith('- ')) {
-      elements.push(
-        <div key={`li-${i}`} className="flex gap-2 pl-1 mb-0.5">
-          <span className="shrink-0" style={{ color: token.colorPrimary }}>
-            •
-          </span>
-          <Text className="text-[13px]">{renderInline(line.replace(/^[•\-]\s*/, ''))}</Text>
-        </div>,
-      );
-      continue;
-    }
-
-    elements.push(
-      <Text key={`p-${i}`} className="text-[13px] block mb-0.5 leading-[22px]">
-        {renderInline(line)}
-      </Text>,
-    );
-  }
-
-  return elements;
 }
 
 function formatTokenCount(n: number): string {
@@ -346,8 +253,6 @@ export default function ChatArea({
                     border: isUser ? 'none' : `1px solid ${token.colorBorderSecondary}`,
                   }}
                 >
-                  {!isUser && msg.steps && msg.steps.length > 0 && <AgentSteps steps={msg.steps} />}
-
                   {!isUser && msg.approval && (
                     <ApprovalCard approval={msg.approval} onDecision={onApprovalDecision} />
                   )}
@@ -356,7 +261,52 @@ export default function ChatArea({
                     <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
                   )}
 
-                  <div>{renderContent(msg.content, token)}</div>
+                  {!isUser && msg.blocks ? (
+                    // 按流式到达顺序交错渲染：文本段与工具块的位置与生成顺序一致
+                    msg.blocks.map((block, i) =>
+                      block.type === 'text' ? (
+                        <MarkdownPreview
+                          key={`b-${i}`}
+                          content={block.text}
+                          className="text-[13px]"
+                          breaks
+                          streaming={msg.isStreaming && i === msg.blocks.length - 1}
+                        />
+                      ) : (
+                        <div key={`b-${i}`} className="my-1">
+                          <StepRow
+                            step={{
+                              id: block.id,
+                              type: 'tool',
+                              name: block.name,
+                              description: block.status === 'error' ? '执行失败' : '执行工具调用',
+                              durationMs: block.durationMs,
+                              status: block.status,
+                            }}
+                            detail={{
+                              ...(block.arguments === undefined
+                                ? {}
+                                : { arguments: block.arguments }),
+                              ...(block.output === undefined ? {} : { output: block.output }),
+                            }}
+                          />
+                        </div>
+                      ),
+                    )
+                  ) : (
+                    <>
+                      {!isUser && msg.steps && msg.steps.length > 0 && (
+                        <AgentSteps steps={msg.steps} />
+                      )}
+
+                      <MarkdownPreview
+                        content={msg.content}
+                        className="text-[13px]"
+                        breaks
+                        streaming={msg.isStreaming}
+                      />
+                    </>
+                  )}
 
                   {!isUser && msg.sources && msg.sources.length > 0 && (
                     <ResearchSources sources={msg.sources} />

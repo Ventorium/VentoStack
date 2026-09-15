@@ -79,6 +79,17 @@ export interface ResearchSourcesChunk {
   sources: Array<{ title: string; url: string }>;
 }
 
+/** 工具执行结束 chunk（下发到 SSE 流，前端据此实时收敛工具状态与真实耗时） */
+export interface ToolResultChunk {
+  type: 'tool_result';
+  toolCallId: string;
+  toolName: string;
+  durationMs: number;
+  isError: boolean;
+  /** 工具输出摘要（截断至 2000 字符），供前端展开查看 */
+  output?: string;
+}
+
 export type StreamChunk =
   | {
       type: 'content' | 'tool_call_delta' | 'usage' | 'error' | 'done';
@@ -95,7 +106,8 @@ export type StreamChunk =
   | {
       type: 'approval_required';
       approval: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
-    };
+    }
+  | ToolResultChunk;
 
 export interface TokenUsage {
   promptTokens: number;

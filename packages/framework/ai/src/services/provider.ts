@@ -2,7 +2,7 @@
  * AI 供应商与模型管理服务
  */
 
-import type { ConfigEncryptor } from '@ventostack/core';
+import { type ConfigEncryptor, VentoStackError } from '@ventostack/core';
 import type { Database } from '@ventostack/database';
 import { type FetchedModel, type ReasoningOption, fetchModelsFromDev } from './models-dev';
 import { fetchModelsFromProviderApi } from './provider-api-models';
@@ -454,12 +454,18 @@ export function createProviderService(deps: {
   async function syncModels(providerId: string, tenantId: string): Promise<SyncResult> {
     // Validate provider exists
     const provider = await getProviderById(providerId, tenantId);
-    if (!provider) throw new Error('Provider not found');
+    if (!provider) throw new VentoStackError('供应商不存在', 404, 'provider_not_found');
 
     // Auto-resolve models.dev slug: preset first, then provider's own modelsDevSlug
     const preset = provider.presetId ? getPresetById(provider.presetId) : undefined;
     const providerSlug = preset?.modelsDevSlug ?? provider.modelsDevSlug;
-    if (!providerSlug) throw new Error('Provider has no models.dev slug configured for sync');
+    if (!providerSlug) {
+      throw new VentoStackError(
+        '供应商未配置 models.dev slug，无法同步',
+        400,
+        'provider_no_slug',
+      );
+    }
 
     const fetched = await fetchModelsFromDev(providerSlug, cache);
     return upsertFetchedModels(providerId, tenantId, fetched);
@@ -468,10 +474,10 @@ export function createProviderService(deps: {
   /** 从供应商自身 /models 接口拉取模型（OpenAI 兼容 / Anthropic） */
   async function syncModelsFromApi(providerId: string, tenantId: string): Promise<SyncResult> {
     const provider = await getProviderById(providerId, tenantId);
-    if (!provider) throw new Error('Provider not found');
+    if (!provider) throw new VentoStackError('供应商不存在', 404, 'provider_not_found');
 
     const creds = await getProviderApiKey(providerId, tenantId);
-    if (!creds) throw new Error('Provider not found');
+    if (!creds) throw new VentoStackError('供应商不存在', 404, 'provider_not_found');
 
     const fetched = await fetchModelsFromProviderApi(
       creds.baseUrl,
@@ -480,7 +486,7 @@ export function createProviderService(deps: {
     );
     if (fetched.length === 0) {
       // 空结果视为异常，避免误删全部自动拉取的模型
-      throw new Error('Provider API returned no models');
+      throw new VentoStackError('Provider API returned no models', 400, 'provider_no_models');
     }
     return upsertFetchedModels(providerId, tenantId, fetched);
   }

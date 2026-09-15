@@ -420,7 +420,7 @@ const AgentsPage = () => {
       model: record.model,
       systemPrompt: record.systemPrompt,
       isPublic: record.isPublic,
-      maxIterations: record.maxIterations ?? 10,
+      maxIterations: record.maxIterations ?? 100,
       maxTokensPerTurn: record.maxTokensPerTurn ?? 4096,
       requiresVirtualEnvironment: record.requiresVirtualEnvironment,
     });
@@ -867,9 +867,9 @@ const AgentsPage = () => {
               <Form.Item
                 label="最大迭代轮数"
                 name="maxIterations"
-                tooltip="Agent 单次对话中允许的最多工具调用轮次（默认 10）"
+                tooltip="Agent 单次对话中允许的最多工具调用轮次（默认 100，无上限）"
               >
-                <InputNumber min={1} max={100} className="w-full" placeholder="默认 10" />
+                <InputNumber min={1} className="w-full" placeholder="默认 100" />
               </Form.Item>
               <Form.Item
                 label="最大单轮 Token"

@@ -172,7 +172,7 @@ agentConfig.knowledgeBaseIds = ["kb-1"];
 - **web-fetch 内网防护**：默认拒绝 localhost、私网 IPv4/IPv6、链路本地（含云元数据地址）等目标 URL；可通过 `createWebFetchTool({ readerBaseUrl, allowPrivateHosts })` 指向自建 Reader 或显式放开。
 - **terminal 白名单**：仅允许只读命令白名单，禁用全部 shell 结构字符（管道/分号/重定向/命令替换）与 `find -delete/-exec` 类写副作用旗标。
 - **sql-query 租户列防护**：拒绝把表达式别名为 `tenant_id` 输出列的查询（防止外层租户过滤被派生表遮蔽恒真）；裸列引用不受限。
-- **成本硬封顶**：单次运行迭代数上限 `AGENT_MAX_ITERATIONS_LIMIT`（50）、单轮生成 Token 上限 `AGENT_MAX_TOKENS_PER_TURN_LIMIT`（100000）、研究子任务数量/轮数上限（10 / 8）；对话端点按「租户+用户」限流（默认 30 次/分钟）。
+- **成本硬封顶**：迭代轮数由 Agent 配置 `maxIterations` 自行约束（默认 100，不设平台上限；迭代耗尽时会强制进行一次无工具收尾调用保证有最终回答）、单轮生成 Token 上限 `AGENT_MAX_TOKENS_PER_TURN_LIMIT`（100000）、模型流无输出看门狗（180 秒，供应商挂起转为明确错误）、研究子任务数量/轮数上限（10 / 8）；对话端点按「租户+用户」限流（默认 30 次/分钟）。
 
 ## 上下文管理
 

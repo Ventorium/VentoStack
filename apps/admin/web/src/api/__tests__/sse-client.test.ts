@@ -55,13 +55,46 @@ describe("dispatchChunk", () => {
     expect(cb.onContent).toHaveBeenCalledWith("你好");
   });
 
-  test("分发 tool_call_start", () => {
+  test("分发 tool_call_start（含参数）", () => {
     const cb = makeCallbacks();
     dispatchChunk(
-      { type: "tool_call_start", toolCall: { id: "t1", name: "kb-search" } },
+      { type: "tool_call_start", toolCall: { id: "t1", name: "kb-search", arguments: { q: "策略" } } },
       cb,
     );
-    expect(cb.onToolCall).toHaveBeenCalledWith({ id: "t1", name: "kb-search" });
+    expect(cb.onToolCall).toHaveBeenCalledWith({ id: "t1", name: "kb-search", arguments: { q: "策略" } });
+  });
+
+  test("分发 tool_result（工具真实结束，携带耗时与输出摘要）", () => {
+    const cb = makeCallbacks({ onToolResult: mock(() => {}) });
+    dispatchChunk(
+      {
+        type: "tool_result",
+        toolCallId: "t1",
+        toolName: "kb-search",
+        durationMs: 1234,
+        isError: false,
+        output: "[{...结果摘要...}]",
+      },
+      cb,
+    );
+    expect(cb.onToolResult).toHaveBeenCalledWith({
+      toolCallId: "t1",
+      toolName: "kb-search",
+      durationMs: 1234,
+      isError: false,
+      output: "[{...结果摘要...}]",
+    });
+  });
+
+  test("tool_call_delta 忽略（不触发任何回调）", () => {
+    const cb = makeCallbacks();
+    dispatchChunk(
+      { type: "tool_call_delta", toolCallDelta: { id: "t1", arguments: "{\"q\":" } },
+      cb,
+    );
+    expect(cb.onContent).not.toHaveBeenCalled();
+    expect(cb.onToolCall).not.toHaveBeenCalled();
+    expect(cb.onError).not.toHaveBeenCalled();
   });
 
   test("分发 usage", () => {

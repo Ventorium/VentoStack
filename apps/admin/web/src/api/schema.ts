@@ -3709,6 +3709,18 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 上传会话附件
+     */
+    '/api/ai/conversations/:id/attachments': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 异步整理会话记忆
      */
     '/api/ai/conversations/:id/memory/consolidate': {
@@ -3791,7 +3803,16 @@ export type OpenAPIs = {
         /**
          * @description 知识库过滤
          */
-        knowledgeBaseIds?: string[]
+        knowledgeBaseIds?: string[],
+        /**
+         * @description 当前会话附件路径
+         */
+        attachmentPaths?: string[],
+        /**
+         * @description 思考强度
+         * @enum off,minimal,low,medium,high,xhigh
+         */
+        thinkingLevel?: string
       },
       response: {
         /**
@@ -3843,7 +3864,16 @@ export type OpenAPIs = {
         /**
          * @description 知识库过滤
          */
-        knowledgeBaseIds?: string[]
+        knowledgeBaseIds?: string[],
+        /**
+         * @description 当前会话附件路径
+         */
+        attachmentPaths?: string[],
+        /**
+         * @description 思考强度
+         * @enum off,minimal,low,medium,high,xhigh
+         */
+        thinkingLevel?: string
       },
       response: string
     },
@@ -5067,6 +5097,10 @@ export type OpenAPIs = {
          * @description 描述
          */
         description?: string,
+        /**
+         * @description 新会话欢迎词，为空时使用默认文案
+         */
+        welcomeMessage?: string,
         /**
          * @description 可用模型 ID 列表（至少 1 个）
          */

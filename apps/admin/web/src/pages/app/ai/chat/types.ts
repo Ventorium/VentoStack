@@ -11,15 +11,36 @@ export interface Thread {
 
 export interface AgentStep {
   id: string;
-  type: "thinking" | "skill" | "bash" | "tool" | "error";
+  type: 'thinking' | 'skill' | 'bash' | 'tool' | 'error';
   name: string;
   description: string;
-  durationMs: number;
-  status: "running" | "completed" | "error";
+  /** 耗时（毫秒）；历史回放的工具块无计时数据时缺省，隐藏耗时标签 */
+  durationMs?: number;
+  status: 'running' | 'completed' | 'error';
 }
 
+/** 消息内容块：assistant 消息按流式到达顺序交错排列的文本段与工具调用块 */
+export interface TextBlock {
+  type: 'text';
+  text: string;
+}
+
+export interface ToolBlock {
+  type: 'tool';
+  id: string;
+  name: string;
+  status: 'running' | 'completed' | 'error';
+  durationMs?: number;
+  /** 工具调用参数（pretty JSON，点击工具行展开查看） */
+  arguments?: string;
+  /** 工具输出摘要（后端截断，点击工具行展开查看） */
+  output?: string;
+}
+
+export type MessageBlock = TextBlock | ToolBlock;
+
 /** 深度研究阶段 */
-export type ResearchStage = "planning" | "researching" | "synthesizing";
+export type ResearchStage = 'planning' | 'researching' | 'synthesizing';
 
 export interface ResearchSource {
   title: string;
@@ -32,14 +53,16 @@ export interface ChatApproval {
   toolName: string;
   input: Record<string, unknown>;
   expiresAt: string;
-  status: "pending" | "approved" | "rejected" | "expired";
+  status: 'pending' | 'approved' | 'rejected' | 'expired';
 }
 
 export interface ChatMessage {
   id: string;
-  role: "user" | "assistant";
+  role: 'user' | 'assistant';
   content: string;
   timestamp: string;
+  /** 按流式到达顺序交错的内容块（存在时优先于 steps + content 的固定布局渲染） */
+  blocks?: MessageBlock[];
   steps?: AgentStep[];
   /** 深度研究阶段进度 */
   researchStages?: ResearchStage[];

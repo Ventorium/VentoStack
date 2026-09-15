@@ -18,7 +18,7 @@ export const AiAgentModel = defineModel(
     model_overrides: column.json({ nullable: true }),
     memory_config: column.json({ nullable: true }),
     config: column.json({ nullable: true }),
-    max_iterations: column.int({ default: 10 }),
+    max_iterations: column.int({ default: 100 }),
     max_tokens_per_turn: column.int({ default: 4096 }),
     tenant_id: column.varchar({ length: 36 }),
     created_by: column.varchar({ length: 36 }),

@@ -5,21 +5,34 @@
  * - SSE 读取、事件拆分、JSON 解析全部由 o2t 处理，本地不再维护任何 SSE 解析逻辑
  * - 认证与 token 刷新由 api/index.ts 的 client 实例负责
  */
-import { iterateStream } from "@doremijs/o2t/client/stream";
-import { client } from "@/api";
+import { iterateStream } from '@doremijs/o2t/client/stream';
+import { client } from '@/api';
 
 export interface StreamCallbacks {
   onContent: (delta: string) => void;
-  onToolCall?: (toolCall: { id: string; name: string }) => void;
+  onToolCall?: (toolCall: { id: string; name: string; arguments?: Record<string, unknown> }) => void;
+  /** 工具执行结束：携带真实耗时、错误标记与输出摘要（流内实时下发，不等会话结束） */
+  onToolResult?: (result: {
+    toolCallId: string;
+    toolName: string;
+    durationMs: number;
+    isError: boolean;
+    output?: string;
+  }) => void;
   onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void;
   /** 深度研究阶段事件：planning → researching → synthesizing */
-  onStage?: (stage: "planning" | "researching" | "synthesizing") => void;
+  onStage?: (stage: 'planning' | 'researching' | 'synthesizing') => void;
   /** 引用来源清单（研究产出后下发） */
   onSources?: (sources: Array<{ title: string; url: string }>) => void;
   /** 会话 ID 事件（新建会话时后端下发，前端据此绑定 sessionId） */
   onSession?: (sessionId: string) => void;
   /** 工具审批请求事件（高风险工具需要用户在聊天内确认后才能继续执行） */
-  onApprovalRequired?: (approval: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string }) => void;
+  onApprovalRequired?: (approval: {
+    id: string;
+    toolName: string;
+    input: Record<string, unknown>;
+    expiresAt: string;
+  }) => void;
   onError: (error: { code: string; message: string; recoverable: boolean }) => void;
   onDone: () => void;
 }
@@ -42,11 +55,27 @@ export interface ChatStreamParams {
  * 后端 AI 流式 chunk（与 packages/framework/ai 的 StreamChunk 对齐）
  */
 export interface AIStreamChunk {
-  type: "content" | "tool_call_start" | "usage" | "stage" | "sources" | "session" | "approval_required" | "error" | "done";
+  type:
+    | 'content'
+    | 'tool_call_start'
+    | 'tool_call_delta'
+    | 'tool_result'
+    | 'usage'
+    | 'stage'
+    | 'sources'
+    | 'session'
+    | 'approval_required'
+    | 'error'
+    | 'done';
   delta?: string;
-  toolCall?: { id: string; name: string };
+  toolCall?: { id: string; name: string; arguments?: Record<string, unknown> };
+  toolCallId?: string;
+  toolName?: string;
+  durationMs?: number;
+  isError?: boolean;
+  output?: string;
   usage?: { promptTokens: number; completionTokens: number };
-  stage?: "planning" | "researching" | "synthesizing";
+  stage?: 'planning' | 'researching' | 'synthesizing';
   sources?: Array<{ title: string; url: string }>;
   sessionId?: string;
   approval?: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
@@ -64,13 +93,13 @@ export async function streamChat(
   signal?: AbortSignal,
 ): Promise<void> {
   try {
-    const { error, response } = (await client.post("/api/ai/chat/stream", {
+    const { error, response } = (await client.post('/api/ai/chat/stream', {
       body: params,
       signal,
     })) as { error?: unknown; response?: Response };
 
     if (error || !response) {
-      callbacks.onError({ code: "REQUEST_FAILED", message: "请求失败", recoverable: false });
+      callbacks.onError({ code: 'REQUEST_FAILED', message: '请求失败', recoverable: false });
       return;
     }
 
@@ -95,8 +124,8 @@ export async function streamChat(
   } catch (err) {
     if (signal?.aborted) return;
     callbacks.onError({
-      code: "NETWORK_ERROR",
-      message: err instanceof Error ? err.message : "网络错误",
+      code: 'NETWORK_ERROR',
+      message: err instanceof Error ? err.message : '网络错误',
       recoverable: true,
     });
   }
@@ -109,31 +138,45 @@ export async function streamChat(
  */
 export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks): void {
   switch (chunk.type) {
-    case "content":
+    case 'content':
       if (chunk.delta) callbacks.onContent(chunk.delta);
       break;
-    case "tool_call_start":
+    case 'tool_call_start':
       if (chunk.toolCall) callbacks.onToolCall?.(chunk.toolCall);
       break;
-    case "usage":
+    case 'tool_call_delta':
+      // 工具参数流式增量：当前 UI 不渲染参数细节，忽略
+      break;
+    case 'tool_result':
+      if (chunk.toolCallId) {
+        callbacks.onToolResult?.({
+          toolCallId: chunk.toolCallId,
+          toolName: chunk.toolName ?? '',
+          durationMs: chunk.durationMs ?? 0,
+          isError: chunk.isError ?? false,
+          ...(chunk.output === undefined ? {} : { output: chunk.output }),
+        });
+      }
+      break;
+    case 'usage':
       if (chunk.usage) callbacks.onUsage?.(chunk.usage);
       break;
-    case "stage":
+    case 'stage':
       if (chunk.stage) callbacks.onStage?.(chunk.stage);
       break;
-    case "sources":
+    case 'sources':
       if (chunk.sources) callbacks.onSources?.(chunk.sources);
       break;
-    case "session":
+    case 'session':
       if (chunk.sessionId) callbacks.onSession?.(chunk.sessionId);
       break;
-    case "approval_required":
+    case 'approval_required':
       if (chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);
       break;
-    case "error":
+    case 'error':
       if (chunk.error) callbacks.onError(chunk.error);
       break;
-    case "done":
+    case 'done':
       // 忽略：onDone 由流结束统一触发
       break;
   }
