@@ -27,6 +27,46 @@ describe("provider-neutral thinking levels", () => {
     });
 
     expect(body.reasoning_effort).toBe("high");
+    // Qwen/vLLM 系兼容部署：显式声明 enable_thinking 才会分离 reasoning_content
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
+  });
+
+  test("sends enable_thinking false for OpenAI provider when thinking is off", async () => {
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    }) as typeof fetch;
+
+    await createOpenAIProvider({ apiKey: "secret" }).chat({
+      model: "qwen3",
+      messages: [{ role: "user", content: "think" }],
+      thinkingLevel: "off",
+    });
+
+    expect(body.reasoning_effort).toBeUndefined();
+    expect(body.chat_template_kwargs).toEqual({ enable_thinking: false });
+  });
+
+  test("omits chat_template_kwargs when thinking level is not provided", async () => {
+    let body: Record<string, unknown> = {};
+    globalThis.fetch = (async (_input, init) => {
+      body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return Response.json({
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    }) as typeof fetch;
+
+    await createOpenAIProvider({ apiKey: "secret" }).chat({
+      model: "gpt",
+      messages: [{ role: "user", content: "hi" }],
+    });
+
+    expect(body.chat_template_kwargs).toBeUndefined();
   });
 
   test("maps thinking level to Anthropic budget and omits incompatible temperature", async () => {

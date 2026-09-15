@@ -56,6 +56,27 @@ describe("OpenAI Chat streaming Adapter", () => {
     }
   });
 
+  test("emits reasoning chunks for delta.reasoning_content (Qwen/DeepSeek)", async () => {
+    const frames = [
+      { choices: [{ delta: { reasoning_content: "Let me think." } }] },
+      { choices: [{ delta: { reasoning_content: " Step by step." } }] },
+      { choices: [{ delta: { content: "The answer is 42." }, finish_reason: "stop" }] },
+    ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") + "data: [DONE]\n\n";
+    globalThis.fetch = (async () => new Response(frames)) as typeof fetch;
+    const chunks: StreamChunk[] = [];
+
+    for await (const chunk of createOpenAIProvider({ apiKey: "secret" }).chatStream({
+      model: "qwen3",
+      messages: [{ role: "user", content: "1+1?" }],
+      thinkingLevel: "low",
+    })) chunks.push(chunk);
+
+    const reasoning = chunks.filter((chunk) => chunk.type === "reasoning");
+    expect(reasoning.map((chunk) => chunk.delta).join("")).toBe("Let me think. Step by step.");
+    const content = chunks.filter((chunk) => chunk.type === "content");
+    expect(content.map((chunk) => chunk.delta).join("")).toBe("The answer is 42.");
+  });
+
   test("serializes internal assistant tool calls to OpenAI message format", async () => {
     let requestBody: Record<string, unknown> | undefined;
     globalThis.fetch = (async (_input, init) => {

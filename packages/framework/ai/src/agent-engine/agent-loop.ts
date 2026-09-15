@@ -1312,6 +1312,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               fullContent += chunk.delta ?? '';
               yield chunk;
               break;
+            case 'reasoning':
+              // 推理内容仅透传给前端展示，不计入 assistant 正文与历史
+              yield chunk;
+              break;
             case 'tool_call_start':
               if (chunk.toolCall) toolCalls.push(chunk.toolCall);
               yield chunk;
@@ -1628,6 +1632,9 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           if (chunk.type === 'content') {
             finalizeContent += chunk.delta ?? '';
             fullContent += chunk.delta ?? '';
+            yield chunk;
+          } else if (chunk.type === 'reasoning') {
+            // 推理内容仅透传给前端展示，不计入 assistant 正文与历史
             yield chunk;
           } else if (chunk.type === 'usage') {
             yield chunk;

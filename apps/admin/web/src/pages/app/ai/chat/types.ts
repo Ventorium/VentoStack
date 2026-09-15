@@ -70,6 +70,8 @@ export interface ChatMessage {
   sources?: ResearchSource[];
   /** 工具审批请求（当前消息流中待确认/已确认的工具审批） */
   approval?: ChatApproval;
+  /** 模型推理/思考内容（reasoning），与正文分离展示 */
+  thinking?: string;
   model?: string;
   tokensUsed?: { input: number; output: number };
   isStreaming?: boolean;

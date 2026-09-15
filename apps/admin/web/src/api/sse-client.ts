@@ -10,6 +10,7 @@ import { client } from '@/api';
 
 export interface StreamCallbacks {
   onContent: (delta: string) => void;
+  onReasoning?: (delta: string) => void;
   onToolCall?: (toolCall: { id: string; name: string; arguments?: Record<string, unknown> }) => void;
   /** 工具执行结束：携带真实耗时、错误标记与输出摘要（流内实时下发，不等会话结束） */
   onToolResult?: (result: {
@@ -61,6 +62,7 @@ export interface ChatStreamParams {
 export interface AIStreamChunk {
   type:
     | 'content'
+    | 'reasoning'
     | 'tool_call_start'
     | 'tool_call_delta'
     | 'tool_result'
@@ -146,6 +148,9 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
   switch (chunk.type) {
     case 'content':
       if (chunk.delta) callbacks.onContent(chunk.delta);
+      break;
+    case 'reasoning':
+      if (chunk.delta) callbacks.onReasoning?.(chunk.delta);
       break;
     case 'tool_call_start':
       if (chunk.toolCall) callbacks.onToolCall?.(chunk.toolCall);

@@ -4,11 +4,13 @@ import {
   CloseOutlined,
   CopyOutlined,
   DislikeOutlined,
+  DownOutlined,
   EditOutlined,
   FileTextOutlined,
   LikeOutlined,
   LinkOutlined,
   ReloadOutlined,
+  RightOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   UserOutlined,
@@ -36,6 +38,29 @@ interface ChatAreaProps {
 }
 
 /** 从引用行解析名称与可选 URL：支持 `- 来源: [标题](url)`、`- 来源: https://...` 与纯文本 */
+/** 模型推理/思考内容：灰色可折叠块，流式期间自动展开 */
+function ThinkingBlock({ thinking, streaming }: { thinking: string; streaming?: boolean }) {
+  const [expanded, setExpanded] = useState(streaming ?? false);
+  return (
+    <div className="mb-2 rounded-md px-3 py-2 bg-black/[0.03] dark:bg-white/[0.04]">
+      <button
+        type="button"
+        className="flex items-center gap-1.5 text-xs select-none text-neutral-500 dark:text-neutral-400"
+        onClick={() => setExpanded((value) => !value)}
+      >
+        {expanded ? <DownOutlined /> : <RightOutlined />}
+        深度思考
+        {streaming && <span className="animate-pulse">·</span>}
+      </button>
+      {expanded && (
+        <div className="mt-1.5 text-[12px] leading-5 whitespace-pre-wrap text-neutral-500 dark:text-neutral-400">
+          {thinking}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function parseCitationLine(raw: string): { name: string; url?: string } | null {
   const line = raw.replace(/^\s*[-*]\s*(来源\s*[:：])?\s*/, '').trim();
   if (!line) return null;
@@ -360,6 +385,10 @@ export default function ChatArea({
 
                   {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
                     <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
+                  )}
+
+                  {!isUser && msg.thinking && (
+                    <ThinkingBlock thinking={msg.thinking} streaming={msg.isStreaming} />
                   )}
 
                   {!isUser && msg.blocks && msg.blocks.length > 0 ? (

@@ -765,6 +765,15 @@ function AgentConversation(): React.ReactElement {
               }),
             );
           },
+          onReasoning: (delta) => {
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.id === assistantMessage.id
+                  ? { ...msg, thinking: (msg.thinking ?? '') + delta }
+                  : msg,
+              ),
+            );
+          },
           onToolCall: (toolCall) => {
             stepTimers.set(toolCall.id, Date.now());
             setMessages((prev) =>

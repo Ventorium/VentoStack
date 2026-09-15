@@ -56,6 +56,16 @@ function applyThinking(body: Record<string, unknown>, params: ChatParams): void 
       : params.thinkingLevel;
     body.reasoning_effort = effort;
   }
+  // Qwen/vLLM 系 OpenAI 兼容部署：显式声明 enable_thinking 才会把思考从正文分离到
+  // reasoning_content（off 时关闭思考）；OpenAI 官方端点会忽略未知字段
+  if (params.thinkingLevel !== undefined) {
+    body.chat_template_kwargs = {
+      ...(typeof body.chat_template_kwargs === 'object' && body.chat_template_kwargs !== null
+        ? (body.chat_template_kwargs as Record<string, unknown>)
+        : {}),
+      enable_thinking: params.thinkingLevel !== 'off',
+    };
+  }
 }
 
 export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider {
@@ -107,6 +117,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
         choices: Array<{
           message: {
             content: string;
+            reasoning_content?: string;
             tool_calls?: Array<{
               id: string;
               function: { name: string; arguments: string };
@@ -127,6 +138,9 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
 
       return {
         content: choice.message.content ?? '',
+        ...(choice.message.reasoning_content
+          ? { reasoning: choice.message.reasoning_content }
+          : {}),
         ...(toolCalls?.length ? { toolCalls } : {}),
         usage: {
           promptTokens: data.usage.prompt_tokens,
@@ -237,6 +251,7 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
               choices?: Array<{
                 delta?: {
                   content?: string;
+                  reasoning_content?: string;
                   tool_calls?: Array<{
                     index?: number;
                     id?: string;
@@ -266,6 +281,11 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
 
             const choice = parsed.choices?.[0];
             if (!choice) continue;
+
+            // 处理推理 delta（reasoning_content：Qwen/DeepSeek 等 OpenAI 兼容网关的思考输出）
+            if (choice.delta?.reasoning_content) {
+              yield { type: 'reasoning', delta: choice.delta.reasoning_content };
+            }
 
             // 处理内容 delta
             if (choice.delta?.content) {

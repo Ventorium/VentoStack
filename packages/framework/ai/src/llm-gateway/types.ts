@@ -60,6 +60,8 @@ export interface ChatParams {
 
 export interface ChatResult {
   content: string;
+  /** 模型推理/思考内容（reasoning_content），与正文分离 */
+  reasoning?: string;
   toolCalls?: ToolCall[];
   usage: TokenUsage;
   finishReason: 'stop' | 'tool_calls' | 'length' | 'error';
@@ -92,7 +94,7 @@ export interface ToolResultChunk {
 
 export type StreamChunk =
   | {
-      type: 'content' | 'tool_call_delta' | 'usage' | 'error' | 'done';
+      type: 'content' | 'reasoning' | 'tool_call_delta' | 'usage' | 'error' | 'done';
       delta?: string;
       toolCall?: ToolCall;
       toolCallDelta?: { id?: string; name?: string; arguments?: string };
