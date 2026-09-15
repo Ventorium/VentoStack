@@ -394,8 +394,11 @@ export default function AISettingsPage() {
   };
 
   // === Edit provider ===
+  // 查看已配置的 API Key（按需解密；加载后隐藏查看按钮，仅保留 antd 明文切换）
+  const [keyLoaded, setKeyLoaded] = useState(false);
   const openEdit = (p: ProviderItem) => {
     setEditProvider(p);
+    setKeyLoaded(false);
     editForm.setFieldsValue({
       displayName: p.displayName,
       apiFormat: p.apiFormat,
@@ -408,7 +411,6 @@ export default function AISettingsPage() {
     setEditOpen(true);
   };
 
-  // 查看已配置的 API Key（按需解密）
   const handleRevealApiKey = async () => {
     if (!editProvider) return;
     if (!editProvider.hasApiKey) {
@@ -420,6 +422,7 @@ export default function AISettingsPage() {
     });
     if (!error && typeof data?.apiKey === 'string') {
       editForm.setFieldsValue({ apiKey: data.apiKey });
+      setKeyLoaded(true);
     }
   };
 
@@ -1166,7 +1169,7 @@ export default function AISettingsPage() {
             <Input.Password
               placeholder={editProvider?.hasApiKey ? '••••••••' : '请输入 API Key'}
               suffix={
-                editProvider?.hasApiKey ? (
+                editProvider?.hasApiKey && !keyLoaded ? (
                   <Tooltip title="查看当前 Key">
                     <Button
                       type="link"
