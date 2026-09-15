@@ -96,10 +96,7 @@ function CitationsBlock({
 }) {
   const { token } = theme.useToken();
   return (
-    <div
-      className="mt-2 pt-2"
-      style={{ borderTop: `1px dashed ${token.colorBorderSecondary}` }}
-    >
+    <div className="mt-2 pt-2" style={{ borderTop: `1px dashed ${token.colorBorderSecondary}` }}>
       <Text type="secondary" className="text-xs block mb-1">
         引用来源（{citations.length}）
       </Text>
@@ -271,20 +268,71 @@ export default function ChatArea({
   onCiteClick,
   onEditResend,
 }: ChatAreaProps) {
-  const endRef = useRef<HTMLDivElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
   // 用户消息编辑态：记录正在编辑的消息 id 与草稿内容
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
+  // 是否停留在底部：停留时跟随流式输出，用户上翻后停止跟随以免被拽回底部
+  const [stickToBottom, setStickToBottom] = useState(true);
 
-  const scrollToBottom = useCallback(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth' });
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior });
   }, []);
-  const latestMessage = messages.at(-1);
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: message updates intentionally trigger scrolling
+  /** 是否贴近底部：读真实 DOM 位置，避免依赖可能已过期的 state */
+  const isNearBottom = useCallback(() => {
+    const el = containerRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight <= 80;
+  }, []);
+
+  // 按钮显隐：滚动时刷新。依赖 hasMessages——空态不渲染滚动容器（ref 为 null），
+  // 必须在容器挂载后重新绑定监听
+  const hasMessages = messages.length > 0;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hasMessages 是"容器已挂载"的重绑定触发条件，非effect内部引用
   useEffect(() => {
-    scrollToBottom();
-  }, [latestMessage, scrollToBottom]);
+    const el = containerRef.current;
+    if (!el) return;
+    const handleScroll = () => setStickToBottom(isNearBottom());
+    handleScroll();
+    el.addEventListener('scroll', handleScroll, { passive: true });
+    return () => el.removeEventListener('scroll', handleScroll);
+  }, [hasMessages, isNearBottom]);
+
+  // 首条消息 id 变化即视为切换会话（会话内流式追加不会改变首条消息）
+  const firstMessageIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    const firstId = messages[0]?.id;
+    const conversationSwitched = firstId !== firstMessageIdRef.current;
+    firstMessageIdRef.current = firstId;
+    // 切换会话 / 用户新发消息：回到底部；流式追加：仅在用户仍停留底部时跟随
+    if (conversationSwitched || messages.at(-1)?.role === 'user' || isNearBottom()) {
+      // 显式恢复"贴底"意图：长会话在挂载瞬间就可能被滚动监听判定为"已上翻"，
+      // 内容布局完成后由 ResizeObserver 接手滚到底
+      setStickToBottom(true);
+      scrollToBottom('auto');
+    }
+  }, [messages, isNearBottom, scrollToBottom]);
+
+  // 内容高度变化时保持贴底：markdown / 代码块等是在 messages 更新之后才完成布局的，
+  // 只按 messages 变化滚一次会扑空（彼时 scrollHeight 尚未增长）
+  const stickToBottomRef = useRef(true);
+  useEffect(() => {
+    stickToBottomRef.current = stickToBottom;
+  }, [stickToBottom]);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: hasMessages 是"容器已挂载"的重绑定触发条件，非effect内部引用
+  useEffect(() => {
+    const el = containerRef.current;
+    const content = el?.firstElementChild;
+    if (!el || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (stickToBottomRef.current) scrollToBottom('auto');
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [hasMessages, scrollToBottom]);
 
   if (messages.length === 0) {
     return (
@@ -307,260 +355,272 @@ export default function ChatArea({
   }
 
   return (
-    <div className="flex-1 overflow-auto py-[16px]">
-      <div className="max-w-[820px]" style={{ margin: '0 auto', padding: '0 16px' }}>
-        {messages.map((msg) => {
-          const isUser = msg.role === 'user';
-          return (
-            <div
-              key={msg.id}
-              className="group flex gap-3 mb-5"
-              style={{ flexDirection: isUser ? 'row-reverse' : 'row' }}
-            >
-              {/* Avatar */}
-              {isUser ? (
-                <Avatar
-                  size={32}
-                  icon={<UserOutlined />}
-                  className="shrink-0"
-                  style={{ background: token.colorPrimaryBg, color: token.colorPrimary }}
-                />
-              ) : (
-                <Avatar
-                  size={32}
-                  className="text-xs font-semibold shrink-0"
-                  style={{ background: token.colorPrimary }}
-                >
-                  {agentName.slice(0, 2)}
-                </Avatar>
-              )}
-
-              {/* Content */}
-              <div className="flex-1 min-w-0" style={{ maxWidth: isUser ? '70%' : '100%' }}>
-                <Text
-                  type="secondary"
-                  className="text-xs block mb-1"
-                  style={{ textAlign: isUser ? 'right' : 'left' }}
-                >
-                  {isUser ? '你' : agentName}
-                </Text>
-
-                {isUser && editing?.id === msg.id ? (
-                  <div>
-                    <Input.TextArea
-                      value={editing.value}
-                      onChange={(e) => setEditing({ id: msg.id, value: e.target.value })}
-                      autoSize={{ minRows: 2, maxRows: 10 }}
-                    />
-                    <div className="flex justify-end gap-2 mt-2">
-                      <Button size="small" onClick={() => setEditing(null)}>
-                        取消
-                      </Button>
-                      <Button
-                        size="small"
-                        type="primary"
-                        disabled={!editing.value.trim()}
-                        onClick={() => {
-                          const value = editing.value.trim();
-                          setEditing(null);
-                          onEditResend?.(msg.id, value);
-                        }}
-                      >
-                        保存并重发
-                      </Button>
-                    </div>
-                  </div>
+    <div className="relative flex-1 min-w-0 min-h-0 flex flex-col">
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto py-[16px]">
+        <div className="max-w-[820px]" style={{ margin: '0 auto', padding: '0 16px' }}>
+          {messages.map((msg) => {
+            const isUser = msg.role === 'user';
+            return (
+              <div
+                key={msg.id}
+                className="group flex gap-3 mb-5"
+                style={{ flexDirection: isUser ? 'row-reverse' : 'row' }}
+              >
+                {/* Avatar */}
+                {isUser ? (
+                  <Avatar
+                    size={32}
+                    icon={<UserOutlined />}
+                    className="shrink-0"
+                    style={{ background: token.colorPrimaryBg, color: token.colorPrimary }}
+                  />
                 ) : (
-                <div
-                  style={{
-                    padding: '12px 16px',
-                    borderRadius: token.borderRadiusLG,
-                    background: isUser ? token.colorFillSecondary : token.colorFillQuaternary,
-                    border: isUser ? 'none' : `1px solid ${token.colorBorderSecondary}`,
-                  }}
-                >
-                  {!isUser && msg.approval && (
-                    <ApprovalCard approval={msg.approval} onDecision={onApprovalDecision} />
-                  )}
-
-                  {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
-                    <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
-                  )}
-
-                  {!isUser && msg.thinking && (
-                    <ThinkingBlock thinking={msg.thinking} streaming={msg.isStreaming} />
-                  )}
-
-                  {!isUser && msg.blocks && msg.blocks.length > 0 ? (
-                    // 按流式到达顺序交错渲染：文本段与工具块的位置与生成顺序一致
-                    msg.blocks.map((block, i) => {
-                      if (block.type === 'text') {
-                        const { displayContent, citations } = msg.isStreaming
-                          ? { displayContent: block.text, citations: [] }
-                          : splitCitations(block.text);
-                        return (
-                          <div key={`b-${i}`}>
-                            <MarkdownPreview
-                              content={displayContent}
-                              className="text-[13px]"
-                              breaks
-                              streaming={msg.isStreaming && i === msg.blocks.length - 1}
-                            />
-                            {!msg.isStreaming && citations.length > 0 && (
-                              <CitationsBlock citations={citations} onCiteClick={onCiteClick} />
-                            )}
-                          </div>
-                        );
-                      }
-                      return (
-                        <div key={`b-${i}`} className="my-1">
-                          <StepRow
-                            step={{
-                              id: block.id,
-                              type: 'tool',
-                              name: block.name,
-                              description: block.status === 'error' ? '执行失败' : '执行工具调用',
-                              durationMs: block.durationMs,
-                              status: block.status,
-                            }}
-                            detail={{
-                              ...(block.arguments === undefined
-                                ? {}
-                                : { arguments: block.arguments }),
-                              ...(block.output === undefined ? {} : { output: block.output }),
-                            }}
-                          />
-                        </div>
-                      );
-                    })
-                  ) : (
-                    <>
-                      {!isUser && msg.steps && msg.steps.length > 0 && (
-                        <AgentSteps steps={msg.steps} />
-                      )}
-
-                      {(() => {
-                        const { displayContent, citations } =
-                          !isUser && !msg.isStreaming
-                            ? splitCitations(msg.content)
-                            : { displayContent: msg.content, citations: [] };
-                        return (
-                          <>
-                            <MarkdownPreview
-                              content={displayContent}
-                              className="text-[13px]"
-                              breaks
-                              streaming={msg.isStreaming}
-                            />
-                            {!isUser && citations.length > 0 && (
-                              <CitationsBlock citations={citations} onCiteClick={onCiteClick} />
-                            )}
-                          </>
-                        );
-                      })()}
-                    </>
-                  )}
-
-                  {!isUser && msg.sources && msg.sources.length > 0 && (
-                    <ResearchSources sources={msg.sources} />
-                  )}
-
-                  {msg.isStreaming && (
-                    <Space size={4} className="mt-2">
-                      {[0, 1, 2].map((i) => (
-                        <div
-                          key={i}
-                          className="w-1.5 h-1.5 opacity-60"
-                          style={{
-                            borderRadius: '50%',
-                            background: token.colorPrimary,
-                            animation: `chat-pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
-                          }}
-                        />
-                      ))}
-                    </Space>
-                  )}
-                </div>
+                  <Avatar
+                    size={32}
+                    className="text-xs font-semibold shrink-0"
+                    style={{ background: token.colorPrimary }}
+                  >
+                    {agentName.slice(0, 2)}
+                  </Avatar>
                 )}
 
-                {/* 用户消息操作：hover 显示编辑与复制 */}
-                {isUser && editing?.id !== msg.id && (
-                  <div className="flex gap-1 justify-end mt-1 opacity-0 transition-opacity group-hover:opacity-100">
-                    {onEditResend && (
-                      <Tooltip title="编辑并重新发送">
+                {/* Content */}
+                <div className="flex-1 min-w-0" style={{ maxWidth: isUser ? '70%' : '100%' }}>
+                  <Text
+                    type="secondary"
+                    className="text-xs block mb-1"
+                    style={{ textAlign: isUser ? 'right' : 'left' }}
+                  >
+                    {isUser ? '你' : agentName}
+                  </Text>
+
+                  {isUser && editing?.id === msg.id ? (
+                    <div>
+                      <Input.TextArea
+                        value={editing.value}
+                        onChange={(e) => setEditing({ id: msg.id, value: e.target.value })}
+                        autoSize={{ minRows: 2, maxRows: 10 }}
+                      />
+                      <div className="flex justify-end gap-2 mt-2">
+                        <Button size="small" onClick={() => setEditing(null)}>
+                          取消
+                        </Button>
+                        <Button
+                          size="small"
+                          type="primary"
+                          disabled={!editing.value.trim()}
+                          onClick={() => {
+                            const value = editing.value.trim();
+                            setEditing(null);
+                            onEditResend?.(msg.id, value);
+                          }}
+                        >
+                          保存并重发
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      style={{
+                        padding: '12px 16px',
+                        borderRadius: token.borderRadiusLG,
+                        background: isUser ? token.colorFillSecondary : token.colorFillQuaternary,
+                        border: isUser ? 'none' : `1px solid ${token.colorBorderSecondary}`,
+                      }}
+                    >
+                      {!isUser && msg.approval && (
+                        <ApprovalCard approval={msg.approval} onDecision={onApprovalDecision} />
+                      )}
+
+                      {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
+                        <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
+                      )}
+
+                      {!isUser && msg.thinking && (
+                        <ThinkingBlock thinking={msg.thinking} streaming={msg.isStreaming} />
+                      )}
+
+                      {!isUser && msg.blocks && msg.blocks.length > 0 ? (
+                        // 按流式到达顺序交错渲染：文本段与工具块的位置与生成顺序一致
+                        msg.blocks.map((block, i) => {
+                          if (block.type === 'text') {
+                            const { displayContent, citations } = msg.isStreaming
+                              ? { displayContent: block.text, citations: [] }
+                              : splitCitations(block.text);
+                            return (
+                              <div key={`b-${i}`}>
+                                <MarkdownPreview
+                                  content={displayContent}
+                                  className="text-[13px]"
+                                  breaks
+                                  streaming={msg.isStreaming && i === msg.blocks.length - 1}
+                                />
+                                {!msg.isStreaming && citations.length > 0 && (
+                                  <CitationsBlock citations={citations} onCiteClick={onCiteClick} />
+                                )}
+                              </div>
+                            );
+                          }
+                          return (
+                            <div key={`b-${i}`} className="my-1">
+                              <StepRow
+                                step={{
+                                  id: block.id,
+                                  type: 'tool',
+                                  name: block.name,
+                                  description:
+                                    block.status === 'error' ? '执行失败' : '执行工具调用',
+                                  durationMs: block.durationMs,
+                                  status: block.status,
+                                }}
+                                detail={{
+                                  ...(block.arguments === undefined
+                                    ? {}
+                                    : { arguments: block.arguments }),
+                                  ...(block.output === undefined ? {} : { output: block.output }),
+                                }}
+                              />
+                            </div>
+                          );
+                        })
+                      ) : (
+                        <>
+                          {!isUser && msg.steps && msg.steps.length > 0 && (
+                            <AgentSteps steps={msg.steps} />
+                          )}
+
+                          {(() => {
+                            const { displayContent, citations } =
+                              !isUser && !msg.isStreaming
+                                ? splitCitations(msg.content)
+                                : { displayContent: msg.content, citations: [] };
+                            return (
+                              <>
+                                <MarkdownPreview
+                                  content={displayContent}
+                                  className="text-[13px]"
+                                  breaks
+                                  streaming={msg.isStreaming}
+                                />
+                                {!isUser && citations.length > 0 && (
+                                  <CitationsBlock citations={citations} onCiteClick={onCiteClick} />
+                                )}
+                              </>
+                            );
+                          })()}
+                        </>
+                      )}
+
+                      {!isUser && msg.sources && msg.sources.length > 0 && (
+                        <ResearchSources sources={msg.sources} />
+                      )}
+
+                      {msg.isStreaming && (
+                        <Space size={4} className="mt-2">
+                          {[0, 1, 2].map((i) => (
+                            <div
+                              key={i}
+                              className="w-1.5 h-1.5 opacity-60"
+                              style={{
+                                borderRadius: '50%',
+                                background: token.colorPrimary,
+                                animation: `chat-pulse 1.4s ease-in-out ${i * 0.2}s infinite`,
+                              }}
+                            />
+                          ))}
+                        </Space>
+                      )}
+                    </div>
+                  )}
+
+                  {/* 用户消息操作：hover 显示编辑与复制 */}
+                  {isUser && editing?.id !== msg.id && (
+                    <div className="flex gap-1 justify-end mt-1 opacity-0 transition-opacity group-hover:opacity-100">
+                      {onEditResend && (
+                        <Tooltip title="编辑并重新发送">
+                          <Button
+                            type="text"
+                            size="small"
+                            icon={<EditOutlined />}
+                            className="opacity-50 color-inherit"
+                            onClick={() => setEditing({ id: msg.id, value: msg.content })}
+                          />
+                        </Tooltip>
+                      )}
+                      <Tooltip title="复制">
                         <Button
                           type="text"
                           size="small"
-                          icon={<EditOutlined />}
+                          icon={<CopyOutlined />}
                           className="opacity-50 color-inherit"
-                          onClick={() => setEditing({ id: msg.id, value: msg.content })}
+                          onClick={() => {
+                            if (onCopy) onCopy(msg.content);
+                            else navigator.clipboard.writeText(msg.content);
+                          }}
                         />
                       </Tooltip>
-                    )}
-                    <Tooltip title="复制">
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<CopyOutlined />}
-                        className="opacity-50 color-inherit"
-                        onClick={() => {
-                          if (onCopy) onCopy(msg.content);
-                          else navigator.clipboard.writeText(msg.content);
-                        }}
+                    </div>
+                  )}
+
+                  {!isUser && !msg.isStreaming && (
+                    <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                      <MessageActions
+                        content={msg.content}
+                        messageId={msg.id}
+                        onCopy={onCopy}
+                        onRegenerate={onRegenerate}
                       />
-                    </Tooltip>
-                  </div>
-                )}
-
-                {!isUser && !msg.isStreaming && (
-                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                    <MessageActions
-                      content={msg.content}
-                      messageId={msg.id}
-                      onCopy={onCopy}
-                      onRegenerate={onRegenerate}
-                    />
-                    {(msg.model || msg.tokensUsed) && (
-                      <>
-                        <span
-                          className="w-px h-3 mx-0.5 shrink-0"
-                          style={{ background: token.colorBorderSecondary }}
-                        />
-                        {msg.model && (
+                      {(msg.model || msg.tokensUsed) && (
+                        <>
                           <span
-                            className="text-[11px] px-1.5 py-px rounded-full shrink-0"
-                            style={{
-                              color: token.colorTextTertiary,
-                              background: token.colorFillQuaternary,
-                            }}
-                          >
-                            <RobotOutlined className="mr-1 opacity-70" />
-                            {msg.model}
-                          </span>
-                        )}
-                        {msg.tokensUsed && (
-                          <Text type="secondary" className="text-[11px] whitespace-nowrap">
-                            {formatTokenCount(msg.tokensUsed.input)} /{' '}
-                            {formatTokenCount(msg.tokensUsed.output)} tokens
-                          </Text>
-                        )}
-                      </>
-                    )}
-                  </div>
-                )}
+                            className="w-px h-3 mx-0.5 shrink-0"
+                            style={{ background: token.colorBorderSecondary }}
+                          />
+                          {msg.model && (
+                            <span
+                              className="text-[11px] px-1.5 py-px rounded-full shrink-0"
+                              style={{
+                                color: token.colorTextTertiary,
+                                background: token.colorFillQuaternary,
+                              }}
+                            >
+                              <RobotOutlined className="mr-1 opacity-70" />
+                              {msg.model}
+                            </span>
+                          )}
+                          {msg.tokensUsed && (
+                            <Text type="secondary" className="text-[11px] whitespace-nowrap">
+                              {formatTokenCount(msg.tokensUsed.input)} /{' '}
+                              {formatTokenCount(msg.tokensUsed.output)} tokens
+                            </Text>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          );
-        })}
-        <div ref={endRef} />
-      </div>
+            );
+          })}
+        </div>
 
-      <style>{`
+        <style>{`
         @keyframes chat-pulse {
           0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
           40% { opacity: 1; transform: scale(1); }
         }
       `}</style>
+      </div>
+
+      {!stickToBottom && (
+        <Button
+          shape="circle"
+          aria-label="滚动到最底部"
+          icon={<DownOutlined />}
+          className="absolute bottom-4 left-1/2 -translate-x-1/2 shadow-lg"
+          onClick={() => scrollToBottom('smooth')}
+        />
+      )}
     </div>
   );
 }
