@@ -1058,6 +1058,18 @@ function AgentConversation(): React.ReactElement {
     [messages, handleSend],
   );
 
+  // 编辑用户消息并重新发送：丢弃该消息及其后的所有消息，以新内容重新发送
+  const handleEditResend = useCallback(
+    (messageId: string, newContent: string) => {
+      if (loading) return;
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+      if (msgIndex < 0) return;
+      setMessages(messages.slice(0, msgIndex));
+      handleSend(newContent);
+    },
+    [messages, handleSend, loading],
+  );
+
   // Context usage
   const contextUsage = {
     used:
@@ -1175,6 +1187,7 @@ function AgentConversation(): React.ReactElement {
                 onRegenerate={handleRegenerate}
                 onApprovalDecision={handleApprovalDecision}
                 onCiteClick={handleCiteClick}
+                onEditResend={loading ? undefined : handleEditResend}
               />
             )}
             {activeTab === 'files' && (

@@ -4,6 +4,7 @@ import {
   CloseOutlined,
   CopyOutlined,
   DislikeOutlined,
+  EditOutlined,
   FileTextOutlined,
   LikeOutlined,
   ReloadOutlined,
@@ -11,8 +12,8 @@ import {
   SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons';
-import { Avatar, Button, Space, Tooltip, Typography, message as msg, theme } from 'antd';
-import { useCallback, useEffect, useRef } from 'react';
+import { Avatar, Button, Input, Space, Tooltip, Typography, message as msg, theme } from 'antd';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatApproval, ChatMessage } from '../types';
 import AgentSteps, { StepRow } from './AgentSteps';
 import { ResearchSources, ResearchStatus } from './ResearchStatus';
@@ -29,6 +30,8 @@ interface ChatAreaProps {
   onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
   /** 点击引用文件：切换到文件页签并预览该文件 */
   onCiteClick?: (name: string) => void;
+  /** 编辑用户消息并重新发送：仅会话结束（含失败）时由父组件传入 */
+  onEditResend?: (messageId: string, newContent: string) => void;
 }
 
 /** 从 assistant 内容末尾解析「### 引用来源」区块 */
@@ -230,9 +233,12 @@ export default function ChatArea({
   onRegenerate,
   onApprovalDecision,
   onCiteClick,
+  onEditResend,
 }: ChatAreaProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
+  // 用户消息编辑态：记录正在编辑的消息 id 与草稿内容
+  const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
 
   const scrollToBottom = useCallback(() => {
     endRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -272,7 +278,7 @@ export default function ChatArea({
           return (
             <div
               key={msg.id}
-              className="flex gap-3 mb-5"
+              className="group flex gap-3 mb-5"
               style={{ flexDirection: isUser ? 'row-reverse' : 'row' }}
             >
               {/* Avatar */}
@@ -303,6 +309,32 @@ export default function ChatArea({
                   {isUser ? '你' : agentName}
                 </Text>
 
+                {isUser && editing?.id === msg.id ? (
+                  <div>
+                    <Input.TextArea
+                      value={editing.value}
+                      onChange={(e) => setEditing({ id: msg.id, value: e.target.value })}
+                      autoSize={{ minRows: 2, maxRows: 10 }}
+                    />
+                    <div className="flex justify-end gap-2 mt-2">
+                      <Button size="small" onClick={() => setEditing(null)}>
+                        取消
+                      </Button>
+                      <Button
+                        size="small"
+                        type="primary"
+                        disabled={!editing.value.trim()}
+                        onClick={() => {
+                          const value = editing.value.trim();
+                          setEditing(null);
+                          onEditResend?.(msg.id, value);
+                        }}
+                      >
+                        保存并重发
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
                 <div
                   style={{
                     padding: '12px 16px',
@@ -409,6 +441,36 @@ export default function ChatArea({
                     </Space>
                   )}
                 </div>
+                )}
+
+                {/* 用户消息操作：hover 显示编辑与复制 */}
+                {isUser && editing?.id !== msg.id && (
+                  <div className="flex gap-1 justify-end mt-1 opacity-0 transition-opacity group-hover:opacity-100">
+                    {onEditResend && (
+                      <Tooltip title="编辑并重新发送">
+                        <Button
+                          type="text"
+                          size="small"
+                          icon={<EditOutlined />}
+                          className="opacity-50 color-inherit"
+                          onClick={() => setEditing({ id: msg.id, value: msg.content })}
+                        />
+                      </Tooltip>
+                    )}
+                    <Tooltip title="复制">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        className="opacity-50 color-inherit"
+                        onClick={() => {
+                          if (onCopy) onCopy(msg.content);
+                          else navigator.clipboard.writeText(msg.content);
+                        }}
+                      />
+                    </Tooltip>
+                  </div>
+                )}
 
                 {!isUser && !msg.isStreaming && (
                   <>
