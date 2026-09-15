@@ -57,7 +57,7 @@ export interface MemoryService {
   appendMessage(
     sessionId: string,
     scope: MemoryScope,
-    message: { role: string; content: string },
+    message: { role: string; content: string; model?: string },
   ): Promise<void>;
   getSession(sessionId: string, scope: MemoryScope): Promise<ConversationMemory | null>;
   /** 更新会话标题（会话总结模型生成标题后调用；缺省标题为 `对话 {sessionId前8位}`） */

@@ -1014,8 +1014,12 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
       }
 
-      /** 增量持久化对话消息（用户/assistant/工具轨迹），失败仅记录不阻断对话 */
-      const persistMemoryMessage = async (msg: { role: string; content: string }): Promise<void> => {
+      /** 增量持久化对话消息（用户/assistant/工具轨迹），失败仅记录不阻断对话；assistant 消息附带生成模型 */
+      const persistMemoryMessage = async (msg: {
+        role: string;
+        content: string;
+        model?: string;
+      }): Promise<void> => {
         if (!deps.memory || !params.sessionId || !memoryEnabled) return;
         try {
           await deps.memory.appendMessage(params.sessionId, { tenantId, userId }, msg);
@@ -1369,13 +1373,14 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         };
         messages.push(assistantChatMsg);
 
-        // 增量持久化 assistant 消息（含工具调用摘要，跨轮/跨进程保留工具使用痕迹）
+        // 增量持久化 assistant 消息（含工具调用摘要与生成模型，跨轮/跨进程保留）
         await persistMemoryMessage({
           role: 'assistant',
           content:
             toolCalls.length > 0
               ? `${assistantContent}\n[工具调用: ${toolCalls.map((tc) => tc.name).join(', ')}]`
               : assistantContent,
+          model,
         });
 
         await emit({ type: 'message_start', message: assistantEventMsg }, signal);
@@ -1644,7 +1649,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
         if (finalizeContent.length > 0) {
           messages.push({ role: 'assistant', content: finalizeContent });
-          await persistMemoryMessage({ role: 'assistant', content: finalizeContent });
+          await persistMemoryMessage({ role: 'assistant', content: finalizeContent, model });
           const finalizeEventMsg: AgentEventMessage = {
             role: 'assistant',
             content: finalizeContent,

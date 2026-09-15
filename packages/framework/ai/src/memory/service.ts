@@ -150,7 +150,12 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
         throw new Error("Invalid memory message role");
       }
       const session = createSession(await loadJsonlSessionStorage(filePath));
-      await session.appendMessage({ role: message.role, content: message.content, timestamp: Date.now() });
+      await session.appendMessage({
+        role: message.role,
+        content: message.content,
+        ...(message.model ? { model: message.model } : {}),
+        timestamp: Date.now(),
+      });
     },
 
     getSession,
@@ -278,7 +283,11 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
       return { sessionId: destination.sessionId };
     },
 
-    async getHistory(sessionId, scope, limit): Promise<Array<{ role: string; content: string }>> {
+    async getHistory(
+      sessionId,
+      scope,
+      limit,
+    ): Promise<Array<{ role: string; content: string; model?: string }>> {
       const filePath = conversationPath(sessionId, scope);
       // 回收站中的会话只读可见（前端回收站查看内容场景）
       let source = filePath;
@@ -288,7 +297,11 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
         source = trashedFile;
       }
       const context = await createSession(await loadJsonlSessionStorage(source)).buildContext();
-      const messages = context.messages.map((message) => ({ role: message.role, content: message.content }));
+      const messages = context.messages.map((message) => ({
+        role: message.role,
+        content: message.content,
+        ...(message.model ? { model: message.model } : {}),
+      }));
       return limit && messages.length > limit ? messages.slice(-limit) : messages;
     },
 

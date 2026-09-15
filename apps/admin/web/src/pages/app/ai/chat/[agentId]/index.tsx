@@ -608,7 +608,7 @@ function AgentConversation(): React.ReactElement {
       try {
         const { data } = (await client.get('/api/ai/conversations/:id/messages', {
           params: { id: threadId },
-        })) as { data?: Array<{ role: string; content: string }> };
+        })) as { data?: Array<{ role: string; content: string; model?: string }> };
         // 历史回显与流式渲染对齐：同一轮运行中连续持久化的 assistant 消息（每轮迭代一条）
         // 合并成一个气泡；role:'tool' 消息按持久化顺序还原为可展开的工具块
         const history: ChatMessage[] = [];
@@ -639,6 +639,7 @@ function AgentConversation(): React.ReactElement {
               ...(text ? [{ type: 'text' as const, text }] : []),
             ];
             last.content = text ? `${last.content}\n\n${text}` : last.content;
+            if (m.model) last.model = m.model; // 同一轮多轮迭代以最后一次生成模型为准
           } else {
             history.push({
               id: crypto.randomUUID(),
@@ -646,6 +647,7 @@ function AgentConversation(): React.ReactElement {
               content: text,
               timestamp: '',
               blocks: [...(text ? [{ type: 'text' as const, text }] : [])],
+              ...(m.model ? { model: m.model } : {}),
             });
           }
         }
