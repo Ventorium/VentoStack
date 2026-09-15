@@ -1,5 +1,6 @@
 import { client } from '@/api';
 import { type ChatStreamParams, streamChat } from '@/api/sse-client';
+import { MenuUnfoldOutlined, RestOutlined } from '@ant-design/icons';
 import { Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -7,10 +8,12 @@ import type { ChatMessage, ModelOption, ToolBlock } from '../types';
 
 import BottomInput from '../components/BottomInput';
 import ChatArea from '../components/ChatArea';
+import FilesPanel from '../components/FilesPanel';
 import KnowledgePanel from '../components/KnowledgePanel';
 import MemoryPanel from '../components/MemoryPanel';
 import ThreadList from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
+import TrashDialog from '../components/TrashDialog';
 
 /** Fallback model when DB has no models configured */
 const FALLBACK_MODEL: ModelOption = {
@@ -133,6 +136,13 @@ function AgentConversation(): React.ReactElement {
   const [currentModel, setCurrentModel] = useState<ModelOption>(FALLBACK_MODEL);
   const [dbModels, setDbModels] = useState<ModelOption[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
+  const sessionIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    sessionIdRef.current = sessionId;
+  }, [sessionId]);
+  // 会话列表收起/展开 + 回收站
+  const [threadListCollapsed, setThreadListCollapsed] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<
     'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   >('off');
@@ -156,8 +166,30 @@ function AgentConversation(): React.ReactElement {
   const [workspaceFiles, setWorkspaceFiles] = useState<
     Array<{ path: string; size: number; modifiedAt: string }>
   >([]);
-  const [previewFileContent, setPreviewFileContent] = useState<string | null>(null);
-  const [previewFilePath, setPreviewFilePath] = useState<string | null>(null);
+
+  // 引用来源点击跳转文件预览
+  const [openFileTarget, setOpenFileTarget] = useState<{ path: string; nonce: number } | null>(
+    null,
+  );
+
+  // 点击消息底部引用来源：切换到文件页签并打开匹配的文件
+  const handleCiteClick = useCallback(
+    (name: string) => {
+      const normalized = name.trim();
+      if (!normalized) return;
+      const matched =
+        workspaceFiles.find((f) => f.path === normalized) ??
+        workspaceFiles.find((f) => f.path.endsWith(`/${normalized}`)) ??
+        workspaceFiles.find((f) => (f.path.split('/').pop() ?? '') === normalized);
+      if (!matched) {
+        msg.info('该引用文件不在当前会话工作区');
+        return;
+      }
+      setOpenFileTarget({ path: matched.path, nonce: Date.now() });
+      setActiveTab('files');
+    },
+    [workspaceFiles],
+  );
 
   // 导出 Skill Modal
   const [exportModalOpen, setExportModalOpen] = useState(false);
@@ -374,6 +406,7 @@ function AgentConversation(): React.ReactElement {
             mcpServerIds: string[] | null;
             knowledgeBaseIds: string[] | null;
             requiresVirtualEnvironment: boolean;
+            config?: Record<string, unknown> | null;
           };
         };
 
@@ -382,6 +415,20 @@ function AgentConversation(): React.ReactElement {
           const skillIds = detail.skillIds ?? [];
           const mcpIds = detail.mcpServerIds ?? [];
           const kbIds = detail.knowledgeBaseIds ?? [];
+
+          // Agent 配置的默认思考强度：仅当默认模型支持思考时生效
+          const cfgDefault = detail.config?.defaultThinkingLevel;
+          const defaultModel = dbModels.find((m) => agent.models.includes(m.id));
+          setThinkingLevel(
+            (cfgDefault === 'minimal' ||
+              cfgDefault === 'low' ||
+              cfgDefault === 'medium' ||
+              cfgDefault === 'high' ||
+              cfgDefault === 'xhigh') &&
+              defaultModel?.supportsThinking
+              ? cfgDefault
+              : 'off',
+          );
 
           // Match IDs with full objects
           const matchedSkills = allSkills.filter((s) => skillIds.includes(s.id));
@@ -598,20 +645,6 @@ function AgentConversation(): React.ReactElement {
     if (sessionId && !loading) fetchWorkspaceFiles(sessionId);
   }, [messages, loading, sessionId, fetchWorkspaceFiles]);
 
-  // 预览工作区文件
-  const handlePreviewFile = useCallback(
-    async (path: string) => {
-      if (!sessionId) return;
-      setPreviewFilePath(path);
-      const { error, data } = (await client.get('/api/ai/conversations/:id/artifact', {
-        params: { id: sessionId },
-        query: { path },
-      })) as { error?: unknown; data?: { content: string } };
-      if (!error && data) setPreviewFileContent(data.content);
-    },
-    [sessionId],
-  );
-
   // 是否为 skill-creator agent
   const handleExportSubmit = useCallback(async () => {
     if (!selectedAgent) return;
@@ -801,6 +834,12 @@ function AgentConversation(): React.ReactElement {
             setSessionId(sid);
             setActiveThreadId(sid);
           },
+          onTitle: (title) => {
+            // 会话总结模型生成的标题：更新左侧会话列表
+            setThreads((prev) =>
+              prev.map((t) => (t.id === sessionIdRef.current ? { ...t, title } : t)),
+            );
+          },
           onApprovalRequired: (approval) => {
             // 高风险工具审批：在当前消息上挂审批卡片，等待用户在聊天内确认
             setMessages((prev) =>
@@ -970,6 +1009,19 @@ function AgentConversation(): React.ReactElement {
     }
   }, [selectedAgent]);
 
+  // 删除会话（移入回收站）
+  const handleDeleteThread = useCallback(
+    async (id: string) => {
+      const { error } = await client.delete('/api/ai/conversations/:id', { params: { id } });
+      if (!error) {
+        msg.success('已移入回收站');
+        if (activeThreadId === id) handleNewChat();
+        void fetchThreads();
+      }
+    },
+    [activeThreadId, handleNewChat, fetchThreads],
+  );
+
   // Regenerate last assistant message
   const handleRegenerate = useCallback(
     (messageId: string) => {
@@ -1054,16 +1106,44 @@ function AgentConversation(): React.ReactElement {
 
       {/* Main Body: Thread List + Chat */}
       <div className="flex-1 flex overflow-hidden">
-        {/* Thread List */}
-        <ThreadList
-          threads={threads}
-          activeId={activeThreadId ?? undefined}
-          onSelect={handleSelectThread}
-          onNew={handleNewChat}
-          onLoadMore={handleLoadMoreThreads}
-          hasMore={hasMoreThreads}
-          loadingMore={loadingMoreThreads}
-        />
+        {/* Thread List（可收起为窄栏） */}
+        {threadListCollapsed ? (
+          <div
+            className="w-[44px] h-full flex flex-col items-center pt-3 gap-2 shrink-0"
+            style={{
+              borderRight: `1px solid ${token.colorBorderSecondary}`,
+              background: token.colorBgContainer,
+            }}
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={<MenuUnfoldOutlined />}
+              onClick={() => setThreadListCollapsed(false)}
+              title="展开会话列表"
+            />
+            <Button
+              type="text"
+              size="small"
+              icon={<RestOutlined />}
+              onClick={() => setTrashOpen(true)}
+              title="回收站"
+            />
+          </div>
+        ) : (
+          <ThreadList
+            threads={threads}
+            activeId={activeThreadId ?? undefined}
+            onSelect={handleSelectThread}
+            onNew={handleNewChat}
+            onDelete={handleDeleteThread}
+            onLoadMore={handleLoadMoreThreads}
+            hasMore={hasMoreThreads}
+            loadingMore={loadingMoreThreads}
+            onCollapse={() => setThreadListCollapsed(true)}
+            onOpenTrash={() => setTrashOpen(true)}
+          />
+        )}
 
         {/* Chat Column */}
         <div className="flex-1 flex flex-col min-w-0">
@@ -1075,37 +1155,22 @@ function AgentConversation(): React.ReactElement {
                 welcomeMessage={selectedAgent.welcomeMessage}
                 onRegenerate={handleRegenerate}
                 onApprovalDecision={handleApprovalDecision}
+                onCiteClick={handleCiteClick}
               />
             )}
             {activeTab === 'files' && (
-              <div
-                className={`h-full overflow-auto p-5 ${workspaceFiles.length === 0 ? 'flex items-center justify-center' : ''}`}
-              >
+              <div className="h-full min-h-0 flex flex-col">
                 {selectedAgent.name === 'Skill Creator' &&
                   workspaceFiles.some((file) => file.path === 'SKILL.md') && (
-                    <Button
-                      type="primary"
-                      className="mb-3"
-                      onClick={() => setExportModalOpen(true)}
-                    >
-                      导出为 Skill
-                    </Button>
+                    <div className="px-4 pt-3 shrink-0">
+                      <Button type="primary" onClick={() => setExportModalOpen(true)}>
+                        导出为 Skill
+                      </Button>
+                    </div>
                   )}
-                {workspaceFiles.length === 0 ? (
-                  <Empty description="当前会话暂无生成文件" />
-                ) : (
-                  workspaceFiles.map((file) => (
-                    <Button
-                      key={file.path}
-                      type="text"
-                      block
-                      className="mb-1 text-left"
-                      onClick={() => handlePreviewFile(file.path)}
-                    >
-                      {file.path}
-                    </Button>
-                  ))
-                )}
+                <div className="flex-1 min-h-0">
+                  <FilesPanel files={workspaceFiles} sessionId={sessionId} openFile={openFileTarget} />
+                </div>
               </div>
             )}
             {activeTab === 'memory' && <MemoryPanel sessionId={sessionId} />}
@@ -1152,25 +1217,6 @@ function AgentConversation(): React.ReactElement {
         </div>
       </div>
 
-      {/* 文件预览 Modal */}
-      <Modal
-        title={previewFilePath ?? '文件预览'}
-        open={!!previewFilePath}
-        onCancel={() => {
-          setPreviewFilePath(null);
-          setPreviewFileContent(null);
-        }}
-        footer={null}
-        width={640}
-      >
-        <pre
-          className="text-xs leading-1.6 whitespace-pre-wrap break-words max-h-[400px] overflow-auto p-3"
-          style={{ background: token.colorFillQuaternary, borderRadius: token.borderRadiusLG }}
-        >
-          {previewFileContent ?? '加载中...'}
-        </pre>
-      </Modal>
-
       {/* 导出 Skill Modal */}
       <Modal
         title="导出为 Skill"
@@ -1199,6 +1245,13 @@ function AgentConversation(): React.ReactElement {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* 回收站 */}
+      <TrashDialog
+        open={trashOpen}
+        onClose={() => setTrashOpen(false)}
+        onChanged={() => void fetchThreads()}
+      />
     </Card>
   );
 }

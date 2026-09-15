@@ -60,11 +60,25 @@ export interface MemoryService {
     message: { role: string; content: string },
   ): Promise<void>;
   getSession(sessionId: string, scope: MemoryScope): Promise<ConversationMemory | null>;
+  /** 更新会话标题（会话总结模型生成标题后调用；缺省标题为 `对话 {sessionId前8位}`） */
+  renameSession(sessionId: string, scope: MemoryScope, title: string): Promise<void>;
   listSessions(
     scope: MemoryScope,
     agentId?: string,
   ): Promise<ConversationMemory[]>;
   deleteSession(sessionId: string, scope: MemoryScope): Promise<void>;
+  /** 移入回收站（软删除）：会话文件与产物目录移动到 trash/，可恢复 */
+  moveSessionToTrash(sessionId: string, scope: MemoryScope): Promise<void>;
+  /** 回收站列表（标题 + 删除时间） */
+  listTrashedSessions(
+    scope: MemoryScope,
+  ): Promise<Array<{ sessionId: string; title: string; deletedAt: Date }>>;
+  /** 从回收站恢复会话 */
+  restoreSession(sessionId: string, scope: MemoryScope): Promise<void>;
+  /** 彻底删除单个回收站会话（不可恢复） */
+  purgeSession(sessionId: string, scope: MemoryScope): Promise<void>;
+  /** 清空回收站（不可恢复） */
+  purgeAllTrash(scope: MemoryScope): Promise<void>;
   /**
    * 从现有会话分叉出独立的新会话（开启新的对话分支）。
    * 新会话写入 conversationPath(destination.sessionId)，继承源会话历史。
@@ -83,6 +97,13 @@ export interface MemoryService {
   writeArtifact(sessionId: string, scope: MemoryScope, path: string, content: Uint8Array): Promise<void>;
   listArtifacts(sessionId: string, scope: MemoryScope): Promise<Array<{ path: string; size: number; modifiedAt: string }>>;
   readArtifact(sessionId: string, scope: MemoryScope, path: string): Promise<{ path: string; content: string } | null>;
+  /** 读取产物原始字节（预览场景：图片 base64 / file2md 转换）；超过 maxBytes 返回 null */
+  readArtifactBytes(
+    sessionId: string,
+    scope: MemoryScope,
+    path: string,
+    maxBytes?: number,
+  ): Promise<Uint8Array | null>;
   getSessionRuntimeSandbox(sessionId: string, scope: MemoryScope): Promise<string | null>;
   setSessionRuntimeSandbox(sessionId: string, scope: MemoryScope, sandboxId: string): Promise<void>;
   withSessionMemoryLock<T>(sessionId: string, scope: MemoryScope, task: () => Promise<T>): Promise<{ acquired: boolean; result?: T }>;

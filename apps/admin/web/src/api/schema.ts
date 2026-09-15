@@ -1928,6 +1928,18 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * 回收站列表
+     */
+    '/api/ai/conversations/trash': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: {
+        description?: any
+      }
+    },
+    /**
      * 获取会话历史消息
      */
     '/api/ai/conversations/:id/messages': {
@@ -1952,6 +1964,22 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 预览会话产物文件
+     */
+    '/api/ai/conversations/:id/artifacts/preview': {
+      query: {
+        path: string
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        description?: any
+      }
     },
     /**
      * 获取会话记忆
@@ -3709,6 +3737,36 @@ export type OpenAPIs = {
       }
     },
     /**
+     * 从回收站恢复会话
+     */
+    '/api/ai/conversations/trash/restore': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 会话 ID 列表
+         */
+        sessionIds: string[]
+      },
+      response: any
+    },
+    /**
+     * 彻底删除回收站会话
+     */
+    '/api/ai/conversations/trash/purge': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 会话 ID 列表（缺省清空全部）
+         */
+        sessionIds?: string[]
+      },
+      response: any
+    },
+    /**
      * 上传会话附件
      */
     '/api/ai/conversations/:id/attachments': {
@@ -4340,7 +4398,7 @@ export type OpenAPIs = {
       response: any
     },
     /**
-     * 删除会话
+     * 删除会话（移入回收站）
      */
     '/api/ai/conversations/:id': {
       query: never,

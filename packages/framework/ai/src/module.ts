@@ -94,12 +94,6 @@ import {
   createDatetimeTool,
   createFileReadTool,
   createFileWriteTool,
-  createFsCatTool,
-  createFsFindTool,
-  createFsGrepTool,
-  createFsHeadTool,
-  createFsLsTool,
-  createFsTailTool,
   createHashTool,
   createJsonFormatTool,
   createKBBrowseTool,
@@ -259,6 +253,24 @@ function extractResearch(config: unknown): { research: AgentConfig['research'] }
     return { research: out };
   }
   return {};
+}
+
+/** 从 agent 的 config JSON 中提取会话总结模型与默认思考强度 */
+function extractSummaryAndThinking(config: unknown): Pick<AgentConfig, 'summaryModel' | 'defaultThinkingLevel'> {
+  const out: Pick<AgentConfig, 'summaryModel' | 'defaultThinkingLevel'> = {};
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return out;
+  const raw = config as Record<string, unknown>;
+  if (typeof raw.summaryModel === 'string' && raw.summaryModel.length > 0 && raw.summaryModel.length <= 64) {
+    out.summaryModel = raw.summaryModel;
+  }
+  const thinking = raw.defaultThinkingLevel;
+  if (
+    typeof thinking === 'string' &&
+    ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(thinking)
+  ) {
+    out.defaultThinkingLevel = thinking as AgentConfig['defaultThinkingLevel'];
+  }
+  return out;
 }
 
 export function createConfiguredProvider(
@@ -480,13 +492,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     registry.register(createKBFollowLinkTool({ kbService: knowledgeBase, tenantId }));
     registry.register(createKBOutlineTool({ kbService: knowledgeBase, tenantId }));
 
-    // 文件系统工具
-    registry.register(createFsLsTool(knowledgeBase, ''));
-    registry.register(createFsCatTool(knowledgeBase, ''));
-    registry.register(createFsGrepTool(knowledgeBase, ''));
-    registry.register(createFsFindTool(knowledgeBase, ''));
-    registry.register(createFsHeadTool(knowledgeBase, ''));
-    registry.register(createFsTailTool(knowledgeBase, ''));
+    // 知识库文件浏览由 kb-* 工具承担；不提供 ls/cat/grep 等重复工具（避免与 kb-* 职责重叠）
 
     // 文件读写工具（租户作用域：仅允许访问本租户目录，防止跨租户文件读取/写入）
     const artifactRoot = userId && sessionId
@@ -557,6 +563,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           ...(typeof item.maxTokensPerTurn === 'number' ? { maxTokensPerTurn: item.maxTokensPerTurn } : {}),
           ...(item.memoryConfig ? { memoryConfig: item.memoryConfig } : {}),
           ...(extractResearch(item.config)),
+          ...extractSummaryAndThinking(item.config),
           tenantId: item.tenantId,
           requiresVirtualEnvironment: item.requiresVirtualEnvironment,
           ...(item.sandboxStatus ? { sandboxStatus: item.sandboxStatus } : {}),
@@ -798,7 +805,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     async delete(id, userId, tenantId) {
       const sandboxId = await memory.getSessionRuntimeSandbox(id, { tenantId, userId });
       if (sandboxId && agentRuntime) await agentRuntime.destroySandbox(sandboxId);
-      await memory.deleteSession(id, { tenantId, userId });
+      // 软删除：移入回收站，可在回收站恢复或彻底删除
+      await memory.moveSessionToTrash(id, { tenantId, userId });
     },
     async getMessages(id, userId, tenantId, limit) {
       return memory.getHistory(id, { tenantId, userId }, limit ?? 50);
@@ -811,6 +819,47 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     // 聊天内嵌审批：请求者自确认
     approvalService,
     scheduleMemoryConsolidation,
+    // 会话标题生成：Agent 配置 summaryModel（轻量快速模型）时，对话结束后生成 ≤20 字标题
+    generateSessionTitle: async ({ sessionId, agentId, tenantId, userId }) => {
+      try {
+        const agent = await agentCrudService.getById(agentId, tenantId);
+        const summaryModel = agent?.summaryModel;
+        if (!summaryModel) return null;
+        // 已有自定义标题（非默认命名）则跳过，避免覆盖用户/历史命名
+        const existing = await memory.getSession(sessionId, { tenantId, userId });
+        if (!existing) return null;
+        if (existing.title !== `对话 ${sessionId.slice(0, 8)}`) return null;
+        const history = (await memory.getHistory(sessionId, { tenantId, userId }, 20))
+          .filter((m) => m.role === 'user' || m.role === 'assistant')
+          .slice(-10);
+        if (history.length === 0) return null;
+        const result = await llmGateway.chat({
+          model: summaryModel,
+          tenantId,
+          maxTokens: 60,
+          messages: [
+            {
+              role: 'system',
+              content:
+                '你是会话标题生成器。根据以下对话内容生成一个不超过20字的中文标题，只输出标题本身，不要输出任何其他内容、引号或解释。',
+            },
+            ...history,
+          ],
+        });
+        const title = result.content
+          .trim()
+          .replace(/^[「『"'“”]+|[」』"'“”]+$/g, '')
+          .split('\n')[0]
+          .slice(0, 20)
+          .trim();
+        if (!title) return null;
+        await memory.renameSession(sessionId, { tenantId, userId }, title);
+        return title;
+      } catch (err) {
+        console.error('[ai] 会话标题生成失败:', err);
+        return null;
+      }
+    },
   });
 
   // Skill 服务

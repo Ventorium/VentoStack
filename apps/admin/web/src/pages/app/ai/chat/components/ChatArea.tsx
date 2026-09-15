@@ -4,6 +4,7 @@ import {
   CloseOutlined,
   CopyOutlined,
   DislikeOutlined,
+  FileTextOutlined,
   LikeOutlined,
   ReloadOutlined,
   RobotOutlined,
@@ -26,6 +27,62 @@ interface ChatAreaProps {
   onRegenerate?: (messageId: string) => void;
   /** 聊天内嵌审批决定：返回是否提交成功（成功后由后端唤醒流继续执行） */
   onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
+  /** 点击引用文件：切换到文件页签并预览该文件 */
+  onCiteClick?: (name: string) => void;
+}
+
+/** 从 assistant 内容末尾解析「### 引用来源」区块 */
+function splitCitations(content: string): { displayContent: string; citations: string[] } {
+  const match = content.match(/###\s*引用来源\s*\n([\s\S]*)$/);
+  if (!match || match.index === undefined) return { displayContent: content, citations: [] };
+  const citations = match[1]
+    .split('\n')
+    .map((line) =>
+      line
+        .replace(/^\s*[-*]\s*(来源\s*[:：])?\s*/, '')
+        .replace(/^\[(.*?)\]\(.*?\)$/, '$1')
+        .replace(/^\[|\]$/g, '')
+        .trim(),
+    )
+    .filter(Boolean);
+  if (citations.length === 0) return { displayContent: content, citations: [] };
+  return { displayContent: content.slice(0, match.index).trimEnd(), citations };
+}
+
+/** 引用文件列表：展示在消息底部，点击可跳转文件预览 */
+function CitationsBlock({
+  citations,
+  onCiteClick,
+}: {
+  citations: string[];
+  onCiteClick?: (name: string) => void;
+}) {
+  const { token } = theme.useToken();
+  return (
+    <div
+      className="mt-2 pt-2"
+      style={{ borderTop: `1px dashed ${token.colorBorderSecondary}` }}
+    >
+      <Text type="secondary" className="text-xs block mb-1">
+        引用来源（{citations.length}）
+      </Text>
+      <Space size={[4, 4]} wrap>
+        {citations.map((name, i) => (
+          <Button
+            key={`${name}-${i}`}
+            size="small"
+            type="text"
+            icon={<FileTextOutlined />}
+            className="text-xs"
+            style={{ color: token.colorPrimary }}
+            onClick={() => onCiteClick?.(name)}
+          >
+            {name}
+          </Button>
+        ))}
+      </Space>
+    </div>
+  );
 }
 
 /** 工具审批卡片：高风险工具需要用户在聊天内确认后才能继续执行 */
@@ -172,6 +229,7 @@ export default function ChatArea({
   onCopy,
   onRegenerate,
   onApprovalDecision,
+  onCiteClick,
 }: ChatAreaProps) {
   const endRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
@@ -261,18 +319,28 @@ export default function ChatArea({
                     <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
                   )}
 
-                  {!isUser && msg.blocks ? (
+                  {!isUser && msg.blocks && msg.blocks.length > 0 ? (
                     // 按流式到达顺序交错渲染：文本段与工具块的位置与生成顺序一致
-                    msg.blocks.map((block, i) =>
-                      block.type === 'text' ? (
-                        <MarkdownPreview
-                          key={`b-${i}`}
-                          content={block.text}
-                          className="text-[13px]"
-                          breaks
-                          streaming={msg.isStreaming && i === msg.blocks.length - 1}
-                        />
-                      ) : (
+                    msg.blocks.map((block, i) => {
+                      if (block.type === 'text') {
+                        const { displayContent, citations } = msg.isStreaming
+                          ? { displayContent: block.text, citations: [] }
+                          : splitCitations(block.text);
+                        return (
+                          <div key={`b-${i}`}>
+                            <MarkdownPreview
+                              content={displayContent}
+                              className="text-[13px]"
+                              breaks
+                              streaming={msg.isStreaming && i === msg.blocks.length - 1}
+                            />
+                            {!msg.isStreaming && citations.length > 0 && (
+                              <CitationsBlock citations={citations} onCiteClick={onCiteClick} />
+                            )}
+                          </div>
+                        );
+                      }
+                      return (
                         <div key={`b-${i}`} className="my-1">
                           <StepRow
                             step={{
@@ -291,20 +359,33 @@ export default function ChatArea({
                             }}
                           />
                         </div>
-                      ),
-                    )
+                      );
+                    })
                   ) : (
                     <>
                       {!isUser && msg.steps && msg.steps.length > 0 && (
                         <AgentSteps steps={msg.steps} />
                       )}
 
-                      <MarkdownPreview
-                        content={msg.content}
-                        className="text-[13px]"
-                        breaks
-                        streaming={msg.isStreaming}
-                      />
+                      {(() => {
+                        const { displayContent, citations } =
+                          !isUser && !msg.isStreaming
+                            ? splitCitations(msg.content)
+                            : { displayContent: msg.content, citations: [] };
+                        return (
+                          <>
+                            <MarkdownPreview
+                              content={displayContent}
+                              className="text-[13px]"
+                              breaks
+                              streaming={msg.isStreaming}
+                            />
+                            {!isUser && citations.length > 0 && (
+                              <CitationsBlock citations={citations} onCiteClick={onCiteClick} />
+                            )}
+                          </>
+                        );
+                      })()}
                     </>
                   )}
 

@@ -1,5 +1,12 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, SearchOutlined } from "@ant-design/icons";
-import { Dropdown, Empty, Input, Spin, theme, Typography } from "antd";
+import {
+  DeleteOutlined,
+  EditOutlined,
+  MenuFoldOutlined,
+  PlusOutlined,
+  RestOutlined,
+  SearchOutlined,
+} from "@ant-design/icons";
+import { Button, Dropdown, Empty, Input, Space, Spin, theme, Typography } from "antd";
 import { useState, type UIEvent } from "react";
 import type { Thread } from "../types";
 
@@ -16,6 +23,10 @@ interface ThreadListProps {
   onLoadMore?: () => void;
   hasMore?: boolean;
   loadingMore?: boolean;
+  /** 收起会话列表（收起后由父组件渲染窄栏） */
+  onCollapse?: () => void;
+  /** 打开回收站 */
+  onOpenTrash?: () => void;
 }
 
 export default function ThreadList({
@@ -28,6 +39,8 @@ export default function ThreadList({
   onLoadMore,
   hasMore,
   loadingMore,
+  onCollapse,
+  onOpenTrash,
 }: ThreadListProps) {
   const [search, setSearch] = useState("");
   const { token } = theme.useToken();
@@ -54,9 +67,20 @@ export default function ThreadList({
       <div
         className="flex items-center justify-between" style={{ padding: "12px 12px 8px" }}
       >
-        <Text strong className="text-[15px]">
-          会话列表
-        </Text>
+        <Space size={4}>
+          {onCollapse && (
+            <Button
+              type="text"
+              size="small"
+              icon={<MenuFoldOutlined />}
+              onClick={onCollapse}
+              title="收起会话列表"
+            />
+          )}
+          <Text strong className="text-[15px]">
+            会话列表
+          </Text>
+        </Space>
         <PlusOutlined
           onClick={onNew}
           className="cursor-pointer text-sm" style={{ color: token.colorPrimary }}
@@ -138,6 +162,21 @@ export default function ThreadList({
           </>
         )}
       </div>
+
+      {/* Footer：回收站入口 */}
+      {onOpenTrash && (
+        <div className="px-3 py-2" style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}>
+          <Button
+            block
+            type="text"
+            size="small"
+            icon={<RestOutlined />}
+            onClick={onOpenTrash}
+          >
+            回收站
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

@@ -67,7 +67,7 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
   async function readMetadata(
     sessionId: string,
     scope: MemoryScope,
-  ): Promise<{ metadata: MemoryMetadata; messageCount: number } | null> {
+  ): Promise<{ metadata: MemoryMetadata; messageCount: number; title: string | null } | null> {
     const filePath = conversationPath(sessionId, scope);
     if (!existsSync(filePath)) return null;
     const session = createSession(await loadJsonlSessionStorage(filePath));
@@ -81,9 +81,16 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
     if (!metadata || metadata.tenantId !== scope.tenantId || metadata.userId !== scope.userId) {
       throw new Error("Memory scope mismatch");
     }
+    const titleEntry = entries.findLast(
+      (entry) => entry.type === "custom" && entry.customType === "session_title",
+    );
+    const title = titleEntry?.type === "custom"
+      ? (titleEntry.data as { title?: unknown } | undefined)?.title
+      : undefined;
     return {
       metadata,
       messageCount: entries.filter((entry) => entry.type === "message").length,
+      title: typeof title === "string" && title.trim().length > 0 ? title.trim() : null,
     };
   }
 
@@ -98,12 +105,21 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
       agentId: stored.metadata.agentId,
       userId: scope.userId,
       filePath,
-      title: `对话 ${sessionId.slice(0, 8)}`,
+      title: stored.title ?? `对话 ${sessionId.slice(0, 8)}`,
       status: stored.metadata.status,
       messageCount: stored.messageCount,
       createdAt: info.birthtime,
       updatedAt: info.mtime,
     };
+  }
+
+  async function renameSession(sessionId: string, scope: MemoryScope, title: string): Promise<void> {
+    const filePath = conversationPath(sessionId, scope);
+    if (!existsSync(filePath)) throw new Error("Session not found");
+    const normalized = title.trim().slice(0, 60);
+    if (!normalized) throw new Error("Invalid session title");
+    const session = createSession(await loadJsonlSessionStorage(filePath));
+    await session.appendCustomEntry("session_title", { title: normalized });
   }
 
   return {
@@ -138,6 +154,7 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
     },
 
     getSession,
+    renameSession,
 
     async listSessions(scope, agentId): Promise<ConversationMemory[]> {
       const directory = join(userRoot(scope), "conversations");
@@ -157,6 +174,86 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
         await unlink(filePath);
         await rm(join(userRoot(scope), "sessions", sessionId), { recursive: true, force: true });
       }
+    },
+
+    async moveSessionToTrash(sessionId, scope): Promise<void> {
+      if (!(await readMetadata(sessionId, scope))) throw new Error("Session not found");
+      const root = userRoot(scope);
+      const trashDir = join(root, "trash");
+      await mkdir(trashDir, { recursive: true });
+      const sourceFile = conversationPath(sessionId, scope);
+      const targetFile = join(trashDir, `${sessionId}.jsonl`);
+      if (existsSync(targetFile)) await unlink(targetFile);
+      await rename(sourceFile, targetFile);
+      const sessionDir = join(root, "sessions", sessionId);
+      if (existsSync(sessionDir)) {
+        const targetDir = join(trashDir, "sessions", sessionId);
+        await rm(targetDir, { recursive: true, force: true });
+        await mkdir(dirname(targetDir), { recursive: true });
+        await rename(sessionDir, targetDir);
+      }
+    },
+
+    async listTrashedSessions(scope) {
+      const trashDir = join(userRoot(scope), "trash");
+      if (!existsSync(trashDir)) return [];
+      const items: Array<{ sessionId: string; title: string; deletedAt: Date }> = [];
+      for (const file of await readdir(trashDir)) {
+        if (!file.endsWith(".jsonl")) continue;
+        const sessionId = file.slice(0, -6);
+        const info = await stat(join(trashDir, file)).catch(() => null);
+        if (!info) continue;
+        // 回收站中的标题只读不回写：从文件条目解析，失败回退默认命名
+        let title = `对话 ${sessionId.slice(0, 8)}`;
+        try {
+          const session = createSession(await loadJsonlSessionStorage(join(trashDir, file)));
+          const entries = await session.getEntries();
+          const titleEntry = entries.findLast(
+            (entry) => entry.type === "custom" && entry.customType === "session_title",
+          );
+          const stored = titleEntry?.type === "custom"
+            ? (titleEntry.data as { title?: unknown } | undefined)?.title
+            : undefined;
+          if (typeof stored === "string" && stored.trim()) title = stored.trim();
+        } catch {
+          // 解析失败使用默认标题
+        }
+        items.push({ sessionId, title, deletedAt: info.mtime });
+      }
+      return items.sort((a, b) => b.deletedAt.getTime() - a.deletedAt.getTime());
+    },
+
+    async restoreSession(sessionId, scope): Promise<void> {
+      assertSafeId(sessionId, "sessionId");
+      const root = userRoot(scope);
+      const trashDir = join(root, "trash");
+      const trashedFile = join(trashDir, `${sessionId}.jsonl`);
+      if (!existsSync(trashedFile)) throw new Error("Session not in trash");
+      await mkdir(join(root, "conversations"), { recursive: true });
+      const targetFile = conversationPath(sessionId, scope);
+      if (existsSync(targetFile)) throw new Error("Session already exists");
+      await rename(trashedFile, targetFile);
+      const trashedDir = join(trashDir, "sessions", sessionId);
+      if (existsSync(trashedDir)) {
+        const targetDir = join(root, "sessions", sessionId);
+        await rm(targetDir, { recursive: true, force: true });
+        await mkdir(join(root, "sessions"), { recursive: true });
+        await rename(trashedDir, targetDir);
+      }
+    },
+
+    async purgeSession(sessionId, scope): Promise<void> {
+      assertSafeId(sessionId, "sessionId");
+      const trashDir = join(userRoot(scope), "trash");
+      const trashedFile = join(trashDir, `${sessionId}.jsonl`);
+      if (!existsSync(trashedFile)) throw new Error("Session not in trash");
+      await unlink(trashedFile);
+      await rm(join(trashDir, "sessions", sessionId), { recursive: true, force: true });
+    },
+
+    async purgeAllTrash(scope): Promise<void> {
+      const trashDir = join(userRoot(scope), "trash");
+      await rm(trashDir, { recursive: true, force: true });
     },
 
     async forkSession(sessionId, scope, destination): Promise<{ sessionId: string }> {
@@ -183,8 +280,14 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
 
     async getHistory(sessionId, scope, limit): Promise<Array<{ role: string; content: string }>> {
       const filePath = conversationPath(sessionId, scope);
-      if (!(await readMetadata(sessionId, scope))) return [];
-      const context = await createSession(await loadJsonlSessionStorage(filePath)).buildContext();
+      // 回收站中的会话只读可见（前端回收站查看内容场景）
+      let source = filePath;
+      if (!(await readMetadata(sessionId, scope))) {
+        const trashedFile = join(userRoot(scope), "trash", `${sessionId}.jsonl`);
+        if (!existsSync(trashedFile)) return [];
+        source = trashedFile;
+      }
+      const context = await createSession(await loadJsonlSessionStorage(source)).buildContext();
       const messages = context.messages.map((message) => ({ role: message.role, content: message.content }));
       return limit && messages.length > limit ? messages.slice(-limit) : messages;
     },
@@ -247,6 +350,19 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
       const resolvedTarget = await realpath(target);
       if (!isWithin(resolvedRoot, resolvedTarget)) return null;
       return { path, content: await readFile(resolvedTarget, "utf-8") };
+    },
+
+    async readArtifactBytes(sessionId, scope, path, maxBytes = 10 * 1024 * 1024): Promise<Uint8Array | null> {
+      if (!(await readMetadata(sessionId, scope)) || !path || path.includes("\0")) return null;
+      const root = artifactRoot(sessionId, scope);
+      const target = resolve(root, path);
+      if (!isWithin(resolve(root), target) || !existsSync(target)) return null;
+      const info = await lstat(target);
+      if (!info.isFile() || info.isSymbolicLink() || info.size > maxBytes) return null;
+      const resolvedRoot = await realpath(root);
+      const resolvedTarget = await realpath(target);
+      if (!isWithin(resolvedRoot, resolvedTarget)) return null;
+      return new Uint8Array(await readFile(resolvedTarget));
     },
 
     async getSessionRuntimeSandbox(sessionId, scope): Promise<string | null> {

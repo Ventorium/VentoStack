@@ -76,8 +76,8 @@ const AGENT_BODY_FIELDS = [
   'requiresVirtualEnvironment',
 ] as const;
 
-/** 迭代轮数 / 单轮 Token / 能力清单长度的硬上限（防止单条消息放大成天文数字的 LLM 成本） */
-const MAX_ITERATIONS_LIMIT = 50;
+/** 迭代轮数 / 单轮 Token / 能力清单长度的硬上限（防止单条消息放大成天文数字的 LLM 成本）；maxIterations 额外允许 -1（无上限） */
+const MAX_ITERATIONS_LIMIT = 10000;
 const MAX_TOKENS_PER_TURN_LIMIT = 100_000;
 const MAX_LIST_LENGTH = 20;
 
@@ -92,8 +92,8 @@ function validateAgentBody(body: Record<string, unknown>): string | null {
   }
   if (body.maxIterations !== undefined) {
     const v = Number(body.maxIterations);
-    if (!Number.isInteger(v) || v < 1 || v > MAX_ITERATIONS_LIMIT) {
-      return `maxIterations 必须是 1-${MAX_ITERATIONS_LIMIT} 之间的整数`;
+    if (!Number.isInteger(v) || (v !== -1 && (v < 1 || v > MAX_ITERATIONS_LIMIT))) {
+      return `maxIterations 必须是 -1（无上限）或 1-${MAX_ITERATIONS_LIMIT} 之间的整数`;
     }
   }
   if (body.maxTokensPerTurn !== undefined) {

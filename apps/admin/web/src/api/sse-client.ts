@@ -26,6 +26,8 @@ export interface StreamCallbacks {
   onSources?: (sources: Array<{ title: string; url: string }>) => void;
   /** 会话 ID 事件（新建会话时后端下发，前端据此绑定 sessionId） */
   onSession?: (sessionId: string) => void;
+  /** 会话标题事件（配置了会话总结模型时，对话结束后下发生成的标题） */
+  onTitle?: (title: string) => void;
   /** 工具审批请求事件（高风险工具需要用户在聊天内确认后才能继续执行） */
   onApprovalRequired?: (approval: {
     id: string;
@@ -64,6 +66,7 @@ export interface AIStreamChunk {
     | 'stage'
     | 'sources'
     | 'session'
+    | 'title'
     | 'approval_required'
     | 'error'
     | 'done';
@@ -78,6 +81,7 @@ export interface AIStreamChunk {
   stage?: 'planning' | 'researching' | 'synthesizing';
   sources?: Array<{ title: string; url: string }>;
   sessionId?: string;
+  title?: string;
   approval?: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
   error?: { code: string; message: string; recoverable: boolean };
 }
@@ -169,6 +173,9 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       break;
     case 'session':
       if (chunk.sessionId) callbacks.onSession?.(chunk.sessionId);
+      break;
+    case 'title':
+      if (chunk.title) callbacks.onTitle?.(chunk.title);
       break;
     case 'approval_required':
       if (chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);

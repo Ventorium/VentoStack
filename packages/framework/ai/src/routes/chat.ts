@@ -8,6 +8,7 @@ import type { MemoryService } from '../memory/types';
 import { createSSEResponse } from '../stream-engine/sse';
 import type { ToolRegistry } from '../tool-registry';
 import { createFileValidator } from '../knowledge-base/file-security';
+import { createConverter } from '@ventostack/file2md';
 import type { ThinkingLevel } from '../llm-gateway/types';
 import { routeDoc } from './schema';
 
@@ -58,6 +59,13 @@ export function createChatRoutes(
     /** 审批服务：聊天内嵌审批的请求者自确认 */
     approvalService?: ChatApprovalService;
     scheduleMemoryConsolidation?: (params: { sessionId: string; tenantId: string; userId: string }) => Promise<void>;
+    /** 会话标题生成：对话结束后由总结模型产出 ≤20 字标题（Agent 未配置总结模型时返回 null） */
+    generateSessionTitle?: (params: {
+      sessionId: string;
+      agentId: string;
+      tenantId: string;
+      userId: string;
+    }) => Promise<string | null>;
   },
 ): Router {
   const router = createRouter();
@@ -208,6 +216,92 @@ export function createChatRoutes(
     perm('ai:chat', 'use'),
   );
 
+  // 回收站列表
+  router.get(
+    '/api/ai/conversations/trash',
+    routeDoc('回收站列表', {
+      responses: {
+        200: {
+          description: '回收站会话列表（标题 + 删除时间）',
+        },
+      },
+    }),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const list = await memoryService.listTrashedSessions({ tenantId, userId });
+        return success(list);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  // 从回收站恢复（支持批量）
+  router.post(
+    '/api/ai/conversations/trash/restore',
+    routeDoc('从回收站恢复会话', {
+      body: {
+        sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '会话 ID 列表' },
+      },
+    }),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const body = await parseBody(ctx.request);
+        const ids = body.sessionIds;
+        if (!Array.isArray(ids) || ids.length === 0 || ids.length > 100) {
+          return fail('sessionIds 必须是 1-100 个会话 ID', 400, 400);
+        }
+        for (const id of ids) {
+          await memoryService.restoreSession(String(id), { tenantId, userId });
+        }
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  // 彻底删除回收站会话（支持批量；sessionIds 缺省或为空数组表示清空回收站）
+  router.post(
+    '/api/ai/conversations/trash/purge',
+    routeDoc('彻底删除回收站会话', {
+      body: {
+        sessionIds: { type: 'array', items: { type: 'string' }, description: '会话 ID 列表（缺省清空全部）' },
+      },
+    }),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const body = await parseBody(ctx.request);
+        const ids = body.sessionIds;
+        if (ids === undefined || (Array.isArray(ids) && ids.length === 0)) {
+          await memoryService.purgeAllTrash({ tenantId, userId });
+          return success(null);
+        }
+        if (!Array.isArray(ids) || ids.length > 100) {
+          return fail('sessionIds 最多 100 个会话 ID', 400, 400);
+        }
+        for (const id of ids) {
+          await memoryService.purgeSession(String(id), { tenantId, userId });
+        }
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
   router.post(
     '/api/ai/conversations/:id/attachments',
     routeDoc('上传会话附件'),
@@ -234,10 +328,10 @@ export function createChatRoutes(
     perm('ai:chat', 'use'),
   );
 
-  // 删除会话
+  // 删除会话（移入回收站，可在回收站恢复或彻底删除）
   router.delete(
     '/api/ai/conversations/:id',
-    routeDoc('删除会话'),
+    routeDoc('删除会话（移入回收站）'),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;
@@ -287,6 +381,79 @@ export function createChatRoutes(
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         return success(await memoryService.listArtifacts(id, { tenantId, userId }));
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  // 会话产物预览：按扩展名返回 text / markdown（file2md 转换）/ image（data URL）/ binary
+  router.get(
+    '/api/ai/conversations/:id/artifacts/preview',
+    routeDoc('预览会话产物文件', {
+      query: {
+        path: { type: 'string', required: true, description: '产物相对路径' },
+      },
+      responses: {
+        200: {
+          description: 'kind: text | markdown | image | binary；content 为文本或 data URL',
+        },
+      },
+    }),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const path = (ctx.query as Record<string, unknown>).path;
+        if (typeof path !== 'string' || !path) return fail('path 参数必填', 400, 400);
+
+        const bytes = await memoryService.readArtifactBytes(id, { tenantId, userId }, path);
+        if (!bytes) return fail('文件不存在或超出大小限制', 404, 404);
+        const name = path.split('/').pop() ?? path;
+        const ext = name.includes('.') ? (name.split('.').pop() ?? '').toLowerCase() : '';
+
+        // 图片：base64 data URL
+        const imageTypes: Record<string, string> = {
+          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
+          webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp',
+        };
+        if (ext in imageTypes) {
+          const b64 = Buffer.from(bytes).toString('base64');
+          return success({ kind: 'image', name, content: `data:${imageTypes[ext]};base64,${b64}` });
+        }
+
+        // 纯文本类：直接 utf-8 输出；Markdown 单独标记以便前端渲染
+        const markdownExts = new Set(['md', 'markdown']);
+        const textExts = new Set([
+          'txt', 'log', 'json', 'jsonl', 'js', 'jsx', 'ts', 'tsx',
+          'py', 'java', 'go', 'rs', 'c', 'h', 'cpp', 'hpp', 'css', 'scss', 'less',
+          'html', 'htm', 'xml', 'yml', 'yaml', 'toml', 'ini', 'env', 'sh', 'bash',
+          'sql', 'csv', 'gitignore', 'dockerfile', 'lock',
+        ]);
+        if (markdownExts.has(ext)) {
+          return success({ kind: 'markdown', name, content: new TextDecoder('utf-8').decode(bytes) });
+        }
+        if (!ext || textExts.has(ext) || name.toLowerCase() === 'dockerfile') {
+          return success({ kind: 'text', name, content: new TextDecoder('utf-8').decode(bytes) });
+        }
+
+        // Office / PDF / EPUB 等：file2md 转 Markdown 预览
+        const convertibleExts = new Set(['docx', 'pdf', 'xlsx', 'xls', 'pptx', 'ppt', 'epub', 'doc', 'rtf', 'odt', 'ods', 'odp']);
+        if (convertibleExts.has(ext)) {
+          try {
+            const converter = createConverter({ maxFileSize: 10 * 1024 * 1024 });
+            const result = await converter.convertFile(Buffer.from(bytes), name);
+            const markdown = result.outputs.map((o) => o.content).join('\n\n');
+            return success({ kind: 'markdown', name, content: markdown });
+          } catch {
+            return fail('文件转换失败，暂不支持预览该文件', 422, 422);
+          }
+        }
+
+        return success({ kind: 'binary', name, content: '' });
       } catch (e) {
         return handleError(e);
       }
@@ -566,6 +733,20 @@ export function createChatRoutes(
         const streamWithSession = (async function* () {
           yield { type: 'session' as const, sessionId } as const;
           yield* stream;
+          // 对话结束后：Agent 配置了会话总结模型时生成 ≤20 字标题（失败不影响对话）
+          if (options?.generateSessionTitle) {
+            try {
+              const title = await options.generateSessionTitle({
+                sessionId,
+                agentId: body.agentId as string,
+                tenantId,
+                userId,
+              });
+              if (title) yield { type: 'title' as const, title } as const;
+            } catch {
+              // 标题生成失败静默忽略
+            }
+          }
         })();
 
         return createSSEResponse(streamWithSession, {

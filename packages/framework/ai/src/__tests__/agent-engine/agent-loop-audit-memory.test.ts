@@ -78,6 +78,7 @@ function createMemoryMock(overrides?: Partial<MemoryService>): MemoryService {
     readLongTermMemory: async () => null,
     listLongTermMemories: async () => [],
     deleteLongTermMemory: async () => {},
+    getSessionMemory: async () => null,
     ...overrides,
   } as MemoryService;
 }

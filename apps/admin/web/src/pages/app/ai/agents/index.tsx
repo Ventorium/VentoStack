@@ -246,6 +246,10 @@ const AgentsPage = () => {
     undefined,
   );
 
+  // 会话总结模型与默认思考强度（对应 ai_agent.config.summaryModel / config.defaultThinkingLevel）
+  const [summaryModel, setSummaryModel] = useState<string | undefined>(undefined);
+  const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<string>('off');
+
   // Fetch models
   useEffect(() => {
     client
@@ -396,6 +400,8 @@ const AgentsPage = () => {
     setResearchSearchCount(undefined);
     setResearchMaxSubtasks(undefined);
     setResearchMaxSubtaskTurns(undefined);
+    setSummaryModel(undefined);
+    setDefaultThinkingLevel('off');
     setEditingAgent(null);
   };
 
@@ -420,8 +426,7 @@ const AgentsPage = () => {
       model: record.model,
       systemPrompt: record.systemPrompt,
       isPublic: record.isPublic,
-      maxIterations: record.maxIterations ?? 100,
-      maxTokensPerTurn: record.maxTokensPerTurn ?? 4096,
+      maxIterations: record.maxIterations ?? 200,
       requiresVirtualEnvironment: record.requiresVirtualEnvironment,
     });
 
@@ -450,6 +455,12 @@ const AgentsPage = () => {
     setResearchMaxSubtasks(research?.maxSubtasks);
     setResearchMaxSubtaskTurns(research?.maxSubtaskTurns);
 
+    // 设置会话总结模型与默认思考强度
+    setSummaryModel(typeof record.config?.summaryModel === 'string' ? record.config.summaryModel : undefined);
+    setDefaultThinkingLevel(
+      typeof record.config?.defaultThinkingLevel === 'string' ? record.config.defaultThinkingLevel : 'off',
+    );
+
     // 设置选中的能力
     setSelectedTools(record.tools ?? []);
     setSelectedSkills(record.skillIds ?? []);
@@ -466,6 +477,15 @@ const AgentsPage = () => {
     ...(researchMaxSubtaskTurns ? { maxSubtaskTurns: researchMaxSubtaskTurns } : {}),
   });
 
+  // 组装 ai_agent.config：深度研究 + 会话总结模型 + 默认思考强度
+  const buildAgentConfig = (): Record<string, unknown> => ({
+    ...(agentType === 'deep_research'
+      ? { research: { depth: researchDepth, ...buildResearchBudget() } }
+      : {}),
+    ...(summaryModel ? { summaryModel } : {}),
+    ...(defaultThinkingLevel && defaultThinkingLevel !== 'off' ? { defaultThinkingLevel } : {}),
+  });
+
   const handleCreate = async () => {
     try {
       const values = await form.validateFields();
@@ -477,9 +497,10 @@ const AgentsPage = () => {
           longTerm: memoryLongTerm,
           maxHistoryMessages: memoryMaxHistory,
         },
-        ...(agentType === 'deep_research'
-          ? { config: { research: { depth: researchDepth, ...buildResearchBudget() } } }
-          : {}),
+        ...(() => {
+          const config = buildAgentConfig();
+          return Object.keys(config).length > 0 ? { config } : {};
+        })(),
         tools: selectedTools.length > 0 ? selectedTools : undefined,
         skillIds: selectedSkills.length > 0 ? selectedSkills : undefined,
         mcpServerIds: selectedMcp.length > 0 ? selectedMcp : undefined,
@@ -510,10 +531,10 @@ const AgentsPage = () => {
           longTerm: memoryLongTerm,
           maxHistoryMessages: memoryMaxHistory,
         },
-        config:
-          agentType === 'deep_research'
-            ? { research: { depth: researchDepth, ...buildResearchBudget() } }
-            : null,
+        config: (() => {
+          const config = buildAgentConfig();
+          return Object.keys(config).length > 0 ? config : null;
+        })(),
         tools: selectedTools.length > 0 ? selectedTools : null,
         skillIds: selectedSkills.length > 0 ? selectedSkills : null,
         mcpServerIds: selectedMcp.length > 0 ? selectedMcp : null,
@@ -867,21 +888,38 @@ const AgentsPage = () => {
               <Form.Item
                 label="最大迭代轮数"
                 name="maxIterations"
-                tooltip="Agent 单次对话中允许的最多工具调用轮次（默认 100，无上限）"
+                tooltip="Agent 单次对话中允许的最多工具调用轮次；-1 表示无上限（默认 200）"
               >
-                <InputNumber min={1} className="w-full" placeholder="默认 100" />
+                <InputNumber min={-1} max={10000} className="w-full" placeholder="默认 200，-1 表示无上限" />
               </Form.Item>
               <Form.Item
-                label="最大单轮 Token"
-                name="maxTokensPerTurn"
-                tooltip="每轮生成的 Token 上限（默认 4096）"
+                label="会话总结模型"
+                tooltip="对话结束后调用的轻量快速模型：根据会话内容生成 20 字以内标题（仅核心结论，Token 消耗极低）。建议从上方已选模型中挑选一个小模型"
               >
-                <InputNumber
-                  min={64}
-                  max={128000}
-                  step={256}
-                  className="w-full"
-                  placeholder="默认 4096"
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择模型（可选）"
+                  value={summaryModel}
+                  onChange={(v) => setSummaryModel(v)}
+                  options={modelOptions}
+                />
+              </Form.Item>
+              <Form.Item
+                label="默认思考强度"
+                tooltip="AI 对话中的默认思考强度；仅当所选模型支持思考时生效，不支持思考的模型自动为关闭"
+              >
+                <Select
+                  value={defaultThinkingLevel}
+                  onChange={setDefaultThinkingLevel}
+                  options={[
+                    { label: '关闭（默认）', value: 'off' },
+                    { label: 'Minimal', value: 'minimal' },
+                    { label: 'Low', value: 'low' },
+                    { label: 'Medium', value: 'medium' },
+                    { label: 'High', value: 'high' },
+                    { label: 'XHigh', value: 'xhigh' },
+                  ]}
                 />
               </Form.Item>
               <div

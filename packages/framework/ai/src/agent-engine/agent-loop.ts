@@ -323,6 +323,10 @@ export interface AgentConfig {
   memoryConfig?: MemoryConfig;
   /** 深度研究模式配置（来自 ai_agent.config.research）；存在时启用多轮研究方法论 */
   research?: ResearchConfig;
+  /** 会话总结模型（轻量快速模型，对话结束后生成 ≤20 字标题），来自 ai_agent.config.summaryModel */
+  summaryModel?: string;
+  /** 默认思考强度（请求未显式指定时生效；所选模型不支持思考时应置 off），来自 ai_agent.config.defaultThinkingLevel */
+  defaultThinkingLevel?: ThinkingLevel;
   tenantId: string;
   requiresVirtualEnvironment?: boolean;
   sandboxStatus?: string;
@@ -873,8 +877,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       } else {
         model = allowedModels[0] ?? 'default';
       }
-      // 迭代预算：默认 100，不设平台上限（由 Agent 配置自行约束）
-      let maxIterations = agentConfig?.maxIterations ?? 100;
+      // 迭代预算：默认 200；-1 表示无上限（映射为极大值）
+      let maxIterations =
+        agentConfig?.maxIterations === -1
+          ? Number.MAX_SAFE_INTEGER
+          : (agentConfig?.maxIterations ?? 200);
       let maxTokensPerTurn = agentConfig?.maxTokensPerTurn === undefined
         ? undefined
         : Math.min(agentConfig.maxTokensPerTurn, AGENT_MAX_TOKENS_PER_TURN_LIMIT);
@@ -1032,6 +1039,22 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           console.error('[ai] 读取长期记忆失败:', err);
         }
       }
+
+      // 4.2 会话级记忆注入：Memory Agent 固化的 MEMORY.md（用户在会话中确认的事实/偏好/决策）
+      if (memoryEnabled && deps.memory && params.sessionId) {
+        try {
+          const sessionMemory = await deps.memory.getSessionMemory(params.sessionId, { tenantId, userId });
+          const content = sessionMemory?.content?.trim();
+          if (content) {
+            systemPrompt = `${systemPrompt}\n\n本对话已积累的会话记忆（可作为背景事实引用，注意甄别过时信息）：\n${content}`;
+          }
+        } catch (err) {
+          console.error('[ai] 读取会话记忆失败:', err);
+        }
+      }
+
+      // 4.3 事实来源与引用要求：确定性结论必须带出事实来源，末尾列出引用文件清单
+      systemPrompt = `${systemPrompt}\n\n## 事实来源与引用要求\n- 给出确定性结论前，必须有事实来源支撑（知识库文档、会话文件、工具返回、检索结果）；缺乏依据时明确说明不确定性，禁止无依据断言。\n- 回答末尾输出「### 引用来源」区块，逐行列出引用的文件/资料，格式为 \`- 来源: <文件名或资料标题>\`。未引用任何资料时省略该区块。`;
 
       // 6. 组装消息
       const messages: ChatMessage[] = [
@@ -1264,7 +1287,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           messages: trimmedMessages,
           ...(toolDefs === undefined ? {} : { tools: toolDefs }),
           ...(signal === undefined ? {} : { signal }),
-          ...(params.thinkingLevel === undefined ? {} : { thinkingLevel: params.thinkingLevel }),
+          ...(params.thinkingLevel === undefined
+            ? agentConfig?.defaultThinkingLevel === undefined
+              ? {}
+              : { thinkingLevel: agentConfig.defaultThinkingLevel }
+            : { thinkingLevel: params.thinkingLevel }),
           ...(effectiveTemperature === undefined ? {} : { temperature: effectiveTemperature }),
           ...(effectiveMaxTokens === undefined ? {} : { maxTokens: effectiveMaxTokens }),
           ...(resolvedApiKey === undefined ? {} : { apiKey: resolvedApiKey }),
@@ -1582,7 +1609,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           tenantId,
           messages: finalizeMessages,
           ...(signal === undefined ? {} : { signal }),
-          ...(params.thinkingLevel === undefined ? {} : { thinkingLevel: params.thinkingLevel }),
+          ...(params.thinkingLevel === undefined
+            ? agentConfig?.defaultThinkingLevel === undefined
+              ? {}
+              : { thinkingLevel: agentConfig.defaultThinkingLevel }
+            : { thinkingLevel: params.thinkingLevel }),
           ...(finalizeTemperature === undefined ? {} : { temperature: finalizeTemperature }),
           ...(maxTokensPerTurn === undefined ? {} : { maxTokens: maxTokensPerTurn }),
           ...(finalizeApiKey === undefined ? {} : { apiKey: finalizeApiKey }),
