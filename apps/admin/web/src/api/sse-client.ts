@@ -51,6 +51,8 @@ export interface ChatStreamParams {
   knowledgeBaseIds?: string[];
   attachmentPaths?: string[];
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  /** 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史（后端截断会话） */
+  truncateUserMessages?: number;
 }
 
 /**

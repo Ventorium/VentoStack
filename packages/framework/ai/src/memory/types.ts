@@ -93,6 +93,15 @@ export interface MemoryService {
     scope: MemoryScope,
     limit?: number,
   ): Promise<Array<{ role: string; content: string }>>;
+  /**
+   * 编辑重发场景的会话历史截断：仅保留前 `keepUserMessages` 轮用户消息及其回复，
+   * 从第 `keepUserMessages + 1` 条用户消息起丢弃全部后续内容（原文件重写）。
+   */
+  truncateSessionHistory(
+    sessionId: string,
+    scope: MemoryScope,
+    keepUserMessages: number,
+  ): Promise<void>;
   getArtifactRoot(sessionId: string, scope: MemoryScope): Promise<string | null>;
   writeArtifact(sessionId: string, scope: MemoryScope, path: string, content: Uint8Array): Promise<void>;
   listArtifacts(sessionId: string, scope: MemoryScope): Promise<Array<{ path: string; size: number; modifiedAt: string }>>;

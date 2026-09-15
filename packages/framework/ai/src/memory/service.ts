@@ -305,6 +305,40 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
       return limit && messages.length > limit ? messages.slice(-limit) : messages;
     },
 
+    async truncateSessionHistory(sessionId, scope, keepUserMessages): Promise<void> {
+      const filePath = conversationPath(sessionId, scope);
+      if (!(await readMetadata(sessionId, scope))) throw new Error("Session not found");
+      if (!Number.isInteger(keepUserMessages) || keepUserMessages < 0) {
+        throw new Error("Invalid keepUserMessages");
+      }
+      const content = await readFile(filePath, "utf-8");
+      const lines = content.split("\n").filter((line) => line.trim());
+      if (lines.length === 0) return;
+      // 第 0 行是 session header，必须保留；找到第 keepUserMessages+1 条用户消息所在的行并截断
+      const kept: string[] = [lines[0]!];
+      let userCount = 0;
+      let truncated = false;
+      for (let i = 1; i < lines.length; i++) {
+        let entry: { type?: string; message?: { role?: string } };
+        try {
+          entry = JSON.parse(lines[i]!) as { type?: string; message?: { role?: string } };
+        } catch {
+          truncated = true; // 无法解析的脏行视为边界，一并丢弃
+          break;
+        }
+        if (entry.type === "message" && entry.message?.role === "user") {
+          if (userCount >= keepUserMessages) {
+            truncated = true;
+            break;
+          }
+          userCount++;
+        }
+        kept.push(lines[i]!);
+      }
+      if (!truncated) return;
+      await writeFile(filePath, `${kept.join("\n")}\n`, "utf-8");
+    },
+
     async getArtifactRoot(sessionId, scope): Promise<string | null> {
       if (!(await readMetadata(sessionId, scope))) return null;
       const root = artifactRoot(sessionId, scope);

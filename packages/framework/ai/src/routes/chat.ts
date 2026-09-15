@@ -90,6 +90,25 @@ export function createChatRoutes(
     };
   }
 
+  /**
+   * 编辑重发截断：校验 truncateUserMessages 并在发送前截断会话历史
+   * （仅保留前 N 轮用户消息及其回复，模型看不到被编辑掉的消息与旧回复）。
+   */
+  async function truncateHistoryForResend(
+    sessionId: string,
+    tenantId: string,
+    userId: string,
+    body: Record<string, unknown>,
+  ): Promise<Response | null> {
+    const keep = body.truncateUserMessages;
+    if (keep === undefined) return null;
+    if (typeof keep !== 'number' || !Number.isInteger(keep) || keep < 0 || keep > 10_000) {
+      return fail('truncateUserMessages 必须是 0-10000 的整数', 400, 400);
+    }
+    await memoryService?.truncateSessionHistory(sessionId, { tenantId, userId }, keep);
+    return null;
+  }
+
   async function validateAttachments(
     sessionId: string,
     tenantId: string,
@@ -574,6 +593,7 @@ export function createChatRoutes(
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
         attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
         thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
+        truncateUserMessages: { type: 'integer', description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史' },
       },
       responses: {
         200: {
@@ -607,6 +627,8 @@ export function createChatRoutes(
           });
           returnedSessionId = conv.id;
         }
+        const truncateError = await truncateHistoryForResend(returnedSessionId, tenantId, userId, body);
+        if (truncateError) return truncateError;
         const toolRegistry = buildRequestToolRegistry(ctx, returnedSessionId);
         const runOptions = requestOptions(body);
         if (runOptions instanceof Response) return runOptions;
@@ -666,6 +688,7 @@ export function createChatRoutes(
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
         attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
         thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
+        truncateUserMessages: { type: 'integer', description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史' },
       },
       responses: {
         200: {
@@ -701,6 +724,8 @@ export function createChatRoutes(
           });
           sessionId = conv.id;
         }
+        const truncateError = await truncateHistoryForResend(sessionId, tenantId, userId, body);
+        if (truncateError) return truncateError;
         const toolRegistry = buildRequestToolRegistry(ctx, sessionId);
         const runOptions = requestOptions(body);
         if (runOptions instanceof Response) return runOptions;

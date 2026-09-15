@@ -695,7 +695,7 @@ function AgentConversation(): React.ReactElement {
 
   // Send message
   const handleSend = useCallback(
-    async (content: string) => {
+    async (content: string, options?: { truncateUserMessages?: number }) => {
       if (loading || !selectedAgent) return;
 
       const userMessage: ChatMessage = {
@@ -732,6 +732,9 @@ function AgentConversation(): React.ReactElement {
         knowledgeBaseIds: enabledKbs,
         thinkingLevel,
         attachmentPaths: attachments.map((file) => file.path),
+        ...(options?.truncateUserMessages === undefined
+          ? {}
+          : { truncateUserMessages: options.truncateUserMessages }),
       };
       // 用户选择的模型：仅在真实模型且落在 Agent 白名单内时下发，否则由后端取默认模型
       const isRealModel = dbModels.some((m) => m.id === currentModel.id);
@@ -1053,11 +1056,16 @@ function AgentConversation(): React.ReactElement {
       if (msgIndex < 0) return;
       // 移除该 assistant 消息
       const newMessages = messages.slice(0, msgIndex);
-      const lastUserMsg = [...newMessages].reverse().find((m) => m.role === 'user');
-      if (!lastUserMsg) return;
+      const lastUserIndex = newMessages.findLastIndex((m) => m.role === 'user');
+      if (lastUserIndex < 0) return;
+      const lastUserMsg = newMessages[lastUserIndex]!;
       setMessages(newMessages);
+      // 后端同步截断会话历史：仅保留该 user 消息之前的轮次，丢弃旧回复
+      const keepUserMessages = newMessages
+        .slice(0, lastUserIndex)
+        .filter((m) => m.role === 'user').length;
       // 重新发送
-      handleSend(lastUserMsg.content);
+      handleSend(lastUserMsg.content, { truncateUserMessages: keepUserMessages });
     },
     [messages, handleSend],
   );
@@ -1069,7 +1077,11 @@ function AgentConversation(): React.ReactElement {
       const msgIndex = messages.findIndex((m) => m.id === messageId);
       if (msgIndex < 0) return;
       setMessages(messages.slice(0, msgIndex));
-      handleSend(newContent);
+      // 后端同步截断会话历史：仅保留被编辑消息之前的轮次
+      const keepUserMessages = messages
+        .slice(0, msgIndex)
+        .filter((m) => m.role === 'user').length;
+      handleSend(newContent, { truncateUserMessages: keepUserMessages });
     },
     [messages, handleSend, loading],
   );

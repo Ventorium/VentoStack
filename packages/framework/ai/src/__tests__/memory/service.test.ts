@@ -46,6 +46,42 @@ describe("tenant-scoped Memory", () => {
     expect(await memory.listSessions(otherTenant)).toEqual([]);
   });
 
+  test("truncateSessionHistory keeps only the first N user turns for edit-resend", async () => {
+    const { db } = createMockDatabase();
+    const memory = createMemoryService({ db, storagePath });
+    const scope = { tenantId: "tenant-a", userId: "user-a" };
+    const { sessionId } = await memory.createSession({ ...scope, agentId: "agent-a" });
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "q1" });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "a1" });
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "q2" });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "a2" });
+
+    // 编辑第 2 轮用户消息并重发：只保留第 1 轮
+    await memory.truncateSessionHistory(sessionId, scope, 1);
+    expect((await memory.getHistory(sessionId, scope)).map((m) => m.content)).toEqual(["q1", "a1"]);
+
+    // 截断后可继续追加新消息（模拟重发）
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "q2-edited" });
+    expect((await memory.getHistory(sessionId, scope)).map((m) => m.content)).toEqual([
+      "q1",
+      "a1",
+      "q2-edited",
+    ]);
+
+    // keepUserMessages 覆盖全部轮次时不重写文件（无变化）
+    await memory.truncateSessionHistory(sessionId, scope, 10);
+    expect((await memory.getHistory(sessionId, scope)).map((m) => m.content)).toEqual([
+      "q1",
+      "a1",
+      "q2-edited",
+    ]);
+
+    // 会话不存在时抛错
+    await expect(memory.truncateSessionHistory("missing-session", scope, 1)).rejects.toThrow(
+      "Session not found",
+    );
+  });
+
   test("isolates long-term memories by tenant and blocks path traversal", async () => {
     const { db } = createMockDatabase();
     const memory = createMemoryService({ db, storagePath });
