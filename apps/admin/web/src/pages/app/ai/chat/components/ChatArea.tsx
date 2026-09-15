@@ -7,6 +7,7 @@ import {
   EditOutlined,
   FileTextOutlined,
   LikeOutlined,
+  LinkOutlined,
   ReloadOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
@@ -28,37 +29,45 @@ interface ChatAreaProps {
   onRegenerate?: (messageId: string) => void;
   /** 聊天内嵌审批决定：返回是否提交成功（成功后由后端唤醒流继续执行） */
   onApprovalDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
-  /** 点击引用文件：切换到文件页签并预览该文件 */
-  onCiteClick?: (name: string) => void;
+  /** 点击引用：URL 引用新标签页打开，文件引用切换到文件页签预览 */
+  onCiteClick?: (name: string, url?: string) => void;
   /** 编辑用户消息并重新发送：仅会话结束（含失败）时由父组件传入 */
   onEditResend?: (messageId: string, newContent: string) => void;
 }
 
+/** 从引用行解析名称与可选 URL：支持 `- 来源: [标题](url)`、`- 来源: https://...` 与纯文本 */
+function parseCitationLine(raw: string): { name: string; url?: string } | null {
+  const line = raw.replace(/^\s*[-*]\s*(来源\s*[:：])?\s*/, '').trim();
+  if (!line) return null;
+  const md = line.match(/^\[(.+?)\]\((https?:\/\/[^\s)]+)\)$/);
+  if (md) return { name: md[1]!, url: md[2] };
+  const bare = line.match(/^(https?:\/\/\S+?)\.*$/);
+  if (bare) return { name: bare[1]!, url: bare[1] };
+  return { name: line.replace(/^\[|\]$/g, '').trim() };
+}
+
 /** 从 assistant 内容末尾解析「### 引用来源」区块 */
-function splitCitations(content: string): { displayContent: string; citations: string[] } {
+function splitCitations(content: string): {
+  displayContent: string;
+  citations: Array<{ name: string; url?: string }>;
+} {
   const match = content.match(/###\s*引用来源\s*\n([\s\S]*)$/);
   if (!match || match.index === undefined) return { displayContent: content, citations: [] };
   const citations = match[1]
     .split('\n')
-    .map((line) =>
-      line
-        .replace(/^\s*[-*]\s*(来源\s*[:：])?\s*/, '')
-        .replace(/^\[(.*?)\]\(.*?\)$/, '$1')
-        .replace(/^\[|\]$/g, '')
-        .trim(),
-    )
-    .filter(Boolean);
+    .map(parseCitationLine)
+    .filter((c): c is { name: string; url?: string } => !!c?.name);
   if (citations.length === 0) return { displayContent: content, citations: [] };
   return { displayContent: content.slice(0, match.index).trimEnd(), citations };
 }
 
-/** 引用文件列表：展示在消息底部，点击可跳转文件预览 */
+/** 引用列表：展示在消息底部，URL 引用点击新标签页打开，文件引用跳转文件预览 */
 function CitationsBlock({
   citations,
   onCiteClick,
 }: {
-  citations: string[];
-  onCiteClick?: (name: string) => void;
+  citations: Array<{ name: string; url?: string }>;
+  onCiteClick?: (name: string, url?: string) => void;
 }) {
   const { token } = theme.useToken();
   return (
@@ -70,17 +79,19 @@ function CitationsBlock({
         引用来源（{citations.length}）
       </Text>
       <Space size={[4, 4]} wrap>
-        {citations.map((name, i) => (
+        {citations.map((c, i) => (
           <Button
-            key={`${name}-${i}`}
+            key={`${c.name}-${i}`}
             size="small"
             type="text"
-            icon={<FileTextOutlined />}
+            icon={c.url ? <LinkOutlined /> : <FileTextOutlined />}
             className="text-xs"
             style={{ color: token.colorPrimary }}
-            onClick={() => onCiteClick?.(name)}
+            onClick={() => onCiteClick?.(c.name, c.url)}
           >
-            {name}
+            <span className="inline-block align-bottom truncate" style={{ maxWidth: 240 }}>
+              {c.name}
+            </span>
           </Button>
         ))}
       </Space>

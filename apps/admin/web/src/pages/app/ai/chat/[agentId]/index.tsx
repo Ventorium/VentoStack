@@ -176,10 +176,14 @@ function AgentConversation(): React.ReactElement {
     null,
   );
 
-  // 点击消息底部引用来源：切换到文件页签并打开匹配的文件
+  // 点击消息底部引用来源：URL 引用新标签页打开，文件引用切换到文件页签预览
   const handleCiteClick = useCallback(
-    (name: string) => {
+    (name: string, url?: string) => {
       const normalized = name.trim();
+      if (url) {
+        window.open(url, '_blank', 'noopener,noreferrer');
+        return;
+      }
       if (!normalized) return;
       const matched =
         workspaceFiles.find((f) => f.path === normalized) ??
