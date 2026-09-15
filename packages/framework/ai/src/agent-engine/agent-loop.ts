@@ -345,6 +345,11 @@ export interface AgentLoopDeps {
   promptGuard?: PromptGuard;
   eventEmitter?: AgentEventEmitter;
   agentService?: AgentCrudService;
+  /**
+   * 解析模型端声明的可用思考档位（ai_model.reasoning_options）。
+   * 请求与 Agent 默认档位都要照此校验，防止绕过前端直传非法值导致上游 400。
+   */
+  resolveAllowedThinkingLevels?: (modelRef: string, tenantId: string) => Promise<ThinkingLevel[] | null>;
   /** Agent 级别的 tools（增强版，支持 hooks） */
   agentTools?: AgentTool[];
   /** beforeToolCall 钩子 */
@@ -877,6 +882,28 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       } else {
         model = allowedModels[0] ?? 'default';
       }
+
+      // 思考档位校验：以模型端 ai_model.reasoning_options 声明为准（请求值或 Agent 默认值，
+      // 二者都会下发到上游）。非法档位直接失败，不静默降级——静默降级会让模型端配置形同虚设。
+      const requestedThinkingLevel = params.thinkingLevel ?? agentConfig?.defaultThinkingLevel;
+      if (
+        requestedThinkingLevel !== undefined &&
+        requestedThinkingLevel !== 'off' &&
+        deps.resolveAllowedThinkingLevels
+      ) {
+        const allowedLevels = await deps.resolveAllowedThinkingLevels(model, tenantId);
+        if (allowedLevels && !allowedLevels.includes(requestedThinkingLevel)) {
+          const denied = {
+            code: 'THINKING_LEVEL_NOT_ALLOWED' as const,
+            message: `思考强度 ${requestedThinkingLevel} 不被模型 ${model} 支持（可用：${allowedLevels.join('、')}）`,
+            recoverable: false,
+          };
+          await emit({ type: 'error', error: denied }, signal);
+          yield { type: 'error', error: denied };
+          return;
+        }
+      }
+
       // 迭代预算：默认 200；-1 表示无上限（映射为极大值）
       let maxIterations =
         agentConfig?.maxIterations === -1
@@ -1014,11 +1041,12 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
       }
 
-      /** 增量持久化对话消息（用户/assistant/工具轨迹），失败仅记录不阻断对话；assistant 消息附带生成模型 */
+      /** 增量持久化对话消息（用户/assistant/工具轨迹），失败仅记录不阻断对话；assistant 消息附带生成模型与思考内容 */
       const persistMemoryMessage = async (msg: {
         role: string;
         content: string;
         model?: string;
+        reasoning?: string;
       }): Promise<void> => {
         if (!deps.memory || !params.sessionId || !memoryEnabled) return;
         try {
@@ -1302,6 +1330,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         });
 
         let assistantContent = '';
+        // 本轮思考内容：随本轮 assistant 消息落盘用于刷新后回显；不计入 assistantContent 与 LLM 上下文
+        let roundReasoning = '';
         const toolCalls: ToolCall[] = [];
         let turnUsage: { promptTokens: number; completionTokens: number } | undefined;
 
@@ -1313,7 +1343,8 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               yield chunk;
               break;
             case 'reasoning':
-              // 推理内容仅透传给前端展示，不计入 assistant 正文与历史
+              // 推理内容只透传前端并随本条消息落盘，不计入 assistant 正文与 LLM 上下文
+              roundReasoning += chunk.delta ?? '';
               yield chunk;
               break;
             case 'tool_call_start':
@@ -1377,7 +1408,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         };
         messages.push(assistantChatMsg);
 
-        // 增量持久化 assistant 消息（含工具调用摘要与生成模型，跨轮/跨进程保留）
+        // 增量持久化 assistant 消息（含工具调用摘要、生成模型与思考内容，跨轮/跨进程保留）
         await persistMemoryMessage({
           role: 'assistant',
           content:
@@ -1385,6 +1416,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
               ? `${assistantContent}\n[工具调用: ${toolCalls.map((tc) => tc.name).join(', ')}]`
               : assistantContent,
           model,
+          ...(roundReasoning ? { reasoning: roundReasoning } : {}),
         });
 
         await emit({ type: 'message_start', message: assistantEventMsg }, signal);
@@ -1628,13 +1660,16 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           ...(finalizeApiKey === undefined ? {} : { apiKey: finalizeApiKey }),
         });
         let finalizeContent = '';
+        // 收尾轮的思考内容：与收尾回答一起落盘用于刷新后回显
+        let finalizeReasoning = '';
         for await (const chunk of withStallTimeout(finalizeStream)) {
           if (chunk.type === 'content') {
             finalizeContent += chunk.delta ?? '';
             fullContent += chunk.delta ?? '';
             yield chunk;
           } else if (chunk.type === 'reasoning') {
-            // 推理内容仅透传给前端展示，不计入 assistant 正文与历史
+            // 推理内容只透传前端并随本条消息落盘，不计入 assistant 正文与 LLM 上下文
+            finalizeReasoning += chunk.delta ?? '';
             yield chunk;
           } else if (chunk.type === 'usage') {
             yield chunk;
@@ -1656,7 +1691,12 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
         if (finalizeContent.length > 0) {
           messages.push({ role: 'assistant', content: finalizeContent });
-          await persistMemoryMessage({ role: 'assistant', content: finalizeContent, model });
+          await persistMemoryMessage({
+            role: 'assistant',
+            content: finalizeContent,
+            model,
+            ...(finalizeReasoning ? { reasoning: finalizeReasoning } : {}),
+          });
           const finalizeEventMsg: AgentEventMessage = {
             role: 'assistant',
             content: finalizeContent,

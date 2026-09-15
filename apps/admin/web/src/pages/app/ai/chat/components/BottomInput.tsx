@@ -67,11 +67,14 @@ const THINKING_OPTIONS = [
 
 const ALL_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
 
-/** 当前模型支持的思考强度档位（依据 reasoningOptions 的 effort 配置） */
-function allowedThinkingLevels(model?: ModelOption): ThinkingLevel[] {
+/** 模型未声明 effort 档位时的安全默认集（OpenAI reasoning_effort 枚举口径，不含 xhigh） */
+const DEFAULT_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high'];
+
+/** 当前模型支持的思考强度档位（依据 reasoningOptions 的 effort 配置；模型配置是唯一权威） */
+export function allowedThinkingLevels(model?: ModelOption): ThinkingLevel[] {
   if (!model?.supportsThinking) return ['off'];
   const effort = model.reasoningOptions?.find((o) => o.type === 'effort')?.values;
-  if (!effort || effort.length === 0) return ALL_LEVELS;
+  if (!effort || effort.length === 0) return DEFAULT_LEVELS;
   return ['off', ...effort.filter((v): v is ThinkingLevel => v !== 'off' && ALL_LEVELS.includes(v as ThinkingLevel))];
 }
 

@@ -113,6 +113,23 @@ export interface RuntimeModelConfig {
   apiKey: string;
   headers: Record<string, string>;
   modelId: string;
+  /** 模型端声明的思考能力与档位，用于校验请求的 thinkingLevel */
+  supportsThinking: boolean;
+  reasoningOptions: ReasoningOption[] | null;
+}
+
+/** 解析 ai_model.reasoning_options：兼容 JSON 字符串与已解析数组两种形态 */
+export function parseReasoningOptions(raw: unknown): ReasoningOption[] | null {
+  if (!raw) return null;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw) as ReasoningOption[];
+      return Array.isArray(parsed) ? parsed : null;
+    } catch {
+      return null;
+    }
+  }
+  return Array.isArray(raw) ? (raw as ReasoningOption[]) : null;
 }
 
 export function createProviderService(deps: {
@@ -538,19 +555,7 @@ export function createProviderService(deps: {
   }
 
   function mapModel(r: Record<string, unknown>): ModelItem {
-    let reasoningOptions: ReasoningOption[] | null = null;
-    const raw = r.reasoning_options;
-    if (raw) {
-      if (typeof raw === 'string') {
-        try {
-          reasoningOptions = JSON.parse(raw);
-        } catch {
-          /* ignore */
-        }
-      } else if (Array.isArray(raw)) {
-        reasoningOptions = raw as ReasoningOption[];
-      }
-    }
+    const reasoningOptions = parseReasoningOptions(r.reasoning_options);
 
     return {
       id: r.id as string,
@@ -685,7 +690,7 @@ export function createProviderService(deps: {
     const modelId = slashIndex > 0 ? modelRef.slice(slashIndex + 1) : modelRef;
     const rows = (await db.raw(
       `SELECT p.name AS provider_name, p.api_format, p.base_url, p.api_key, p.headers,
-              m.model_id
+              m.model_id, m.supports_thinking, m.reasoning_options
        FROM ai_model m
        JOIN ai_provider p ON p.id = m.provider_id AND p.tenant_id = m.tenant_id
        WHERE m.tenant_id = $1 AND m.model_id = $2
@@ -711,6 +716,8 @@ export function createProviderService(deps: {
           ? (JSON.parse(rawHeaders) as Record<string, string>)
           : ((rawHeaders as Record<string, string> | null) ?? {}),
       modelId: row.model_id as string,
+      supportsThinking: (row.supports_thinking as boolean) ?? false,
+      reasoningOptions: parseReasoningOptions(row.reasoning_options),
     };
   }
 

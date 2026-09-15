@@ -27,13 +27,13 @@ export interface ConversationService {
     before?: string;
   }): Promise<unknown[]>;
   delete(id: string, userId: string, tenantId: string): Promise<void>;
-  /** 获取会话历史消息（供前端切换会话时回显；assistant 消息带生成模型） */
+  /** 获取会话历史消息（供前端切换会话时回显；assistant 消息带生成模型与思考内容） */
   getMessages(
     id: string,
     userId: string,
     tenantId: string,
     limit?: number,
-  ): Promise<Array<{ role: string; content: string; model?: string }>>;
+  ): Promise<Array<{ role: string; content: string; model?: string; reasoning?: string }>>;
 }
 
 /** 聊天内嵌审批所需的最小服务接口（请求者自确认） */

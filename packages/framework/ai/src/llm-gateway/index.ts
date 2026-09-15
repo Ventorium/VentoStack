@@ -9,5 +9,7 @@ export { createGoogleProvider } from "./providers/google";
 export { createOpenAIResponsesProvider } from "./providers/openai-responses";
 export { createModelRegistry } from "./model-registry";
 export type { ModelConfig, ModelRegistry } from "./model-registry";
+export { allowedThinkingLevels } from "./thinking-levels";
+export type { ReasoningEffortOption } from "./thinking-levels";
 export { withRetry } from "./retry";
 export { createRequestQueue } from "./queue";

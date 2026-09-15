@@ -6,7 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatMessage, ModelOption, ToolBlock } from '../types';
 
-import BottomInput from '../components/BottomInput';
+import BottomInput, { allowedThinkingLevels } from '../components/BottomInput';
 import ChatArea from '../components/ChatArea';
 import FilesPanel from '../components/FilesPanel';
 import KnowledgePanel from '../components/KnowledgePanel';
@@ -381,8 +381,9 @@ function AgentConversation(): React.ReactElement {
     if (pending === null) return;
     pendingThinkingRef.current = null;
     const model = dbModels.find((m) => m.id === currentModel.id);
+    // Agent 默认档位同样必须落在模型声明的档位内，否则回落到 off（模型端配置是唯一权威）
     setThinkingLevel(
-      pending !== 'off' && model?.supportsThinking ? pending : 'off',
+      model && allowedThinkingLevels(model).includes(pending) ? pending : 'off',
     );
   }, [selectedAgent, dbModels, currentModel.id]);
 
@@ -612,7 +613,7 @@ function AgentConversation(): React.ReactElement {
       try {
         const { data } = (await client.get('/api/ai/conversations/:id/messages', {
           params: { id: threadId },
-        })) as { data?: Array<{ role: string; content: string; model?: string }> };
+        })) as { data?: Array<{ role: string; content: string; model?: string; reasoning?: string }> };
         // 历史回显与流式渲染对齐：同一轮运行中连续持久化的 assistant 消息（每轮迭代一条）
         // 合并成一个气泡；role:'tool' 消息按持久化顺序还原为可展开的工具块
         const history: ChatMessage[] = [];
@@ -644,6 +645,8 @@ function AgentConversation(): React.ReactElement {
             ];
             last.content = text ? `${last.content}\n\n${text}` : last.content;
             if (m.model) last.model = m.model; // 同一轮多轮迭代以最后一次生成模型为准
+            // 同一轮多轮迭代的思考内容依次拼接，对齐流式期间累积在同一气泡的展示
+            if (m.reasoning) last.thinking = [last.thinking, m.reasoning].filter(Boolean).join('\n\n');
           } else {
             history.push({
               id: crypto.randomUUID(),
@@ -652,6 +655,7 @@ function AgentConversation(): React.ReactElement {
               timestamp: '',
               blocks: [...(text ? [{ type: 'text' as const, text }] : [])],
               ...(m.model ? { model: m.model } : {}),
+              ...(m.reasoning ? { thinking: m.reasoning } : {}),
             });
           }
         }

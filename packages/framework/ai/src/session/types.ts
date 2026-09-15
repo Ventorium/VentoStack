@@ -22,6 +22,8 @@ export interface MessageEntry {
     errorMessage?: string;
     model?: string;
     provider?: string;
+    /** 模型推理/思考内容：仅用于前端回显，不进入送给 LLM 的上下文 */
+    reasoning?: string;
     timestamp: number;
   };
 }

@@ -26,6 +26,7 @@ import { createAnthropicProvider } from './llm-gateway/providers/anthropic';
 import { createGoogleProvider } from './llm-gateway/providers/google';
 import { createOpenAIProvider } from './llm-gateway/providers/openai';
 import { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-responses';
+import { allowedThinkingLevels } from './llm-gateway/thinking-levels';
 import type { LLMGateway, LLMProvider } from './llm-gateway/types';
 
 // Agent Engine
@@ -638,6 +639,12 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     eventEmitter,
     toolRegistry,
     agentService: agentCrudService,
+    // 思考档位以模型端 ai_model.reasoning_options 声明为准：请求值与 Agent 默认值都要照此校验
+    async resolveAllowedThinkingLevels(modelRef, tenantId) {
+      const runtime = await providerService.resolveRuntimeModel(modelRef, tenantId || 'default');
+      if (!runtime) return null;
+      return allowedThinkingLevels(runtime.supportsThinking, runtime.reasoningOptions);
+    },
     beforeToolCall: deps.hooks?.beforeToolCall,
     afterToolCall: deps.hooks?.afterToolCall,
     transformContext: deps.hooks?.transformContext,

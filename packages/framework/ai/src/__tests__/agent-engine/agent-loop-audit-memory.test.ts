@@ -134,6 +134,54 @@ describe('agent loop audit + memory config', () => {
     expect(historyRoles).toEqual(['历史问题', '历史回答', 'run']);
   });
 
+  test('persists reasoning for replay but never replays it into the LLM context', async () => {
+    const requests: ChatParams[] = [];
+    const saved: Array<{ role: string; content: string; model?: string; reasoning?: string }> = [];
+    const gateway = createGateway(
+      [[
+        { type: 'reasoning', delta: '先分析一下' },
+        { type: 'reasoning', delta: '，再作答。' },
+        { type: 'content', delta: '答案' },
+        { type: 'done' },
+      ]],
+      requests,
+    );
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentService: { getById: async () => ({ ...baseAgent }) },
+      memory: createMemoryMock({
+        getHistory: async () => [
+          { role: 'assistant', content: '历史回答', reasoning: '历史思考' },
+        ],
+        appendMessage: async (_sessionId, _scope, message) => {
+          saved.push(message);
+        },
+      }),
+    });
+
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        sessionId: 'conv-1',
+        message: 'run',
+      }),
+    );
+
+    // 思考透传给前端
+    expect(chunks.filter((chunk) => chunk.type === 'reasoning').map((chunk) => chunk.delta)).toEqual([
+      '先分析一下',
+      '，再作答。',
+    ]);
+    // 历史里的 reasoning 不会被回放给 LLM
+    const replayed = requests[0]?.messages ?? [];
+    expect(replayed.map((m) => m.content)).toContain('历史回答');
+    expect(replayed.every((m) => !('reasoning' in m))).toBe(true);
+    // 本轮的思考随 assistant 消息落盘，供刷新后回显
+    expect(saved.find((m) => m.role === 'assistant')?.reasoning).toBe('先分析一下，再作答。');
+  });
+
   test('memory_config.enabled=false skips history load and save', async () => {
     const requests: ChatParams[] = [];
     let historyCalls = 0;

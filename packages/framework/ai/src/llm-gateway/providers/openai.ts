@@ -48,13 +48,10 @@ function toOpenAIMessages(messages: ChatParams['messages']): unknown[] {
 }
 
 function applyThinking(body: Record<string, unknown>, params: ChatParams): void {
+  // 档位由模型端 ai_model.reasoning_options 声明，是唯一权威；此处原样透传，不做任何映射。
+  // off 表示关闭思考，不发 reasoning_effort，仅通过 enable_thinking=false 表达。
   if (params.thinkingLevel && params.thinkingLevel !== 'off') {
-    // OpenAI reasoning_effort 仅接受 low/medium/high；将 minimal 视为 low、xhigh 视为 high
-    const effort =
-      params.thinkingLevel === 'minimal' ? 'low'
-      : params.thinkingLevel === 'xhigh' ? 'high'
-      : params.thinkingLevel;
-    body.reasoning_effort = effort;
+    body.reasoning_effort = params.thinkingLevel;
   }
   // Qwen/vLLM 系 OpenAI 兼容部署：显式声明 enable_thinking 才会把思考从正文分离到
   // reasoning_content（off 时关闭思考）；OpenAI 官方端点会忽略未知字段

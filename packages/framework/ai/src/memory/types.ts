@@ -57,7 +57,7 @@ export interface MemoryService {
   appendMessage(
     sessionId: string,
     scope: MemoryScope,
-    message: { role: string; content: string; model?: string },
+    message: { role: string; content: string; model?: string; reasoning?: string },
   ): Promise<void>;
   getSession(sessionId: string, scope: MemoryScope): Promise<ConversationMemory | null>;
   /** 更新会话标题（会话总结模型生成标题后调用；缺省标题为 `对话 {sessionId前8位}`） */
@@ -88,11 +88,12 @@ export interface MemoryService {
     scope: MemoryScope,
     destination: ForkDestination,
   ): Promise<{ sessionId: string }>;
+  /** 历史消息：reasoning 仅用于前端回显，调用方构造 LLM 上下文时必须丢弃 */
   getHistory(
     sessionId: string,
     scope: MemoryScope,
     limit?: number,
-  ): Promise<Array<{ role: string; content: string }>>;
+  ): Promise<Array<{ role: string; content: string; model?: string; reasoning?: string }>>;
   /**
    * 编辑重发场景的会话历史截断：仅保留前 `keepUserMessages` 轮用户消息及其回复，
    * 从第 `keepUserMessages + 1` 条用户消息起丢弃全部后续内容（原文件重写）。

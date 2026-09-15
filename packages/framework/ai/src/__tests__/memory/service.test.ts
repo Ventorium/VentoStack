@@ -33,6 +33,29 @@ describe("tenant-scoped Memory", () => {
     expect((await memory.listSessions(scope, "agent-a"))[0]?.sessionId).toBe(sessionId);
   });
 
+  test("persists assistant reasoning alongside the message for replay", async () => {
+    const { db } = createMockDatabase();
+    const memory = createMemoryService({ db, storagePath });
+    const scope = { tenantId: "tenant-a", userId: "user-a" };
+    const { sessionId } = await memory.createSession({ ...scope, agentId: "agent-a" });
+
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "1+1?" });
+    await memory.appendMessage(sessionId, scope, {
+      role: "assistant",
+      content: "2",
+      model: "qwen3",
+      reasoning: "个位相加，无进位",
+    });
+    // 未传 reasoning 的消息不应带上空字段
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "再来一题" });
+
+    expect(await memory.getHistory(sessionId, scope)).toEqual([
+      { role: "user", content: "1+1?" },
+      { role: "assistant", content: "2", model: "qwen3", reasoning: "个位相加，无进位" },
+      { role: "user", content: "再来一题" },
+    ]);
+  });
+
   test("does not discover or read a session through another tenant scope", async () => {
     const { db } = createMockDatabase();
     const memory = createMemoryService({ db, storagePath });

@@ -31,6 +31,25 @@ describe("provider-neutral thinking levels", () => {
     expect(body.chat_template_kwargs).toEqual({ enable_thinking: true });
   });
 
+  test("passes declared thinking levels through verbatim (xhigh/minimal not folded)", async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    globalThis.fetch = (async (_input, init) => {
+      bodies.push(JSON.parse(String(init?.body)) as Record<string, unknown>);
+      return Response.json({
+        choices: [{ message: { content: "ok" }, finish_reason: "stop" }],
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+      });
+    }) as typeof fetch;
+
+    const provider = createOpenAIProvider({ apiKey: "secret" });
+    // xhigh 曾为迁就 OpenAI 枚举被折叠成 high，导致模型端声明的档位失真
+    await provider.chat({ model: "qwen3", messages: [{ role: "user", content: "t" }], thinkingLevel: "xhigh" });
+    await provider.chat({ model: "gpt", messages: [{ role: "user", content: "t" }], thinkingLevel: "minimal" });
+
+    expect(bodies[0]?.reasoning_effort).toBe("xhigh");
+    expect(bodies[1]?.reasoning_effort).toBe("minimal");
+  });
+
   test("sends enable_thinking false for OpenAI provider when thinking is off", async () => {
     let body: Record<string, unknown> = {};
     globalThis.fetch = (async (_input, init) => {

@@ -154,6 +154,7 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
         role: message.role,
         content: message.content,
         ...(message.model ? { model: message.model } : {}),
+        ...(message.reasoning ? { reasoning: message.reasoning } : {}),
         timestamp: Date.now(),
       });
     },
@@ -287,7 +288,7 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
       sessionId,
       scope,
       limit,
-    ): Promise<Array<{ role: string; content: string; model?: string }>> {
+    ): Promise<Array<{ role: string; content: string; model?: string; reasoning?: string }>> {
       const filePath = conversationPath(sessionId, scope);
       // 回收站中的会话只读可见（前端回收站查看内容场景）
       let source = filePath;
@@ -301,6 +302,7 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
         role: message.role,
         content: message.content,
         ...(message.model ? { model: message.model } : {}),
+        ...(message.reasoning ? { reasoning: message.reasoning } : {}),
       }));
       return limit && messages.length > limit ? messages.slice(-limit) : messages;
     },
