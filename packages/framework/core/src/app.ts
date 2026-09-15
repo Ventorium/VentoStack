@@ -30,6 +30,12 @@ export interface AppConfig {
   port?: number;
   /** 监听主机名，默认 0.0.0.0 */
   hostname?: string;
+  /**
+   * 空闲连接超时（秒），Bun.serve idleTimeout，范围 0-255。
+   * SSE 等长连接在两次数据之间可能长时间静默，默认 10s 会掐断流式响应；
+   * 0 表示禁用空闲超时。默认 120。
+   */
+  idleTimeout?: number;
   /** 是否打印启动 Banner，默认 true */
   banner?: boolean;
   /**
@@ -266,6 +272,7 @@ export function createApp(config?: AppConfig): VentoStackApp {
       server = Bun.serve({
         port: listenPort,
         hostname,
+        idleTimeout: config?.idleTimeout ?? 120,
         routes: wrapped,
         fetch(req: Request, srv: Server<undefined>) {
           if (!config?.fetchFallback) return notFoundResponse();
