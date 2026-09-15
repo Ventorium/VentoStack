@@ -12,6 +12,7 @@ import {
   CloudSyncOutlined,
   CodeOutlined,
   DeleteOutlined,
+  EyeInvisibleOutlined,
   EyeOutlined,
   PictureOutlined,
   PlusOutlined,
@@ -394,11 +395,13 @@ export default function AISettingsPage() {
   };
 
   // === Edit provider ===
-  // 查看已配置的 API Key（按需解密；加载后隐藏查看按钮，仅保留 antd 明文切换）
+  // 查看已配置的 API Key（按需解密；单图标：首次点击加载并显示明文，再点隐藏）
   const [keyLoaded, setKeyLoaded] = useState(false);
+  const [keyVisible, setKeyVisible] = useState(false);
   const openEdit = (p: ProviderItem) => {
     setEditProvider(p);
     setKeyLoaded(false);
+    setKeyVisible(false);
     editForm.setFieldsValue({
       displayName: p.displayName,
       apiFormat: p.apiFormat,
@@ -411,19 +414,23 @@ export default function AISettingsPage() {
     setEditOpen(true);
   };
 
-  const handleRevealApiKey = async () => {
+  const handleToggleApiKey = async () => {
     if (!editProvider) return;
-    if (!editProvider.hasApiKey) {
-      msg.info('该供应商尚未配置 API Key');
-      return;
-    }
-    const { error, data } = await client.get('/api/ai/providers/:id/api-key', {
-      params: { id: editProvider.id },
-    });
-    if (!error && typeof data?.apiKey === 'string') {
+    if (!keyLoaded) {
+      if (!editProvider.hasApiKey) {
+        msg.info('该供应商尚未配置 API Key');
+        return;
+      }
+      const { error, data } = await client.get('/api/ai/providers/:id/api-key', {
+        params: { id: editProvider.id },
+      });
+      if (error || typeof data?.apiKey !== 'string') return;
       editForm.setFieldsValue({ apiKey: data.apiKey });
       setKeyLoaded(true);
+      setKeyVisible(true);
+      return;
     }
+    setKeyVisible(!keyVisible);
   };
 
   const handleEditProvider = async () => {
@@ -1166,16 +1173,18 @@ export default function AISettingsPage() {
             label="API Key"
             extra={editProvider?.hasApiKey ? '已配置；留空表示不修改' : '首次配置必填'}
           >
-            <Input.Password
+            <Input
+              type={keyVisible ? 'text' : 'password'}
+              autoComplete="new-password"
               placeholder={editProvider?.hasApiKey ? '••••••••' : '请输入 API Key'}
               suffix={
-                editProvider?.hasApiKey && !keyLoaded ? (
-                  <Tooltip title="查看当前 Key">
+                editProvider?.hasApiKey ? (
+                  <Tooltip title={keyVisible ? '隐藏 API Key' : '查看 API Key'}>
                     <Button
-                      type="link"
+                      type="text"
                       size="small"
-                      icon={<EyeOutlined />}
-                      onClick={handleRevealApiKey}
+                      icon={keyVisible ? <EyeOutlined /> : <EyeInvisibleOutlined />}
+                      onClick={handleToggleApiKey}
                     />
                   </Tooltip>
                 ) : undefined
