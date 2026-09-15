@@ -1240,7 +1240,7 @@ export default function AISettingsPage() {
         size={960}
         extra={
           <Space>
-            {(modelsProvider?.presetId || modelsProvider?.modelsDevSlug) && (
+            {modelsProvider?.modelsDevSlug && (
               <Button icon={<CloudSyncOutlined />} loading={syncing} onClick={handleSync}>
                 从 models.dev 同步
               </Button>
@@ -1265,7 +1265,7 @@ export default function AISettingsPage() {
       >
         <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]">
           💡{' '}
-          {modelsProvider?.presetId || modelsProvider?.modelsDevSlug
+          {modelsProvider?.modelsDevSlug
             ? '点击「从 models.dev 同步」拉取模型与配置，或点击「从接口获取」访问供应商 /models 接口自动识别模型。'
             : '点击「从接口获取」访问供应商 /models 接口自动识别模型，或点击「添加模型」手动添加。'}{' '}
           勾选模型后可批量删除或测试连通性。
