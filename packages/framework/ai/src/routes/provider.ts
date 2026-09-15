@@ -48,6 +48,23 @@ export function createProviderRoutes(
     perm("ai:provider", "query"),
   );
 
+  router.get(
+    "/api/ai/providers/:id/api-key",
+    routeDoc("查看供应商 API Key（按需解密，仅授权用户）", {
+      response: {
+        apiKey: { type: "string", description: "解密后的 API Key" },
+      },
+    }),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "default";
+      const creds = await providerService.getProviderApiKey(id, tenantId);
+      if (!creds) return fail("供应商不存在", 404, 404);
+      return success({ apiKey: creds.apiKey });
+    },
+    perm("ai:provider", "update"),
+  );
+
   router.post(
     "/api/ai/providers",
     routeDoc("创建供应商", {

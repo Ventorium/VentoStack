@@ -12,6 +12,7 @@ import {
   CloudSyncOutlined,
   CodeOutlined,
   DeleteOutlined,
+  EyeOutlined,
   PictureOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -405,6 +406,21 @@ export default function AISettingsPage() {
       sort: p.sort,
     });
     setEditOpen(true);
+  };
+
+  // 查看已配置的 API Key（按需解密）
+  const handleRevealApiKey = async () => {
+    if (!editProvider) return;
+    if (!editProvider.hasApiKey) {
+      msg.info('该供应商尚未配置 API Key');
+      return;
+    }
+    const { error, data } = await client.get('/api/ai/providers/:id/api-key', {
+      params: { id: editProvider.id },
+    });
+    if (!error && typeof data?.apiKey === 'string') {
+      editForm.setFieldsValue({ apiKey: data.apiKey });
+    }
   };
 
   const handleEditProvider = async () => {
@@ -1142,8 +1158,26 @@ export default function AISettingsPage() {
           <Form.Item name="baseUrl" label="Base URL">
             <Input />
           </Form.Item>
-          <Form.Item name="apiKey" label="API Key">
-            <Input.Password />
+          <Form.Item
+            name="apiKey"
+            label="API Key"
+            extra={editProvider?.hasApiKey ? '已配置；留空表示不修改' : '首次配置必填'}
+          >
+            <Input.Password
+              placeholder={editProvider?.hasApiKey ? '••••••••' : '请输入 API Key'}
+              suffix={
+                editProvider?.hasApiKey ? (
+                  <Tooltip title="查看当前 Key">
+                    <Button
+                      type="link"
+                      size="small"
+                      icon={<EyeOutlined />}
+                      onClick={handleRevealApiKey}
+                    />
+                  </Tooltip>
+                ) : undefined
+              }
+            />
           </Form.Item>
           <Form.Item
             name="modelsDevSlug"

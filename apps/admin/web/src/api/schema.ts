@@ -2036,6 +2036,18 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    /**
+     * 查看供应商 API Key（按需解密，仅授权用户）
+     */
+    '/api/ai/providers/:id/api-key': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/ai/providers/:id/models': {
       query: never,
       params: {
