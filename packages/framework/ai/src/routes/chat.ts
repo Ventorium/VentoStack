@@ -365,6 +365,35 @@ export function createChatRoutes(
     perm('ai:chat', 'use'),
   );
 
+  // 重命名会话（用户手动命名；命名后会话总结不再覆盖）
+  router.patch(
+    '/api/ai/conversations/:id',
+    routeDoc('重命名会话', {
+      body: {
+        title: { type: 'string', required: true, description: '会话标题（1-60 字）' },
+      },
+    }),
+    async (ctx) => {
+      try {
+        if (!memoryService) return fail('记忆服务未配置', 503, 503);
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const body = await parseBody(ctx.request);
+        if (typeof body.title !== 'string') return fail('title 必须是字符串', 400, 400);
+        const title = body.title.trim();
+        if (title.length === 0 || title.length > 60) {
+          return fail('title 长度必须在 1-60 字之间', 400, 400);
+        }
+        await memoryService.renameSession(id, { tenantId, userId }, title);
+        return success(null);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
   // 获取会话历史消息（切换会话时回显）
   router.get(
     '/api/ai/conversations/:id/messages',

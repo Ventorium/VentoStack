@@ -5,10 +5,10 @@ import {
   PlusOutlined,
   RestOutlined,
   SearchOutlined,
-} from "@ant-design/icons";
-import { Button, Dropdown, Empty, Input, Space, Spin, theme, Typography } from "antd";
-import { useState, type UIEvent } from "react";
-import type { Thread } from "../types";
+} from '@ant-design/icons';
+import { Button, Dropdown, Empty, Input, Space, Spin, Typography, theme } from 'antd';
+import { type UIEvent, useState } from 'react';
+import type { Thread } from '../types';
 
 const { Text } = Typography;
 
@@ -18,7 +18,8 @@ interface ThreadListProps {
   onSelect?: (id: string) => void;
   onNew?: () => void;
   onDelete?: (id: string) => void;
-  onRename?: (id: string) => void;
+  /** 重命名会话（提交时回调，title 已 trim） */
+  onRename?: (id: string, title: string) => void;
   /** 滚动到底部时加载更多 */
   onLoadMore?: () => void;
   hasMore?: boolean;
@@ -42,8 +43,17 @@ export default function ThreadList({
   onCollapse,
   onOpenTrash,
 }: ThreadListProps) {
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState('');
+  const [renaming, setRenaming] = useState<{ id: string; value: string } | null>(null);
   const { token } = theme.useToken();
+
+  /** 提交重命名：空标题视为取消，不发出请求 */
+  const commitRename = () => {
+    if (!renaming) return;
+    const value = renaming.value.trim();
+    setRenaming(null);
+    if (value) onRename?.(renaming.id, value);
+  };
 
   const filtered = threads.filter(
     (t) =>
@@ -61,12 +71,14 @@ export default function ThreadList({
 
   return (
     <div
-      className="w-[200px] h-full flex flex-col shrink-0" style={{ borderRight: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
+      className="w-[200px] h-full flex flex-col shrink-0"
+      style={{
+        borderRight: `1px solid ${token.colorBorderSecondary}`,
+        background: token.colorBgContainer,
+      }}
     >
       {/* Header */}
-      <div
-        className="flex items-center justify-between" style={{ padding: "12px 12px 8px" }}
-      >
+      <div className="flex items-center justify-between" style={{ padding: '12px 12px 8px' }}>
         <Space size={4}>
           {onCollapse && (
             <Button
@@ -83,12 +95,13 @@ export default function ThreadList({
         </Space>
         <PlusOutlined
           onClick={onNew}
-          className="cursor-pointer text-sm" style={{ color: token.colorPrimary }}
+          className="cursor-pointer text-sm"
+          style={{ color: token.colorPrimary }}
         />
       </div>
 
       {/* Search */}
-      <div style={{ padding: "0 12px 8px" }}>
+      <div style={{ padding: '0 12px 8px' }}>
         <Input
           prefix={<SearchOutlined style={{ color: token.colorTextPlaceholder }} />}
           placeholder="搜索对话..."
@@ -100,13 +113,9 @@ export default function ThreadList({
       </div>
 
       {/* Thread List */}
-      <div className="flex-1 overflow-auto px-[4px]" onScroll={handleScroll} >
+      <div className="flex-1 overflow-auto px-[4px]" onScroll={handleScroll}>
         {filtered.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="暂无会话"
-            className="mt-12"
-          />
+          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无会话" className="mt-12" />
         ) : (
           <>
             {filtered.map((thread) => {
@@ -114,42 +123,97 @@ export default function ThreadList({
               return (
                 <Dropdown
                   key={thread.id}
-                  trigger={["contextMenu"]}
+                  trigger={['contextMenu']}
                   menu={{
                     items: [
-                      { key: "rename", icon: <EditOutlined />, label: "重命名" },
-                      { key: "delete", icon: <DeleteOutlined />, label: "删除", danger: true },
+                      { key: 'rename', icon: <EditOutlined />, label: '重命名' },
+                      { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true },
                     ],
                     onClick: ({ key }) => {
-                      if (key === "delete") onDelete?.(thread.id);
-                      if (key === "rename") onRename?.(thread.id);
+                      if (key === 'delete') onDelete?.(thread.id);
+                      if (key === 'rename') setRenaming({ id: thread.id, value: thread.title });
                     },
                   }}
                 >
-                  <div
-                    onClick={() => onSelect?.(thread.id)}
-                    className="cursor-pointer mb-0.5" style={{ padding: "8px 10px", borderRadius: token.borderRadiusLG, background: isActive ? token.controlItemBgActive : "transparent", borderLeft: isActive ? `3px solid ${token.colorPrimary}` : "3px solid transparent", transition: "all 0.15s ease" }}
-                    onMouseEnter={(e) => {
-                      if (!isActive) e.currentTarget.style.background = token.controlItemBgHover;
-                    }}
-                    onMouseLeave={(e) => {
-                      if (!isActive) e.currentTarget.style.background = "transparent";
-                    }}
-                  >
-                    <Text
-                      strong={isActive}
-                      ellipsis
-                      className="block text-[13px] mb-0.5" style={{ color: isActive ? token.colorPrimary : token.colorText }}
+                  <div className="relative group">
+                    <div
+                      onClick={() => onSelect?.(thread.id)}
+                      className="cursor-pointer mb-0.5"
+                      style={{
+                        padding: '8px 10px',
+                        borderRadius: token.borderRadiusLG,
+                        background: isActive ? token.controlItemBgActive : 'transparent',
+                        borderLeft: isActive
+                          ? `3px solid ${token.colorPrimary}`
+                          : '3px solid transparent',
+                        transition: 'all 0.15s ease',
+                      }}
+                      onMouseEnter={(e) => {
+                        if (!isActive) e.currentTarget.style.background = token.controlItemBgHover;
+                      }}
+                      onMouseLeave={(e) => {
+                        if (!isActive) e.currentTarget.style.background = 'transparent';
+                      }}
                     >
-                      {thread.title}
-                    </Text>
-                    <Text
-                      type="secondary"
-                      ellipsis
-                      className="text-xs block"
-                    >
-                      {thread.lastMessage}
-                    </Text>
+                      {renaming?.id === thread.id ? (
+                        <Input
+                          size="small"
+                          autoFocus
+                          maxLength={60}
+                          value={renaming.value}
+                          onChange={(e) => setRenaming({ id: thread.id, value: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          onPressEnter={commitRename}
+                          onBlur={commitRename}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Escape') setRenaming(null);
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <Text
+                            strong={isActive}
+                            ellipsis
+                            className="block text-[13px] mb-0.5"
+                            style={{ color: isActive ? token.colorPrimary : token.colorText }}
+                          >
+                            {thread.title}
+                          </Text>
+                          <Text type="secondary" ellipsis className="text-xs block">
+                            {thread.lastMessage}
+                          </Text>
+                        </>
+                      )}
+                    </div>
+
+                    {/* hover 操作：重命名 / 删除（删除为移入回收站，可恢复） */}
+                    {renaming?.id !== thread.id && (
+                      <div
+                        className="absolute right-1 top-1 flex gap-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                        style={{ background: token.colorBgContainer }}
+                      >
+                        <Button
+                          type="text"
+                          size="small"
+                          aria-label="重命名会话"
+                          icon={<EditOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setRenaming({ id: thread.id, value: thread.title });
+                          }}
+                        />
+                        <Button
+                          type="text"
+                          size="small"
+                          aria-label="删除会话"
+                          icon={<DeleteOutlined />}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            onDelete?.(thread.id);
+                          }}
+                        />
+                      </div>
+                    )}
                   </div>
                 </Dropdown>
               );
@@ -166,13 +230,7 @@ export default function ThreadList({
       {/* Footer：回收站入口 */}
       {onOpenTrash && (
         <div className="px-3 py-2" style={{ borderTop: `1px solid ${token.colorBorderSecondary}` }}>
-          <Button
-            block
-            type="text"
-            size="small"
-            icon={<RestOutlined />}
-            onClick={onOpenTrash}
-          >
+          <Button block type="text" size="small" icon={<RestOutlined />} onClick={onOpenTrash}>
             回收站
           </Button>
         </div>

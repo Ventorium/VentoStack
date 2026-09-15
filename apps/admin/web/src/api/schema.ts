@@ -5316,5 +5316,24 @@ export type OpenAPIs = {
       },
       response: any
     }
+  },
+  patch: {
+    /**
+     * 重命名会话
+     */
+    '/api/ai/conversations/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 会话标题（1-60 字）
+         */
+        title: string
+      },
+      response: any
+    }
   }
 }

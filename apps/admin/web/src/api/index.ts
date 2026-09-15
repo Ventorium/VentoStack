@@ -1,7 +1,7 @@
-import { globalNavigate } from "@/components/GlobalHistory";
-import { msg } from "@/components/GlobalMessage";
-import { createFetchClient, queryStringify } from "@doremijs/o2t/client";
-import type { OpenAPIs } from "./schema";
+import { globalNavigate } from '@/components/GlobalHistory';
+import { msg } from '@/components/GlobalMessage';
+import { createFetchClient } from '@doremijs/o2t/client';
+import type { OpenAPIs } from './schema';
 
 // ---------------------------------------------------------------------------
 // Token refresh state — module-level to coordinate concurrent 401 retries
@@ -13,7 +13,7 @@ const refreshQueue: QueueEntry[] = [];
 async function refreshAccessToken(): Promise<boolean> {
   isRefreshing = true;
   try {
-    const { error, data } = await rawClient.post("/api/auth/refresh", {
+    const { error, data } = await rawClient.post('/api/auth/refresh', {
       body: {},
     } as never);
     if (!error && data?.accessToken) {
@@ -25,10 +25,10 @@ async function refreshAccessToken(): Promise<boolean> {
       return true;
     }
     // Refresh itself failed — reject all queued requests
-    abortPendingRequests("Token refresh failed");
+    abortPendingRequests('Token refresh failed');
     return false;
   } catch {
-    abortPendingRequests("Token refresh failed");
+    abortPendingRequests('Token refresh failed');
     return false;
   } finally {
     isRefreshing = false;
@@ -41,7 +41,7 @@ function abortPendingRequests(reason: string): void {
   for (const entry of queue) {
     entry.reject(new Error(reason));
   }
-  setTimeout(() => globalNavigate("/auth/login", { replace: true }), 0);
+  setTimeout(() => globalNavigate('/auth/login', { replace: true }), 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -50,46 +50,51 @@ function abortPendingRequests(reason: string): void {
 const rawClient = createFetchClient<OpenAPIs>({
   requestTimeoutMs: 10000,
   requestInterceptor(request) {
-    request.init.credentials = "include";
+    request.init.credentials = 'include';
+    // o2t 以小写方法名发出，而 Fetch 规范只对 DELETE/GET/HEAD/OPTIONS/POST/PUT 做大写归一化，
+    // PATCH 不在其中——小写 patch 会被 Bun 判定为非法方法并直接断开连接（空响应）。
+    if (request.init.method) {
+      request.init.method = request.init.method.toUpperCase();
+    }
     return request;
   },
   async responseInterceptor(_request, response) {
     // 仅处理成功响应的信封解包 { code, message, data } → data
     if (!response.ok) return response;
 
-    const ct = response.headers.get("content-type");
-    if (!ct?.includes("application/json")) return response;
+    const ct = response.headers.get('content-type');
+    if (!ct?.includes('application/json')) return response;
 
     const json: unknown = await response.clone().json();
-    if (!json || typeof json !== "object" || !("code" in json)) return response;
+    if (!json || typeof json !== 'object' || !('code' in json)) return response;
 
     const envelope = json as { code: number; message?: string; data?: unknown };
 
     // code !== 0 业务错误，转为 400 由 errorHandler 统一处理
     if (envelope.code !== 0) {
       return new Response(
-        JSON.stringify({ code: envelope.code, message: envelope.message || "请求失败" }),
-        { status: 400, headers: { "Content-Type": "application/json" } },
+        JSON.stringify({ code: envelope.code, message: envelope.message || '请求失败' }),
+        { status: 400, headers: { 'Content-Type': 'application/json' } },
       );
     }
 
     // code=0 成功，解包 data
     return new Response(JSON.stringify(envelope.data ?? null), {
       status: 200,
-      headers: { "Content-Type": "application/json" },
+      headers: { 'Content-Type': 'application/json' },
     });
   },
   async errorHandler(_request, response, error) {
     // 网络错误
     if (error) {
       const msgMap: Record<string, string> = {
-        "Failed to fetch": "网络连接失败，请检查网络",
-        "The user aborted a request": "请求已取消",
-        NetworkError: "网络连接失败，请检查网络",
-        TimeoutError: "请求超时，请稍后重试",
+        'Failed to fetch': '网络连接失败，请检查网络',
+        'The user aborted a request': '请求已取消',
+        NetworkError: '网络连接失败，请检查网络',
+        TimeoutError: '请求超时，请稍后重试',
       };
       const key = Object.keys(msgMap).find((k) => error.message.includes(k));
-      msg.error(key ? msgMap[key] : "请求失败，请稍后重试");
+      msg.error(key ? msgMap[key] : '请求失败，请稍后重试');
       return;
     }
 
@@ -97,18 +102,18 @@ const rawClient = createFetchClient<OpenAPIs>({
 
     // 401 — token 过期或登录失败
     if (response.status === 401) {
-      const url = typeof _request?.url === "string" ? _request.url : "";
-      const isLoginRequest = url.includes("/api/auth/login") || url.includes("/api/login");
+      const url = typeof _request?.url === 'string' ? _request.url : '';
+      const isLoginRequest = url.includes('/api/auth/login') || url.includes('/api/login');
 
       // 仅登录接口需要把服务端错误展示给用户
       if (isLoginRequest) {
         try {
           const json: unknown = await response.clone().json();
-          if (json && typeof json === "object" && "message" in json) {
+          if (json && typeof json === 'object' && 'message' in json) {
             msg.error((json as { message: string }).message);
           }
         } catch {
-          msg.error("登录失败");
+          msg.error('登录失败');
         }
         return;
       }
@@ -119,11 +124,11 @@ const rawClient = createFetchClient<OpenAPIs>({
     if (response.status === 400) {
       try {
         const json: unknown = await response.clone().json();
-        if (json && typeof json === "object" && "message" in json) {
+        if (json && typeof json === 'object' && 'message' in json) {
           msg.error((json as { message: string }).message);
         }
       } catch {
-        msg.error("请求失败");
+        msg.error('请求失败');
       }
       return;
     }
@@ -132,42 +137,42 @@ const rawClient = createFetchClient<OpenAPIs>({
     if (response.status === 403) {
       try {
         const json: unknown = await response.clone().json();
-        if (json && typeof json === "object" && "data" in json) {
+        if (json && typeof json === 'object' && 'data' in json) {
           const data = (json as { data: unknown }).data;
           if (
             data &&
-            typeof data === "object" &&
-            "code" in data &&
-            (data as { code: string }).code === "password_expired"
+            typeof data === 'object' &&
+            'code' in data &&
+            (data as { code: string }).code === 'password_expired'
           ) {
             return; // 登录密码过期，由 useAuth.login() 处理
           }
         }
-        if ("message" in (json as object)) {
-          msg.error((json as { message: string }).message || "没有权限");
+        if ('message' in (json as object)) {
+          msg.error((json as { message: string }).message || '没有权限');
         }
       } catch {
-        msg.error("没有权限");
+        msg.error('没有权限');
       }
       return;
     }
 
     // 其他服务端错误（500/502 等）
     try {
-      const contentType = response.headers.get("content-type");
-      if (contentType?.includes("application/json")) {
+      const contentType = response.headers.get('content-type');
+      if (contentType?.includes('application/json')) {
         const resp: unknown = await response.clone().json();
-        if (resp && typeof resp === "object" && "message" in resp) {
-          msg.error((resp as { message: string }).message || "服务器错误");
+        if (resp && typeof resp === 'object' && 'message' in resp) {
+          msg.error((resp as { message: string }).message || '服务器错误');
         } else {
-          msg.error("服务器错误");
+          msg.error('服务器错误');
         }
       } else {
         const text = await response.text();
-        msg.error(text || "服务器错误");
+        msg.error(text || '服务器错误');
       }
     } catch {
-      msg.error("服务器错误");
+      msg.error('服务器错误');
     }
   },
 });
@@ -176,14 +181,14 @@ const rawClient = createFetchClient<OpenAPIs>({
 // Public client — wraps rawClient with automatic token refresh on 401
 // ---------------------------------------------------------------------------
 
-type HttpMethod = "get" | "post" | "put" | "delete" | "patch";
+type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch';
 
 function isAuthPath(url: string): boolean {
   return (
-    url.startsWith("/api/auth/login") ||
-    url.startsWith("/api/auth/register") ||
-    url.startsWith("/api/auth/refresh") ||
-    url.startsWith("/api/auth/passkey/")
+    url.startsWith('/api/auth/login') ||
+    url.startsWith('/api/auth/register') ||
+    url.startsWith('/api/auth/refresh') ||
+    url.startsWith('/api/auth/passkey/')
   );
 }
 
@@ -233,7 +238,7 @@ async function requestWithRefresh(
  */
 export const client = new Proxy(rawClient, {
   get(target, prop: string) {
-    if (["get", "post", "put", "delete", "patch"].includes(prop)) {
+    if (['get', 'post', 'put', 'delete', 'patch'].includes(prop)) {
       return (path: string, options?: Record<string, unknown>) =>
         requestWithRefresh(prop as HttpMethod, path, options);
     }

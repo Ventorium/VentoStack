@@ -151,9 +151,9 @@ function AgentConversation(): React.ReactElement {
     'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   >('off');
   // Agent 配置的默认思考强度：等模型列表就绪后由白名单同步 effect 应用（null 表示未暂存）
-  const pendingThinkingRef = useRef<
-    'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null
-  >(null);
+  const pendingThinkingRef = useRef<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null>(
+    null,
+  );
   const [attachments, setAttachments] = useState<Array<{ path: string; name: string }>>([]);
   const [uploadingAttachment, setUploadingAttachment] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -371,10 +371,7 @@ function AgentConversation(): React.ReactElement {
   // 模型列表就绪后应用 Agent 配置的默认思考强度（仅当前模型支持思考时生效）
   useEffect(() => {
     if (!selectedAgent || dbModels.length === 0) return;
-    if (
-      selectedAgent.models.length > 0 &&
-      !selectedAgent.models.includes(currentModel.id)
-    ) {
+    if (selectedAgent.models.length > 0 && !selectedAgent.models.includes(currentModel.id)) {
       const found = dbModels.find((m) => selectedAgent.models.includes(m.id));
       if (found) {
         setCurrentModel(found);
@@ -386,9 +383,7 @@ function AgentConversation(): React.ReactElement {
     pendingThinkingRef.current = null;
     const model = dbModels.find((m) => m.id === currentModel.id);
     // Agent 默认档位同样必须落在模型声明的档位内，否则回落到 off（模型端配置是唯一权威）
-    setThinkingLevel(
-      model && allowedThinkingLevels(model).includes(pending) ? pending : 'off',
-    );
+    setThinkingLevel(model && allowedThinkingLevels(model).includes(pending) ? pending : 'off');
   }, [selectedAgent, dbModels, currentModel.id]);
 
   // 当前 Agent 可切换的模型（白名单内；白名单为空则不限制）
@@ -416,7 +411,9 @@ function AgentConversation(): React.ReactElement {
       // 同步到路径参数，刷新后可恢复；链接带 ?s= 时暂留，交给恢复逻辑消费
       const pendingSession = pendingUrlSessionRef.current;
       navigate(
-        pendingSession ? `/app/ai/chat/${agent.id}?s=${pendingSession}` : `/app/ai/chat/${agent.id}`,
+        pendingSession
+          ? `/app/ai/chat/${agent.id}?s=${pendingSession}`
+          : `/app/ai/chat/${agent.id}`,
         { replace: true },
       );
 
@@ -621,7 +618,9 @@ function AgentConversation(): React.ReactElement {
       try {
         const { data } = (await client.get('/api/ai/conversations/:id/messages', {
           params: { id: threadId },
-        })) as { data?: Array<{ role: string; content: string; model?: string; reasoning?: string }> };
+        })) as {
+          data?: Array<{ role: string; content: string; model?: string; reasoning?: string }>;
+        };
         // 历史回显与流式渲染对齐：同一轮运行中连续持久化的 assistant 消息（每轮迭代一条）
         // 合并成一个气泡；role:'tool' 消息按持久化顺序还原为可展开的工具块
         const history: ChatMessage[] = [];
@@ -654,7 +653,8 @@ function AgentConversation(): React.ReactElement {
             last.content = text ? `${last.content}\n\n${text}` : last.content;
             if (m.model) last.model = m.model; // 同一轮多轮迭代以最后一次生成模型为准
             // 同一轮多轮迭代的思考内容依次拼接，对齐流式期间累积在同一气泡的展示
-            if (m.reasoning) last.thinking = [last.thinking, m.reasoning].filter(Boolean).join('\n\n');
+            if (m.reasoning)
+              last.thinking = [last.thinking, m.reasoning].filter(Boolean).join('\n\n');
           } else {
             history.push({
               id: crypto.randomUUID(),
@@ -1084,6 +1084,17 @@ function AgentConversation(): React.ReactElement {
     [activeThreadId, handleNewChat, fetchThreads],
   );
 
+  // 重命名会话：成功后本地先行更新，避免等待列表刷新
+  const handleRenameThread = useCallback(async (id: string, title: string) => {
+    const { error } = await client.patch('/api/ai/conversations/:id', {
+      params: { id },
+      body: { title },
+    });
+    if (!error) {
+      setThreads((prev) => prev.map((t) => (t.id === id ? { ...t, title } : t)));
+    }
+  }, []);
+
   // Regenerate last assistant message
   const handleRegenerate = useCallback(
     (messageId: string) => {
@@ -1114,9 +1125,7 @@ function AgentConversation(): React.ReactElement {
       if (msgIndex < 0) return;
       setMessages(messages.slice(0, msgIndex));
       // 后端同步截断会话历史：仅保留被编辑消息之前的轮次
-      const keepUserMessages = messages
-        .slice(0, msgIndex)
-        .filter((m) => m.role === 'user').length;
+      const keepUserMessages = messages.slice(0, msgIndex).filter((m) => m.role === 'user').length;
       handleSend(newContent, { truncateUserMessages: keepUserMessages });
     },
     [messages, handleSend, loading],
@@ -1220,6 +1229,7 @@ function AgentConversation(): React.ReactElement {
             onSelect={handleSelectThread}
             onNew={handleNewChat}
             onDelete={handleDeleteThread}
+            onRename={handleRenameThread}
             onLoadMore={handleLoadMoreThreads}
             hasMore={hasMoreThreads}
             loadingMore={loadingMoreThreads}
@@ -1253,7 +1263,11 @@ function AgentConversation(): React.ReactElement {
                     </div>
                   )}
                 <div className="flex-1 min-h-0">
-                  <FilesPanel files={workspaceFiles} sessionId={sessionId} openFile={openFileTarget} />
+                  <FilesPanel
+                    files={workspaceFiles}
+                    sessionId={sessionId}
+                    openFile={openFileTarget}
+                  />
                 </div>
               </div>
             )}
