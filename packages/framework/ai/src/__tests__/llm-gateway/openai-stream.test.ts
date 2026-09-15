@@ -77,6 +77,27 @@ describe("OpenAI Chat streaming Adapter", () => {
     expect(content.map((chunk) => chunk.delta).join("")).toBe("The answer is 42.");
   });
 
+  test("emits reasoning chunks for delta.reasoning (vLLM 0.27+ renamed field)", async () => {
+    const frames = [
+      { choices: [{ delta: { reasoning: "Step one." } }] },
+      { choices: [{ delta: { reasoning: " Step two." } }] },
+      { choices: [{ delta: { content: "Done." }, finish_reason: "stop" }] },
+    ].map((frame) => `data: ${JSON.stringify(frame)}\n\n`).join("") + "data: [DONE]\n\n";
+    globalThis.fetch = (async () => new Response(frames)) as typeof fetch;
+    const chunks: StreamChunk[] = [];
+
+    for await (const chunk of createOpenAIProvider({ apiKey: "secret" }).chatStream({
+      model: "qwen3",
+      messages: [{ role: "user", content: "1+1?" }],
+      thinkingLevel: "low",
+    })) chunks.push(chunk);
+
+    const reasoning = chunks.filter((chunk) => chunk.type === "reasoning");
+    expect(reasoning.map((chunk) => chunk.delta).join("")).toBe("Step one. Step two.");
+    const content = chunks.filter((chunk) => chunk.type === "content");
+    expect(content.map((chunk) => chunk.delta).join("")).toBe("Done.");
+  });
+
   test("serializes internal assistant tool calls to OpenAI message format", async () => {
     let requestBody: Record<string, unknown> | undefined;
     globalThis.fetch = (async (_input, init) => {

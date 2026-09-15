@@ -117,7 +117,10 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
         choices: Array<{
           message: {
             content: string;
+            /** DeepSeek/Qwen 系网关字段名 */
             reasoning_content?: string;
+            /** vLLM 0.27+ 已将其更名为 reasoning */
+            reasoning?: string;
             tool_calls?: Array<{
               id: string;
               function: { name: string; arguments: string };
@@ -135,12 +138,12 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
         name: tc.function.name,
         arguments: JSON.parse(tc.function.arguments) as Record<string, unknown>,
       }));
+      // vLLM 0.27 起把 reasoning_content 更名为 reasoning，两种字段名都需兼容
+      const reasoningText = choice.message.reasoning ?? choice.message.reasoning_content;
 
       return {
         content: choice.message.content ?? '',
-        ...(choice.message.reasoning_content
-          ? { reasoning: choice.message.reasoning_content }
-          : {}),
+        ...(reasoningText ? { reasoning: reasoningText } : {}),
         ...(toolCalls?.length ? { toolCalls } : {}),
         usage: {
           promptTokens: data.usage.prompt_tokens,
@@ -251,7 +254,10 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
               choices?: Array<{
                 delta?: {
                   content?: string;
+                  /** DeepSeek/Qwen 系网关字段名 */
                   reasoning_content?: string;
+                  /** vLLM 0.27+ 已将其更名为 reasoning */
+                  reasoning?: string;
                   tool_calls?: Array<{
                     index?: number;
                     id?: string;
@@ -282,9 +288,10 @@ export function createOpenAIProvider(config: OpenAIProviderConfig): LLMProvider 
             const choice = parsed.choices?.[0];
             if (!choice) continue;
 
-            // 处理推理 delta（reasoning_content：Qwen/DeepSeek 等 OpenAI 兼容网关的思考输出）
-            if (choice.delta?.reasoning_content) {
-              yield { type: 'reasoning', delta: choice.delta.reasoning_content };
+            // 处理推理 delta：DeepSeek/Qwen 用 reasoning_content，vLLM 0.27+ 更名为 reasoning
+            const reasoningDelta = choice.delta?.reasoning ?? choice.delta?.reasoning_content;
+            if (reasoningDelta) {
+              yield { type: 'reasoning', delta: reasoningDelta };
             }
 
             // 处理内容 delta
