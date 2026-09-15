@@ -105,6 +105,7 @@ export type StreamChunk =
   | ResearchStageChunk
   | ResearchSourcesChunk
   | { type: 'session'; sessionId: string }
+  | { type: 'title'; title: string }
   | {
       type: 'approval_required';
       approval: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };

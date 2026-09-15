@@ -140,6 +140,10 @@ function AgentConversation(): React.ReactElement {
   useEffect(() => {
     sessionIdRef.current = sessionId;
   }, [sessionId]);
+  // 链接上的 ?s=xxx 会话 ID：首次渲染即捕获（Agent 就绪后恢复），消费后置空
+  const pendingUrlSessionRef = useRef<string | null>(
+    new URLSearchParams(window.location.search).get('s'),
+  );
   // 会话列表收起/展开 + 回收站
   const [threadListCollapsed, setThreadListCollapsed] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
@@ -409,8 +413,12 @@ function AgentConversation(): React.ReactElement {
       setSessionId(undefined);
       setAttachments([]);
       setBoundKbIds([]);
-      // 同步到路径参数，刷新后可恢复
-      navigate(`/app/ai/chat/${agent.id}`, { replace: true });
+      // 同步到路径参数，刷新后可恢复；链接带 ?s= 时暂留，交给恢复逻辑消费
+      const pendingSession = pendingUrlSessionRef.current;
+      navigate(
+        pendingSession ? `/app/ai/chat/${agent.id}?s=${pendingSession}` : `/app/ai/chat/${agent.id}`,
+        { replace: true },
+      );
 
       // Set default model based on agent config
       if (agent.models.length > 0 && dbModels.length > 0) {
@@ -666,6 +674,21 @@ function AgentConversation(): React.ReactElement {
     },
     [selectedAgent],
   );
+
+  // 链接带 ?s=xxx：Agent 就绪后恢复该会话（只消费一次；消费前不让 URL 同步覆盖它）
+  useEffect(() => {
+    const pending = pendingUrlSessionRef.current;
+    if (!pending || !selectedAgent) return;
+    pendingUrlSessionRef.current = null;
+    void handleSelectThread(pending);
+  }, [selectedAgent, handleSelectThread]);
+
+  // 当前会话同步到 URL：刷新或分享链接可直接回到会话
+  useEffect(() => {
+    if (!selectedAgent || pendingUrlSessionRef.current) return;
+    const base = `/app/ai/chat/${selectedAgent.id}`;
+    navigate(sessionId ? `${base}?s=${sessionId}` : base, { replace: true });
+  }, [sessionId, selectedAgent, navigate]);
 
   // 消息完成后刷新工作区文件
   useEffect(() => {

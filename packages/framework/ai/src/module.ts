@@ -843,7 +843,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         const result = await llmGateway.chat({
           model: summaryModel,
           tenantId,
-          maxTokens: 60,
+          // 标题是纯摘要任务：关掉思考，避免推理模型把 token 预算耗在 reasoning_content 上
+          // 导致 content 为空（finish_reason=length）而拿不到标题
+          thinkingLevel: 'off',
+          maxTokens: 256,
           messages: [
             {
               role: 'system',
