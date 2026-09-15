@@ -3882,7 +3882,11 @@ export type OpenAPIs = {
          * @description 思考强度
          * @enum off,minimal,low,medium,high,xhigh
          */
-        thinkingLevel?: string
+        thinkingLevel?: string,
+        /**
+         * @description 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史
+         */
+        truncateUserMessages?: any
       },
       response: {
         /**
@@ -3943,7 +3947,11 @@ export type OpenAPIs = {
          * @description 思考强度
          * @enum off,minimal,low,medium,high,xhigh
          */
-        thinkingLevel?: string
+        thinkingLevel?: string,
+        /**
+         * @description 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史
+         */
+        truncateUserMessages?: any
       },
       response: string
     },
