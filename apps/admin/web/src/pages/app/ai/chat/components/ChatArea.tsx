@@ -178,13 +178,13 @@ function MessageActions({
   onRegenerate?: (messageId: string) => void;
 }) {
   return (
-    <Space size={2} className="mt-2">
+    <Space size={0}>
       <Tooltip title="复制">
         <Button
           type="text"
           size="small"
           icon={<CopyOutlined />}
-          className="opacity-50 color-inherit"
+          className="opacity-40 color-inherit transition-opacity group-hover:opacity-100"
           onClick={() => {
             if (onCopy) {
               onCopy(content);
@@ -199,7 +199,7 @@ function MessageActions({
           type="text"
           size="small"
           icon={<ReloadOutlined />}
-          className="opacity-50 color-inherit"
+          className="opacity-40 color-inherit transition-opacity group-hover:opacity-100"
           onClick={() => onRegenerate?.(messageId)}
         />
       </Tooltip>
@@ -208,7 +208,7 @@ function MessageActions({
           type="text"
           size="small"
           icon={<LikeOutlined />}
-          className="opacity-50 color-inherit"
+          className="opacity-40 color-inherit transition-opacity group-hover:opacity-100"
           onClick={() => msg.success('感谢反馈')}
         />
       </Tooltip>
@@ -217,7 +217,7 @@ function MessageActions({
           type="text"
           size="small"
           icon={<DislikeOutlined />}
-          className="opacity-50 color-inherit"
+          className="opacity-40 color-inherit transition-opacity group-hover:opacity-100"
           onClick={() => msg.success('感谢反馈')}
         />
       </Tooltip>
@@ -473,7 +473,7 @@ export default function ChatArea({
                 )}
 
                 {!isUser && !msg.isStreaming && (
-                  <>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                     <MessageActions
                       content={msg.content}
                       messageId={msg.id}
@@ -481,22 +481,32 @@ export default function ChatArea({
                       onRegenerate={onRegenerate}
                     />
                     {(msg.model || msg.tokensUsed) && (
-                      <Space size={8} className="mt-1.5">
+                      <>
+                        <span
+                          className="w-px h-3 mx-0.5 shrink-0"
+                          style={{ background: token.colorBorderSecondary }}
+                        />
                         {msg.model && (
-                          <Text type="secondary" className="text-[11px]">
-                            <RobotOutlined className="mr-1" />
+                          <span
+                            className="text-[11px] px-1.5 py-px rounded-full shrink-0"
+                            style={{
+                              color: token.colorTextTertiary,
+                              background: token.colorFillQuaternary,
+                            }}
+                          >
+                            <RobotOutlined className="mr-1 opacity-70" />
                             {msg.model}
-                          </Text>
+                          </span>
                         )}
                         {msg.tokensUsed && (
-                          <Text type="secondary" className="text-[11px]">
+                          <Text type="secondary" className="text-[11px] whitespace-nowrap">
                             {formatTokenCount(msg.tokensUsed.input)} /{' '}
                             {formatTokenCount(msg.tokensUsed.output)} tokens
                           </Text>
                         )}
-                      </Space>
+                      </>
                     )}
-                  </>
+                  </div>
                 )}
               </div>
             </div>
