@@ -246,8 +246,9 @@ const AgentsPage = () => {
     undefined,
   );
 
-  // 会话总结模型与默认思考强度（对应 ai_agent.config.summaryModel / config.defaultThinkingLevel）
+  // 会话总结模型、审批模型与默认思考强度（对应 ai_agent.config.*）
   const [summaryModel, setSummaryModel] = useState<string | undefined>(undefined);
+  const [approvalModel, setApprovalModel] = useState<string | undefined>(undefined);
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<string>('off');
 
   // Fetch models
@@ -401,6 +402,7 @@ const AgentsPage = () => {
     setResearchMaxSubtasks(undefined);
     setResearchMaxSubtaskTurns(undefined);
     setSummaryModel(undefined);
+    setApprovalModel(undefined);
     setDefaultThinkingLevel('off');
     setEditingAgent(null);
   };
@@ -457,6 +459,7 @@ const AgentsPage = () => {
 
     // 设置会话总结模型与默认思考强度
     setSummaryModel(typeof record.config?.summaryModel === 'string' ? record.config.summaryModel : undefined);
+    setApprovalModel(typeof record.config?.approvalModel === 'string' ? record.config.approvalModel : undefined);
     setDefaultThinkingLevel(
       typeof record.config?.defaultThinkingLevel === 'string' ? record.config.defaultThinkingLevel : 'off',
     );
@@ -483,6 +486,7 @@ const AgentsPage = () => {
       ? { research: { depth: researchDepth, ...buildResearchBudget() } }
       : {}),
     ...(summaryModel ? { summaryModel } : {}),
+    ...(approvalModel ? { approvalModel } : {}),
     ...(defaultThinkingLevel && defaultThinkingLevel !== 'off' ? { defaultThinkingLevel } : {}),
   });
 
@@ -902,6 +906,19 @@ const AgentsPage = () => {
                   placeholder="选择模型（可选）"
                   value={summaryModel}
                   onChange={(v) => setSummaryModel(v)}
+                  options={modelOptions}
+                />
+              </Form.Item>
+              <Form.Item
+                label="审批模型"
+                tooltip="「自动审批」运行模式下，由该模型判定工具调用是否放行。未配置时回退到会话总结模型，都没有则自动审批不可用（转人工审批）"
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  placeholder="选择模型（可选）"
+                  value={approvalModel}
+                  onChange={(v) => setApprovalModel(v)}
                   options={modelOptions}
                 />
               </Form.Item>

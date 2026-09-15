@@ -48,7 +48,8 @@ export function createMcpToolSource(service: McpServerService): McpToolSource {
               properties: {},
               additionalProperties: false,
             },
-            riskLevel: "high",
+            // MCP 是第三方任意能力：标记 critical，任何运行模式都必须人工审批
+            riskLevel: "critical",
             requiresApproval: true,
             timeout: 60_000,
             async execute(_toolCallId, params, signal) {

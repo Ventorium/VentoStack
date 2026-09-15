@@ -35,6 +35,8 @@ export interface ToolBlock {
   arguments?: string;
   /** 工具输出摘要（后端截断，点击工具行展开查看） */
   output?: string;
+  /** 非人工放行来源（auto=审批子智能体放行，trust=信任模式跳过审批） */
+  approval?: { mode: 'auto' | 'trust'; reason?: string };
 }
 
 export type MessageBlock = TextBlock | ToolBlock;
@@ -54,6 +56,8 @@ export interface ChatApproval {
   input: Record<string, unknown>;
   expiresAt: string;
   status: 'pending' | 'approved' | 'rejected' | 'expired';
+  /** 工具风险等级：critical 工具任何运行模式都会走到人工审批 */
+  riskLevel?: 'low' | 'medium' | 'high' | 'critical';
 }
 
 export interface ChatMessage {

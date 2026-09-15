@@ -3884,6 +3884,11 @@ export type OpenAPIs = {
          */
         thinkingLevel?: string,
         /**
+         * @description 审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）
+         * @enum ask,auto,trust
+         */
+        runMode?: string,
+        /**
          * @description 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史
          */
         truncateUserMessages?: any
@@ -3948,6 +3953,11 @@ export type OpenAPIs = {
          * @enum off,minimal,low,medium,high,xhigh
          */
         thinkingLevel?: string,
+        /**
+         * @description 审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）
+         * @enum ask,auto,trust
+         */
+        runMode?: string,
         /**
          * @description 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史
          */

@@ -88,9 +88,16 @@ export interface ToolRegistry {
    * 执行指定工具
    * @param name - 工具名称
    * @param params - 调用参数
+   * @param options.skipApproval - 跳过注册表内置的审批检查。
+   *   仅供 agent-loop 使用：它在执行前已通过 authorizeToolCall 完成审批（人工/子智能体/信任），
+   *   注册表这层检查会因未配置 ApprovalManager 而把已获批的调用再拦一次。
    * @returns 工具执行结果
    */
-  execute(name: string, params: Record<string, unknown>): Promise<ToolExecutionResult>;
+  execute(
+    name: string,
+    params: Record<string, unknown>,
+    options?: { skipApproval?: boolean },
+  ): Promise<ToolExecutionResult>;
 
   /**
    * 校验工具参数
@@ -312,6 +319,7 @@ export function createToolRegistry(options?: { approvalManager?: ApprovalManager
   async function execute(
     name: string,
     params: Record<string, unknown>,
+    options?: { skipApproval?: boolean },
   ): Promise<ToolExecutionResult> {
     const tool = tools.get(name);
     if (!tool) {
@@ -337,7 +345,8 @@ export function createToolRegistry(options?: { approvalManager?: ApprovalManager
 
     // 审批流检查：如果工具标记为需要审批，必须通过审批管理器获取许可
     // 这防止 AI 模型自主批准高风险操作（如删除数据、执行系统命令等）
-    if (tool.requiresApproval) {
+    // skipApproval：调用方（agent-loop）已在执行前用 authorizeToolCall 完成审批，跳过这层重复检查
+    if (tool.requiresApproval && !options?.skipApproval) {
       if (!approvalManager) {
         return {
           toolName: name,

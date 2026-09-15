@@ -27,7 +27,9 @@ import { createGoogleProvider } from './llm-gateway/providers/google';
 import { createOpenAIProvider } from './llm-gateway/providers/openai';
 import { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-responses';
 import { allowedThinkingLevels } from './llm-gateway/thinking-levels';
-import type { LLMGateway, LLMProvider } from './llm-gateway/types';
+import type { LLMGateway, LLMProvider, RunMode } from './llm-gateway/types';
+import type { RiskLevel } from './agent-engine/types';
+import { APPROVAL_JUDGE_PROMPT, parseApprovalVerdict, resolveApprovalAction } from './approval-policy';
 
 // Agent Engine
 import { type AgentConfig, type AgentLoop, createAgentLoop } from './agent-engine/agent-loop';
@@ -256,14 +258,19 @@ function extractResearch(config: unknown): { research: AgentConfig['research'] }
   return {};
 }
 
-/** 从 agent 的 config JSON 中提取会话总结模型与默认思考强度 */
-function extractSummaryAndThinking(config: unknown): Pick<AgentConfig, 'summaryModel' | 'defaultThinkingLevel'> {
-  const out: Pick<AgentConfig, 'summaryModel' | 'defaultThinkingLevel'> = {};
+/** 从 agent 的 config JSON 中提取会话总结模型、审批模型与默认思考强度 */
+function extractAgentConfigExtras(
+  config: unknown,
+): Pick<AgentConfig, 'summaryModel' | 'approvalModel' | 'defaultThinkingLevel'> {
+  const out: Pick<AgentConfig, 'summaryModel' | 'approvalModel' | 'defaultThinkingLevel'> = {};
   if (!config || typeof config !== 'object' || Array.isArray(config)) return out;
   const raw = config as Record<string, unknown>;
-  if (typeof raw.summaryModel === 'string' && raw.summaryModel.length > 0 && raw.summaryModel.length <= 64) {
-    out.summaryModel = raw.summaryModel;
-  }
+  const modelRef = (value: unknown): string | undefined =>
+    typeof value === 'string' && value.length > 0 && value.length <= 64 ? value : undefined;
+  const summaryModel = modelRef(raw.summaryModel);
+  if (summaryModel) out.summaryModel = summaryModel;
+  const approvalModel = modelRef(raw.approvalModel);
+  if (approvalModel) out.approvalModel = approvalModel;
   const thinking = raw.defaultThinkingLevel;
   if (
     typeof thinking === 'string' &&
@@ -274,8 +281,7 @@ function extractSummaryAndThinking(config: unknown): Pick<AgentConfig, 'summaryM
   return out;
 }
 
-export function createConfiguredProvider(
-  config: LLMProviderConfig,
+export function createConfiguredProvider(  config: LLMProviderConfig,
   customFactories: Record<string, LLMProviderFactory> = {},
 ): LLMProvider {
   const providerConfig = {
@@ -564,7 +570,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           ...(typeof item.maxTokensPerTurn === 'number' ? { maxTokensPerTurn: item.maxTokensPerTurn } : {}),
           ...(item.memoryConfig ? { memoryConfig: item.memoryConfig } : {}),
           ...(extractResearch(item.config)),
-          ...extractSummaryAndThinking(item.config),
+          ...extractAgentConfigExtras(item.config),
           tenantId: item.tenantId,
           requiresVirtualEnvironment: item.requiresVirtualEnvironment,
           ...(item.sandboxStatus ? { sandboxStatus: item.sandboxStatus } : {}),
@@ -629,6 +635,51 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       await scheduleMemoryConsolidation({ sessionId: item.sessionId, ...item.scope }).catch(() => undefined);
     }
   });
+  /**
+   * 审批子智能体：判定一次工具调用能否放行。
+   * 任何失败（未配置模型 / 调用异常 / 输出非法）都返回 null，由调用方 fail-closed 转人工审批——
+   * 绝不因为"判不出来"而放行。
+   */
+  async function judgeToolCall(params: {
+    agentId: string;
+    tenantId: string;
+    toolName: string;
+    toolDescription?: string;
+    riskLevel: RiskLevel;
+    input: Record<string, unknown>;
+  }): Promise<{ decision: 'approve' | 'reject'; reason: string } | null> {
+    try {
+      const agent = await agentCrudService.getById(params.agentId, params.tenantId);
+      const model = agent?.approvalModel ?? agent?.summaryModel ?? agent?.models?.[0];
+      if (!model) return null;
+      const result = await llmGateway.chat({
+        model,
+        tenantId: params.tenantId,
+        // 审批判定是短判断任务：关掉思考，避免推理模型耗尽预算后返回空 content
+        thinkingLevel: 'off',
+        maxTokens: 1024,
+        messages: [
+          { role: 'system', content: APPROVAL_JUDGE_PROMPT },
+          {
+            role: 'user',
+            content: JSON.stringify({
+              tool: params.toolName,
+              description: params.toolDescription ?? '',
+              riskLevel: params.riskLevel,
+              arguments: params.input,
+            }),
+          },
+        ],
+      });
+      // 部分网关（如自建 vLLM）无视 enable_thinking，思考仍占满预算导致 content 为空；
+      // 此时退回 reasoning 文本里最后一段合法判定。两处都没有 → null → fail-closed 转人工
+      return parseApprovalVerdict(result.content) ?? parseApprovalVerdict(result.reasoning ?? '');
+    } catch (err) {
+      console.error('[ai] 审批子智能体判定失败，转人工审批:', err);
+      return null;
+    }
+  }
+
   const agentLoop = createAgentLoop({
     llmGateway,
     knowledgeBase,
@@ -651,12 +702,75 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     prepareNextTurn: deps.hooks?.prepareNextTurn,
     getApiKey: deps.hooks?.getApiKey,
     dynamicToolResolver: deps.hooks?.dynamicToolResolver,
-    // 高风险工具审批：已批准（未过期且参数一致）直接放行；否则创建审批请求，
-    // 由 agent-loop 在流内下发 approval_required 并通过 waitForApproval 等待 decision
-    authorizeToolCall: async ({ toolCall, args, context }) => {
+    // 工具审批决策点：按运行模式（runMode，按消息粒度）在「人工审批 / 子智能体审批 / 直接放行」间选择。
+    // critical 风险工具无视运行模式，始终人工审批（强制底线）。
+    authorizeToolCall: async ({ toolCall, args, context, tool }) => {
+      const input = args as Record<string, unknown>;
+      const riskLevel: RiskLevel = tool.riskLevel ?? 'low';
+      const runMode: RunMode = context.runMode ?? 'ask';
+
+      // auto 模式先取子智能体判定；判定不可用（未配置模型 / 异常 / 输出非法）时为 null，
+      // 由 resolveApprovalAction fail-closed 回落人工审批——绝不因为"判不出来"而放行。
+      // critical 工具不浪费这次调用，直接人工审批。
+      const verdict =
+        runMode === 'auto' && riskLevel !== 'critical'
+          ? await judgeToolCall({
+              agentId: context.agentId,
+              tenantId: context.tenantId,
+              toolName: toolCall.name,
+              ...(tool.description === undefined ? {} : { toolDescription: tool.description }),
+              riskLevel,
+              input,
+            })
+          : null;
+      const decision = resolveApprovalAction({ riskLevel, runMode, verdict });
+
+      if (decision.action === 'trust') {
+        // 信任模式：留审计事件，但不写 ai_approval_request——
+        // 否则批准态的行会被 findRecentApproved 命中，导致切回 ask 模式后被跨模式自动放行
+        eventBus?.emit(
+          { name: 'ai.approval.bypassed' },
+          {
+            toolName: toolCall.name,
+            riskLevel,
+            tenantId: context.tenantId,
+            requestedBy: context.userId,
+            sessionId: context.sessionId,
+          },
+        );
+        return {
+          approved: true,
+          reason: '信任模式：跳过审批',
+          approval: { mode: 'trust' as const, reason: '信任模式' },
+        };
+      }
+
+      if (decision.action === 'auto-approve' || decision.action === 'auto-reject') {
+        eventBus?.emit(
+          { name: 'ai.approval.auto_decided' },
+          {
+            toolName: toolCall.name,
+            riskLevel,
+            decision: decision.action === 'auto-approve' ? 'approve' : 'reject',
+            reason: decision.reason,
+            tenantId: context.tenantId,
+            requestedBy: context.userId,
+            sessionId: context.sessionId,
+          },
+        );
+        return decision.action === 'auto-approve'
+          ? {
+              approved: true,
+              reason: `自动审批放行：${decision.reason}`,
+              approval: { mode: 'auto' as const, reason: decision.reason },
+            }
+          : { approved: false, reason: `自动审批拒绝：${decision.reason}` };
+      }
+
+      // 人工审批：ask 模式、critical 工具，以及 auto 判定失败的情形
       const recent = await approvalService.findRecentApproved(
         toolCall.name,
-        args as Record<string, unknown>,
+        input,
         context.userId,
         context.tenantId,
       );
@@ -664,7 +778,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       try {
         const request = await approvalService.request(
           toolCall.name,
-          args as Record<string, unknown>,
+          input,
           context.userId,
           context.tenantId,
         );
@@ -675,6 +789,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
             toolName: request.toolName,
             input: request.input,
             expiresAt: request.expiresAt,
+            riskLevel,
           },
         };
       } catch (err) {

@@ -1,10 +1,16 @@
-import { CheckCircleOutlined, CloseCircleOutlined, CodeOutlined, LoadingOutlined, RightOutlined } from "@ant-design/icons";
-import { Tag, theme, Typography } from "antd";
-import { useState } from "react";
-import type { AgentStep } from "../types";
-import StepIcon from "./StepIcons";
+import {
+  CheckCircleOutlined,
+  CloseCircleOutlined,
+  CodeOutlined,
+  LoadingOutlined,
+  RightOutlined,
+} from '@ant-design/icons';
+import { Tag, Typography, theme } from 'antd';
+import { useState } from 'react';
+import type { AgentStep } from '../types';
+import StepIcon from './StepIcons';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface AgentStepsProps {
   steps: AgentStep[];
@@ -16,6 +22,8 @@ export interface StepDetail {
   arguments?: string;
   /** 后端截断的输出摘要 */
   output?: string;
+  /** 非人工放行来源（auto=审批子智能体放行，trust=信任模式跳过审批） */
+  approval?: { mode: 'auto' | 'trust'; reason?: string };
 }
 
 function formatDuration(ms: number): string {
@@ -45,44 +53,77 @@ function DetailPanel({ label, text }: { label: string; text: string }) {
 export function StepRow({ step, detail }: { step: AgentStep; detail?: StepDetail }) {
   const { token } = theme.useToken();
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = !!(detail?.arguments || detail?.output);
+  const hasDetail = !!(detail?.arguments || detail?.output || detail?.approval);
 
   return (
     <div>
       <div
         className={`flex items-center gap-2 text-xs ${hasDetail ? 'cursor-pointer' : ''}`}
-        style={{ padding: "4px 8px", borderRadius: token.borderRadiusSM, color: token.colorTextSecondary }}
+        style={{
+          padding: '4px 8px',
+          borderRadius: token.borderRadiusSM,
+          color: token.colorTextSecondary,
+        }}
         onClick={hasDetail ? () => setExpanded(!expanded) : undefined}
       >
-        {step.status === "completed" ? (
-          <CheckCircleOutlined className="text-[13px] shrink-0" style={{ color: token.colorSuccess }} />
-        ) : step.status === "error" ? (
-          <CloseCircleOutlined className="text-[13px] shrink-0" style={{ color: token.colorError }} />
+        {step.status === 'completed' ? (
+          <CheckCircleOutlined
+            className="text-[13px] shrink-0"
+            style={{ color: token.colorSuccess }}
+          />
+        ) : step.status === 'error' ? (
+          <CloseCircleOutlined
+            className="text-[13px] shrink-0"
+            style={{ color: token.colorError }}
+          />
         ) : (
           <LoadingOutlined className="text-[13px] shrink-0" style={{ color: token.colorPrimary }} />
         )}
         <StepIcon type={step.type} />
-        <Text strong={step.type === "skill"} className="text-xs whitespace-nowrap" style={{ color: step.type === "skill" ? token.colorPrimary : token.colorText }}>
+        <Text
+          strong={step.type === 'skill'}
+          className="text-xs whitespace-nowrap"
+          style={{ color: step.type === 'skill' ? token.colorPrimary : token.colorText }}
+        >
           {step.name}
         </Text>
         <Text type="secondary" ellipsis className="flex-1 text-xs">
           {step.description}
         </Text>
+        {detail?.approval && (
+          <Tag
+            className="text-[11px] m-0 leading-[18px]"
+            color={detail.approval.mode === 'trust' ? 'red' : 'orange'}
+          >
+            {detail.approval.mode === 'trust' ? '信任放行' : '自动放行'}
+          </Tag>
+        )}
         {step.durationMs !== undefined && (
           <Tag className="text-[11px] m-0 leading-[18px]">{formatDuration(step.durationMs)}</Tag>
         )}
-        {hasDetail && (
-          <CodeOutlined className="text-[11px] shrink-0 opacity-60" />
-        )}
+        {hasDetail && <CodeOutlined className="text-[11px] shrink-0 opacity-60" />}
         {hasDetail && (
           <RightOutlined
             className="text-[10px] shrink-0 opacity-60"
-            style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}
+            style={{
+              transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+              transition: 'transform 0.2s ease',
+            }}
           />
         )}
       </div>
       {expanded && hasDetail && (
         <div className="pl-6">
+          {detail?.approval && (
+            <DetailPanel
+              label="审批"
+              text={
+                detail.approval.mode === 'trust'
+                  ? '信任模式：跳过审批直接执行'
+                  : `自动审批放行：${detail.approval.reason ?? '（未给出理由）'}`
+              }
+            />
+          )}
           {detail?.arguments && <DetailPanel label="参数" text={detail.arguments} />}
           {detail?.output && <DetailPanel label="输出" text={detail.output} />}
         </div>
@@ -102,10 +143,22 @@ export default function AgentSteps({ steps }: AgentStepsProps) {
       {/* Toggle */}
       <div
         onClick={() => setExpanded(!expanded)}
-        className="inline-flex items-center gap-1.5 cursor-pointer text-xs select-none" style={{ padding: "3px 10px", borderRadius: token.borderRadiusSM, background: token.colorFillQuaternary, border: `1px solid ${token.colorBorderSecondary}`, marginBottom: expanded ? 8 : 0, color: token.colorTextSecondary }}
+        className="inline-flex items-center gap-1.5 cursor-pointer text-xs select-none"
+        style={{
+          padding: '3px 10px',
+          borderRadius: token.borderRadiusSM,
+          background: token.colorFillQuaternary,
+          border: `1px solid ${token.colorBorderSecondary}`,
+          marginBottom: expanded ? 8 : 0,
+          color: token.colorTextSecondary,
+        }}
       >
         <RightOutlined
-          className="text-[10px]" style={{ transform: expanded ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.2s ease" }}
+          className="text-[10px]"
+          style={{
+            transform: expanded ? 'rotate(90deg)' : 'rotate(0deg)',
+            transition: 'transform 0.2s ease',
+          }}
         />
         {steps.length} 步执行完成
       </div>

@@ -1,5 +1,5 @@
 import type { KnowledgeBaseService } from '../knowledge-base/types';
-import type { ChatMessage, LLMGateway, LLMToolDefinition, ResearchStage, StreamChunk, ThinkingLevel, ToolCall, ToolResultChunk } from '../llm-gateway/types';
+import type { ChatMessage, LLMGateway, LLMToolDefinition, ResearchStage, RunMode, StreamChunk, ThinkingLevel, ToolCall, ToolResultChunk } from '../llm-gateway/types';
 import type { Tracer, SpanHandle } from '@ventostack/observability';
 import type { MemoryService } from '../memory/types';
 import type { McpToolSource } from './mcp-tool-source';
@@ -17,6 +17,7 @@ import type {
   AgentTool,
   AgentToolResult,
   ApprovalRequestInfo,
+  ApprovalProvenance,
   ApprovalWaiter,
   ToolExecutionMode,
   ToolCallAuthorizer,
@@ -325,6 +326,8 @@ export interface AgentConfig {
   research?: ResearchConfig;
   /** 会话总结模型（轻量快速模型，对话结束后生成 ≤20 字标题），来自 ai_agent.config.summaryModel */
   summaryModel?: string;
+  /** 审批子智能体模型（auto 运行模式下的工具放行判定），来自 ai_agent.config.approvalModel */
+  approvalModel?: string;
   /** 默认思考强度（请求未显式指定时生效；所选模型不支持思考时应置 off），来自 ai_agent.config.defaultThinkingLevel */
   defaultThinkingLevel?: ThinkingLevel;
   tenantId: string;
@@ -412,6 +415,8 @@ export interface AgentRunParams {
   model?: string;
   history?: ChatMessage[];
   thinkingLevel?: ThinkingLevel;
+  /** 审批策略（ask/auto/trust）；缺省 ask。critical 工具无视该值 */
+  runMode?: RunMode;
   temperature?: number;
   maxTokens?: number;
   /** 按请求注入的工具注册表（KB 等租户相关工具已绑定请求 tenantId）；缺省使用 deps.toolRegistry */
@@ -463,7 +468,11 @@ function wrapRegistryTools(registry: ToolRegistry, filterTools?: string[]): Agen
     },
     label: toolDef.name,
     execute: async (_id, params) => {
-      const result = await registry.execute(toolDef.name, params as Record<string, unknown>);
+      // 审批已由主循环/子任务的 prepareToolCall → authorizeToolCall 完成（人工/子智能体/信任），
+      // 这里跳过注册表内置的审批检查：那层在没有 ApprovalManager 时会把已获批的调用再拦一次
+      const result = await registry.execute(toolDef.name, params as Record<string, unknown>, {
+        skipApproval: true,
+      });
       return {
         content: [
           {
@@ -491,6 +500,8 @@ interface PreparedToolCall {
   toolCall: { id: string; name: string; arguments: Record<string, unknown> };
   tool: AgentTool;
   args: Record<string, unknown>;
+  /** 非人工放行来源（auto/trust）；人工审批放行时缺省 */
+  approval?: ApprovalProvenance;
 }
 
 interface ImmediateResult {
@@ -593,6 +604,8 @@ async function prepareToolCall(
       }
     }
 
+    // 非人工放行来源（auto/trust）：由 authorizer 返回，透传到 tool_result 供 UI 标注
+    let approvalProvenance: ApprovalProvenance | undefined;
     if (tool.requiresApproval) {
       if (!authorizeToolCall) {
         return {
@@ -605,6 +618,7 @@ async function prepareToolCall(
         { assistantMessage, toolCall, args: validatedArgs, context, tool },
         signal,
       );
+      approvalProvenance = authorization.approval;
       if (!authorization.approved) {
         // 已创建审批请求：返回 pending 项，由调用方（generator 作用域）完成审批握手
         if (authorization.approvalRequest) {
@@ -631,6 +645,7 @@ async function prepareToolCall(
       toolCall,
       tool,
       args: validatedArgs,
+      ...(approvalProvenance ? { approval: approvalProvenance } : {}),
     };
   } catch (err) {
     return {
@@ -751,6 +766,7 @@ async function executePreparedToolCall(
     durationMs,
     isError,
     ...(summarizeToolOutput(result) === undefined ? {} : { output: summarizeToolOutput(result) }),
+    ...(prepared.approval ? { approval: prepared.approval } : {}),
   });
   return { toolCall, result, durationMs, isError };
 }
@@ -1103,6 +1119,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         systemPrompt,
         messages,
         tools: runtimeTools,
+        ...(params.runMode === undefined ? {} : { runMode: params.runMode }),
       };
 
       // 用户消息先行落盘：即使后续轮次中断也不丢失

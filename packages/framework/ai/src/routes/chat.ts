@@ -9,7 +9,8 @@ import { createSSEResponse } from '../stream-engine/sse';
 import type { ToolRegistry } from '../tool-registry';
 import { createFileValidator } from '../knowledge-base/file-security';
 import { createConverter } from '@ventostack/file2md';
-import type { ThinkingLevel } from '../llm-gateway/types';
+import { RUN_MODES } from '../llm-gateway/types';
+import type { RunMode, ThinkingLevel } from '../llm-gateway/types';
 import { routeDoc } from './schema';
 
 export interface ConversationService {
@@ -71,11 +72,20 @@ export function createChatRoutes(
   const router = createRouter();
   const attachmentValidator = createFileValidator({ maxFileSize: 20 * 1024 * 1024 });
   const thinkingLevels = new Set<ThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+  const runModes = new Set<RunMode>(RUN_MODES);
 
-  function requestOptions(body: Record<string, unknown>): { thinkingLevel?: ThinkingLevel; attachmentPaths?: string[] } | Response {
+  function requestOptions(body: Record<string, unknown>): {
+    thinkingLevel?: ThinkingLevel;
+    runMode?: RunMode;
+    attachmentPaths?: string[];
+  } | Response {
     const thinkingLevel = body.thinkingLevel;
     if (thinkingLevel !== undefined && (typeof thinkingLevel !== 'string' || !thinkingLevels.has(thinkingLevel as ThinkingLevel))) {
       return fail('thinkingLevel 不合法', 400, 400);
+    }
+    const runMode = body.runMode;
+    if (runMode !== undefined && (typeof runMode !== 'string' || !runModes.has(runMode as RunMode))) {
+      return fail('runMode 不合法', 400, 400);
     }
     const attachmentPaths = body.attachmentPaths;
     if (attachmentPaths !== undefined && (!Array.isArray(attachmentPaths) || attachmentPaths.length > 10 || attachmentPaths.some((path) => {
@@ -86,6 +96,7 @@ export function createChatRoutes(
     }
     return {
       ...(thinkingLevel === undefined ? {} : { thinkingLevel: thinkingLevel as ThinkingLevel }),
+      ...(runMode === undefined ? {} : { runMode: runMode as RunMode }),
       ...(attachmentPaths === undefined ? {} : { attachmentPaths: attachmentPaths as string[] }),
     };
   }
@@ -622,6 +633,7 @@ export function createChatRoutes(
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
         attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
         thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
+        runMode: { type: 'string', enum: ['ask', 'auto', 'trust'], description: '审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）' },
         truncateUserMessages: { type: 'integer', description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史' },
       },
       responses: {
@@ -717,6 +729,7 @@ export function createChatRoutes(
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
         attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
         thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
+        runMode: { type: 'string', enum: ['ask', 'auto', 'trust'], description: '审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）' },
         truncateUserMessages: { type: 'integer', description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史' },
       },
       responses: {

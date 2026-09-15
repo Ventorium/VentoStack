@@ -73,6 +73,8 @@ export { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-re
 export { createModelRegistry } from './llm-gateway/model-registry';
 export { withRetry } from './llm-gateway/retry';
 export { createRequestQueue } from './llm-gateway/queue';
+export { APPROVAL_JUDGE_PROMPT, parseApprovalVerdict, resolveApprovalAction } from './approval-policy';
+export type { ApprovalAction, ApprovalVerdict } from './approval-policy';
 export type {
   LLMProvider,
   ProviderCapabilities,

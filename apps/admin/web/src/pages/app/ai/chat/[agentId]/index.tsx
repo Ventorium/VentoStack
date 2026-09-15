@@ -7,6 +7,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatMessage, ModelOption, ToolBlock } from '../types';
 
 import BottomInput, { allowedThinkingLevels } from '../components/BottomInput';
+import type { RunMode } from '../components/RunModeSelect';
 import ChatArea from '../components/ChatArea';
 import FilesPanel from '../components/FilesPanel';
 import KnowledgePanel from '../components/KnowledgePanel';
@@ -150,6 +151,8 @@ function AgentConversation(): React.ReactElement {
   const [thinkingLevel, setThinkingLevel] = useState<
     'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
   >('off');
+  // 审批策略：默认需人工审批；只对「本次发送」生效，发送后回到默认，不静默延续
+  const [runMode, setRunMode] = useState<RunMode>('ask');
   // Agent 配置的默认思考强度：等模型列表就绪后由白名单同步 effect 应用（null 表示未暂存）
   const pendingThinkingRef = useRef<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null>(
     null,
@@ -758,6 +761,7 @@ function AgentConversation(): React.ReactElement {
         mcpServerIds: enabledMcp,
         knowledgeBaseIds: enabledKbs,
         thinkingLevel,
+        runMode,
         attachmentPaths: attachments.map((file) => file.path),
         ...(options?.truncateUserMessages === undefined
           ? {}
@@ -847,6 +851,8 @@ function AgentConversation(): React.ReactElement {
                         status: result.isError ? ('error' as const) : ('completed' as const),
                         durationMs: result.durationMs,
                         ...(result.output === undefined ? {} : { output: result.output }),
+                        // 非人工放行（自动审批/信任模式）在工具块上标注，便于事后追溯
+                        ...(result.approval === undefined ? {} : { approval: result.approval }),
                       }
                     : b;
                 });
@@ -957,6 +963,8 @@ function AgentConversation(): React.ReactElement {
             setLoading(false);
             void fetchThreads();
             setAttachments([]);
+            // 运行模式只对本次发送生效：结束即回到默认「需要审批」
+            setRunMode('ask');
           },
         },
         controller.signal,
@@ -972,6 +980,7 @@ function AgentConversation(): React.ReactElement {
       enabledMcp,
       enabledKbs,
       thinkingLevel,
+      runMode,
       attachments,
       fetchThreads,
     ],
@@ -1305,6 +1314,8 @@ function AgentConversation(): React.ReactElement {
               setAttachments((current) => current.filter((file) => file.path !== path))
             }
             onThinkingLevelChange={setThinkingLevel}
+            runMode={runMode}
+            onRunModeChange={setRunMode}
             skills={selectedAgent?.skills ?? []}
             onSelectSkill={(id) =>
               setEnabledSkills((current) => (current.includes(id) ? current : [...current, id]))

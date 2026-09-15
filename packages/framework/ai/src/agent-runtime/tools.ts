@@ -22,7 +22,7 @@ export function createAgentRuntimeTools(
     {
       name: 'terminal', label: '虚拟环境终端', description: '在当前 Agent 的隔离 Linux 虚拟环境中执行命令。',
       parameters: { type: 'object', additionalProperties: false, properties: { command: { type: 'array', items: { type: 'string' }, minItems: 1, maxItems: 64 } }, required: ['command'] },
-      riskLevel: 'high', requiresApproval: true,
+      riskLevel: 'critical', requiresApproval: true,
       async execute(_id, params) {
         await runtime.runCommand(sandboxId, ['mkdir', '-p', workspace], '/workspace');
         const result = await runtime.runCommand(sandboxId, (params as { command: string[] }).command, workspace);

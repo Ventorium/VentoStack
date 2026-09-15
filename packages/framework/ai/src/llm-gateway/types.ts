@@ -21,6 +21,17 @@ export interface ProviderCapabilities {
 
 export type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
+/**
+ * Agent 运行模式（审批策略），按消息粒度下发：
+ * - ask：高风险工具挂起等人工确认（默认）
+ * - auto：由审批子智能体判定放行/拒绝
+ * - trust：跳过审批直接执行
+ * 注意：riskLevel 为 critical 的工具无视该模式，始终走人工审批。
+ */
+export type RunMode = 'ask' | 'auto' | 'trust';
+
+export const RUN_MODES: readonly RunMode[] = ['ask', 'auto', 'trust'] as const;
+
 export interface ChatMessage {
   role: 'system' | 'user' | 'assistant' | 'tool';
   content: string;
@@ -90,6 +101,8 @@ export interface ToolResultChunk {
   isError: boolean;
   /** 工具输出摘要（截断至 2000 字符），供前端展开查看 */
   output?: string;
+  /** 审批放行方式：非人工审批时标注出来，让用户当场可见（auto=子智能体放行，trust=信任模式跳过） */
+  approval?: { mode: 'auto' | 'trust'; reason?: string };
 }
 
 export type StreamChunk =

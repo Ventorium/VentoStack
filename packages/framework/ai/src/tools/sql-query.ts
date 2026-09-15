@@ -80,7 +80,7 @@ export function createSQLQueryTool(deps: SQLQueryToolDeps) {
         required: false,
       },
     ],
-    riskLevel: "high" as const,
+    riskLevel: "critical" as const,
     requiresApproval: true,
     async handler(params: Record<string, unknown>): Promise<{ rows: unknown[]; rowCount: number } | { error: string }> {
       const sql = (params.sql as string)?.trim();

@@ -50,7 +50,8 @@ describe("MCP tool source", () => {
     expect(tools).toHaveLength(1);
     expect(tools[0]?.name).toBe("mcp_filesystem_read_file");
     expect(tools[0]?.requiresApproval).toBe(true);
-    expect(tools[0]?.riskLevel).toBe("high");
+    // MCP 是第三方任意能力：标记 critical，任何运行模式都必须人工审批
+    expect(tools[0]?.riskLevel).toBe("critical");
 
     const result = await tools[0]!.execute("call-1", { path: "README.md" });
     expect(result.content).toEqual([{ type: "text", text: "contents" }]);

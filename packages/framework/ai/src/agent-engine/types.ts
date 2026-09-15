@@ -5,11 +5,15 @@
  * 同时保持 VentoStack 的函数式风格。
  */
 import type { AgentEventEmitter, AgentEventMessage, AgentToolResultEventMessage } from "./events";
+import type { RunMode } from "../llm-gateway/types";
 
 // ---- 工具执行模式 ----
 
 /** 工具调用执行模式 */
 export type ToolExecutionMode = "sequential" | "parallel";
+
+/** 工具风险等级；critical 表示无视运行模式、始终需要人工审批 */
+export type RiskLevel = "low" | "medium" | "high" | "critical";
 
 // ---- 工具结果 ----
 
@@ -75,7 +79,7 @@ export interface AgentTool<TParams = Record<string, unknown>> {
   /** 是否需要审批 */
   requiresApproval?: boolean;
   /** 风险等级 */
-  riskLevel?: "low" | "medium" | "high" | "critical";
+  riskLevel?: RiskLevel;
   /** 超时时间（毫秒） */
   timeout?: number;
   /** 覆盖全局执行模式 */
@@ -112,14 +116,25 @@ export interface ApprovalRequestInfo {
   input: Record<string, unknown>;
   /** 过期时间（ISO 字符串） */
   expiresAt: string;
+  /** 工具风险等级（随流下发供 UI 上色，不落库） */
+  riskLevel?: RiskLevel;
 }
 
+/** 非人工放行的审批来源（随流下发供 UI 标注）：auto=审批子智能体判定，trust=信任模式跳过 */
+export type ApprovalProvenance = { mode: "auto" | "trust"; reason?: string };
+
 /** External authorization seam for tools that require human approval.
- *  返回 approved: false 且携带 approvalRequest 时，表示已创建审批请求、等待人工 decision（由 waitForApproval hook 完成）。 */
+ *  返回 approved: false 且携带 approvalRequest 时，表示已创建审批请求、等待人工 decision（由 waitForApproval hook 完成）。
+ *  approved: true 且携带 approval 时，表示非人工放行（auto=子智能体判定 / trust=信任模式），供 UI 标注。 */
 export type ToolCallAuthorizer = (
   context: BeforeToolCallContext & { tool: AgentTool },
   signal?: AbortSignal,
-) => Promise<{ approved: boolean; reason?: string; approvalRequest?: ApprovalRequestInfo }>;
+) => Promise<{
+  approved: boolean;
+  reason?: string;
+  approvalRequest?: ApprovalRequestInfo;
+  approval?: ApprovalProvenance;
+}>;
 
 /** 等待审批 decision 的 hook：在流式主循环内于 generator 作用域调用，可长时间挂起。
  *  resolved 时 approved 决定工具是否继续执行；请求未被 decision 时应返回 approved: false + 原因。 */
@@ -163,6 +178,8 @@ export interface AgentContext {
   messages: ChatMessage[];
   /** 可用工具 */
   tools?: AgentTool[];
+  /** 本轮运行的审批策略（按消息粒度下发；缺省 ask） */
+  runMode?: RunMode;
 }
 
 /** 标准聊天消息 */

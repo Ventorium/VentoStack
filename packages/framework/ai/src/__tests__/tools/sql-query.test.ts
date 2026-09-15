@@ -245,7 +245,8 @@ describe("sql-query tool", () => {
       const db = createMockDb();
       const tool = createSQLQueryTool({ db: db as any, tenantId: "t1" });
       expect(tool.name).toBe("sql-query");
-      expect(tool.riskLevel).toBe("high");
+      // 任意 SQL：标记 critical，任何运行模式都必须人工审批
+      expect(tool.riskLevel).toBe("critical");
       expect(tool.requiresApproval).toBe(true);
     });
 

@@ -12,6 +12,7 @@ import {
 import { App, Button, Popover, Space, Tabs, Tag, Tooltip, Typography, theme } from 'antd';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ModelOption } from '../types';
+import RunModeSelect, { type RunMode } from './RunModeSelect';
 
 const { Text } = Typography;
 
@@ -47,6 +48,9 @@ interface BottomInputProps {
   onAttachWorkspaceFile?: (file: WorkspaceFile) => void;
   onRemoveAttachment?: (path: string) => void;
   onThinkingLevelChange?: (level: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh') => void;
+  /** 审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批 */
+  runMode?: RunMode;
+  onRunModeChange?: (mode: RunMode) => void;
   skills?: Array<{ id: string; name: string; description: string | null }>;
   onSelectSkill?: (id: string) => void;
 }
@@ -61,8 +65,12 @@ const BOTTOM_TABS: BottomTab[] = [
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
 const THINKING_OPTIONS = [
-  ['off', '不思考'], ['minimal', '极简'], ['low', '低'],
-  ['medium', '中'], ['high', '高'], ['xhigh', '极高'],
+  ['off', '不思考'],
+  ['minimal', '极简'],
+  ['low', '低'],
+  ['medium', '中'],
+  ['high', '高'],
+  ['xhigh', '极高'],
 ] as const;
 
 const ALL_LEVELS: ThinkingLevel[] = ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'];
@@ -75,7 +83,12 @@ export function allowedThinkingLevels(model?: ModelOption): ThinkingLevel[] {
   if (!model?.supportsThinking) return ['off'];
   const effort = model.reasoningOptions?.find((o) => o.type === 'effort')?.values;
   if (!effort || effort.length === 0) return DEFAULT_LEVELS;
-  return ['off', ...effort.filter((v): v is ThinkingLevel => v !== 'off' && ALL_LEVELS.includes(v as ThinkingLevel))];
+  return [
+    'off',
+    ...effort.filter(
+      (v): v is ThinkingLevel => v !== 'off' && ALL_LEVELS.includes(v as ThinkingLevel),
+    ),
+  ];
 }
 
 function formatTokens(n: number): string {
@@ -101,6 +114,8 @@ export default function BottomInput({
   onAttachWorkspaceFile,
   onRemoveAttachment,
   onThinkingLevelChange,
+  runMode = 'ask',
+  onRunModeChange,
   skills = [],
   onSelectSkill,
 }: BottomInputProps): React.ReactElement {
@@ -122,7 +137,12 @@ export default function BottomInput({
       return workspaceFiles
         .filter((file) => file.path.toLowerCase().includes(query))
         .slice(0, 8)
-        .map((file) => ({ id: file.path, name: file.path, description: '当前会话文件', kind: 'file' as const }));
+        .map((file) => ({
+          id: file.path,
+          name: file.path,
+          description: '当前会话文件',
+          kind: 'file' as const,
+        }));
     }
     return skills
       .filter((skill) => skill.name.toLowerCase().includes(query))
@@ -130,26 +150,34 @@ export default function BottomInput({
       .map((skill) => ({ ...skill, kind: 'skill' as const }));
   }, [command, skills, workspaceFiles]);
 
-  const handleFiles = useCallback((files: File[]) => {
-    const isImage = (file: File) => file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(file.name);
-    const accepted = supportsImages ? files : files.filter((file) => !isImage(file));
-    if (accepted.length !== files.length) message.warning(`当前模型 ${currentModel?.name ?? ''} 不支持图片输入`);
-    if (accepted.length > 0) onAttach?.(accepted);
-  }, [currentModel?.name, message, onAttach, supportsImages]);
+  const handleFiles = useCallback(
+    (files: File[]) => {
+      const isImage = (file: File) =>
+        file.type.startsWith('image/') || /\.(png|jpe?g|gif|webp|bmp|tiff?)$/i.test(file.name);
+      const accepted = supportsImages ? files : files.filter((file) => !isImage(file));
+      if (accepted.length !== files.length)
+        message.warning(`当前模型 ${currentModel?.name ?? ''} 不支持图片输入`);
+      if (accepted.length > 0) onAttach?.(accepted);
+    },
+    [currentModel?.name, message, onAttach, supportsImages],
+  );
 
-  const selectCommand = useCallback((item: { id: string; name: string; kind: 'file' | 'skill' }) => {
-    if (!command) return;
-    const triggerIndex = input.lastIndexOf(command[1]!);
-    const label = item.kind === 'file' ? `@${item.name}` : `/${item.name}`;
-    setInput(`${input.slice(0, triggerIndex)}${label} `);
-    if (item.kind === 'file') {
-      const file = workspaceFiles.find((entry) => entry.path === item.id);
-      if (file) onAttachWorkspaceFile?.(file);
-    } else {
-      onSelectSkill?.(item.id);
-    }
-    textareaRef.current?.focus();
-  }, [command, input, onAttachWorkspaceFile, onSelectSkill, workspaceFiles]);
+  const selectCommand = useCallback(
+    (item: { id: string; name: string; kind: 'file' | 'skill' }) => {
+      if (!command) return;
+      const triggerIndex = input.lastIndexOf(command[1]!);
+      const label = item.kind === 'file' ? `@${item.name}` : `/${item.name}`;
+      setInput(`${input.slice(0, triggerIndex)}${label} `);
+      if (item.kind === 'file') {
+        const file = workspaceFiles.find((entry) => entry.path === item.id);
+        if (file) onAttachWorkspaceFile?.(file);
+      } else {
+        onSelectSkill?.(item.id);
+      }
+      textareaRef.current?.focus();
+    },
+    [command, input, onAttachWorkspaceFile, onSelectSkill, workspaceFiles],
+  );
 
   const handleSend = useCallback(() => {
     const trimmed = input.trim();
@@ -211,10 +239,14 @@ export default function BottomInput({
           <div
             className={`relative flex flex-col gap-3 rounded-[24px] border border-solid px-4 pt-4 pb-3 transition-all sm:px-5 ${dragging ? 'shadow-lg' : ''}`}
             style={{ borderColor: token.colorBorder, background: token.colorBgContainer }}
-            onDragEnter={(event) => { event.preventDefault(); setDragging(true); }}
+            onDragEnter={(event) => {
+              event.preventDefault();
+              setDragging(true);
+            }}
             onDragOver={(event) => event.preventDefault()}
             onDragLeave={(event) => {
-              if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
+              if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+                setDragging(false);
             }}
             onDrop={(event) => {
               event.preventDefault();
@@ -232,7 +264,11 @@ export default function BottomInput({
             {dragging && (
               <div
                 className="pointer-events-none absolute inset-1 z-30 flex items-center justify-center rounded-[20px] border border-dashed text-sm font-medium"
-                style={{ borderColor: token.colorPrimary, background: token.colorPrimaryBg, color: token.colorPrimary }}
+                style={{
+                  borderColor: token.colorPrimary,
+                  background: token.colorPrimaryBg,
+                  color: token.colorPrimary,
+                }}
               >
                 {supportsImages ? '松开以上传文件或图片' : '松开以上传文件 · 当前模型不支持图片'}
               </div>
@@ -258,28 +294,46 @@ export default function BottomInput({
             {command && (
               <div
                 className="absolute bottom-[calc(100%-70px)] left-4 right-4 z-20 max-h-64 overflow-auto rounded-xl border border-solid p-1 shadow-lg"
-                style={{ borderColor: token.colorBorderSecondary, background: token.colorBgElevated }}
+                style={{
+                  borderColor: token.colorBorderSecondary,
+                  background: token.colorBgElevated,
+                }}
               >
                 <div className="px-3 py-2 text-xs" style={{ color: token.colorTextSecondary }}>
                   {command[1] === '@' ? '选择当前会话文件' : '选择 Agent 技能'}
                 </div>
                 {commandItems.length === 0 ? (
-                  <div className="px-3 py-3 text-sm" style={{ color: token.colorTextTertiary }}>暂无匹配项</div>
-                ) : commandItems.map((item) => (
-                  <button
-                    key={`${item.kind}-${item.id}`}
-                    type="button"
-                    className="flex w-full cursor-pointer items-start gap-3 rounded-lg border-none bg-transparent px-3 py-2 text-left hover:bg-[var(--ant-color-fill-tertiary)]"
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={() => selectCommand(item)}
-                  >
-                    {item.kind === 'file' ? <FileOutlined className="mt-1" /> : <BulbOutlined className="mt-1" />}
-                    <span className="min-w-0">
-                      <span className="block truncate text-sm">{item.name}</span>
-                      {item.description && <span className="block truncate text-xs" style={{ color: token.colorTextSecondary }}>{item.description}</span>}
-                    </span>
-                  </button>
-                ))}
+                  <div className="px-3 py-3 text-sm" style={{ color: token.colorTextTertiary }}>
+                    暂无匹配项
+                  </div>
+                ) : (
+                  commandItems.map((item) => (
+                    <button
+                      key={`${item.kind}-${item.id}`}
+                      type="button"
+                      className="flex w-full cursor-pointer items-start gap-3 rounded-lg border-none bg-transparent px-3 py-2 text-left hover:bg-[var(--ant-color-fill-tertiary)]"
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => selectCommand(item)}
+                    >
+                      {item.kind === 'file' ? (
+                        <FileOutlined className="mt-1" />
+                      ) : (
+                        <BulbOutlined className="mt-1" />
+                      )}
+                      <span className="min-w-0">
+                        <span className="block truncate text-sm">{item.name}</span>
+                        {item.description && (
+                          <span
+                            className="block truncate text-xs"
+                            style={{ color: token.colorTextSecondary }}
+                          >
+                            {item.description}
+                          </span>
+                        )}
+                      </span>
+                    </button>
+                  ))
+                )}
               </div>
             )}
             {attachments.length > 0 && (
@@ -315,14 +369,25 @@ export default function BottomInput({
                 />
               </Tooltip>
               <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 sm:gap-2">
+                <RunModeSelect value={runMode} onChange={onRunModeChange} disabled={loading} />
                 <Popover
                   trigger="click"
                   placement="topRight"
-                  content={(
+                  content={
                     <div className="w-64 p-1">
-                      <div className="px-2 py-1 text-xs" style={{ color: token.colorTextSecondary }}>模型</div>
+                      <div
+                        className="px-2 py-1 text-xs"
+                        style={{ color: token.colorTextSecondary }}
+                      >
+                        模型
+                      </div>
                       {models.length === 0 ? (
-                        <div className="px-2 pb-2 text-sm" style={{ color: token.colorTextTertiary }}>未配置模型</div>
+                        <div
+                          className="px-2 pb-2 text-sm"
+                          style={{ color: token.colorTextTertiary }}
+                        >
+                          未配置模型
+                        </div>
                       ) : (
                         models.map((model) => (
                           <Button
@@ -334,18 +399,40 @@ export default function BottomInput({
                           >
                             <span className="min-w-0">
                               <span className="block truncate text-left text-sm">{model.name}</span>
-                              <span className="block truncate text-left text-xs" style={{ color: token.colorTextTertiary }}>{model.provider}</span>
+                              <span
+                                className="block truncate text-left text-xs"
+                                style={{ color: token.colorTextTertiary }}
+                              >
+                                {model.provider}
+                              </span>
                             </span>
-                            {currentModel?.id === model.id && <span style={{ color: token.colorPrimary }}>✓</span>}
+                            {currentModel?.id === model.id && (
+                              <span style={{ color: token.colorPrimary }}>✓</span>
+                            )}
                           </Button>
                         ))
                       )}
-                      <div className="my-1 border-0 border-t border-solid" style={{ borderColor: token.colorBorderSecondary }} />
-                      <div className="px-2 py-1 text-xs" style={{ color: token.colorTextSecondary }}>思考强度</div>
+                      <div
+                        className="my-1 border-0 border-t border-solid"
+                        style={{ borderColor: token.colorBorderSecondary }}
+                      />
+                      <div
+                        className="px-2 py-1 text-xs"
+                        style={{ color: token.colorTextSecondary }}
+                      >
+                        思考强度
+                      </div>
                       {allowedThinkingLevels(currentModel).length <= 1 ? (
-                        <div className="px-2 pb-2 text-xs" style={{ color: token.colorTextTertiary }}>当前模型不支持思考</div>
+                        <div
+                          className="px-2 pb-2 text-xs"
+                          style={{ color: token.colorTextTertiary }}
+                        >
+                          当前模型不支持思考
+                        </div>
                       ) : (
-                        THINKING_OPTIONS.filter(([value]) => allowedThinkingLevels(currentModel).includes(value)).map(([value, label]) => (
+                        THINKING_OPTIONS.filter(([value]) =>
+                          allowedThinkingLevels(currentModel).includes(value),
+                        ).map(([value, label]) => (
                           <Button
                             key={value}
                             type="text"
@@ -354,12 +441,14 @@ export default function BottomInput({
                             onClick={() => onThinkingLevelChange?.(value)}
                           >
                             <span>{label}</span>
-                            {thinkingLevel === value && <span style={{ color: token.colorPrimary }}>✓</span>}
+                            {thinkingLevel === value && (
+                              <span style={{ color: token.colorPrimary }}>✓</span>
+                            )}
                           </Button>
                         ))
                       )}
                     </div>
-                  )}
+                  }
                 >
                   <Button
                     type="text"
@@ -371,7 +460,10 @@ export default function BottomInput({
                       <RobotOutlined className="shrink-0" />
                       <span className="truncate text-xs">{currentModel?.name ?? '未配置模型'}</span>
                       {thinkingLevel !== 'off' && (
-                        <span className="shrink-0 text-xs" style={{ color: token.colorTextSecondary }}>
+                        <span
+                          className="shrink-0 text-xs"
+                          style={{ color: token.colorTextSecondary }}
+                        >
                           · {THINKING_OPTIONS.find(([value]) => value === thinkingLevel)?.[1]}
                         </span>
                       )}

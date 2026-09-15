@@ -1,3 +1,4 @@
+import { client } from '@/api';
 /**
  * SSE 流式聊天客户端
  *
@@ -6,12 +7,15 @@
  * - 认证与 token 刷新由 api/index.ts 的 client 实例负责
  */
 import { iterateStream } from '@doremijs/o2t/client/stream';
-import { client } from '@/api';
 
 export interface StreamCallbacks {
   onContent: (delta: string) => void;
   onReasoning?: (delta: string) => void;
-  onToolCall?: (toolCall: { id: string; name: string; arguments?: Record<string, unknown> }) => void;
+  onToolCall?: (toolCall: {
+    id: string;
+    name: string;
+    arguments?: Record<string, unknown>;
+  }) => void;
   /** 工具执行结束：携带真实耗时、错误标记与输出摘要（流内实时下发，不等会话结束） */
   onToolResult?: (result: {
     toolCallId: string;
@@ -19,6 +23,8 @@ export interface StreamCallbacks {
     durationMs: number;
     isError: boolean;
     output?: string;
+    /** 非人工放行来源：auto=审批子智能体放行，trust=信任模式跳过 */
+    approval?: { mode: 'auto' | 'trust'; reason?: string };
   }) => void;
   onUsage?: (usage: { promptTokens: number; completionTokens: number }) => void;
   /** 深度研究阶段事件：planning → researching → synthesizing */
@@ -35,6 +41,8 @@ export interface StreamCallbacks {
     toolName: string;
     input: Record<string, unknown>;
     expiresAt: string;
+    /** 工具风险等级，供审批弹窗标注（critical 工具任何模式都会走到这里） */
+    riskLevel?: 'low' | 'medium' | 'high' | 'critical';
   }) => void;
   onError: (error: { code: string; message: string; recoverable: boolean }) => void;
   onDone: () => void;
@@ -52,6 +60,8 @@ export interface ChatStreamParams {
   knowledgeBaseIds?: string[];
   attachmentPaths?: string[];
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+  /** 审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批 */
+  runMode?: 'ask' | 'auto' | 'trust';
   /** 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史（后端截断会话） */
   truncateUserMessages?: number;
 }
@@ -86,7 +96,16 @@ export interface AIStreamChunk {
   sources?: Array<{ title: string; url: string }>;
   sessionId?: string;
   title?: string;
-  approval?: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
+  /** approval_required：待审批请求；tool_result：非人工放行来源（auto/trust） */
+  approval?:
+    | {
+        id: string;
+        toolName: string;
+        input: Record<string, unknown>;
+        expiresAt: string;
+        riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+      }
+    | { mode: 'auto' | 'trust'; reason?: string };
   error?: { code: string; message: string; recoverable: boolean };
 }
 
@@ -160,12 +179,14 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       break;
     case 'tool_result':
       if (chunk.toolCallId) {
+        const provenance = chunk.approval;
         callbacks.onToolResult?.({
           toolCallId: chunk.toolCallId,
           toolName: chunk.toolName ?? '',
           durationMs: chunk.durationMs ?? 0,
           isError: chunk.isError ?? false,
           ...(chunk.output === undefined ? {} : { output: chunk.output }),
+          ...(provenance && 'mode' in provenance ? { approval: provenance } : {}),
         });
       }
       break;
@@ -185,7 +206,7 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       if (chunk.title) callbacks.onTitle?.(chunk.title);
       break;
     case 'approval_required':
-      if (chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);
+      if (chunk.approval && 'id' in chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);
       break;
     case 'error':
       if (chunk.error) callbacks.onError(chunk.error);

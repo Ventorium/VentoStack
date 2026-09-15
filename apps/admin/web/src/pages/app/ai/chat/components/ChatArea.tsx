@@ -1,7 +1,8 @@
 import MarkdownPreview from '@/components/MarkdownPreview';
 import {
-  CheckOutlined,
-  CloseOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+  CloseCircleOutlined,
   CopyOutlined,
   DislikeOutlined,
   DownOutlined,
@@ -12,16 +13,16 @@ import {
   ReloadOutlined,
   RightOutlined,
   RobotOutlined,
-  SafetyCertificateOutlined,
   UserOutlined,
 } from '@ant-design/icons';
 import { Avatar, Button, Input, Space, Tooltip, Typography, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatApproval, ChatMessage } from '../types';
 import AgentSteps, { StepRow } from './AgentSteps';
+import ApprovalModal from './ApprovalModal';
 import { ResearchSources, ResearchStatus } from './ResearchStatus';
 
-const { Text, Paragraph } = Typography;
+const { Text } = Typography;
 
 interface ChatAreaProps {
   messages: ChatMessage[];
@@ -121,75 +122,36 @@ function CitationsBlock({
   );
 }
 
-/** 工具审批卡片：高风险工具需要用户在聊天内确认后才能继续执行 */
-function ApprovalCard({
-  approval,
-  onDecision,
-}: {
-  approval: ChatApproval;
-  onDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
-}) {
+/**
+ * 审批状态行：交互已移到弹窗（ApprovalModal），消息流内只保留结果，
+ * 让回看历史时能看到"哪次工具调用被审批过、结论是什么"。
+ */
+function ApprovalStatusRow({ approval }: { approval: ChatApproval }) {
   const { token } = theme.useToken();
   const expired = approval.status === 'pending' && Date.now() > Date.parse(approval.expiresAt);
   const effectiveStatus = expired ? ('expired' as const) : approval.status;
 
-  const statusText =
-    effectiveStatus === 'pending'
-      ? '需要你的确认后才能继续执行'
-      : effectiveStatus === 'approved'
-        ? '已允许'
-        : effectiveStatus === 'rejected'
-          ? '已拒绝'
-          : '已过期';
-
-  const handleDecision = async (decision: 'approved' | 'rejected') => {
-    const ok = await onDecision?.(approval.id, decision);
-    if (ok) {
-      msg.success(decision === 'approved' ? '已允许执行' : '已拒绝执行');
-    }
-  };
+  const meta = {
+    pending: {
+      text: '等待你的确认（弹窗中处理）',
+      color: token.colorWarning,
+      icon: <ClockCircleOutlined />,
+    },
+    approved: { text: '已允许执行', color: token.colorSuccess, icon: <CheckCircleOutlined /> },
+    rejected: { text: '已拒绝执行', color: token.colorError, icon: <CloseCircleOutlined /> },
+    expired: {
+      text: '已过期，未执行',
+      color: token.colorTextTertiary,
+      icon: <CloseCircleOutlined />,
+    },
+  }[effectiveStatus];
 
   return (
-    <div
-      className="mb-2 p-3 rounded-md"
-      style={{ background: token.colorWarningBg, border: `1px solid ${token.colorWarningBorder}` }}
-    >
-      <Space size={6} className="mb-1">
-        <SafetyCertificateOutlined style={{ color: token.colorWarning }} />
-        <Text strong className="text-[13px]">
-          工具执行审批：{approval.toolName}
-        </Text>
-        <Text type="secondary" className="text-xs">
-          {statusText}
-        </Text>
-      </Space>
-      <Paragraph
-        code
-        className="text-xs mb-2!"
-        ellipsis={{ rows: 2, expandable: true, symbol: '展开' }}
-      >
-        {JSON.stringify(approval.input ?? {})}
-      </Paragraph>
-      {effectiveStatus === 'pending' && (
-        <Space size={8}>
-          <Button
-            type="primary"
-            size="small"
-            icon={<CheckOutlined />}
-            onClick={() => handleDecision('approved')}
-          >
-            允许
-          </Button>
-          <Button
-            size="small"
-            danger
-            icon={<CloseOutlined />}
-            onClick={() => handleDecision('rejected')}
-          >
-            拒绝
-          </Button>
-        </Space>
-      )}
+    <div className="mb-2 flex items-center gap-1.5 text-xs" style={{ color: meta.color }}>
+      {meta.icon}
+      <span>
+        工具执行审批 · {approval.toolName} · {meta.text}
+      </span>
     </div>
   );
 }
@@ -334,6 +296,9 @@ export default function ChatArea({
     return () => observer.disconnect();
   }, [hasMessages, scrollToBottom]);
 
+  // 待审批请求：同一时刻至多一个（agent-loop 在流内挂起等待 decision），交互交给弹窗
+  const pendingApproval = messages.find((msg) => msg.approval?.status === 'pending')?.approval;
+
   if (messages.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4">
@@ -428,9 +393,7 @@ export default function ChatArea({
                         border: isUser ? 'none' : `1px solid ${token.colorBorderSecondary}`,
                       }}
                     >
-                      {!isUser && msg.approval && (
-                        <ApprovalCard approval={msg.approval} onDecision={onApprovalDecision} />
-                      )}
+                      {!isUser && msg.approval && <ApprovalStatusRow approval={msg.approval} />}
 
                       {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
                         <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
@@ -478,6 +441,9 @@ export default function ChatArea({
                                     ? {}
                                     : { arguments: block.arguments }),
                                   ...(block.output === undefined ? {} : { output: block.output }),
+                                  ...(block.approval === undefined
+                                    ? {}
+                                    : { approval: block.approval }),
                                 }}
                               />
                             </div>
@@ -621,6 +587,9 @@ export default function ChatArea({
           onClick={() => scrollToBottom('smooth')}
         />
       )}
+
+      {/* 审批交互在弹窗里完成；流内只留状态行 */}
+      <ApprovalModal approval={pendingApproval} onDecision={onApprovalDecision} />
     </div>
   );
 }
