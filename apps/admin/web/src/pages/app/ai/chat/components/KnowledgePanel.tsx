@@ -2,7 +2,7 @@ import { client } from '@/api';
 import type { FileEntry } from '@/api/types';
 import MarkdownPreview from '@/components/MarkdownPreview';
 import { FileTextOutlined, FolderOutlined } from '@ant-design/icons';
-import { Empty, Select, Spin, Table, Typography, theme } from 'antd';
+import { Empty, Select, Spin, Table, Tooltip, Typography, theme } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 
 const { Text } = Typography;
@@ -69,13 +69,16 @@ export default function KnowledgePanel({
       >
         <Select
           value={kbId}
-          className="min-w-[220px]"
+          className="w-full max-w-[320px]"
           onChange={(value) => {
             setKbId(value);
             setPath('.');
             setPreview(null);
           }}
-          options={knowledgeBases.map((kb) => ({ value: kb.id, label: kb.name }))}
+          options={knowledgeBases.map((kb) => ({
+            value: kb.id,
+            label: <Tooltip title={kb.name}><span className="block truncate">{kb.name}</span></Tooltip>,
+          }))}
         />
       </div>
       <div className="flex flex-1 min-h-0">
@@ -94,9 +97,9 @@ export default function KnowledgePanel({
               {
                 dataIndex: 'name',
                 render: (name: string, file) => (
-                  <div className="flex items-center gap-2">
+                  <div className="flex min-w-0 items-center gap-2">
                     {file.type === 'directory' ? <FolderOutlined /> : <FileTextOutlined />}
-                    <Text ellipsis>{name}</Text>
+                    <Text ellipsis className="min-w-0 flex-1" title={name}>{name}</Text>
                   </div>
                 ),
               },
@@ -114,7 +117,7 @@ export default function KnowledgePanel({
             </div>
           ) : preview ? (
             <>
-              <Text strong>{preview.path}</Text>
+              <Text strong ellipsis className="block" title={preview.path}>{preview.path}</Text>
               <div className="mt-4">
                 <MarkdownPreview content={preview.content} />
               </div>

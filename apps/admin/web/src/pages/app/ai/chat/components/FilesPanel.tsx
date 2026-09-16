@@ -8,9 +8,10 @@ import {
   FilePptOutlined,
   FileTextOutlined,
   FileWordOutlined,
+  FolderOutlined,
 } from '@ant-design/icons';
-import { Empty, Spin, Tag, Typography, theme } from 'antd';
-import { useCallback, useEffect, useState } from 'react';
+import { Empty, Spin, Tag, Tree, Typography, theme } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const { Text } = Typography;
 
@@ -26,6 +27,44 @@ interface PreviewData {
   kind: PreviewKind;
   name: string;
   content: string;
+}
+
+interface FileTreeNode {
+  key: string;
+  title: string;
+  isLeaf: boolean;
+  file?: WorkspaceFile;
+  children?: FileTreeNode[];
+}
+
+function buildFileTree(files: WorkspaceFile[]): FileTreeNode[] {
+  const root: FileTreeNode[] = [];
+  for (const file of files) {
+    const parts = file.path.split('/').filter(Boolean);
+    let level = root;
+    let currentPath = '';
+    for (const [index, part] of parts.entries()) {
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+      const isLeaf = index === parts.length - 1;
+      let node = level.find((item) => item.key === currentPath);
+      if (!node) {
+        node = {
+          key: currentPath,
+          title: part,
+          isLeaf,
+          ...(isLeaf ? { file } : { children: [] }),
+        };
+        level.push(node);
+      }
+      if (!isLeaf) level = node.children ?? [];
+    }
+  }
+  const sort = (nodes: FileTreeNode[]): void => {
+    nodes.sort((a, b) => Number(a.isLeaf) - Number(b.isLeaf) || a.title.localeCompare(b.title));
+    for (const node of nodes) if (node.children) sort(node.children);
+  };
+  sort(root);
+  return root;
 }
 
 function fileIcon(path: string): React.ReactNode {
@@ -60,6 +99,26 @@ export default function FilesPanel({ files, sessionId, openFile }: FilesPanelPro
   const [selected, setSelected] = useState<string | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loading, setLoading] = useState(false);
+  const [expandedKeys, setExpandedKeys] = useState<string[]>([]);
+  const knownDirectoryKeys = useRef(new Set<string>());
+  const treeData = useMemo(() => buildFileTree(files), [files]);
+
+  useEffect(() => {
+    const newDirectoryKeys: string[] = [];
+    const collect = (nodes: FileTreeNode[]): void => {
+      for (const node of nodes) {
+        if (!node.isLeaf && !knownDirectoryKeys.current.has(node.key)) {
+          knownDirectoryKeys.current.add(node.key);
+          newDirectoryKeys.push(node.key);
+        }
+        if (node.children) collect(node.children);
+      }
+    };
+    collect(treeData);
+    if (newDirectoryKeys.length > 0) {
+      setExpandedKeys((current) => [...current, ...newDirectoryKeys]);
+    }
+  }, [treeData]);
 
   const handleSelect = useCallback(
     async (path: string) => {
@@ -107,30 +166,38 @@ export default function FilesPanel({ files, sessionId, openFile }: FilesPanelPro
               className="mt-12"
             />
           ) : (
-            files.map((file) => {
-              const isActive = file.path === selected;
-              return (
-                <div
-                  key={file.path}
-                  onClick={() => handleSelect(file.path)}
-                  className="cursor-pointer flex items-center gap-2 px-2 py-1.5 mb-0.5"
-                  style={{
-                    borderRadius: token.borderRadiusLG,
-                    background: isActive ? token.controlItemBgActive : 'transparent',
-                  }}
-                >
-                  {fileIcon(file.path)}
-                  <div className="flex-1 min-w-0">
-                    <Text ellipsis className="block text-[13px]">
-                      {file.path}
-                    </Text>
-                    <Text type="secondary" className="text-xs">
-                      {fmtSize(file.size)}
-                    </Text>
-                  </div>
+            <Tree<FileTreeNode>
+              blockNode
+              className="[&_.ant-tree-switcher]:hidden"
+              expandedKeys={expandedKeys}
+              selectedKeys={selected ? [selected] : []}
+              treeData={treeData}
+              titleRender={(node) => (
+                <div className="flex min-w-0 items-center gap-2 pr-1">
+                  {node.isLeaf ? fileIcon(node.key) : <FolderOutlined />}
+                  <span className="min-w-0 flex-1 truncate text-[13px]" title={node.title}>
+                    {node.title}
+                  </span>
+                  {node.file && (
+                    <span className="ml-auto shrink-0 text-[10px] text-gray-400">
+                      {fmtSize(node.file.size)}
+                    </span>
+                  )}
                 </div>
-              );
-            })
+              )}
+              onSelect={(_, info) => {
+                if (info.node.file) {
+                  void handleSelect(info.node.file.path);
+                  return;
+                }
+                setExpandedKeys((current) =>
+                  current.includes(info.node.key)
+                    ? current.filter((key) => key !== info.node.key)
+                    : [...current, info.node.key],
+                );
+              }}
+              onExpand={(keys) => setExpandedKeys(keys.map(String))}
+            />
           )}
         </div>
       </div>

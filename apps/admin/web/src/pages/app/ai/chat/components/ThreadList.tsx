@@ -6,7 +6,18 @@ import {
   RestOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import { Button, Dropdown, Empty, Input, Space, Spin, Typography, theme } from 'antd';
+import {
+  Button,
+  Dropdown,
+  Empty,
+  Input,
+  Modal,
+  Popconfirm,
+  Space,
+  Spin,
+  Typography,
+  theme,
+} from 'antd';
 import { type UIEvent, useState } from 'react';
 import type { Thread } from '../types';
 
@@ -130,23 +141,29 @@ export default function ThreadList({
                       { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true },
                     ],
                     onClick: ({ key }) => {
-                      if (key === 'delete') onDelete?.(thread.id);
+                      if (key === 'delete') {
+                        Modal.confirm({
+                          title: '将该会话移入回收站？',
+                          content: '移入后可在回收站恢复。',
+                          okText: '移入回收站',
+                          okButtonProps: { danger: true },
+                          onOk: () => onDelete?.(thread.id),
+                        });
+                      }
                       if (key === 'rename') setRenaming({ id: thread.id, value: thread.title });
                     },
                   }}
                 >
-                  <div className="relative group">
+                  <div className="group">
                     <div
                       onClick={() => onSelect?.(thread.id)}
-                      className="cursor-pointer mb-0.5"
+                      className="mb-0.5 flex cursor-pointer items-start gap-1 px-10px py-2 transition-all transition-ease-DEFAULT"
                       style={{
-                        padding: '8px 10px',
-                        borderRadius: token.borderRadiusLG,
+                        // borderRadius: token.borderRadiusLG,
                         background: isActive ? token.controlItemBgActive : 'transparent',
                         borderLeft: isActive
                           ? `3px solid ${token.colorPrimary}`
                           : '3px solid transparent',
-                        transition: 'all 0.15s ease',
                       }}
                       onMouseEnter={(e) => {
                         if (!isActive) e.currentTarget.style.background = token.controlItemBgHover;
@@ -157,6 +174,7 @@ export default function ThreadList({
                     >
                       {renaming?.id === thread.id ? (
                         <Input
+                          className="min-w-0 flex-1"
                           size="small"
                           autoFocus
                           maxLength={60}
@@ -170,7 +188,7 @@ export default function ThreadList({
                           }}
                         />
                       ) : (
-                        <>
+                        <div className="min-w-0 flex-1">
                           <Text
                             strong={isActive}
                             ellipsis
@@ -182,38 +200,42 @@ export default function ThreadList({
                           <Text type="secondary" ellipsis className="text-xs block">
                             {thread.lastMessage}
                           </Text>
-                        </>
+                        </div>
+                      )}
+                      {/* hover 操作：在布局中占位，避免覆盖标题 */}
+                      {renaming?.id !== thread.id && (
+                        <div className="ml-auto flex shrink-0 items-center gap-0 opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto">
+                          <Button
+                            type="text"
+                            size="small"
+                            className="!h-6 !w-6 !min-w-6 !p-0 text-gray-400 hover:!bg-transparent"
+                            aria-label="重命名会话"
+                            icon={<EditOutlined />}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRenaming({ id: thread.id, value: thread.title });
+                            }}
+                          />
+                          <Popconfirm
+                            title="将该会话移入回收站？"
+                            description="移入后可在回收站恢复"
+                            okText="移入回收站"
+                            cancelText="取消"
+                            okButtonProps={{ danger: true }}
+                            onConfirm={() => onDelete?.(thread.id)}
+                          >
+                            <Button
+                              type="text"
+                              size="small"
+                              className="!h-6 !w-6 !min-w-6 !p-0 text-gray-400 hover:!bg-transparent hover:!text-red-500"
+                              aria-label="删除会话"
+                              icon={<DeleteOutlined />}
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </Popconfirm>
+                        </div>
                       )}
                     </div>
-
-                    {/* hover 操作：重命名 / 删除（删除为移入回收站，可恢复） */}
-                    {renaming?.id !== thread.id && (
-                      <div
-                        className="absolute right-1 top-1 flex gap-0.5 rounded opacity-0 group-hover:opacity-100 transition-opacity"
-                        style={{ background: token.colorBgContainer }}
-                      >
-                        <Button
-                          type="text"
-                          size="small"
-                          aria-label="重命名会话"
-                          icon={<EditOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setRenaming({ id: thread.id, value: thread.title });
-                          }}
-                        />
-                        <Button
-                          type="text"
-                          size="small"
-                          aria-label="删除会话"
-                          icon={<DeleteOutlined />}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onDelete?.(thread.id);
-                          }}
-                        />
-                      </div>
-                    )}
                   </div>
                 </Dropdown>
               );
