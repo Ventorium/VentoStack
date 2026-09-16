@@ -3729,6 +3729,18 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * 停止会话进行中的回复
+     */
+    '/api/ai/chat/sessions/:id/stop': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 创建会话
      */
     '/api/ai/conversations': {

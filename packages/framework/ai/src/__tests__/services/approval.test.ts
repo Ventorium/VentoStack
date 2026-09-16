@@ -369,7 +369,7 @@ describe("createApprovalWaiter（审批等待器）", () => {
     expect(result.approved).toBe(true);
   });
 
-  test("returns deny on abort（断开连接不挂死）", async () => {
+  test("returns deny on abort（停止生成：审批作废且工具不执行）", async () => {
     const waiter = createApprovalWaiter({
       getStatus: async () => ({ id: "a1", toolName: "terminal", input: {}, requestedBy: "u1", status: "pending", approvedBy: null, comment: null, expiresAt: new Date(Date.now() + 60_000).toISOString(), tenantId: "t1", createdAt: "", updatedAt: "" }),
     });
@@ -378,5 +378,93 @@ describe("createApprovalWaiter（审批等待器）", () => {
     controller.abort();
     const result = await pending;
     expect(result.approved).toBe(false);
+    // 与超时同构：状态置 expired，由调用方把审批单落为过期并记决议台账
+    expect(result.status).toBe("expired");
+  });
+
+  test("returns status expired on timeout（超时即默认拒绝）", async () => {
+    const waiter = createApprovalWaiter({
+      getStatus: async () => ({ id: "a1", toolName: "terminal", input: {}, requestedBy: "u1", status: "pending", approvedBy: null, comment: null, expiresAt: new Date(Date.now() + 5).toISOString(), tenantId: "t1", createdAt: "", updatedAt: "" }),
+    });
+    const result = await waiter({ id: "a1", expiresAt: new Date(Date.now() + 5).toISOString() });
+    expect(result.approved).toBe(false);
+    expect(result.status).toBe("expired");
+  });
+
+  test("returns status expired when the request expired meanwhile（竞态兜底读到 expired）", async () => {
+    const waiter = createApprovalWaiter({
+      getStatus: async () => ({ id: "a1", toolName: "terminal", input: {}, requestedBy: "u1", status: "expired", approvedBy: null, comment: null, expiresAt: new Date(Date.now() - 1000).toISOString(), tenantId: "t1", createdAt: "", updatedAt: "" }),
+    });
+    const result = await waiter({ id: "a1", expiresAt: new Date(Date.now() + 60_000).toISOString() });
+    expect(result.status).toBe("expired");
+  });
+});
+
+describe("审批会话台账（request/expire 契约）", () => {
+  const pendingRow = {
+    id: "a1",
+    toolName: "file-write",
+    input: { path: "note.md" },
+    requestedBy: "user1",
+    status: "pending",
+    approvedBy: null,
+    comment: null,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    tenantId: "t1",
+    sessionId: "s1",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+  };
+
+  test("request 支持 ttlMs 与 sessionId（聊天内审批对齐等待窗口）", async () => {
+    const { db, exec } = createMockDatabase();
+    const service = createApprovalService({ db });
+    const before = Date.now();
+
+    const result = await service.request("file-write", { path: "note.md" }, "user1", "t1", {
+      ttlMs: 10 * 60 * 1000,
+      sessionId: "s1",
+    });
+
+    expect(result.sessionId).toBe("s1");
+    // 有效期按 ttlMs 起算（不是默认 24h）
+    expect(Date.parse(result.expiresAt) - before).toBeLessThanOrEqual(10 * 60 * 1000 + 1000);
+    const insertCall = exec.calls.find((args) => String(args[0]).includes("INSERT INTO ai_approval_request"));
+    expect((insertCall?.[1] as unknown[] | undefined)?.at(-1)).toBe("s1");
+  });
+
+  test("expire 仅对 pending 生效并广播 ai.approval.expired", async () => {
+    const expiredRow = { ...pendingRow, status: "expired", comment: "等待超时，已默认拒绝" };
+    let selects = 0;
+    const raw = async (sql: string) => {
+      if (sql.includes("UPDATE")) return [{ id: "a1" }];
+      selects += 1;
+      return selects === 1 ? [pendingRow] : [expiredRow];
+    };
+    const bus = createMockEventBus();
+    const service = createApprovalService({ db: { raw } as never, eventBus: bus as never });
+
+    const result = await service.expire("a1");
+
+    expect(result?.status).toBe("expired");
+    expect(
+      bus.events.some((e) => (e.event as { name?: string })?.name === "ai.approval.expired"),
+    ).toBe(true);
+  });
+
+  test("expire 幂等：已是终态（UPDATE 无命中）返回 null 且不广播", async () => {
+    const { db } = createMockDatabase({
+      "UPDATE ai_approval_request SET status = 'expired'": [],
+      "SELECT id": [{ ...pendingRow, status: "approved" }],
+    });
+    const bus = createMockEventBus();
+    const service = createApprovalService({ db, eventBus: bus as never });
+
+    const result = await service.expire("a1");
+
+    expect(result).toBeNull();
+    expect(
+      bus.events.some((e) => (e.event as { name?: string })?.name === "ai.approval.expired"),
+    ).toBe(false);
   });
 });

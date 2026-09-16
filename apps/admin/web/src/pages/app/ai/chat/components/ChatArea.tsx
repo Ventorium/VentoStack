@@ -1,8 +1,5 @@
 import MarkdownPreview from '@/components/MarkdownPreview';
 import {
-  CheckCircleOutlined,
-  ClockCircleOutlined,
-  CloseCircleOutlined,
   CopyOutlined,
   DislikeOutlined,
   DownOutlined,
@@ -18,7 +15,7 @@ import {
 import { Avatar, Button, Input, Space, Tooltip, Typography, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { ChatApproval, ChatMessage } from '../types';
-import AgentSteps, { StepRow } from './AgentSteps';
+import AgentSteps, { type StepDetail, StepRow } from './AgentSteps';
 import ApprovalModal from './ApprovalModal';
 import { ResearchSources, ResearchStatus } from './ResearchStatus';
 
@@ -36,6 +33,8 @@ interface ChatAreaProps {
   onCiteClick?: (name: string, url?: string) => void;
   /** 编辑用户消息并重新发送：仅会话结束（含失败）时由父组件传入 */
   onEditResend?: (messageId: string, newContent: string) => void;
+  /** 只读历史回放：保留消息样式，隐藏编辑、反馈、重新生成和审批交互 */
+  readOnly?: boolean;
 }
 
 /** 从引用行解析名称与可选 URL：支持 `- 来源: [标题](url)`、`- 来源: https://...` 与纯文本 */
@@ -123,37 +122,15 @@ function CitationsBlock({
 }
 
 /**
- * 审批状态行：交互已移到弹窗（ApprovalModal），消息流内只保留结果，
- * 让回看历史时能看到"哪次工具调用被审批过、结论是什么"。
+ * 审批状态落到工具行上（不再单独占消息顶部一行）：
+ * pending 且已过有效期时按 expired 展示，避免过期条目长期显示"待审批"。
  */
-function ApprovalStatusRow({ approval }: { approval: ChatApproval }) {
-  const { token } = theme.useToken();
+function approvalStateOf(approval: ChatApproval): NonNullable<StepDetail['approvalState']> {
   const expired = approval.status === 'pending' && Date.now() > Date.parse(approval.expiresAt);
-  const effectiveStatus = expired ? ('expired' as const) : approval.status;
-
-  const meta = {
-    pending: {
-      text: '等待你的确认（弹窗中处理）',
-      color: token.colorWarning,
-      icon: <ClockCircleOutlined />,
-    },
-    approved: { text: '已允许执行', color: token.colorSuccess, icon: <CheckCircleOutlined /> },
-    rejected: { text: '已拒绝执行', color: token.colorError, icon: <CloseCircleOutlined /> },
-    expired: {
-      text: '已过期，未执行',
-      color: token.colorTextTertiary,
-      icon: <CloseCircleOutlined />,
-    },
-  }[effectiveStatus];
-
-  return (
-    <div className="mb-2 flex items-center gap-1.5 text-xs" style={{ color: meta.color }}>
-      {meta.icon}
-      <span>
-        工具执行审批 · {approval.toolName} · {meta.text}
-      </span>
-    </div>
-  );
+  return {
+    status: expired ? 'expired' : approval.status,
+    ...(approval.reason ? { reason: approval.reason } : {}),
+  };
 }
 
 function formatTokenCount(n: number): string {
@@ -229,8 +206,11 @@ export default function ChatArea({
   onApprovalDecision,
   onCiteClick,
   onEditResend,
+  readOnly = false,
 }: ChatAreaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // 审批弹窗的 Portal 目标：挂进对话容器，遮罩只覆盖对话区域
+  const dialogRootRef = useRef<HTMLDivElement>(null);
   const { token } = theme.useToken();
   // 用户消息编辑态：记录正在编辑的消息 id 与草稿内容
   const [editing, setEditing] = useState<{ id: string; value: string } | null>(null);
@@ -296,8 +276,12 @@ export default function ChatArea({
     return () => observer.disconnect();
   }, [hasMessages, scrollToBottom]);
 
-  // 待审批请求：同一时刻至多一个（agent-loop 在流内挂起等待 decision），交互交给弹窗
-  const pendingApproval = messages.find((msg) => msg.approval?.status === 'pending')?.approval;
+  // 待审批请求：同一时刻至多一个（agent-loop 在流内挂起等待 decision），交互交给弹窗。
+  // 已过期的不再弹窗（超时即默认拒绝），避免刷新恢复出的过期条目把弹窗永久挂住
+  const pendingApproval = messages.find(
+    (msg) =>
+      msg.approval?.status === 'pending' && Date.parse(msg.approval.expiresAt) > Date.now(),
+  )?.approval;
 
   if (messages.length === 0) {
     return (
@@ -320,11 +304,23 @@ export default function ChatArea({
   }
 
   return (
-    <div className="relative flex-1 min-w-0 min-h-0 flex flex-col">
-      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto py-[16px]">
-        <div className="max-w-[820px]" style={{ margin: '0 auto', padding: '0 16px' }}>
+    <div ref={dialogRootRef} className="relative flex-1 min-w-0 min-h-0 flex flex-col">
+      <div ref={containerRef} className="flex-1 min-h-0 overflow-auto p-4">
+        <div className="max-w-[960px] mx-auto">
           {messages.map((msg) => {
             const isUser = msg.role === 'user';
+            // 审批状态标在对应的工具行上：优先按 toolCallId 定位，
+            // 历史条目没有 toolCallId 时退化为"最后一个工具行"
+            const approvalTargetId = msg.approval?.toolCallId ?? msg.approval?.id;
+            const lastToolBlockId = [...(msg.blocks ?? [])]
+              .reverse()
+              .find((block) => block.type === 'tool')?.id;
+            const approvalStateFor = (blockId: string) =>
+              msg.approval &&
+              (blockId === approvalTargetId ||
+                (msg.approval.toolCallId === undefined && blockId === lastToolBlockId))
+                ? approvalStateOf(msg.approval)
+                : undefined;
             return (
               <div
                 key={msg.id}
@@ -393,8 +389,6 @@ export default function ChatArea({
                         border: isUser ? 'none' : `1px solid ${token.colorBorderSecondary}`,
                       }}
                     >
-                      {!isUser && msg.approval && <ApprovalStatusRow approval={msg.approval} />}
-
                       {!isUser && msg.researchStages && msg.researchStages.length > 0 && (
                         <ResearchStatus stages={msg.researchStages} streaming={msg.isStreaming} />
                       )}
@@ -444,6 +438,9 @@ export default function ChatArea({
                                   ...(block.approval === undefined
                                     ? {}
                                     : { approval: block.approval }),
+                                  ...(approvalStateFor(block.id) === undefined
+                                    ? {}
+                                    : { approvalState: approvalStateFor(block.id) }),
                                 }}
                               />
                             </div>
@@ -500,7 +497,7 @@ export default function ChatArea({
                   )}
 
                   {/* 用户消息操作：hover 显示编辑与复制 */}
-                  {isUser && editing?.id !== msg.id && (
+                  {!readOnly && isUser && editing?.id !== msg.id && (
                     <div className="flex gap-1 justify-end mt-1 opacity-0 transition-opacity group-hover:opacity-100">
                       {onEditResend && (
                         <Tooltip title="编辑并重新发送">
@@ -528,7 +525,7 @@ export default function ChatArea({
                     </div>
                   )}
 
-                  {!isUser && !msg.isStreaming && (
+                  {!readOnly && !isUser && !msg.isStreaming && (
                     <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                       <MessageActions
                         content={msg.content}
@@ -588,8 +585,14 @@ export default function ChatArea({
         />
       )}
 
-      {/* 审批交互在弹窗里完成；流内只留状态行 */}
-      <ApprovalModal approval={pendingApproval} onDecision={onApprovalDecision} />
+      {/* 审批交互在弹窗里完成；弹窗挂进对话容器，遮罩只盖住对话区域 */}
+      {!readOnly && (
+        <ApprovalModal
+          approval={pendingApproval}
+          onDecision={onApprovalDecision}
+          getContainer={() => dialogRootRef.current ?? document.body}
+        />
+      )}
     </div>
   );
 }

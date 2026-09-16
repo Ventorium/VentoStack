@@ -60,6 +60,11 @@ export interface MemoryService {
     message: { role: string; content: string; model?: string; reasoning?: string },
   ): Promise<void>;
   getSession(sessionId: string, scope: MemoryScope): Promise<ConversationMemory | null>;
+  /**
+   * 追加自定义条目（会话台账）：不进 LLM 上下文，仅用于前端回显/审计。
+   * 会话不存在时静默跳过（与 appendMessage 一致，不阻断调用方主流程）。
+   */
+  appendCustomEntry(sessionId: string, scope: MemoryScope, customType: string, data?: unknown): Promise<void>;
   /** 更新会话标题（会话总结模型生成标题后调用；缺省标题为 `对话 {sessionId前8位}`） */
   renameSession(sessionId: string, scope: MemoryScope, title: string): Promise<void>;
   listSessions(
@@ -145,6 +150,32 @@ export interface MemoryService {
 export interface MemoryScope {
   tenantId: string;
   userId: string;
+}
+
+/**
+ * 会话内审批台账条目（以 custom entry 落盘，因此天然不进 LLM 上下文）。
+ * 审批生命周期跨 SSE 流存活：刷新页面后前端靠这些条目还原待审批弹窗与历史决议。
+ */
+export interface ApprovalRequestEntry {
+  /** 审批单 id（ai_approval_request.id） */
+  id: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+  riskLevel?: string;
+  /** 待审批有效期（ISO），超时即默认拒绝 */
+  expiresAt?: string;
+  toolCallId?: string;
+  requestedBy?: string;
+  createdAt?: string;
+}
+
+export interface ApprovalDecisionEntry {
+  /** 审批单 id，与 ApprovalRequestEntry.id 对应 */
+  id: string;
+  status: "approved" | "rejected" | "expired";
+  reason?: string;
+  decidedBy?: string;
+  decidedAt?: string;
 }
 
 /** fork 会话目标与选项 */

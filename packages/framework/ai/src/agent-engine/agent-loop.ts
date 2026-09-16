@@ -269,7 +269,7 @@ async function runResearchSubtask(
       );
       // 非流式子任务路径：无流可下发审批卡片，内联等待 decision（不可等待则按 deny 处理）
       if (prepared.kind === 'pending_approval') {
-        prepared = await resolvePendingApproval(prepared, deps.waitForApproval, signal);
+        prepared = (await resolvePendingApproval(prepared, deps.waitForApproval, signal)).result;
       }
 
       let text = '';
@@ -522,28 +522,44 @@ type PrepareResult = PreparedToolCall | ImmediateResult | PendingToolCall;
 
 /**
  * 解析待审批项：等待人工 decision，通过则转为 prepared 继续执行，否则转为 deny 的 immediate error。
+ * 同时返回审批结论，供调用方向前端下发 approval_resolved。
  * waitForApproval 缺省时视为审批等待不可用（维持 deny 行为）。
  */
 async function resolvePendingApproval(
   pending: PendingToolCall,
   waitForApproval: ApprovalWaiter | undefined,
   signal?: AbortSignal,
-): Promise<PreparedToolCall | ImmediateResult> {
+): Promise<{
+  result: PreparedToolCall | ImmediateResult;
+  status: 'approved' | 'rejected' | 'expired';
+  reason?: string;
+}> {
   if (!waitForApproval) {
     return {
-      kind: 'immediate',
-      result: createErrorToolResult(`工具 ${pending.toolCall.name} 需要人工审批，但审批等待器未配置`),
-      isError: true,
+      result: {
+        kind: 'immediate',
+        result: createErrorToolResult(`工具 ${pending.toolCall.name} 需要人工审批，但审批等待器未配置`),
+        isError: true,
+      },
+      status: 'rejected',
+      reason: '审批等待器未配置',
     };
   }
   const decision = await waitForApproval(pending.request, signal);
   if (decision.approved) {
-    return { kind: 'prepared', toolCall: pending.toolCall, tool: pending.tool, args: pending.args };
+    return {
+      result: { kind: 'prepared', toolCall: pending.toolCall, tool: pending.tool, args: pending.args },
+      status: 'approved',
+    };
   }
   return {
-    kind: 'immediate',
-    result: createErrorToolResult(decision.reason ?? `Tool ${pending.toolCall.name} was not approved`),
-    isError: true,
+    result: {
+      kind: 'immediate',
+      result: createErrorToolResult(decision.reason ?? `Tool ${pending.toolCall.name} was not approved`),
+      isError: true,
+    },
+    status: decision.status ?? 'rejected',
+    ...(decision.reason ? { reason: decision.reason } : {}),
   };
 }
 
@@ -1495,7 +1511,15 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
           // 审批握手：在 generator 作用域内 yield 审批卡片并等待 decision（通过则同轮继续执行）
           if (prepared.kind === 'pending_approval') {
             yield { type: 'approval_required', approval: prepared.request };
-            prepared = await resolvePendingApproval(prepared, deps.waitForApproval, signal);
+            const resolution = await resolvePendingApproval(prepared, deps.waitForApproval, signal);
+            // 下发审批结论：前端据此立即收敛弹窗（拒绝/超时也必须收敛，否则弹窗永远关不掉）
+            yield {
+              type: 'approval_resolved',
+              approvalId: prepared.request.id,
+              status: resolution.status,
+              ...(resolution.reason ? { reason: resolution.reason } : {}),
+            };
+            prepared = resolution.result;
           }
           preparedList.push(prepared);
         }

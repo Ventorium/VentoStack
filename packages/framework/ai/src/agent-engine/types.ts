@@ -118,6 +118,8 @@ export interface ApprovalRequestInfo {
   expiresAt: string;
   /** 工具风险等级（随流下发供 UI 上色，不落库） */
   riskLevel?: RiskLevel;
+  /** 对应的模型工具调用 ID：前端据此把审批状态标在同一个工具行上 */
+  toolCallId?: string;
 }
 
 /** 非人工放行的审批来源（随流下发供 UI 标注）：auto=审批子智能体判定，trust=信任模式跳过 */
@@ -137,11 +139,12 @@ export type ToolCallAuthorizer = (
 }>;
 
 /** 等待审批 decision 的 hook：在流式主循环内于 generator 作用域调用，可长时间挂起。
- *  resolved 时 approved 决定工具是否继续执行；请求未被 decision 时应返回 approved: false + 原因。 */
+ *  resolved 时 approved 决定工具是否继续执行；请求未被 decision 时应返回 approved: false + 原因。
+ *  status 用于向前端下发 approval_resolved（approved / rejected / 超时 expired）。 */
 export type ApprovalWaiter = (
   request: ApprovalRequestInfo,
   signal?: AbortSignal,
-) => Promise<{ approved: boolean; reason?: string }>;
+) => Promise<{ approved: boolean; reason?: string; status?: 'approved' | 'rejected' | 'expired' }>;
 
 /** afterToolCall 上下文 */
 export interface AfterToolCallContext {

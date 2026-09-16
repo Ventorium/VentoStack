@@ -15,6 +15,8 @@ export interface ApprovalRequest {
   comment: string | null;
   expiresAt: string;
   tenantId: string;
+  /** 发起该审批的对话会话（聊天内审批）；管理员/API 直接发起时为 null */
+  sessionId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -43,6 +45,7 @@ function mapRow(r: Record<string, unknown>): ApprovalRequest {
     comment: (r.comment as string) ?? null,
     expiresAt: r.expiresAt instanceof Date ? r.expiresAt.toISOString() : String(r.expiresAt ?? ""),
     tenantId: r.tenantId as string,
+    sessionId: (r.sessionId as string | null) ?? null,
     createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
     updatedAt: r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ""),
   };
@@ -87,17 +90,25 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     input: Record<string, unknown>,
     requestedBy: string,
     tenantId: string,
+    options?: {
+      /** 待审批有效期覆盖（聊天内审批对齐等待窗口用）；缺省 24 小时 */
+      ttlMs?: number;
+      /** 发起该审批的对话会话（聊天内审批），用于把审批台账写回会话历史 */
+      sessionId?: string;
+    },
   ): Promise<ApprovalRequest> {
     const id = crypto.randomUUID();
-    const expiresAt = new Date(Date.now() + PENDING_EXPIRY_MS);
+    const ttlMs = options?.ttlMs ?? PENDING_EXPIRY_MS;
+    const expiresAt = new Date(Date.now() + ttlMs);
+    const sessionId = options?.sessionId ?? null;
 
     await db.raw(
-      `INSERT INTO ai_approval_request (id, tool_name, input, requested_by, status, expires_at, tenant_id)
-       VALUES ($1, $2, $3, $4, 'pending', $5, $6)`,
-      [id, toolName, canonicalJson(input), requestedBy, expiresAt, tenantId],
+      `INSERT INTO ai_approval_request (id, tool_name, input, requested_by, status, expires_at, tenant_id, session_id)
+       VALUES ($1, $2, $3, $4, 'pending', $5, $6, $7)`,
+      [id, toolName, canonicalJson(input), requestedBy, expiresAt, tenantId, sessionId],
     );
 
-    await eventBus?.emit({ name: "ai.approval.requested" }, { id, toolName, tenantId });
+    await eventBus?.emit({ name: "ai.approval.requested" }, { id, toolName, tenantId, sessionId });
     void opportunisticCleanup();
 
     return {
@@ -110,6 +121,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
       comment: null,
       expiresAt: expiresAt.toISOString(),
       tenantId,
+      sessionId,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -145,7 +157,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     const updated = await getStatus(id);
     // 读回兜底：RETURNING 生效但读回异常时仍视为不可批准
     if (updated?.status !== "approved") return null;
-    await eventBus?.emit({ name: "ai.approval.approved" }, { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
+    await eventBus?.emit({ name: "ai.approval.approved" }, { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId, requestedBy: updated.requestedBy, sessionId: updated.sessionId, reason: reason ?? null });
     return updated;
   }
 
@@ -173,7 +185,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
 
     const updated = await getStatus(id);
     if (updated?.status !== "rejected") return null;
-    await eventBus?.emit({ name: "ai.approval.rejected" }, { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId });
+    await eventBus?.emit({ name: "ai.approval.rejected" }, { id, toolName: updated.toolName, reviewedBy, tenantId: updated.tenantId, requestedBy: updated.requestedBy, sessionId: updated.sessionId, reason: reason ?? null });
     return updated;
   }
 
@@ -215,7 +227,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     const updated = await getStatus(id);
     const expectedStatus = approved ? "approved" : "rejected";
     if (updated?.status !== expectedStatus) return null;
-    await eventBus?.emit({ name: approved ? "ai.approval.approved" : "ai.approval.rejected" }, { id, toolName: updated.toolName, reviewedBy: userId, tenantId: updated.tenantId });
+    await eventBus?.emit({ name: approved ? "ai.approval.approved" : "ai.approval.rejected" }, { id, toolName: updated.toolName, reviewedBy: userId, tenantId: updated.tenantId, requestedBy: updated.requestedBy, sessionId: updated.sessionId, reason: reason ?? null });
     return updated;
   }
 
@@ -223,7 +235,8 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     const rows = await db.raw(
       `SELECT id, tool_name as "toolName", input, requested_by as "requestedBy",
               status, approved_by as "approvedBy", comment, expires_at as "expiresAt",
-              tenant_id as "tenantId", created_at as "createdAt", updated_at as "updatedAt"
+              tenant_id as "tenantId", session_id as "sessionId",
+              created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_approval_request WHERE id = $1`,
       [id],
     );
@@ -244,7 +257,8 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     const rows = await db.raw(
       `SELECT id, tool_name as "toolName", input, requested_by as "requestedBy",
               status, approved_by as "approvedBy", comment, expires_at as "expiresAt",
-              tenant_id as "tenantId", created_at as "createdAt", updated_at as "updatedAt"
+              tenant_id as "tenantId", session_id as "sessionId",
+              created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_approval_request
        WHERE tool_name = $1 AND requested_by = $2 AND tenant_id = $3
          AND status = 'approved' AND expires_at > NOW()
@@ -259,7 +273,8 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     const rows = await db.raw(
       `SELECT id, tool_name as "toolName", input, requested_by as "requestedBy",
               status, approved_by as "approvedBy", comment, expires_at as "expiresAt",
-              tenant_id as "tenantId", created_at as "createdAt", updated_at as "updatedAt"
+              tenant_id as "tenantId", session_id as "sessionId",
+              created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_approval_request
        WHERE tenant_id = $1 AND status = 'pending' AND expires_at > NOW()
        ORDER BY created_at DESC`,
@@ -267,6 +282,29 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     );
 
     return (rows as Array<Record<string, unknown>>).map(mapRow);
+  }
+
+  /**
+   * 单条审批超时过期（默认拒绝）：仅 pending 可转 expired（幂等），并广播 ai.approval.expired。
+   * 与批量 cleanup 的区别：带 reason 且广播事件，供会话审批台账记一条决议。
+   */
+  async function expire(id: string, reason = "等待超时，已默认拒绝"): Promise<ApprovalRequest | null> {
+    const request = await getStatus(id);
+    if (!request) return null;
+    const updatedRows = (await db.raw(
+      `UPDATE ai_approval_request SET status = 'expired', comment = $1, updated_at = NOW()
+       WHERE id = $2 AND status = 'pending' RETURNING id`,
+      [reason, id],
+    )) as unknown[];
+    if (!Array.isArray(updatedRows) || updatedRows.length === 0) return null;
+
+    const updated = await getStatus(id);
+    if (updated?.status !== "expired") return null;
+    await eventBus?.emit(
+      { name: "ai.approval.expired" },
+      { id, toolName: updated.toolName, reviewedBy: null, tenantId: updated.tenantId, requestedBy: updated.requestedBy, sessionId: updated.sessionId, reason },
+    );
+    return updated;
   }
 
   async function cleanup(): Promise<number> {
@@ -278,7 +316,7 @@ export function createApprovalService(deps: ApprovalServiceDeps) {
     return Array.isArray(result) ? result.length : 0;
   }
 
-  return { request, approve, reject, confirmByRequester, getStatus, findRecentApproved, listPending, cleanup };
+  return { request, approve, reject, confirmByRequester, expire, getStatus, findRecentApproved, listPending, cleanup };
 }
 
 /** 聊天内嵌审批的单次等待上限：10 分钟（超时后请求保留，用户可重新发起该操作） */
@@ -288,8 +326,18 @@ export const IN_CHAT_APPROVAL_WAIT_MS = 10 * 60 * 1000;
 interface ApprovalEventPayload {
   id: string;
   toolName: string;
-  reviewedBy: string;
+  reviewedBy: string | null;
   tenantId: string;
+  requestedBy: string;
+  sessionId?: string | null;
+  reason?: string | null;
+}
+
+/** 审批等待结果：status 用于向会话流下发 approval_resolved 节点 */
+export interface ApprovalWaitResult {
+  approved: boolean;
+  reason?: string;
+  status?: "approved" | "rejected" | "expired";
 }
 
 export interface ApprovalWaiterDeps {
@@ -299,23 +347,24 @@ export interface ApprovalWaiterDeps {
 
 /**
  * 创建审批等待器：在 SSE 流内挂起等待人工 decision（聊天内自确认，含其他已登录标签页发起的确认）。
- * 基于同进程事件总线感知 decision；客户端断开或超时返回 deny，pending 请求保留至过期，过期后由 cleanup 清理。
+ * 基于同进程事件总线感知 decision；显式停止（signal abort）或超时返回 deny，
+ * pending 请求保留至过期，过期后由 cleanup 清理。
  * 注意：事件总线为进程内存实现，多实例部署时审批请求需与 SSE 流同进程处理。
  */
 export function createApprovalWaiter(deps: ApprovalWaiterDeps): (
   request: { id: string; expiresAt: string },
   signal?: AbortSignal,
-) => Promise<{ approved: boolean; reason?: string }> {
+) => Promise<ApprovalWaitResult> {
   const { eventBus } = deps;
   return async (request, signal) => {
     if (signal?.aborted) {
-      return { approved: false, reason: "连接已断开，请重新发起该操作" };
+      return { approved: false, reason: "已停止生成，该工具未执行", status: "expired" };
     }
 
     return new Promise((resolve) => {
       let settled = false;
       const cleanups: Array<() => void> = [];
-      const finish = (result: { approved: boolean; reason?: string }): void => {
+      const finish = (result: ApprovalWaitResult): void => {
         if (settled) return;
         settled = true;
         for (const fn of cleanups) fn();
@@ -326,19 +375,27 @@ export function createApprovalWaiter(deps: ApprovalWaiterDeps): (
       if (eventBus) {
         const offApproved = eventBus.on({ name: "ai.approval.approved" }, (payload) => {
           if ((payload as ApprovalEventPayload)?.id === request.id) {
-            finish({ approved: true, reason: "该工具调用已获确认" });
+            finish({ approved: true, reason: "该工具调用已获确认", status: "approved" });
           }
         });
         const offRejected = eventBus.on({ name: "ai.approval.rejected" }, (payload) => {
           if ((payload as ApprovalEventPayload)?.id === request.id) {
-            finish({ approved: false, reason: "该工具调用已被拒绝" });
+            finish({ approved: false, reason: "该工具调用已被拒绝", status: "rejected" });
           }
         });
-        cleanups.push(offApproved, offRejected);
+        // 超时过期（由服务端 expire 广播）同样结束等待，避免等到本地定时器
+        const offExpired = eventBus.on({ name: "ai.approval.expired" }, (payload) => {
+          if ((payload as ApprovalEventPayload)?.id === request.id) {
+            finish({ approved: false, reason: "审批等待超时，已默认拒绝", status: "expired" });
+          }
+        });
+        cleanups.push(offApproved, offRejected, offExpired);
       }
 
-      // 客户端断开：立即结束等待（请求保留至过期，过期后由 cleanup 清理）
-      const onAbort = (): void => finish({ approved: false, reason: "连接已断开，请重新发起该操作" });
+      // 显式停止（用户点停止按钮）：审批随之作废（与超时同构：未执行 → 过期），
+      // 由调用方（module 的 waitForApproval 包装）落审批单终态与决议台账
+      const onAbort = (): void =>
+        finish({ approved: false, reason: "已停止生成，该工具未执行", status: "expired" });
       signal?.addEventListener("abort", onAbort, { once: true });
       cleanups.push(() => signal?.removeEventListener("abort", onAbort));
 
@@ -347,25 +404,27 @@ export function createApprovalWaiter(deps: ApprovalWaiterDeps): (
       const waitMs = Number.isFinite(expiresMs)
         ? Math.max(0, Math.min(IN_CHAT_APPROVAL_WAIT_MS, expiresMs - Date.now()))
         : IN_CHAT_APPROVAL_WAIT_MS;
-      const timer = setTimeout(() => finish({ approved: false, reason: "审批等待超时，请重新发起该操作" }), waitMs);
+      const timer = setTimeout(
+        () => finish({ approved: false, reason: "审批等待超时，已默认拒绝", status: "expired" }),
+        waitMs,
+      );
       cleanups.push(() => clearTimeout(timer));
 
       // 竞态兜底：订阅就绪后查一次状态（审批卡片下发后用户可能已秒点通过）
       void deps
         .getStatus(request.id)
         .then((current) => {
-          if (settled) return;
-          if (current?.status === "approved") {
-            finish({ approved: true, reason: "该工具调用已获确认" });
-          } else if (current != null && current.status !== "pending") {
-            finish({
-              approved: false,
-              reason: current.status === "rejected" ? "该工具调用已被拒绝" : "审批请求已过期",
-            });
+          if (settled || !current) return;
+          if (current.status === "approved") {
+            finish({ approved: true, reason: "该工具调用已获确认", status: "approved" });
+          } else if (current.status === "rejected") {
+            finish({ approved: false, reason: "该工具调用已被拒绝", status: "rejected" });
+          } else if (current.status === "expired") {
+            finish({ approved: false, reason: "审批请求已过期", status: "expired" });
           }
         })
         .catch(() => {
-          // 状态查询失败不结束等待：仍有事件订阅、断开与超时三重兜底
+          // 状态查询失败不结束等待：仍有事件订阅、停止与超时三重兜底
         });
     });
   };

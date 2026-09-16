@@ -29,13 +29,19 @@ function formatRemaining(expiresAt: string, now: number): string {
  * 工具执行审批弹窗：高风险工具挂起时弹出，等待用户确认后才继续执行。
  * 注意批准语义——批准后，**同一工具、同一参数**在有效期内会被自动放行（后端 findRecentApproved），
  * 文案里必须说清楚，避免用户误以为只放行这一次。
+ *
+ * 渲染方式：Portal 挂到对话容器（getContainer），并把 antd 默认的 `position: fixed`
+ * 遮罩/容器覆盖为 `absolute`，使遮罩只铺满对话区域，而不是整个视口。
  */
 export default function ApprovalModal({
   approval,
   onDecision,
+  getContainer,
 }: {
   approval?: ChatApproval;
   onDecision?: (approvalId: string, decision: 'approved' | 'rejected') => Promise<boolean>;
+  /** 挂载容器：传入对话容器则弹窗只盖住对话区域，而非全局视口 */
+  getContainer?: () => HTMLElement | null;
 }) {
   const { token } = theme.useToken();
   const [now, setNow] = useState(() => Date.now());
@@ -64,9 +70,15 @@ export default function ApprovalModal({
     }
   };
 
+  // 滚动容器也是对话区域的一部分，弹窗要盖在它上面
+  const container = getContainer as (() => HTMLElement) | undefined;
+
   return (
     <Modal
       open={!!open}
+      getContainer={container}
+      centered
+      styles={{ mask: { position: 'absolute' }, wrapper: { position: 'absolute' } }}
       title={
         <Space size={8}>
           <SafetyCertificateOutlined style={{ color: token.colorWarning }} />

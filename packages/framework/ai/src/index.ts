@@ -349,6 +349,7 @@ export { addKbDocumentCount } from './migrations/012_add_kb_document_count';
 export { addAgentRuntime } from './migrations/013_add_agent_runtime';
 export { agentModelsArray } from './migrations/014_agent_models_array';
 export { dropAiToolLog } from './migrations/015_drop_ai_tool_log';
+export { addApprovalSessionId } from './migrations/017_add_approval_session_id';
 export { createAgentRuntimeClient } from './agent-runtime/client';
 export { createMemoryConsolidator } from './memory/consolidator';
 export type { AgentRuntimeClient, RuntimeSandbox, SandboxStatus } from './agent-runtime/types';

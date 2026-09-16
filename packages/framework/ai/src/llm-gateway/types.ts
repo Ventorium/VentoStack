@@ -121,7 +121,25 @@ export type StreamChunk =
   | { type: 'title'; title: string }
   | {
       type: 'approval_required';
-      approval: { id: string; toolName: string; input: Record<string, unknown>; expiresAt: string };
+      approval: {
+        id: string;
+        toolName: string;
+        input: Record<string, unknown>;
+        expiresAt: string;
+        riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+        /** 对应的工具调用 ID：前端把审批状态标在同一个工具行上 */
+        toolCallId?: string;
+      };
+    }
+  /**
+   * 审批结论 chunk：审批通过/被拒/超时过期时下发，让前端弹窗立即收敛
+   * （否则超时后前端状态永远停在 pending，弹窗关不掉）。
+   */
+  | {
+      type: 'approval_resolved';
+      approvalId: string;
+      status: 'approved' | 'rejected' | 'expired';
+      reason?: string;
     }
   | ToolResultChunk;
 

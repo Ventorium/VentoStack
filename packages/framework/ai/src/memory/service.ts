@@ -7,7 +7,7 @@ import { lstat, mkdir, open, readdir, readFile, realpath, rename, rm, stat, unli
 import { dirname, join, resolve, sep } from "node:path";
 import { createJsonlSessionStorage, loadJsonlSessionStorage } from "../session/jsonl-storage";
 import { createSession } from "../session/session";
-import type { ConversationMemory, LongTermMemory, MemoryOperation, MemoryScope, MemoryService, SessionMemoryEvent, SessionMemoryState } from "./types";
+import type { ApprovalDecisionEntry, ApprovalRequestEntry, ConversationMemory, LongTermMemory, MemoryOperation, MemoryScope, MemoryService, SessionMemoryEvent, SessionMemoryState } from "./types";
 
 export interface MemoryServiceDeps {
   storagePath: string;
@@ -162,6 +162,13 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
     getSession,
     renameSession,
 
+    async appendCustomEntry(sessionId, scope, customType, data): Promise<void> {
+      const filePath = conversationPath(sessionId, scope);
+      if (!(await readMetadata(sessionId, scope))) return;
+      const session = createSession(await loadJsonlSessionStorage(filePath));
+      await session.appendCustomEntry(customType, data);
+    },
+
     async listSessions(scope, agentId): Promise<ConversationMemory[]> {
       const directory = join(userRoot(scope), "conversations");
       if (!existsSync(directory)) return [];
@@ -297,14 +304,79 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
         if (!existsSync(trashedFile)) return [];
         source = trashedFile;
       }
-      const context = await createSession(await loadJsonlSessionStorage(source)).buildContext();
-      const messages = context.messages.map((message) => ({
-        role: message.role,
-        content: message.content,
-        ...(message.model ? { model: message.model } : {}),
-        ...(message.reasoning ? { reasoning: message.reasoning } : {}),
-      }));
-      return limit && messages.length > limit ? messages.slice(-limit) : messages;
+      const session = createSession(await loadJsonlSessionStorage(source));
+      // 按会话路径条目重建（而非 buildContext）：需要把审批台账条目按原位置插入消息之间。
+      // 聊天路径不产生 compaction 条目（仅 harness 的独立 prompt 路径使用），此处不做压缩摘要回放。
+      const entries = await session.getBranch();
+      // 审批台账按「文件顺序」读取：决议由事件订阅异步落盘，可能与记忆整理等并发追加交错，
+      // 从而挂在分支之外（getBranch 看不到）——只用分支会漏掉决议，刷新后审批状态就停在 pending
+      const fileOrder = await session.getEntries();
+      const positionOf = new Map(fileOrder.map((entry, index) => [entry.id, index] as const));
+
+      // 审批决议按审批单 id 合并后，在请求条目的位置输出一行（携带最终状态）
+      const decisions = new Map<string, ApprovalDecisionEntry>();
+      for (const entry of fileOrder) {
+        if (entry.type !== "custom" || entry.customType !== "approval_decision") continue;
+        const data = entry.data as ApprovalDecisionEntry | undefined;
+        if (data?.id) decisions.set(data.id, data);
+      }
+      const approvals: Array<{ at: number; row: { role: string; content: string } }> = [];
+      for (const entry of fileOrder) {
+        if (entry.type !== "custom" || entry.customType !== "approval_request") continue;
+        const data = entry.data as ApprovalRequestEntry | undefined;
+        if (!data?.id) continue;
+        const decision = decisions.get(data.id);
+        approvals.push({
+          at: positionOf.get(entry.id) ?? fileOrder.length,
+          row: {
+            role: "approval",
+            content: JSON.stringify({
+              id: data.id,
+              toolName: data.toolName,
+              input: data.input ?? {},
+              expiresAt: data.expiresAt ?? "",
+              riskLevel: data.riskLevel ?? "low",
+              ...(data.toolCallId ? { toolCallId: data.toolCallId } : {}),
+              status: decision?.status ?? "pending",
+              ...(decision?.reason ? { reason: decision.reason } : {}),
+            }),
+          },
+        });
+      }
+      approvals.sort((left, right) => left.at - right.at);
+
+      const rows: Array<{ role: string; content: string; model?: string; reasoning?: string }> = [];
+      // 消息行在 rows 中的下标：limit 只作用于消息行，审批行不占额度（避免挤掉真实历史）
+      const messageIndexes: number[] = [];
+      let nextApproval = 0;
+      /** 把位置在当前条目之前的审批行按文件顺序吐出（审批行不占 limit 额度） */
+      const flushApprovalsBefore = (position: number): void => {
+        while (nextApproval < approvals.length && approvals[nextApproval]!.at < position) {
+          rows.push(approvals[nextApproval]!.row);
+          nextApproval += 1;
+        }
+      };
+      for (const entry of entries) {
+        flushApprovalsBefore(positionOf.get(entry.id) ?? fileOrder.length);
+        if (entry.type !== "message") continue;
+        messageIndexes.push(rows.length);
+        rows.push({
+          role: entry.message.role,
+          content: entry.message.content,
+          ...(entry.message.model ? { model: entry.message.model } : {}),
+          ...(entry.message.reasoning ? { reasoning: entry.message.reasoning } : {}),
+        });
+      }
+      // 分支之后（或分支之外）的审批行补在末尾
+      flushApprovalsBefore(fileOrder.length);
+      while (nextApproval < approvals.length) {
+        rows.push(approvals[nextApproval]!.row);
+        nextApproval += 1;
+      }
+      if (limit && messageIndexes.length > limit) {
+        return rows.slice(messageIndexes[messageIndexes.length - limit]!);
+      }
+      return rows;
     },
 
     async truncateSessionHistory(sessionId, scope, keepUserMessages): Promise<void> {

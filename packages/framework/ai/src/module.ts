@@ -54,7 +54,7 @@ import type { KnowledgeBaseService } from './knowledge-base/types';
 // Memory
 import { createMemoryService } from './memory/service';
 import { createMemoryConsolidator } from './memory/consolidator';
-import type { MemoryService } from './memory/types';
+import type { ApprovalDecisionEntry, ApprovalRequestEntry, MemoryService } from './memory/types';
 
 // Skills
 import { type SkillManager, createSkillManager } from './skills';
@@ -75,7 +75,8 @@ import { createProviderRoutes } from './routes/provider';
 import { createSkillRoutes } from './routes/skill';
 import { createToolRegistryRoutes } from './routes/tool-registry';
 import { createAgentService } from './services/agent';
-import { createApprovalService, createApprovalWaiter } from './services/approval';
+import { IN_CHAT_APPROVAL_WAIT_MS, createApprovalService, createApprovalWaiter } from './services/approval';
+import type { ApprovalWaitResult } from './services/approval';
 import { createScopedKBService } from './services/kb-scope';
 import { createMcpServerService } from './services/mcp-server';
 import type { McpServerService } from './services/mcp-server';
@@ -418,6 +419,68 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     storagePath: `${storagePath}/memories`,
     db,
   });
+
+  /**
+   * 审批台账：把审批生命周期写回会话 JSONL（custom 条目，不进 LLM 上下文）。
+   * 目的：审批不再只活在 SSE 流里——刷新页面后前端靠台账还原待审批弹窗与历史决议。
+   * 台账写失败不影响审批主流程（会话可能已被删除或磁盘异常）。
+   */
+  async function appendApprovalJournal(
+    scope: { tenantId: string; userId: string },
+    sessionId: string,
+    customType: 'approval_request' | 'approval_decision',
+    data: ApprovalRequestEntry | ApprovalDecisionEntry,
+  ): Promise<void> {
+    await memory.appendCustomEntry(sessionId, scope, customType, data).catch(() => {});
+  }
+
+  /** 决议事件 → 台账：决议可能来自聊天自确认、管理员审批或超时过期，统一在此落账 */
+  async function journalApprovalDecision(
+    payload: unknown,
+    status: ApprovalDecisionEntry['status'],
+  ): Promise<void> {
+    const event = payload as
+      | { id?: string; sessionId?: string | null; tenantId?: string; requestedBy?: string; reviewedBy?: string | null; reason?: string | null }
+      | undefined;
+    if (!event?.id || !event.sessionId || !event.requestedBy) return;
+    await appendApprovalJournal(
+      { tenantId: event.tenantId ?? 'default', userId: event.requestedBy },
+      event.sessionId,
+      'approval_decision',
+      {
+        id: event.id,
+        status,
+        ...(event.reason ? { reason: event.reason } : {}),
+        ...(event.reviewedBy ? { decidedBy: event.reviewedBy } : {}),
+        decidedAt: new Date().toISOString(),
+      },
+    );
+  }
+  eventBus.on({ name: 'ai.approval.approved' }, (payload) => {
+    void journalApprovalDecision(payload, 'approved');
+  });
+  eventBus.on({ name: 'ai.approval.rejected' }, (payload) => {
+    void journalApprovalDecision(payload, 'rejected');
+  });
+  eventBus.on({ name: 'ai.approval.expired' }, (payload) => {
+    void journalApprovalDecision(payload, 'expired');
+  });
+
+  /**
+   * 等待审批 + 超时/停止收尾：等待窗口结束（超时）或本次运行被显式停止时，
+   * 把审批单落为过期（默认拒绝/未执行），由事件订阅统一记一条决议台账——
+   * 否则刷新页面会看到一个已经不可能执行的待审批弹窗。
+   */
+  const waitForApprovalWithExpiry = async (
+    request: { id: string; expiresAt: string },
+    signal?: AbortSignal,
+  ): Promise<ApprovalWaitResult> => {
+    const result = await waitForApproval(request, signal);
+    if (result.status === 'expired') {
+      await approvalService.expire(request.id, result.reason).catch(() => null);
+    }
+    return result;
+  };
 
   // 创建 Skill Manager
   const skillManager = deps.skillDirs ? createSkillManager({ dirs: deps.skillDirs }) : undefined;
@@ -775,13 +838,34 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         context.tenantId,
       );
       if (recent) return { approved: true, reason: '该工具此前已获审批' };
+      const sessionId = context.sessionId;
       try {
         const request = await approvalService.request(
           toolCall.name,
           input,
           context.userId,
           context.tenantId,
+          // 聊天内审批：有效期与等待窗口对齐（10 分钟），超时即默认拒绝
+          { ttlMs: IN_CHAT_APPROVAL_WAIT_MS, ...(sessionId ? { sessionId } : {}) },
         );
+        // 台账落盘：刷新页面后前端据此还原待审批弹窗（写失败不影响审批主流程）
+        if (sessionId) {
+          await appendApprovalJournal(
+            { tenantId: context.tenantId, userId: context.userId },
+            sessionId,
+            'approval_request',
+            {
+              id: request.id,
+              toolName: request.toolName,
+              input: request.input,
+              riskLevel,
+              expiresAt: request.expiresAt,
+              toolCallId: toolCall.id,
+              requestedBy: context.userId,
+              createdAt: request.createdAt,
+            },
+          );
+        }
         return {
           approved: false,
           approvalRequest: {
@@ -790,6 +874,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
             input: request.input,
             expiresAt: request.expiresAt,
             riskLevel,
+            // 前端据此把审批状态标在同一个工具行上
+            toolCallId: toolCall.id,
           },
         };
       } catch (err) {
@@ -799,7 +885,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         };
       }
     },
-    waitForApproval,
+    waitForApproval: waitForApprovalWithExpiry,
     tracer: deps.tracer,
     parentSpanContext: deps.parentSpanContext,
     mcpToolSource,

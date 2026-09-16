@@ -58,6 +58,10 @@ export interface ChatApproval {
   status: 'pending' | 'approved' | 'rejected' | 'expired';
   /** 工具风险等级：critical 工具任何运行模式都会走到人工审批 */
   riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+  /** 对应的工具调用 ID：审批状态标在该工具行上 */
+  toolCallId?: string;
+  /** 结论原因（拒绝/超时原因，来自后端审批台账） */
+  reason?: string;
 }
 
 export interface ChatMessage {

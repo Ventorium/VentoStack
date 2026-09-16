@@ -45,6 +45,12 @@ export interface StreamCallbacks {
     riskLevel?: 'low' | 'medium' | 'high' | 'critical';
   }) => void;
   onError: (error: { code: string; message: string; recoverable: boolean }) => void;
+  /** 审批结论（通过/被拒/超时过期）：弹窗据此立即收敛，超时也不会永远挂在 pending */
+  onApprovalResolved?: (resolved: {
+    approvalId: string;
+    status: 'approved' | 'rejected' | 'expired';
+    reason?: string;
+  }) => void;
   onDone: () => void;
 }
 
@@ -82,6 +88,7 @@ export interface AIStreamChunk {
     | 'session'
     | 'title'
     | 'approval_required'
+    | 'approval_resolved'
     | 'error'
     | 'done';
   delta?: string;
@@ -104,8 +111,13 @@ export interface AIStreamChunk {
         input: Record<string, unknown>;
         expiresAt: string;
         riskLevel?: 'low' | 'medium' | 'high' | 'critical';
+        toolCallId?: string;
       }
     | { mode: 'auto' | 'trust'; reason?: string };
+  /** approval_resolved：审批结论 */
+  approvalId?: string;
+  approvalStatus?: 'approved' | 'rejected' | 'expired';
+  approvalReason?: string;
   error?: { code: string; message: string; recoverable: boolean };
 }
 
@@ -207,6 +219,15 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       break;
     case 'approval_required':
       if (chunk.approval && 'id' in chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);
+      break;
+    case 'approval_resolved':
+      if (chunk.approvalId && chunk.approvalStatus) {
+        callbacks.onApprovalResolved?.({
+          approvalId: chunk.approvalId,
+          status: chunk.approvalStatus,
+          ...(chunk.approvalReason ? { reason: chunk.approvalReason } : {}),
+        });
+      }
       break;
     case 'error':
       if (chunk.error) callbacks.onError(chunk.error);

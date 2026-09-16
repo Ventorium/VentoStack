@@ -3,6 +3,8 @@ import { mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { createMemoryService } from "../../memory/service";
+import { loadJsonlSessionStorage } from "../../session/jsonl-storage";
+import { createSession } from "../../session/session";
 import { createMockDatabase } from "../helpers";
 
 describe("tenant-scoped Memory", () => {
@@ -226,5 +228,102 @@ describe("tenant-scoped Memory", () => {
     await memory.setMemoryConsolidationStatus(sessionId, scope, "pending");
 
     expect(await memory.listPendingMemoryConsolidations()).toEqual([{ sessionId, scope }]);
+  });
+
+  test("审批台账：getHistory 在消息之间合成 approval 行，并合并决议状态", async () => {
+    const { db } = createMockDatabase();
+    const memory = createMemoryService({ db, storagePath });
+    const scope = { tenantId: "tenant-a", userId: "user-a" };
+    const { sessionId } = await memory.createSession({ ...scope, agentId: "agent-a" });
+
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "写个文件" });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "需要审批" });
+    await memory.appendCustomEntry(sessionId, scope, "approval_request", {
+      id: "ap-1",
+      toolName: "file-write",
+      input: { path: "note.md" },
+      riskLevel: "high",
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      toolCallId: "call-1",
+      requestedBy: "user-a",
+    });
+
+    // 决议前：pending
+    const pendingHistory = await memory.getHistory(sessionId, scope);
+    expect(pendingHistory.map((m) => m.role)).toEqual(["user", "assistant", "approval"]);
+    expect(JSON.parse(pendingHistory[2]!.content)).toMatchObject({
+      id: "ap-1",
+      toolName: "file-write",
+      status: "pending",
+    });
+
+    // 决议后：同一行携带最终状态与原因
+    await memory.appendCustomEntry(sessionId, scope, "approval_decision", {
+      id: "ap-1",
+      status: "rejected",
+      reason: "参数不可接受",
+    });
+    const decidedHistory = await memory.getHistory(sessionId, scope);
+    expect(decidedHistory.map((m) => m.role)).toEqual(["user", "assistant", "approval"]);
+    expect(JSON.parse(decidedHistory[2]!.content)).toMatchObject({
+      id: "ap-1",
+      status: "rejected",
+      reason: "参数不可接受",
+    });
+  });
+
+  test("审批行不占 limit 额度（limit 只作用于消息行）", async () => {
+    const { db } = createMockDatabase();
+    const memory = createMemoryService({ db, storagePath });
+    const scope = { tenantId: "tenant-a", userId: "user-a" };
+    const { sessionId } = await memory.createSession({ ...scope, agentId: "agent-a" });
+
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "q1" });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "a1" });
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "q2" });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "a2" });
+    await memory.appendCustomEntry(sessionId, scope, "approval_request", {
+      id: "ap-2",
+      toolName: "terminal",
+      input: {},
+    });
+
+    const history = await memory.getHistory(sessionId, scope, 2);
+    // 取最后 2 条消息，同时带出其后仍在窗口内的审批行
+    expect(history.map((m) => m.role)).toEqual(["user", "assistant", "approval"]);
+  });
+
+  test("决议条目落在分支之外时（并发追加）仍能合并出最终状态", async () => {
+    const { db } = createMockDatabase();
+    const memory = createMemoryService({ db, storagePath });
+    const scope = { tenantId: "tenant-a", userId: "user-a" };
+    const { sessionId } = await memory.createSession({ ...scope, agentId: "agent-a" });
+    const filePath = join(
+      storagePath,
+      scope.tenantId,
+      "users",
+      scope.userId,
+      "conversations",
+      `${sessionId}.jsonl`,
+    );
+
+    // 决议由事件订阅异步落盘，可能与记忆整理等并发追加交错：
+    // 用旧 leaf 追加决议 → 该条目挂在分支之外（getBranch 看不到）
+    const staleSession = createSession(await loadJsonlSessionStorage(filePath));
+    await memory.appendCustomEntry(sessionId, scope, "approval_request", {
+      id: "ap-fork",
+      toolName: "file-write",
+      input: { path: "x.md" },
+    });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "等待审批" });
+    await staleSession.appendCustomEntry("approval_decision", {
+      id: "ap-fork",
+      status: "approved",
+    });
+
+    const history = await memory.getHistory(sessionId, scope);
+    const approvalRow = history.find((m) => m.role === "approval");
+    expect(approvalRow).toBeDefined();
+    expect(JSON.parse(approvalRow!.content)).toMatchObject({ id: "ap-fork", status: "approved" });
   });
 });

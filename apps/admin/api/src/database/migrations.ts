@@ -5,6 +5,7 @@
 import {
   addAgentRuntime,
   addAgentWelcomeMessage,
+  addApprovalSessionId,
   addKbDocumentCount,
   addModelCapabilities,
   addProviderModelsDevSlug,
@@ -113,6 +114,8 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(agentModelsArray);
   runner.addMigration(dropAiToolLog);
   runner.addMigration(addAgentWelcomeMessage);
+  // 审批单关联会话：审批台账写回会话历史 + 任意决议路径反查会话
+  runner.addMigration(addApprovalSessionId);
 
   // AI 链路追踪
   runner.addMigration(createTraceTables);

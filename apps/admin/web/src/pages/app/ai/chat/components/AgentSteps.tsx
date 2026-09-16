@@ -24,6 +24,27 @@ export interface StepDetail {
   output?: string;
   /** 非人工放行来源（auto=审批子智能体放行，trust=信任模式跳过审批） */
   approval?: { mode: 'auto' | 'trust'; reason?: string };
+  /** 人工审批状态：直接标注在该工具行上（待审批/已允许/已拒绝/已过期） */
+  approvalState?: { status: 'pending' | 'approved' | 'rejected' | 'expired'; reason?: string };
+}
+
+/** 审批状态在工具行上的展示口径 */
+const APPROVAL_STATE_META: Record<
+  'pending' | 'approved' | 'rejected' | 'expired',
+  { text: string; color: string }
+> = {
+  pending: { text: '待审批', color: 'orange' },
+  approved: { text: '审批已允许', color: 'green' },
+  rejected: { text: '审批已拒绝', color: 'red' },
+  expired: { text: '审批已过期', color: 'default' },
+};
+
+/** 审批结论的展开文案 */
+function approvalDetailText(state: NonNullable<StepDetail['approvalState']>): string {
+  if (state.status === 'pending') return '等待你在审批弹窗中确认；超时未确认将默认拒绝，工具不会执行。';
+  if (state.status === 'approved') return `已允许执行${state.reason ? `：${state.reason}` : ''}`;
+  if (state.status === 'rejected') return `已拒绝执行${state.reason ? `：${state.reason}` : ''}`;
+  return state.reason ?? '已过期，未执行';
 }
 
 function formatDuration(ms: number): string {
@@ -53,7 +74,7 @@ function DetailPanel({ label, text }: { label: string; text: string }) {
 export function StepRow({ step, detail }: { step: AgentStep; detail?: StepDetail }) {
   const { token } = theme.useToken();
   const [expanded, setExpanded] = useState(false);
-  const hasDetail = !!(detail?.arguments || detail?.output || detail?.approval);
+  const hasDetail = !!(detail?.arguments || detail?.output || detail?.approval || detail?.approvalState);
 
   return (
     <div>
@@ -90,6 +111,14 @@ export function StepRow({ step, detail }: { step: AgentStep; detail?: StepDetail
         <Text type="secondary" ellipsis className="flex-1 text-xs">
           {step.description}
         </Text>
+        {detail?.approvalState && (
+          <Tag
+            className="text-[11px] m-0 leading-[18px]"
+            color={APPROVAL_STATE_META[detail.approvalState.status].color}
+          >
+            {APPROVAL_STATE_META[detail.approvalState.status].text}
+          </Tag>
+        )}
         {detail?.approval && (
           <Tag
             className="text-[11px] m-0 leading-[18px]"
@@ -114,6 +143,9 @@ export function StepRow({ step, detail }: { step: AgentStep; detail?: StepDetail
       </div>
       {expanded && hasDetail && (
         <div className="pl-6">
+          {detail?.approvalState && (
+            <DetailPanel label="审批" text={approvalDetailText(detail.approvalState)} />
+          )}
           {detail?.approval && (
             <DetailPanel
               label="审批"

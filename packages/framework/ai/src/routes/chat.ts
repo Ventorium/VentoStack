@@ -70,6 +70,15 @@ export function createChatRoutes(
   },
 ): Router {
   const router = createRouter();
+  /**
+   * 活跃对话运行表：sessionId → 运行句柄。
+   * 用于「显式停止」——刷新/断开不再等于停止（断开后仍要把本轮跑完并落盘，见 sse.ts），
+   * 因此流内 signal 与 HTTP 请求 signal 解耦：请求 signal 只管写，运行 signal 管取消。
+   */
+  const activeRuns = new Map<
+    string,
+    { controller: AbortController; tenantId: string; userId: string; startedAt: number }
+  >();
   const attachmentValidator = createFileValidator({ maxFileSize: 20 * 1024 * 1024 });
   const thinkingLevels = new Set<ThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
   const runModes = new Set<RunMode>(RUN_MODES);
@@ -186,6 +195,29 @@ export function createChatRoutes(
         );
         if (!result) return fail('审批请求不存在、已处理或非本人请求', 404, 404);
         return success(result);
+      } catch (e) {
+        return handleError(e);
+      }
+    },
+    perm('ai:chat', 'use'),
+  );
+
+  // 停止会话进行中的回复（显式停止）：断开/刷新不会取消运行，只有这里会
+  router.post(
+    '/api/ai/chat/sessions/:id/stop',
+    routeDoc('停止会话进行中的回复'),
+    async (ctx) => {
+      try {
+        const id = (ctx.params as Record<string, string>).id!;
+        const userId = (ctx.user as { id?: string })?.id ?? '';
+        const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+        const run = activeRuns.get(id);
+        // 归属校验：非本人/本租户的运行一律按"不存在"处理，避免探测他人会话
+        if (!run || run.tenantId !== tenantId || run.userId !== userId) {
+          return fail('该会话没有进行中的回复', 404, 404);
+        }
+        run.controller.abort();
+        return success({ stopped: true });
       } catch (e) {
         return handleError(e);
       }
@@ -779,13 +811,19 @@ export function createChatRoutes(
         );
         if (attachmentError) return attachmentError;
 
+        // 同一会话已有进行中的运行：先中断旧的，避免两个 run 同时写一份会话历史
+        activeRuns.get(sessionId)?.controller.abort();
+        const runController = new AbortController();
+        activeRuns.set(sessionId, { controller: runController, tenantId, userId, startedAt: Date.now() });
+
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
           userId,
           sessionId,
           message: rawMessage,
           tenantId,
-          signal: ctx.request.signal,
+          // 运行级 signal（不是请求 signal）：断开不取消，只有显式停止才取消
+          signal: runController.signal,
           toolRegistry,
           // 能力过滤器
           tools: body.tools as string[] | undefined,
@@ -798,25 +836,31 @@ export function createChatRoutes(
 
         // 在流开头下发 session 事件，前端据此绑定会话 ID（新建会话时前端无 sessionId）
         const streamWithSession = (async function* () {
-          yield { type: 'session' as const, sessionId } as const;
-          yield* stream;
-          // 对话结束后：Agent 配置了会话总结模型时生成 ≤20 字标题（失败不影响对话）
-          if (options?.generateSessionTitle) {
-            try {
-              const title = await options.generateSessionTitle({
-                sessionId,
-                agentId: body.agentId as string,
-                tenantId,
-                userId,
-              });
-              if (title) yield { type: 'title' as const, title } as const;
-            } catch {
-              // 标题生成失败静默忽略
+          try {
+            yield { type: 'session' as const, sessionId } as const;
+            yield* stream;
+            // 对话结束后：Agent 配置了会话总结模型时生成 ≤20 字标题（失败不影响对话）
+            if (options?.generateSessionTitle) {
+              try {
+                const title = await options.generateSessionTitle({
+                  sessionId,
+                  agentId: body.agentId as string,
+                  tenantId,
+                  userId,
+                });
+                if (title) yield { type: 'title' as const, title } as const;
+              } catch {
+                // 标题生成失败静默忽略
+              }
             }
+          } finally {
+            // 运行真正结束（正常 / 停止 / 断开后后台跑完）才摘掉句柄
+            if (activeRuns.get(sessionId)?.controller === runController) activeRuns.delete(sessionId);
           }
         })();
 
         return createSSEResponse(streamWithSession, {
+          // 请求 signal 只用于"客户端断开后停止写流"，不取消运行
           signal: ctx.request.signal,
         });
       } catch (e) {

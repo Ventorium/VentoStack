@@ -4,7 +4,7 @@ import { MenuUnfoldOutlined, RestOutlined } from '@ant-design/icons';
 import { Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { ChatMessage, ModelOption, ToolBlock } from '../types';
+import type { ChatApproval, ChatMessage, ModelOption, ToolBlock } from '../types';
 
 import BottomInput, { allowedThinkingLevels } from '../components/BottomInput';
 import type { RunMode } from '../components/RunModeSelect';
@@ -97,6 +97,39 @@ function parsePersistedTool(content: string): ToolBlock | null {
     };
   }
   return null;
+}
+
+/** 审批台账信封：后端把审批生命周期合成 role:'approval' 行下发（待审批与已决议同一形状） */
+interface PersistedApprovalEnvelope {
+  id: string;
+  toolName: string;
+  input?: Record<string, unknown>;
+  expiresAt?: string;
+  riskLevel?: ChatApproval['riskLevel'];
+  status?: ChatApproval['status'];
+  toolCallId?: string;
+  reason?: string;
+}
+
+/** 解析持久化的 role:'approval' 行 → 审批状态卡片数据；格式非法返回 null */
+function parsePersistedApproval(content: string): ChatApproval | null {
+  if (!content.startsWith('{')) return null;
+  try {
+    const parsed = JSON.parse(content) as PersistedApprovalEnvelope;
+    if (typeof parsed.id !== 'string' || !parsed.id) return null;
+    return {
+      id: parsed.id,
+      toolName: parsed.toolName,
+      input: parsed.input ?? {},
+      expiresAt: parsed.expiresAt ?? '',
+      status: parsed.status ?? 'pending',
+      ...(parsed.riskLevel ? { riskLevel: parsed.riskLevel } : {}),
+      ...(parsed.toolCallId ? { toolCallId: parsed.toolCallId } : {}),
+      ...(parsed.reason ? { reason: parsed.reason } : {}),
+    };
+  } catch {
+    return null;
+  }
 }
 
 interface AgentInfo {
@@ -603,6 +636,88 @@ function AgentConversation(): React.ReactElement {
     );
   }, [loadingMoreThreads, hasMoreThreads, threads, fetchThreads]);
 
+  /** 拉取并重建会话历史：切换会话与「刷新后确认审批」后的重拉共用 */
+  const loadHistory = useCallback(async (threadId: string): Promise<void> => {
+    try {
+      const { data } = (await client.get('/api/ai/conversations/:id/messages', {
+        params: { id: threadId },
+      })) as {
+        data?: Array<{ role: string; content: string; model?: string; reasoning?: string }>;
+      };
+      // 历史回显与流式渲染对齐：同一轮运行中连续持久化的 assistant 消息（每轮迭代一条）
+      // 合并成一个气泡；role:'tool' 消息按持久化顺序还原为可展开的工具块；
+      // role:'approval' 为审批台账条目（后端合成行），还原为审批状态卡片
+      const history: ChatMessage[] = [];
+      for (const m of data ?? []) {
+        if (m.role === 'user') {
+          history.push({
+            id: crypto.randomUUID(),
+            role: 'user',
+            content: m.content,
+            timestamp: '',
+          });
+          continue;
+        }
+        if (m.role === 'tool') {
+          const block = parsePersistedTool(m.content);
+          const last = history[history.length - 1];
+          if (block && last?.role === 'assistant') {
+            last.blocks = [...(last.blocks ?? []), block];
+          }
+          continue;
+        }
+        if (m.role === 'approval') {
+          const approval = parsePersistedApproval(m.content);
+          const last = history[history.length - 1];
+          if (approval && last?.role === 'assistant') {
+            last.approval = approval;
+            // 待审批：补一个运行中的工具块（id 与审批单对齐，状态行据此标注），
+            // 让用户看清在等哪个工具
+            if (approval.status === 'pending') {
+              last.blocks = [
+                ...(last.blocks ?? []),
+                {
+                  type: 'tool',
+                  id: approval.toolCallId ?? approval.id,
+                  name: toolDisplayName(approval.toolName),
+                  status: 'running',
+                },
+              ];
+            }
+          }
+          continue;
+        }
+        if (m.role !== 'assistant') continue;
+        const text = parsePersistedAssistant(m.content);
+        const last = history[history.length - 1];
+        if (last?.role === 'assistant') {
+          last.blocks = [
+            ...(last.blocks ?? []),
+            ...(text ? [{ type: 'text' as const, text }] : []),
+          ];
+          last.content = text ? `${last.content}\n\n${text}` : last.content;
+          if (m.model) last.model = m.model; // 同一轮多轮迭代以最后一次生成模型为准
+          // 同一轮多轮迭代的思考内容依次拼接，对齐流式期间累积在同一气泡的展示
+          if (m.reasoning)
+            last.thinking = [last.thinking, m.reasoning].filter(Boolean).join('\n\n');
+        } else {
+          history.push({
+            id: crypto.randomUUID(),
+            role: 'assistant',
+            content: text,
+            timestamp: '',
+            blocks: [...(text ? [{ type: 'text' as const, text }] : [])],
+            ...(m.model ? { model: m.model } : {}),
+            ...(m.reasoning ? { thinking: m.reasoning } : {}),
+          });
+        }
+      }
+      setMessages(history);
+    } catch {
+      /* 历史加载失败保持空 */
+    }
+  }, []);
+
   // 切换会话：绑定 sessionId 并回显历史消息
   const handleSelectThread = useCallback(
     async (threadId: string) => {
@@ -618,64 +733,9 @@ function AgentConversation(): React.ReactElement {
         setEnabledMcp(selectedAgent.mcpServers.map((m) => m.id));
         setEnabledKbs(selectedAgent.knowledgeBases.map((k) => k.id));
       }
-      try {
-        const { data } = (await client.get('/api/ai/conversations/:id/messages', {
-          params: { id: threadId },
-        })) as {
-          data?: Array<{ role: string; content: string; model?: string; reasoning?: string }>;
-        };
-        // 历史回显与流式渲染对齐：同一轮运行中连续持久化的 assistant 消息（每轮迭代一条）
-        // 合并成一个气泡；role:'tool' 消息按持久化顺序还原为可展开的工具块
-        const history: ChatMessage[] = [];
-        for (const m of data ?? []) {
-          if (m.role === 'user') {
-            history.push({
-              id: crypto.randomUUID(),
-              role: 'user',
-              content: m.content,
-              timestamp: '',
-            });
-            continue;
-          }
-          if (m.role === 'tool') {
-            const block = parsePersistedTool(m.content);
-            const last = history[history.length - 1];
-            if (block && last?.role === 'assistant') {
-              last.blocks = [...(last.blocks ?? []), block];
-            }
-            continue;
-          }
-          if (m.role !== 'assistant') continue;
-          const text = parsePersistedAssistant(m.content);
-          const last = history[history.length - 1];
-          if (last?.role === 'assistant') {
-            last.blocks = [
-              ...(last.blocks ?? []),
-              ...(text ? [{ type: 'text' as const, text }] : []),
-            ];
-            last.content = text ? `${last.content}\n\n${text}` : last.content;
-            if (m.model) last.model = m.model; // 同一轮多轮迭代以最后一次生成模型为准
-            // 同一轮多轮迭代的思考内容依次拼接，对齐流式期间累积在同一气泡的展示
-            if (m.reasoning)
-              last.thinking = [last.thinking, m.reasoning].filter(Boolean).join('\n\n');
-          } else {
-            history.push({
-              id: crypto.randomUUID(),
-              role: 'assistant',
-              content: text,
-              timestamp: '',
-              blocks: [...(text ? [{ type: 'text' as const, text }] : [])],
-              ...(m.model ? { model: m.model } : {}),
-              ...(m.reasoning ? { thinking: m.reasoning } : {}),
-            });
-          }
-        }
-        setMessages(history);
-      } catch {
-        /* 历史加载失败保持空 */
-      }
+      await loadHistory(threadId);
     },
-    [selectedAgent],
+    [selectedAgent, loadHistory],
   );
 
   // 链接带 ?s=xxx：Agent 就绪后恢复该会话（只消费一次；消费前不让 URL 同步覆盖它）
@@ -918,6 +978,35 @@ function AgentConversation(): React.ReactElement {
               ),
             );
           },
+          onApprovalResolved: (resolved) => {
+            // 审批结论（通过/被拒/超时过期）：立即收敛弹窗状态，避免超时后弹窗关不掉；
+            // 未通过时把该审批对应的工具块标为失败（刷新恢复出的工具块 id 就是审批单 id）
+            setMessages((prev) =>
+              prev.map((msg) =>
+                msg.approval?.id === resolved.approvalId
+                  ? {
+                      ...msg,
+                      approval: {
+                        ...msg.approval,
+                        status: resolved.status,
+                        ...(resolved.reason ? { reason: resolved.reason } : {}),
+                      },
+                      ...(resolved.status === 'approved'
+                        ? {}
+                        : {
+                            blocks: msg.blocks?.map((block) =>
+                              block.type === 'tool' &&
+                              (block.id === msg.approval?.toolCallId ||
+                                block.id === resolved.approvalId)
+                                ? { ...block, status: 'error' as const }
+                                : block,
+                            ),
+                          }),
+                    }
+                  : msg,
+              ),
+            );
+          },
           onError: (error) => {
             // 标记所有 running 工具块为 error
             setMessages((prev) =>
@@ -1045,20 +1134,55 @@ function AgentConversation(): React.ReactElement {
             : msg,
         ),
       );
+      // 「刷新后确认」场景（本页无进行中的流）：后端 run 仍在后台等待，确认后会继续执行该工具，
+      // 稍后重拉历史把执行结果带进页面（流内确认则由 SSE 的 tool_result 自然回填）。
+      // 跑两次：工具执行有延迟，第一次可能还没落盘
+      const target = sessionIdRef.current;
+      if (!loading && target) {
+        for (const delay of [3000, 9000]) {
+          setTimeout(() => {
+            if (sessionIdRef.current === target) void loadHistory(target);
+          }, delay);
+        }
+      }
       return true;
     },
-    [],
+    [loading, loadHistory],
   );
 
-  // Stop generation
+  // Stop generation：显式停止必须先通知后端（断开/刷新不会取消运行，见 sse.ts）
   const handleStop = useCallback(() => {
+    const target = sessionIdRef.current;
+    if (target) {
+      void client.post('/api/ai/chat/sessions/:id/stop', { params: { id: target } });
+    }
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
     setLoading(false);
     setMessages((prev) =>
       prev.map((msg) =>
         msg.isStreaming
-          ? { ...msg, isStreaming: false, content: msg.content || '（已停止）' }
+          ? {
+              ...msg,
+              isStreaming: false,
+              content: msg.content || '（已停止）',
+              // 停止即本次审批作废：后端把审批单落为过期且工具不执行，
+              // 本地同步收敛弹窗（停止后流已断开，收不到 approval_resolved）
+              ...(msg.approval?.status === 'pending'
+                ? {
+                    approval: {
+                      ...msg.approval,
+                      status: 'expired' as const,
+                      reason: '已停止生成，该工具未执行',
+                    },
+                  }
+                : {}),
+              blocks: msg.blocks?.map((block) =>
+                block.type === 'tool' && block.status === 'running'
+                  ? { ...block, status: 'error' as const }
+                  : block,
+              ),
+            }
           : msg,
       ),
     );
@@ -1262,7 +1386,7 @@ function AgentConversation(): React.ReactElement {
               />
             )}
             {activeTab === 'files' && (
-              <div className="h-full min-h-0 flex flex-col">
+              <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4 flex flex-col">
                 {selectedAgent.name === 'Skill Creator' &&
                   workspaceFiles.some((file) => file.path === 'SKILL.md') && (
                     <div className="px-4 pt-3 shrink-0">
@@ -1271,7 +1395,7 @@ function AgentConversation(): React.ReactElement {
                       </Button>
                     </div>
                   )}
-                <div className="flex-1 min-h-0">
+                <div className="mt-4 flex-1 min-h-0  border rounded-lg">
                   <FilesPanel
                     files={workspaceFiles}
                     sessionId={sessionId}
@@ -1280,9 +1404,15 @@ function AgentConversation(): React.ReactElement {
                 </div>
               </div>
             )}
-            {activeTab === 'memory' && <MemoryPanel sessionId={sessionId} />}
+            {activeTab === 'memory' && (
+              <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
+                <MemoryPanel sessionId={sessionId} />
+              </div>
+            )}
             {activeTab === 'knowledge' && (
-              <KnowledgePanel knowledgeBases={selectedAgent.knowledgeBases} />
+              <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
+                <KnowledgePanel knowledgeBases={selectedAgent.knowledgeBases} />
+              </div>
             )}
           </div>
 

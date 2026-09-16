@@ -741,6 +741,59 @@ describe("in-stream tool approval handshake", () => {
     expect(executed).toBe(0);
     expect(chunks.some((c) => c.type === "approval_required")).toBe(true);
   });
+
+  test("emits approval_resolved(approved) after the waiter approves", async () => {
+    const gateway = createGateway([
+      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
+      [{ type: "content", delta: "after" }, { type: "done" }],
+    ]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createApprovalTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      authorizeToolCall: async () => ({
+        approved: false,
+        approvalRequest: { id: "req-4", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      }),
+      waitForApproval: async () => ({ approved: true, status: "approved" }),
+    });
+
+    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+
+    const resolved = chunks.find((c) => c.type === "approval_resolved") as
+      | { type: "approval_resolved"; approvalId: string; status: string }
+      | undefined;
+    expect(resolved?.approvalId).toBe("req-4");
+    expect(resolved?.status).toBe("approved");
+  });
+
+  test("emits approval_resolved(expired) on timeout so the dialog can converge", async () => {
+    let executed = 0;
+    const gateway = createGateway([
+      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
+      [{ type: "done" }],
+    ]);
+    const loop = createAgentLoop({
+      llmGateway: gateway,
+      agentTools: [createApprovalTool(async () => {
+        executed += 1;
+        return { content: [{ type: "text", text: "ok" }], details: {} };
+      })],
+      authorizeToolCall: async () => ({
+        approved: false,
+        approvalRequest: { id: "req-5", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+      }),
+      waitForApproval: async () => ({ approved: false, status: "expired", reason: "审批等待超时，已默认拒绝" }),
+    });
+
+    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+
+    const resolved = chunks.find((c) => c.type === "approval_resolved") as
+      | { type: "approval_resolved"; status: string; reason?: string }
+      | undefined;
+    expect(resolved?.status).toBe("expired");
+    expect(resolved?.reason).toContain("超时");
+    expect(executed).toBe(0);
+  });
 });
 
 describe("iteration budget exhaustion finalize", () => {
