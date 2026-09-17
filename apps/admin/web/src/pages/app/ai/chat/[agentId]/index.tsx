@@ -1,5 +1,6 @@
 import { client } from '@/api';
 import { type ChatStreamParams, streamChat } from '@/api/sse-client';
+import type { FileEntry } from '@/api/types';
 import { MenuUnfoldOutlined, RestOutlined } from '@ant-design/icons';
 import { Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -7,11 +8,11 @@ import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatApproval, ChatMessage, ModelOption, ToolBlock } from '../types';
 
 import BottomInput, { allowedThinkingLevels } from '../components/BottomInput';
-import type { RunMode } from '../components/RunModeSelect';
 import ChatArea from '../components/ChatArea';
 import FilesPanel from '../components/FilesPanel';
 import KnowledgePanel from '../components/KnowledgePanel';
 import MemoryPanel from '../components/MemoryPanel';
+import type { RunMode } from '../components/RunModeSelect';
 import ThreadList from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
 import TrashDialog from '../components/TrashDialog';
@@ -215,8 +216,55 @@ function AgentConversation(): React.ReactElement {
   const [openFileTarget, setOpenFileTarget] = useState<{ path: string; nonce: number } | null>(
     null,
   );
+  // 知识库引用定位：点击引用时切到知识库页签并选中对应文件
+  const [kbOpenFile, setKbOpenFile] = useState<{
+    kbId: string;
+    path: string;
+    nonce: number;
+  } | null>(null);
+  // 知识库文件列表缓存（kbId → 展平后的文件列表），避免重复展开目录
+  const kbFilesCacheRef = useRef<Map<string, FileEntry[]>>(new Map());
 
-  // 点击消息底部引用来源：URL 引用新标签页打开，文件引用切换到文件页签预览
+  /** 深度优先展平知识库目录树，只保留文件节点 */
+  const flattenKbEntries = useCallback((entries: FileEntry[]): FileEntry[] => {
+    const out: FileEntry[] = [];
+    const walk = (list: FileEntry[]) => {
+      for (const entry of list) {
+        if (entry.type === 'file') out.push(entry);
+        if (entry.children?.length) walk(entry.children);
+      }
+    };
+    walk(entries);
+    return out;
+  }, []);
+
+  // 在当前 Agent 绑定的知识库中按路径/文件名查找引用文件
+  const lookupKbCitation = useCallback(
+    async (normalized: string): Promise<{ kbId: string; path: string } | null> => {
+      for (const kb of selectedAgent?.knowledgeBases ?? []) {
+        let files = kbFilesCacheRef.current.get(kb.id);
+        if (!files) {
+          const { data, error } = await client.get('/api/ai/knowledge-bases/:id/files', {
+            params: { id: kb.id },
+            query: { path: '.', depth: 10 },
+          });
+          if (error) continue;
+          files = flattenKbEntries((data as FileEntry[] | undefined) ?? []);
+          kbFilesCacheRef.current.set(kb.id, files);
+        }
+        const matched =
+          files.find((f) => f.path === normalized) ??
+          files.find((f) => f.path.endsWith(`/${normalized}`)) ??
+          files.find((f) => f.name === normalized);
+        if (matched) return { kbId: kb.id, path: matched.path };
+      }
+      return null;
+    },
+    [selectedAgent, flattenKbEntries],
+  );
+
+  // 点击消息底部引用来源：URL 引用新标签页打开，工作区文件切到文件页签预览，
+  // 知识库文件切到知识库页签并选中该文件
   const handleCiteClick = useCallback(
     (name: string, url?: string) => {
       const normalized = name.trim();
@@ -229,14 +277,21 @@ function AgentConversation(): React.ReactElement {
         workspaceFiles.find((f) => f.path === normalized) ??
         workspaceFiles.find((f) => f.path.endsWith(`/${normalized}`)) ??
         workspaceFiles.find((f) => (f.path.split('/').pop() ?? '') === normalized);
-      if (!matched) {
-        msg.info('该引用文件不在当前会话工作区');
+      if (matched) {
+        setOpenFileTarget({ path: matched.path, nonce: Date.now() });
+        setActiveTab('files');
         return;
       }
-      setOpenFileTarget({ path: matched.path, nonce: Date.now() });
-      setActiveTab('files');
+      void lookupKbCitation(normalized).then((result) => {
+        if (!result) {
+          msg.info('该引用文件不在当前会话工作区');
+          return;
+        }
+        setKbOpenFile({ ...result, nonce: Date.now() });
+        setActiveTab('knowledge');
+      });
     },
-    [workspaceFiles],
+    [workspaceFiles, lookupKbCitation],
   );
 
   // 导出 Skill Modal
@@ -1411,7 +1466,10 @@ function AgentConversation(): React.ReactElement {
             )}
             {activeTab === 'knowledge' && (
               <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
-                <KnowledgePanel knowledgeBases={selectedAgent.knowledgeBases} />
+                <KnowledgePanel
+                  knowledgeBases={selectedAgent.knowledgeBases}
+                  openFile={kbOpenFile}
+                />
               </div>
             )}
           </div>
