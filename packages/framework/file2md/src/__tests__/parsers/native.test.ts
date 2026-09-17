@@ -32,6 +32,7 @@ describe("native parser — optionsJson mapping", () => {
         headers: { Authorization: "bearer tok" },
         model: "PaddleOCR-VL-1.6",
       },
+      convert: { allowedRoots: [] },
     }));
   });
 
@@ -41,7 +42,7 @@ describe("native parser — optionsJson mapping", () => {
       language: "chi_sim",
     })).toBe(JSON.stringify({
       paddleOcr: { endpoint: "https://ocr.example.com/api/v2/ocr/jobs" },
-      convert: { ocrLanguage: "chi_sim" },
+      convert: { allowedRoots: [], ocrLanguage: "chi_sim" },
     }));
   });
 

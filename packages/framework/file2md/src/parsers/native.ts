@@ -61,7 +61,10 @@ export function buildOptionsJson(ocr?: OCRService): string | undefined {
   const paddleOcr: Record<string, unknown> = { endpoint: ocr.endpoint };
   if (ocr.headers && Object.keys(ocr.headers).length > 0) paddleOcr.headers = ocr.headers;
   if (ocr.model) paddleOcr.model = ocr.model;
-  const options: Record<string, unknown> = { paddleOcr };
-  if (ocr.language) options.convert = { ocrLanguage: ocr.language };
+  // file-parser ≥0.3.0 的 ConvertOptions.allowed_roots 为必填（serde 字段缺 #[serde(default)]）；
+  // 空数组 = 不覆盖 parser 级默认（同样为空），且 Bytes 输入不经过路径沙箱校验
+  const convert: Record<string, unknown> = { allowedRoots: [] };
+  if (ocr.language) convert.ocrLanguage = ocr.language;
+  const options: Record<string, unknown> = { paddleOcr, convert };
   return JSON.stringify(options);
 }
