@@ -107,7 +107,7 @@ export type {
 } from "./middlewares/rate-limit";
 
 // ========== 超时中间件 ==========
-export { timeout } from "./middlewares/timeout";
+export { longRunning, timeout } from "./middlewares/timeout";
 export type { TimeoutOptions } from "./middlewares/timeout";
 
 // ========== 请求 ID 中间件 ==========

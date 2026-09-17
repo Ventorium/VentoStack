@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createContext } from "../context";
-import { timeout } from "../middlewares/timeout";
+import { longRunning, timeout } from "../middlewares/timeout";
 
 function makeCtx() {
   return createContext(new Request("http://localhost/"));
@@ -51,5 +51,29 @@ describe("timeout", () => {
     // just verify it creates without error with defaults
     const mw = timeout();
     expect(typeof mw).toBe("function");
+  });
+
+  test("longRunning() exempts the route from timeout", async () => {
+    const mw = timeout({ ms: 50 });
+    const ctx = makeCtx();
+    // 模拟路由链：longRunning 挂在全局超时中间件之后（next 内层即同一 ctx）
+    const response = await mw(ctx, async () => {
+      await longRunning()(ctx, () => Promise.resolve());
+      return new Promise<Response>((resolve) =>
+        setTimeout(() => resolve(ctx.json({ ok: true })), 200),
+      );
+    });
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+  });
+
+  test("timeout still applies when longRunning() is not in the chain", async () => {
+    const mw = timeout({ ms: 50 });
+    const ctx = makeCtx();
+    const response = await mw(
+      ctx,
+      () => new Promise<Response>((resolve) => setTimeout(() => resolve(ctx.json({ ok: true })), 200)),
+    );
+    expect(response.status).toBe(408);
   });
 });

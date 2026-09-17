@@ -286,14 +286,8 @@ export async function buildApp(opts?: {
   app.use(requestLogger());
 
   // 4a-1. 全局请求超时兜底（30s）：防止慢查询/外部调用长期占用连接。
-  // 跳过 SSE 流式端点（AI 对话流可长连接），其余请求超时返回 408。
-  const ssePaths = new Set(['/api/ai/chat/stream']);
-  const timeoutMiddleware: Middleware = (ctx, next) => {
-    const pathname = new URL(ctx.request.url).pathname;
-    if (ssePaths.has(pathname)) return next();
-    return timeout({ ms: 30_000 })(ctx, next);
-  };
-  app.use(timeoutMiddleware);
+  // 长耗时端点（SSE 流式、文件上传+OCR）由路由用 longRunning() 自行声明豁免。
+  app.use(timeout({ ms: 30_000 }));
 
   // 4b. 判断是否使用独立管理端口
   const useAdminPort = env.ADMIN_PORT > 0;

@@ -1,9 +1,7 @@
 /**
  * 知识库路由
  */
-import { resolve } from "node:path";
-import { readFile, existsSync } from "node:fs/promises";
-import { createRouter, success, paginated, fail, handleError, parseBody, pageOf } from "@ventostack/core";
+import { createRouter, success, paginated, fail, handleError, longRunning, parseBody, pageOf } from "@ventostack/core";
 import type { Middleware, Router } from "@ventostack/core";
 import type { KnowledgeBaseService } from "../knowledge-base/types";
 import { createFileValidator } from "../knowledge-base/file-security";
@@ -288,9 +286,11 @@ export function createKnowledgeBaseRoutes(
   );
 
   // ── 文件上传（支持 PDF/Word/文本）──
+  // 转换可能走 OCR（异步任务+轮询，单任务预算 5 分钟），远超全局 30s 超时：声明豁免
   router.post(
     "/api/ai/knowledge-bases/:id/upload",
     perm("ai:knowledge-base", "update"),
+    longRunning(),
     async (ctx) => {
       try {
         const id = (ctx.params as Record<string, string>).id!;

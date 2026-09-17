@@ -1,7 +1,7 @@
 /**
  * 对话路由（含 SSE 流式）
  */
-import { createRouter, fail, handleError, parseBody, success, rateLimit } from '@ventostack/core';
+import { createRouter, fail, handleError, longRunning, parseBody, success, rateLimit } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { AgentLoop } from '../agent-engine/agent-loop';
 import type { MemoryService } from '../memory/types';
@@ -869,6 +869,8 @@ export function createChatRoutes(
     },
     chatLimiter,
     perm('ai:chat', 'use'),
+    // SSE 流可长连接：声明豁免全局 30s 请求超时（原为 app 层硬编码白名单）
+    longRunning(),
   );
 
   return router;
