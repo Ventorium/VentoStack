@@ -289,6 +289,7 @@ export function createRoleService(deps: {
         const menus = await db
           .query(MenuModel)
           .where('tenant_id', '=', deps.tenantId)
+          .where('application_id', 'IS NULL')
           .where('id', 'IN', normalized)
           .where('status', '=', 1)
           .select('id')

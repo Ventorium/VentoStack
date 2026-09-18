@@ -153,6 +153,12 @@
       "@ventostack/oss/*": [
         "./packages/platform/oss/src/*"
       ],
+      "@ventostack/oauth": [
+        "./packages/platform/oauth/src/index.ts"
+      ],
+      "@ventostack/oauth/*": [
+        "./packages/platform/oauth/src/*"
+      ],
       "@ventostack/scheduler": [
         "./packages/platform/scheduler/src/index.ts"
       ],

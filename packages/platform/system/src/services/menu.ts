@@ -165,6 +165,7 @@ export function createMenuService(deps: {
         const parent = await db
           .query(MenuModel)
           .where('tenant_id', '=', deps.tenantId)
+          .where('application_id', 'IS NULL')
           .where('id', '=', parentId)
           .select('status')
           .get();
@@ -174,6 +175,7 @@ export function createMenuService(deps: {
       await db.query(MenuModel).insert({
         id,
         tenant_id: deps.tenantId,
+        application_id: null,
         parent_id: parentId ?? null,
         name,
         path,
@@ -195,6 +197,7 @@ export function createMenuService(deps: {
       const current = await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .where('id', '=', id)
         .select('id')
         .get();
@@ -204,6 +207,7 @@ export function createMenuService(deps: {
         const rows = await db
           .query(MenuModel)
           .where('tenant_id', '=', deps.tenantId)
+          .where('application_id', 'IS NULL')
           .select('id', 'parent_id', 'status')
           .list();
         const byId = new Map(rows.map((row) => [row.id, row]));
@@ -234,6 +238,7 @@ export function createMenuService(deps: {
       await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .where('id', '=', id)
         .update(updates);
     },
@@ -242,6 +247,7 @@ export function createMenuService(deps: {
       const children = await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .where('parent_id', '=', id)
         .count();
       if (children > 0) throw new Error('菜单存在子菜单，不能删除');
@@ -254,6 +260,7 @@ export function createMenuService(deps: {
         await tx
           .query(MenuModel)
           .where('tenant_id', '=', deps.tenantId)
+          .where('application_id', 'IS NULL')
           .where('id', '=', id)
           .hardDelete();
       });
@@ -263,6 +270,7 @@ export function createMenuService(deps: {
       const rows = await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .where('status', '=', 1)
         .orderBy('sort', 'asc')
         .list();
@@ -274,6 +282,7 @@ export function createMenuService(deps: {
       const rows = await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .orderBy('sort', 'asc')
         .list();
 
@@ -284,6 +293,7 @@ export function createMenuService(deps: {
       const row = await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .where('id', '=', id)
         .get();
 
@@ -293,6 +303,7 @@ export function createMenuService(deps: {
       const allRows = await db
         .query(MenuModel)
         .where('tenant_id', '=', deps.tenantId)
+        .where('application_id', 'IS NULL')
         .where('status', '=', 1)
         .orderBy('sort', 'asc')
         .list();

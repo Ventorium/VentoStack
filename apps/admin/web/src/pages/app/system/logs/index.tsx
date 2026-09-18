@@ -1,6 +1,7 @@
 import { Card, Tabs } from 'antd';
 import { useState } from 'react';
 import LoginLogPage from './login-content';
+import OAuthLogContent from './oauth-content';
 import OperationLogPage from './operation-content';
 
 const LogsPage = () => {
@@ -18,6 +19,7 @@ const LogsPage = () => {
           items={[
             { key: 'login', label: '登录日志', children: <LoginLogPage /> },
             { key: 'operation', label: '操作日志', children: <OperationLogPage /> },
+            { key: 'oauth', label: 'OAuth 日志', children: <OAuthLogContent /> },
           ]}
         />
       </Card>

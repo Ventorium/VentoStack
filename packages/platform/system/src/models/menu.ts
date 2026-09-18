@@ -6,6 +6,7 @@ export const MenuModel = defineModel(
     id: column.varchar({ primary: true, length: 36 }),
     tenant_id: column.varchar({ length: 36, default: 'default' }),
     parent_id: column.varchar({ length: 36, nullable: true }),
+    application_id: column.varchar({ length: 36, nullable: true }),
     name: column.varchar({ length: 64 }),
     path: column.varchar({ length: 256, nullable: true }),
     component: column.varchar({ length: 256, nullable: true }),

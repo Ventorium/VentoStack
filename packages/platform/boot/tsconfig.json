@@ -31,7 +31,8 @@
       "@ventostack/i18n": ["../i18n/src/index.ts"],
       "@ventostack/workflow": ["../workflow/src/index.ts"],
       "@ventostack/oss": ["../oss/src/index.ts"],
-      "@ventostack/scheduler": ["../scheduler/src/index.ts"]
+      "@ventostack/scheduler": ["../scheduler/src/index.ts"],
+      "@ventostack/oauth": ["../oauth/src/index.ts"]
     }
   }
 }

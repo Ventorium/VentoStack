@@ -81,7 +81,10 @@ export interface SystemModule {
     menuTreeBuilder: ReturnType<typeof createMenuTreeBuilder>;
     passkey: ReturnType<typeof createPasskeyService>;
     tag: ReturnType<typeof createTagService>;
+    governance: ReturnType<typeof createIdentityGovernanceService>;
   };
+  /** 供其他平台控制面复用的数据库实时认证中间件。 */
+  liveAuthMiddleware: Middleware;
   /** 聚合到平台根路由的全局操作日志中间件。 */
   operationLogMiddleware: Middleware;
   router: Router;
@@ -2227,7 +2230,9 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
       menuTreeBuilder,
       passkey: passkeyService,
       tag: tagService,
+      governance,
     },
+    liveAuthMiddleware: authMiddleware,
     operationLogMiddleware: opLogMiddleware,
     router,
     async init() {

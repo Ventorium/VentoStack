@@ -154,6 +154,27 @@ const rawConfig = createConfig(
       default: false,
       description: '是否启用 AI 平台模块',
     },
+    OAUTH_ENABLED: {
+      type: 'boolean',
+      env: 'OAUTH_ENABLED',
+      default: false,
+      description: '是否启用 OAuth 2.0 / OpenID Connect 平台模块',
+    },
+    OAUTH_SECRET_PEPPER: {
+      type: 'string',
+      env: 'OAUTH_SECRET_PEPPER',
+      sensitive: true,
+      description: 'OAuth 客户端 Secret 摘要 pepper；启用模块时至少 32 字节',
+    },
+    OAUTH_ISSUER: { type: 'string', env: 'OAUTH_ISSUER' },
+    OAUTH_SIGNING_KEY_ID: { type: 'string', env: 'OAUTH_SIGNING_KEY_ID' },
+    OAUTH_PRIVATE_KEY_PEM: { type: 'string', env: 'OAUTH_PRIVATE_KEY_PEM', sensitive: true },
+    OAUTH_PUBLIC_KEY_PEM: { type: 'string', env: 'OAUTH_PUBLIC_KEY_PEM' },
+    OAUTH_VERIFYING_JWKS: {
+      type: 'string',
+      env: 'OAUTH_VERIFYING_JWKS',
+      default: '{"keys":[]}',
+    },
     AI_CREDENTIAL_ENCRYPTION_KEY: {
       type: 'string',
       env: 'AI_CREDENTIAL_ENCRYPTION_KEY',
@@ -225,6 +246,22 @@ if (rawConfig.AI_ENABLED) {
   ).length;
   if (encryptionKeyBytes !== 32) {
     throw new Error('AI_CREDENTIAL_ENCRYPTION_KEY must be exactly 32 bytes when AI_ENABLED=true');
+  }
+}
+if (rawConfig.OAUTH_ENABLED) {
+  const pepperBytes = new TextEncoder().encode(rawConfig.OAUTH_SECRET_PEPPER ?? '').length;
+  if (pepperBytes < 32) {
+    throw new Error('OAUTH_SECRET_PEPPER must be at least 32 bytes when OAUTH_ENABLED=true');
+  }
+  if (!rawConfig.OAUTH_ISSUER || !rawConfig.OAUTH_SIGNING_KEY_ID || !rawConfig.OAUTH_PRIVATE_KEY_PEM || !rawConfig.OAUTH_PUBLIC_KEY_PEM)
+    throw new Error('OAuth issuer and RS256 signing key configuration are required');
+  if (rawConfig.NODE_ENV === 'production' && new URL(rawConfig.OAUTH_ISSUER).protocol !== 'https:')
+    throw new Error('OAUTH_ISSUER must use HTTPS in production');
+  try {
+    const jwks = JSON.parse(rawConfig.OAUTH_VERIFYING_JWKS) as { keys?: JsonWebKey[] };
+    if (!Array.isArray(jwks.keys) || jwks.keys.some((key) => key.d)) throw new Error();
+  } catch {
+    throw new Error('OAUTH_VERIFYING_JWKS must be a public JWKS object');
   }
 }
 if (Boolean(rawConfig.VENTO_RUNTIME_URL) !== Boolean(rawConfig.VENTO_RUNTIME_TOKEN)) {

@@ -42,6 +42,8 @@
       "@ventostack/notification/*": ["../../../packages/platform/notification/src/*"],
       "@ventostack/oss": ["../../../packages/platform/oss/src/index.ts"],
       "@ventostack/oss/*": ["../../../packages/platform/oss/src/*"],
+      "@ventostack/oauth": ["../../../packages/platform/oauth/src/index.ts"],
+      "@ventostack/oauth/*": ["../../../packages/platform/oauth/src/*"],
       "@ventostack/scheduler": ["../../../packages/platform/scheduler/src/index.ts"],
       "@ventostack/scheduler/*": ["../../../packages/platform/scheduler/src/*"],
       "@ventostack/system": ["../../../packages/platform/system/src/index.ts"],

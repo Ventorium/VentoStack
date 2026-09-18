@@ -24,6 +24,7 @@ import { createTagLogger } from '@ventostack/core';
 import { type SqlExecutor, createMigrationRunner } from '@ventostack/database';
 import { createI18nTables } from '@ventostack/i18n';
 import { createNotifyTables } from '@ventostack/notification';
+import { createOAuthTables } from '@ventostack/oauth';
 import { addDirectorySupport, addTenantIdToOssFile, createOssTables } from '@ventostack/oss';
 import { createSchedulerTables } from '@ventostack/scheduler';
 import {
@@ -98,6 +99,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addTenantIdToOssFile);
   runner.addMigration(createNotifyTables);
   runner.addMigration(createSchedulerTables);
+  runner.addMigration(createOAuthTables);
 
   // AI 模块
   runner.addMigration(createAiKnowledgeTables);

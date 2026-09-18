@@ -180,6 +180,7 @@ export function createMenuTreeBuilder(deps: {
     const rows = await db
       .query(MenuModel)
       .where('tenant_id', '=', deps.tenantId)
+      .where('application_id', 'IS NULL')
       .where('status', '=', 1)
       .select(
         'id',

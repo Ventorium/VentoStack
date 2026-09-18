@@ -81,6 +81,7 @@ export function createPermissionLoader(deps: {
     const menus = await db
       .query(MenuModel)
       .where('tenant_id', '=', deps.tenantId)
+      .where('application_id', 'IS NULL')
       .where('id', 'IN', menuIds)
       .where('status', '=', 1)
       .where('permission', 'IS NOT NULL')

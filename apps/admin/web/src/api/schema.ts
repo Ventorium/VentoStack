@@ -1337,6 +1337,146 @@ export type OpenAPIs = {
       }
     },
     /**
+     * OAuth Application 列表
+     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。
+     */
+    '/api/oauth/admin/applications': {
+      query: {
+        page?: number,
+        pageSize?: number,
+        name?: string,
+        status?: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * OAuth Application 详情
+     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。
+     */
+    '/api/oauth/admin/applications/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/applications/:id/icon': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/admin/applications/:applicationId/menus': {
+      query: never,
+      params: {
+        applicationId: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/authorize': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/logout': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/.well-known/openid-configuration': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/.well-known/oauth-authorization-server/api/oauth': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/jwks': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 查询当前租户的 Application 授权
+     */
+    '/api/oauth/admin/applications/:id/grants': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 当前用户可访问的 Application 门户列表
+     */
+    '/api/oauth/portal/applications': {
+      query: {
+        search?: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/me/context': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/userinfo': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * OAuth 认证日志
+     * @description 仅返回当前认证租户日志。
+     */
+    '/api/oauth/logs': {
+      query: {
+        page?: number,
+        pageSize?: number,
+        eventType?: string,
+        success?: boolean,
+        clientId?: string,
+        userId?: string,
+        startAt?: string,
+        endAt?: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 获取服务器状态
      */
     '/api/system/monitor/server': {
@@ -3281,6 +3421,124 @@ export type OpenAPIs = {
         message?: string
       }
     },
+    /**
+     * 注册 OAuth Application
+     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。 clientSecret 仅在本次响应展示。
+     */
+    '/api/oauth/admin/applications': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        identifier: string,
+        name: string,
+        description?: string,
+        homepageUrl: string,
+        redirectUri: string,
+        postLogoutRedirectUri?: string,
+        backchannelLogoutUri?: string,
+        backchannelLogoutSessionRequired?: boolean,
+        allowedScopes: string[],
+        offlineAccessEnabled?: boolean,
+        enabled?: boolean,
+        sort?: number
+      },
+      response: any
+    },
+    /**
+     * 重新生成 Client Secret
+     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。 旧 Secret 立即失效，新 Secret 仅展示一次。
+     */
+    '/api/oauth/admin/applications/:id/secret': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/admin/applications/:id/icon': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        file: File
+      },
+      response: any
+    },
+    '/api/oauth/admin/applications/:applicationId/menus': {
+      query: never,
+      params: {
+        applicationId: string
+      },
+      headers: never,
+      body: {
+        parentId?: string,
+        name: string,
+        path?: string,
+        component?: string,
+        redirect?: string,
+        /**
+         * @enum 1,2,3
+         */
+        type: number,
+        permission?: string,
+        icon?: string,
+        sort: number,
+        visible: boolean,
+        /**
+         * @enum 0,1
+         */
+        status: number,
+        roleIds: string[]
+      },
+      response: any
+    },
+    '/api/oauth/session/bootstrap': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/token': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/revoke': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/introspect': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/logout': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/userinfo': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/system/notification/send': {
       query: never,
       params: never,
@@ -4331,6 +4589,29 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * 永久删除 OAuth Application
+     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。 唯一标识以 tombstone 保留且不可复用。
+     */
+    '/api/oauth/admin/applications/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/oauth/admin/applications/:applicationId/menus/:id': {
+      query: never,
+      params: {
+        applicationId: string,
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 强制下线
      * @description 校验当前租户内的有效会话，并撤销该用户的全部会话。
      */
@@ -5060,6 +5341,83 @@ export type OpenAPIs = {
          * @description 标签 ID 列表
          */
         tagIds: string[]
+      },
+      response: any
+    },
+    /**
+     * 更新 OAuth Application
+     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。
+     */
+    '/api/oauth/admin/applications/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        name?: string,
+        description?: string,
+        homepageUrl?: string,
+        redirectUri?: string,
+        postLogoutRedirectUri?: string,
+        backchannelLogoutUri?: string,
+        backchannelLogoutSessionRequired?: boolean,
+        allowedScopes?: string[],
+        offlineAccessEnabled?: boolean,
+        enabled?: boolean,
+        sort?: number
+      },
+      response: any
+    },
+    '/api/oauth/admin/applications/:applicationId/menus/:id': {
+      query: never,
+      params: {
+        applicationId: string,
+        id: string
+      },
+      headers: never,
+      body: {
+        parentId?: string,
+        name: string,
+        path?: string,
+        component?: string,
+        redirect?: string,
+        /**
+         * @enum 1,2,3
+         */
+        type: number,
+        permission?: string,
+        icon?: string,
+        sort: number,
+        visible: boolean,
+        /**
+         * @enum 0,1
+         */
+        status: number,
+        roleIds: string[]
+      },
+      response: any
+    },
+    /**
+     * 全量替换当前租户的 Application 授权
+     * @description 租户由认证上下文确定，客户端不得提交 tenantId；跨租户主体按无效处理。
+     */
+    '/api/oauth/admin/applications/:id/grants': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        roleIds: string[],
+        userIds: string[],
+        departments: {
+          deptId?: string,
+          /**
+           * @enum SELF,SELF_AND_DESCENDANTS
+           */
+          scope?: string
+        }[]
       },
       response: any
     },

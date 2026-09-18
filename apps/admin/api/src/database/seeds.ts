@@ -4,20 +4,21 @@
  * 种子数据（admin、config、dict）均为本应用专属数据。
  */
 
-import { createTagLogger } from "@ventostack/core";
-import { type SqlExecutor, createSeedRunner } from "@ventostack/database";
-import { initAdminSeed } from "./seeds/001_init_admin";
-import { initConfigSeed } from "./seeds/002_init_config";
-import { initDictSeed } from "./seeds/003_init_dict";
-import { addDashboardMenuSeed } from "./seeds/004_add_dashboard_menu";
-import { addWorkflowMenuSeed } from "./seeds/005_add_workflow_menu";
-import { noticeWorkflowSeed } from "./seeds/006_notice_workflow";
-import { addAIMenusSeed } from "./seeds/007_ai_menus";
-import { skillCreatorAgentSeed } from "./seeds/008_skill_creator_agent";
-import { addDeepResearchSkillSeed } from "./seeds/010_deep_research_skill";
-import { addAITraceSeed } from "./seeds/011_ai_trace";
+import { createTagLogger } from '@ventostack/core';
+import { type SqlExecutor, createSeedRunner } from '@ventostack/database';
+import { initAdminSeed } from './seeds/001_init_admin';
+import { initConfigSeed } from './seeds/002_init_config';
+import { initDictSeed } from './seeds/003_init_dict';
+import { addDashboardMenuSeed } from './seeds/004_add_dashboard_menu';
+import { addWorkflowMenuSeed } from './seeds/005_add_workflow_menu';
+import { noticeWorkflowSeed } from './seeds/006_notice_workflow';
+import { addAIMenusSeed } from './seeds/007_ai_menus';
+import { skillCreatorAgentSeed } from './seeds/008_skill_creator_agent';
+import { addDeepResearchSkillSeed } from './seeds/010_deep_research_skill';
+import { addAITraceSeed } from './seeds/011_ai_trace';
+import { addOAuthMenusSeed } from './seeds/012_oauth_menus';
 
-const log = createTagLogger("seeds");
+const log = createTagLogger('seeds');
 
 export async function runSeeds(executor: SqlExecutor): Promise<void> {
   const runner = createSeedRunner(executor);
@@ -31,7 +32,8 @@ export async function runSeeds(executor: SqlExecutor): Promise<void> {
   runner.addSeed(skillCreatorAgentSeed);
   runner.addSeed(addDeepResearchSkillSeed);
   runner.addSeed(addAITraceSeed);
+  runner.addSeed(addOAuthMenusSeed);
 
   await runner.run();
-  log.info("All seeds executed");
+  log.info('All seeds executed');
 }

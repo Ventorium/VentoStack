@@ -176,6 +176,77 @@ export interface FrontendRoute {
   children?: FrontendRoute[];
 }
 
+export interface OAuthApplicationItem {
+  id: string;
+  identifier: string;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
+  homepageUrl: string;
+  redirectUri: string;
+  postLogoutRedirectUri: string | null;
+  backchannelLogoutUri: string | null;
+  backchannelLogoutSessionRequired: boolean;
+  clientId: string;
+  allowedScopes: string[];
+  offlineAccessEnabled: boolean;
+  enabled: boolean;
+  sort: number;
+  status: 'ACTIVE' | 'DISABLED';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OAuthApplicationSecret {
+  id?: string;
+  clientId?: string;
+  clientSecret: string;
+}
+
+export interface OAuthPortalApplication {
+  id: string;
+  identifier: string;
+  name: string;
+  description: string | null;
+  iconUrl: string | null;
+  homepageUrl: string;
+  sort: number;
+}
+
+export interface OAuthAuthLogItem {
+  id: string;
+  user_id: string | null;
+  application_name_snapshot: string | null;
+  client_id_snapshot: string | null;
+  event_type: string;
+  success: boolean;
+  failure_code: string | null;
+  ip: string | null;
+  created_at: string;
+}
+
+export interface OAuthApplicationGrants {
+  roleIds: string[];
+  userIds: string[];
+  departments: Array<{ deptId: string; scope: 'SELF' | 'SELF_AND_DESCENDANTS' }>;
+}
+
+export interface OAuthApplicationMenu {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  path: string | null;
+  component: string | null;
+  type: number;
+  permission: string | null;
+  icon: string | null;
+  sort: number;
+  visible: boolean;
+  status: number;
+  role_ids: string[];
+  children: OAuthApplicationMenu[];
+}
+
 // ===== 定时任务 =====
 export interface RegisteredJobHandler {
   id: string;

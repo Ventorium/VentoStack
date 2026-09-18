@@ -39,6 +39,8 @@ import { createNotificationModule } from '@ventostack/notification';
 import type { NotificationModule, NotifyChannel } from '@ventostack/notification';
 import { createOSSModule } from '@ventostack/oss';
 import type { OSSModule, StorageAdapter } from '@ventostack/oss';
+import { createOAuthModule } from '@ventostack/oauth';
+import type { OAuthModule } from '@ventostack/oauth';
 import { createSchedulerModule } from '@ventostack/scheduler';
 import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
 import { createSystemModule } from '@ventostack/system';
@@ -98,6 +100,8 @@ export interface PlatformConfig {
     ai?: boolean;
     /** AI 链路追踪（依赖 ai 模块，缺省跟随 ai 开关） */
     aiTrace?: boolean;
+    /** OAuth 2.0 / OpenID Connect 认证中心 */
+    oauth?: boolean;
   };
 
   /** OSS 存储适配器 */
@@ -130,6 +134,18 @@ export interface PlatformConfig {
   tenantEnabled?: boolean;
   /** 认证 Cookie 是否附加 Secure 属性（生产环境应设为 true，防止令牌 Cookie 明文传输） */
   secureCookies?: boolean;
+  /** OAuth 客户端 Secret 摘要 pepper，至少 32 字节。 */
+  oauthSecretPepper?: string;
+  /** 仅本地开发时允许 loopback HTTP 客户端 URL。 */
+  oauthAllowLoopbackHttp?: boolean;
+  oauthIssuer?: string;
+  oauthLoginPath?: string;
+  oauthSigningKey?: {
+    keyId: string;
+    privateKeyPem: string;
+    publicKeyPem: string;
+    verificationJwks?: JsonWebKey[];
+  };
 }
 
 /** 平台实例 */
@@ -153,6 +169,8 @@ export interface Platform {
   ai?: AIModule;
   /** AI 链路追踪模块 */
   aiTrace?: AiTraceModule;
+  /** OAuth 2.0 / OpenID Connect 模块 */
+  oauth?: OAuthModule;
   /** 所有路由的聚合 */
   router: Router;
   /** 初始化所有模块 */
@@ -219,6 +237,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ai: moduleFlags?.ai === true,
     // 链路追踪依赖 ai 模块：ai 关闭时强制禁用
     aiTrace: moduleFlags?.aiTrace !== false && moduleFlags?.ai === true,
+    oauth: moduleFlags?.oauth === true,
   };
 
   // Create modules
@@ -245,6 +264,33 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(secureCookies !== undefined ? { secureCookies } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
+
+  if (enabled.oauth && !system) {
+    throw new Error('OAuth module requires the system module');
+  }
+  if (enabled.oauth && (!config.oauthSecretPepper || !config.oauthIssuer || !config.oauthSigningKey)) {
+    throw new Error('OAuth pepper, issuer and RS256 signing key are required when OAuth is enabled');
+  }
+  if (enabled.oauth && !storageAdapter) throw new Error('OAuth module requires a storage adapter');
+  const oauthMod = enabled.oauth && system
+    ? createOAuthModule({
+        db,
+        rbac,
+        authMiddleware: system.liveAuthMiddleware,
+        sessionManager,
+        storage: storageAdapter!,
+        platformAdminMiddleware: system.services.governance.adminOnlyMiddleware,
+        secretPepper: config.oauthSecretPepper!,
+        tenantId: normalizedTenantId,
+        issuer: config.oauthIssuer!,
+        loginPath: config.oauthLoginPath ?? '/auth/login',
+        secureCookies: secureCookies ?? false,
+        signingKey: config.oauthSigningKey!,
+        ...(config.oauthAllowLoopbackHttp !== undefined
+          ? { allowLoopbackHttp: config.oauthAllowLoopbackHttp }
+          : {}),
+      })
+    : undefined;
 
   const monitor = enabled.monitor
     ? createMonitorModule({
@@ -386,6 +432,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
 
   // Mount module routers
   if (system) router.merge(system.router);
+  if (oauthMod) router.merge(oauthMod.router);
   if (monitor) router.merge(monitor.router);
   if (notification) router.merge(notification.router);
   if (i18n) router.merge(i18n.router);
@@ -408,6 +455,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     router,
     ...(aiMod !== undefined ? { ai: aiMod } : {}),
     ...(aiTraceMod !== undefined ? { aiTrace: aiTraceMod } : {}),
+    ...(oauthMod !== undefined ? { oauth: oauthMod } : {}),
     async init() {
       if (system) await system.init();
       if (monitor) await monitor.init();
@@ -419,6 +467,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       if (genMod) await genMod.init();
       if (aiMod) await aiMod.init();
       if (aiTraceMod) await aiTraceMod.init();
+      if (oauthMod) await oauthMod.init();
     },
   };
 }

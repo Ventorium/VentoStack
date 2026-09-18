@@ -509,6 +509,7 @@ export function createAuthService(deps: {
           // 租户标识来自部署配置（tenantEnabled 时由系统模块注入），AI/多租户链路依赖 ctx.user.tenantId（memory 隔离、skill/KB 归属、审计）
           tenantId,
         },
+        sessionData: { authenticatedAt: Date.now() },
       });
 
       await auditStore.append({
@@ -1020,6 +1021,7 @@ export function createAuthService(deps: {
           deviceName: userAgent,
         },
         tokenPayload: { username, roles: await getUserRoleCodes(db, tenantId, userId), tenantId },
+        sessionData: { authenticatedAt: Date.now() },
       });
 
       await auditStore.append({
@@ -1074,6 +1076,7 @@ export function createAuthService(deps: {
           deviceName: userAgent,
         },
         tokenPayload: { username, roles: await getUserRoleCodes(db, tenantId, userId), tenantId },
+        sessionData: { authenticatedAt: Date.now() },
       });
 
       await recordLoginLog({

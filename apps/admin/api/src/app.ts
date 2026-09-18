@@ -170,6 +170,7 @@ export async function buildApp(opts?: {
       ai: env.AI_ENABLED,
       // 链路追踪跟随 ai 开关（运行时可通过后台配置 ai_trace_enabled 单独关闭记录）
       aiTrace: env.AI_ENABLED,
+      oauth: env.OAUTH_ENABLED,
     },
     ...(env.AI_ENABLED
       ? {
@@ -191,6 +192,22 @@ export async function buildApp(opts?: {
         }
       : {}),
     notifyChannels: new Map([['in_app', createInAppChannel()]]),
+    ...(env.OAUTH_ENABLED
+      ? {
+          oauthSecretPepper: env.OAUTH_SECRET_PEPPER!,
+          oauthAllowLoopbackHttp: env.NODE_ENV !== 'production',
+          oauthIssuer: env.OAUTH_ISSUER!,
+          oauthLoginPath: '/auth/login',
+          oauthSigningKey: {
+            keyId: env.OAUTH_SIGNING_KEY_ID!,
+            privateKeyPem: env.OAUTH_PRIVATE_KEY_PEM!.replace(/\\n/g, '\n'),
+            publicKeyPem: env.OAUTH_PUBLIC_KEY_PEM!.replace(/\\n/g, '\n'),
+            verificationJwks: (
+              JSON.parse(env.OAUTH_VERIFYING_JWKS) as { keys: JsonWebKey[] }
+            ).keys,
+          },
+        }
+      : {}),
     // 多租户隔离开关
     tenantEnabled: env.TENANT_ENABLED,
     tenantId: env.TENANT_ID,
@@ -457,10 +474,23 @@ export async function buildApp(opts?: {
     '/api/auth/passkey/login-finish',
   ]);
   const authRefreshLimitPaths = new Set(['/api/auth/refresh']);
+  const oauthProtocolLimitPaths = new Set([
+    '/api/oauth/authorize',
+    '/api/oauth/token',
+    '/api/oauth/revoke',
+    '/api/oauth/introspect',
+    '/api/oauth/logout',
+    '/api/oauth/session/bootstrap',
+  ]);
   const authRateLimitMiddleware: Middleware = (ctx, next) => {
     const pathname = new URL(ctx.request.url).pathname;
     if (authLoginLimitPaths.has(pathname)) return authLoginRateLimit(ctx, next);
     if (authRefreshLimitPaths.has(pathname)) return authRefreshRateLimit(ctx, next);
+    if (
+      oauthProtocolLimitPaths.has(pathname) ||
+      (pathname.startsWith('/api/oauth/admin/applications/') && pathname.endsWith('/secret'))
+    )
+      return authRefreshRateLimit(ctx, next);
     return next();
   };
   app.use(authRateLimitMiddleware);

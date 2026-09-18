@@ -35,6 +35,7 @@
     "@ventostack/scheduler": "workspace:*",
     "@ventostack/file2md": "workspace:*",
     "@ventostack/ai": "workspace:*",
-    "@ventostack/ai-trace": "workspace:*"
+    "@ventostack/ai-trace": "workspace:*",
+    "@ventostack/oauth": "workspace:*"
   }
 }

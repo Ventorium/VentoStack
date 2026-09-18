@@ -12,13 +12,13 @@ import {
 import { getPasswordRules } from '@/utils/validators';
 import { Button, Checkbox, Divider, Form, Input, Modal } from 'antd';
 import type { OTPRef } from 'antd/es/input/Otp';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 
 const LoginPage = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const { login, completeMFALogin, passkeyLogin } = useAuth();
+  const { login, completeMFALogin, passkeyLogin, user } = useAuth();
   const siteName = usePublicConfig((s) => s.config.siteName);
   const passkeyEnabled = usePublicConfig((s) => s.config.passkeyEnabled);
   const registerEnabled = usePublicConfig((s) => s.config.registerEnabled);
@@ -40,6 +40,28 @@ const LoginPage = () => {
   const [mfaLoading, setMfaLoading] = useState(false);
   const [mfaCode, setMfaCode] = useState('');
   const inputRef = useRef<OTPRef>(null);
+  const oauthRequest = new URLSearchParams(location.search).get('oauth_request');
+
+  const completeNavigation = useCallback(() => {
+    if (oauthRequest) {
+      const formElement = document.createElement('form');
+      formElement.method = 'POST';
+      formElement.action = '/api/oauth/session/bootstrap';
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = 'request';
+      input.value = oauthRequest;
+      formElement.append(input);
+      document.body.append(formElement);
+      formElement.submit();
+      return;
+    }
+    navigate(resolvePostLoginTarget(location.state), { replace: true });
+  }, [location.state, navigate, oauthRequest]);
+
+  useEffect(() => {
+    if (user && oauthRequest) completeNavigation();
+  }, [user, oauthRequest, completeNavigation]);
 
   useEffect(() => {
     if (mfaInfo) {
@@ -73,7 +95,7 @@ const LoginPage = () => {
       if (user.mfaSetupRequired) {
         msg.warning('请尽快在个人中心设置多因素认证');
       }
-      navigate(resolvePostLoginTarget(location.state), { replace: true });
+      completeNavigation();
     } else if (result && 'code' in result && result.code === 'mfa_required') {
       setMfaInfo(result as MfaRequiredInfo);
     } else if (result && 'code' in result && result.code === 'password_expired') {
@@ -90,7 +112,7 @@ const LoginPage = () => {
       msg.success('登录成功');
       setMfaInfo(null);
       setMfaCode('');
-      navigate(resolvePostLoginTarget(location.state), { replace: true });
+      completeNavigation();
     } else {
       setMfaCode('');
       inputRef.current?.focus();
@@ -129,7 +151,7 @@ const LoginPage = () => {
     setPasskeyLoading(false);
     if (result && 'id' in result) {
       msg.success('登录成功');
-      navigate(resolvePostLoginTarget(location.state), { replace: true });
+      completeNavigation();
     }
   };
 
