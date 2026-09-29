@@ -1,53 +1,56 @@
-import { describe, expect, mock, test } from "bun:test";
-import { createLLMClient } from "../llm";
+import { afterEach, describe, expect, mock, test } from 'bun:test';
+import { createLLMClient } from '../llm';
 
-describe("createLLMClient", () => {
-  test("requires non-empty apiKey", () => {
-    expect(() => createLLMClient({ apiKey: "", model: "gpt-4" })).toThrow(
-      "LLM client requires a non-empty apiKey",
+describe('createLLMClient', () => {
+  // 保存原始 fetch，每个用例结束后恢复，避免 mock 泄漏污染同进程其他测试文件
+  const originalFetch = globalThis.fetch;
+  afterEach(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  test('requires non-empty apiKey', () => {
+    expect(() => createLLMClient({ apiKey: '', model: 'gpt-4' })).toThrow(
+      'LLM client requires a non-empty apiKey',
     );
-    expect(() => createLLMClient({ apiKey: "   ", model: "gpt-4" })).toThrow(
-      "LLM client requires a non-empty apiKey",
+    expect(() => createLLMClient({ apiKey: '   ', model: 'gpt-4' })).toThrow(
+      'LLM client requires a non-empty apiKey',
     );
   });
 
-  test("constructs request correctly", async () => {
+  test('constructs request correctly', async () => {
     const mockFetch = mock(async (url: string, init?: RequestInit) => {
-      expect(url).toContain("/chat/completions");
-      const body = JSON.parse((init?.body as string) ?? "{}");
-      expect(body.model).toBe("gpt-4");
+      expect(url).toContain('/chat/completions');
+      const body = JSON.parse((init?.body as string) ?? '{}');
+      expect(body.model).toBe('gpt-4');
       expect(body.messages).toHaveLength(1);
-      expect(body.messages[0]).toEqual({ role: "user", content: "Hello" });
+      expect(body.messages[0]).toEqual({ role: 'user', content: 'Hello' });
       expect(body.temperature).toBe(0.7);
 
       return new Response(
         JSON.stringify({
-          choices: [{ message: { content: "Hi there" } }],
+          choices: [{ message: { content: 'Hi there' } }],
         }),
-        { status: 200, headers: { "Content-Type": "application/json" } },
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
       );
     });
 
     globalThis.fetch = mockFetch;
 
-    const client = createLLMClient({ apiKey: "sk-test", model: "gpt-4" });
-    const response = await client.chat([{ role: "user", content: "Hello" }]);
-    expect(response).toBe("Hi there");
+    const client = createLLMClient({ apiKey: 'sk-test', model: 'gpt-4' });
+    const response = await client.chat([{ role: 'user', content: 'Hello' }]);
+    expect(response).toBe('Hi there');
     expect(mockFetch).toHaveBeenCalledTimes(1);
-
-    // Restore
-    globalThis.fetch = fetch;
   });
 
-  test("passes custom baseURL, temperature, maxTokens", async () => {
+  test('passes custom baseURL, temperature, maxTokens', async () => {
     const mockFetch = mock(async (_url: string, init?: RequestInit) => {
-      const body = JSON.parse((init?.body as string) ?? "{}");
+      const body = JSON.parse((init?.body as string) ?? '{}');
       expect(body.max_tokens).toBe(100);
       expect(body.temperature).toBe(0.2);
 
       return new Response(
         JSON.stringify({
-          choices: [{ message: { content: "OK" } }],
+          choices: [{ message: { content: 'OK' } }],
         }),
         { status: 200 },
       );
@@ -56,67 +59,59 @@ describe("createLLMClient", () => {
     globalThis.fetch = mockFetch;
 
     const client = createLLMClient({
-      apiKey: "sk-test",
-      model: "claude",
-      baseURL: "https://api.anthropic.com/v1",
+      apiKey: 'sk-test',
+      model: 'claude',
+      baseURL: 'https://api.anthropic.com/v1',
       temperature: 0.2,
       maxTokens: 100,
     });
 
-    await client.chat([{ role: "user", content: "Test" }]);
-
-    globalThis.fetch = fetch;
+    await client.chat([{ role: 'user', content: 'Test' }]);
   });
 
-  test("throws on API error", async () => {
+  test('throws on API error', async () => {
     const mockFetch = mock(async () => {
-      return new Response(JSON.stringify({ error: "invalid key" }), {
+      return new Response(JSON.stringify({ error: 'invalid key' }), {
         status: 401,
       });
     });
 
     globalThis.fetch = mockFetch;
 
-    const client = createLLMClient({ apiKey: "sk-bad", model: "gpt-4" });
-    await expect(client.chat([{ role: "user", content: "Hi" }])).rejects.toThrow("401");
-
-    globalThis.fetch = fetch;
+    const client = createLLMClient({ apiKey: 'sk-bad', model: 'gpt-4' });
+    await expect(client.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow('401');
   });
 
-  test("throws on timeout", async () => {
+  test('throws on timeout', async () => {
     const mockFetch = mock(async (_url, init) => {
       const signal = (init as RequestInit)?.signal;
       if (signal) {
         await new Promise<void>((_, reject) => {
-          signal.addEventListener("abort", () => reject(new Error("Aborted")));
+          signal.addEventListener('abort', () => reject(new Error('Aborted')));
         });
       }
-      return new Response("{}");
+      return new Response('{}');
     });
 
     globalThis.fetch = mockFetch;
 
     const client = createLLMClient({
-      apiKey: "sk-test",
-      model: "gpt-4",
+      apiKey: 'sk-test',
+      model: 'gpt-4',
       timeout: 10,
     });
 
-    await expect(client.chat([{ role: "user", content: "Hi" }])).rejects.toThrow("timed out");
-
-    globalThis.fetch = fetch;
+    await expect(client.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow('timed out');
   });
 
-  test("throws when response has no content", async () => {
+  test('throws when response has no content', async () => {
     const mockFetch = mock(async () => {
       return new Response(JSON.stringify({ choices: [{}] }), { status: 200 });
     });
 
     globalThis.fetch = mockFetch;
 
-    const client = createLLMClient({ apiKey: "sk-test", model: "gpt-4" });
-    await expect(client.chat([{ role: "user", content: "Hi" }])).rejects.toThrow("empty content");
-
-    globalThis.fetch = fetch;
+    const client = createLLMClient({ apiKey: 'sk-test', model: 'gpt-4' });
+    await expect(client.chat([{ role: 'user', content: 'Hi' }])).rejects.toThrow('empty content');
   });
 });
