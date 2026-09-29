@@ -1,5 +1,43 @@
 # @ventostack/ai
 
+## 0.2.0
+
+### Minor Changes
+
+- [`45f6875`](https://github.com/Ventorium/VentoStack/commit/45f687501196a36234b323ad827a3afd2a480319) Thanks [@erguotou520](https://github.com/erguotou520)! - Add token-authenticated Vento Agent Runtime integration, persistent per-Agent sandbox lifecycle, sandbox-bound terminal and file tools, and platform configuration support.
+
+### Patch Changes
+
+- [`bf00f3f`](https://github.com/Ventorium/VentoStack/commit/bf00f3fab47373f8c7d95025bcc8552bc8e35744) Thanks [@erguotou520](https://github.com/erguotou520)! - file2md 的主解析改为委托 @ventostack/file-parser（Rust napi）：doc/docx/ppt/pptx/xls/xlsx/odt/ods/odp/rtf/epub/csv/pdf/html/图片(OCR) 全部由 Rust 完成，移除手写解析器与 @llamaindex/liteparse 依赖；本地仅保留 ZIP 解包与文本（markdown/代码/结构化/纯文本）兜底。OCR 服务重定义为 PaddleOCR 连接配置（`createRemoteOCRService` 支持 `token` 展开为 `Authorization: bearer` 头），ai 侧知识库上传新增 `ocr_token` 配置键贯通到解析。
+
+- [`2d1aa08`](https://github.com/Ventorium/VentoStack/commit/2d1aa08485038145179fc6619ace9fefc77b6bda) Thanks [@erguotou520](https://github.com/erguotou520)! - fix: 安全加固与 RBAC 权限语义统一
+
+  安全修复：
+
+  - rate-limit 限流键优先取直接连接 IP，修复全局单桶可被 DoS 打挂
+  - 认证 Cookie Secure 支持 COOKIE_SECURE 环境变量（生产默认 true）
+  - OSS 上传增加扩展名/MIME 白名单与 magic bytes 校验，静态服务扩展名白名单
+  - Webhook 入站增加时间戳窗口 + nonce 去重（防重放）
+  - 日志脱敏改为包含匹配（覆盖 newPassword/oldPassword 变体）
+  - handleError 不再泄露内部错误，新增 safeErrorMessage
+  - 新增 TRUSTED_PROXIES 可信代理配置
+
+  功能修复：
+
+  - RBAC 权限调用统一为 perm("module:entity", "action")，种子权限同步
+  - 用户角色分配 roleIds 落库（assignUserRoles）
+  - workflow sequential 多审批人依次流转修复
+  - 通知消息删除端点；分布式锁改为原子 SET NX EX
+  - 批量操作数组上限、全局超时中间件（跳过 SSE）、CSV 公式注入防护
+
+- Updated dependencies [[`bf00f3f`](https://github.com/Ventorium/VentoStack/commit/bf00f3fab47373f8c7d95025bcc8552bc8e35744), [`2d1aa08`](https://github.com/Ventorium/VentoStack/commit/2d1aa08485038145179fc6619ace9fefc77b6bda)]:
+  - @ventostack/file2md@0.2.0
+  - @ventostack/cache@0.1.2
+  - @ventostack/core@0.1.2
+  - @ventostack/database@0.1.2
+  - @ventostack/events@0.1.2
+  - @ventostack/observability@0.1.2
+
 ## Unreleased
 
 ### Security Fixes

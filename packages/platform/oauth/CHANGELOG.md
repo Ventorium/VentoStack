@@ -1,6 +1,6 @@
-# @ventostack/auth
+# @ventostack/oauth
 
-## 0.1.2
+## 0.1.1
 
 ### Patch Changes
 
@@ -15,17 +15,8 @@
   - @ventostack/auth / integration / notification / openapi / scheduler：以修正后的依赖重新发布
 
 - Updated dependencies [[`2d1aa08`](https://github.com/Ventorium/VentoStack/commit/2d1aa08485038145179fc6619ace9fefc77b6bda)]:
-  - @ventostack/cache@0.1.2
   - @ventostack/core@0.1.2
   - @ventostack/database@0.1.2
-
-## 0.1.1
-
-### Patch Changes
-
-- [#1](https://github.com/Ventorium/VentoStack/pull/1) [`0b99c01`](https://github.com/Ventorium/VentoStack/commit/0b99c017d9b2c5c8a8090f677c26e89e66430d35) Thanks [@erguotou520](https://github.com/erguotou520)! - Prepare every framework and platform package for compiled npm distribution, document each
-  package, and add secure database-backed AI provider and model resolution.
-- Updated dependencies [[`0b99c01`](https://github.com/Ventorium/VentoStack/commit/0b99c017d9b2c5c8a8090f677c26e89e66430d35)]:
-  - @ventostack/cache@0.1.1
-  - @ventostack/core@0.1.1
-  - @ventostack/database@0.1.1
+  - @ventostack/oss@0.1.2
+  - @ventostack/system@0.1.2
+  - @ventostack/auth@0.1.2

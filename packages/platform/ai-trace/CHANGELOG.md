@@ -1,6 +1,6 @@
-# @ventostack/auth
+# @ventostack/ai-trace
 
-## 0.1.2
+## 0.1.1
 
 ### Patch Changes
 
@@ -14,18 +14,9 @@
   - @ventostack/ai-trace：首次公开发布（AI 问答链路追踪，订阅 ai 模块事件流）
   - @ventostack/auth / integration / notification / openapi / scheduler：以修正后的依赖重新发布
 
-- Updated dependencies [[`2d1aa08`](https://github.com/Ventorium/VentoStack/commit/2d1aa08485038145179fc6619ace9fefc77b6bda)]:
-  - @ventostack/cache@0.1.2
+- Updated dependencies [[`45f6875`](https://github.com/Ventorium/VentoStack/commit/45f687501196a36234b323ad827a3afd2a480319), [`bf00f3f`](https://github.com/Ventorium/VentoStack/commit/bf00f3fab47373f8c7d95025bcc8552bc8e35744), [`2d1aa08`](https://github.com/Ventorium/VentoStack/commit/2d1aa08485038145179fc6619ace9fefc77b6bda)]:
+  - @ventostack/ai@0.2.0
   - @ventostack/core@0.1.2
   - @ventostack/database@0.1.2
-
-## 0.1.1
-
-### Patch Changes
-
-- [#1](https://github.com/Ventorium/VentoStack/pull/1) [`0b99c01`](https://github.com/Ventorium/VentoStack/commit/0b99c017d9b2c5c8a8090f677c26e89e66430d35) Thanks [@erguotou520](https://github.com/erguotou520)! - Prepare every framework and platform package for compiled npm distribution, document each
-  package, and add secure database-backed AI provider and model resolution.
-- Updated dependencies [[`0b99c01`](https://github.com/Ventorium/VentoStack/commit/0b99c017d9b2c5c8a8090f677c26e89e66430d35)]:
-  - @ventostack/cache@0.1.1
-  - @ventostack/core@0.1.1
-  - @ventostack/database@0.1.1
+  - @ventostack/observability@0.1.2
+  - @ventostack/auth@0.1.2

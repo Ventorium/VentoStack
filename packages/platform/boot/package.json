@@ -1,6 +1,6 @@
 {
   "name": "@ventostack/boot",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "type": "module",
   "repository": {
     "type": "git",
@@ -34,8 +34,10 @@
     "@ventostack/oss": "workspace:*",
     "@ventostack/scheduler": "workspace:*",
     "@ventostack/file2md": "workspace:*",
-    "@ventostack/ai": "workspace:*",
-    "@ventostack/ai-trace": "workspace:*",
     "@ventostack/oauth": "workspace:*"
+  },
+  "optionalDependencies": {
+    "@ventostack/ai": "workspace:*",
+    "@ventostack/ai-trace": "workspace:*"
   }
 }

@@ -128,7 +128,9 @@ export function createOAuthTokenService(deps: {
    */
   async function revokeFamily(familyId: string, sessionId: string): Promise<void> {
     await deps.db.transaction(async (tx) => {
-      await tx.raw('UPDATE oauth_refresh_token SET revoked_at=NOW() WHERE family_id=$1', [familyId]);
+      await tx.raw('UPDATE oauth_refresh_token SET revoked_at=NOW() WHERE family_id=$1', [
+        familyId,
+      ]);
       await tx.raw('UPDATE oauth_client_session SET revoked_at=NOW() WHERE id=$1', [sessionId]);
       await tx.raw('UPDATE oauth_access_token SET revoked_at=NOW() WHERE client_session_id=$1', [
         sessionId,
@@ -280,7 +282,7 @@ export function createOAuthTokenService(deps: {
         return {
           kind: 'ok' as const,
           result: {
-            token_type: 'Bearer',
+            token_type: 'Bearer' as const,
             access_token: accessToken,
             expires_in: deps.accessTokenTtlSeconds,
             scope,

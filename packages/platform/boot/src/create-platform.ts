@@ -24,10 +24,6 @@ import { createDatabase } from '@ventostack/database';
 import type { EventBus } from '@ventostack/events';
 import type { AuditStore, HealthCheck } from '@ventostack/observability';
 
-import { createAIModule } from '@ventostack/ai';
-import type { AIModule, LLMProviderConfig } from '@ventostack/ai';
-import { createAiTraceModule } from '@ventostack/ai-trace';
-import type { AiTraceModule } from '@ventostack/ai-trace';
 import type { Scheduler } from '@ventostack/events';
 import { createGenModule } from '@ventostack/gen';
 import type { GenModule } from '@ventostack/gen';
@@ -37,16 +33,53 @@ import { createMonitorModule } from '@ventostack/monitor';
 import type { MonitorModule } from '@ventostack/monitor';
 import { createNotificationModule } from '@ventostack/notification';
 import type { NotificationModule, NotifyChannel } from '@ventostack/notification';
-import { createOSSModule } from '@ventostack/oss';
-import type { OSSModule, StorageAdapter } from '@ventostack/oss';
 import { createOAuthModule } from '@ventostack/oauth';
 import type { OAuthModule } from '@ventostack/oauth';
+import { createOSSModule } from '@ventostack/oss';
+import type { OSSModule, StorageAdapter } from '@ventostack/oss';
 import { createSchedulerModule } from '@ventostack/scheduler';
 import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
 import { createSystemModule } from '@ventostack/system';
 import type { SystemModule } from '@ventostack/system';
 import { createWorkflowModule, workflowInstanceCompleted } from '@ventostack/workflow';
 import type { WorkflowModule } from '@ventostack/workflow';
+
+// ---- AI 可选模块类型 ----
+//
+// @ventostack/ai 与 @ventostack/ai-trace 是 optionalDependencies：
+// 未启用 AI 的应用（如纯管理后台）不需要安装这两个包。
+// 因此 boot 不在顶层 import 它们，仅在 modules.ai === true 时动态加载，
+// 并以下列最小结构化类型描述其模块形状（结构兼容即可，无运行时依赖）。
+
+/** LLM Provider 配置（与 @ventostack/ai 的 LLMProviderConfig 结构兼容） */
+export interface LLMProviderConfig {
+  /** Provider 名称 */
+  name: string;
+  /** 线协议；Provider 名称与协议解耦，兼容聚合网关及私有 Provider。 */
+  apiFormat?: 'openai_chat' | 'openai_response' | 'anthropic' | 'google' | (string & {});
+  /** API Key */
+  apiKey: string;
+  /** 自定义 Base URL */
+  baseUrl?: string;
+  /** Provider 专用请求头。 */
+  headers?: Record<string, string>;
+}
+
+/** AI 模块最小结构（createAIModule 返回值，结构兼容即可） */
+export interface AIModule {
+  services: {
+    /** 事件发射器，供 ai-trace 订阅 */
+    eventEmitter: unknown;
+  };
+  router: Router;
+  init(): Promise<void>;
+}
+
+/** AI 链路追踪模块最小结构（createAiTraceModule 返回值，结构兼容即可） */
+export interface AiTraceModule {
+  router: Router;
+  init(): Promise<void>;
+}
 
 /** 平台配置 */
 export interface PlatformConfig {
@@ -179,6 +212,63 @@ export interface Platform {
 
 const bootLog = createTagLogger('boot');
 
+/** 动态加载可选 AI 模块（@ventostack/ai 未安装时给出明确指引） */
+async function loadAIModule(params: {
+  db: Database;
+  cache: Cache;
+  authMiddleware: ReturnType<typeof createAuthMiddleware>;
+  permMiddleware: ReturnType<typeof createPermMiddleware>;
+  eventBus: EventBus;
+  credentialEncryptionKey: string;
+  llmProviders: LLMProviderConfig[];
+  defaultModel: string;
+  storagePath: string;
+  agentRuntime?: { baseUrl: string; token: string; timeoutMs: number };
+}): Promise<AIModule> {
+  let factory: (deps: unknown) => AIModule;
+  try {
+    factory = (
+      (await import('@ventostack/ai')) as {
+        createAIModule: (deps: unknown) => AIModule;
+      }
+    ).createAIModule;
+  } catch (error) {
+    throw new Error(
+      `modules.ai 已启用但未安装 @ventostack/ai（可选依赖）。请安装该包，或将 modules.ai 设为 false。原始错误：${String(error)}`,
+    );
+  }
+  return factory({
+    ...params,
+    // framework/ai 不依赖 platform/auth：认证与权限中间件由平台组装层注入
+    credentialEncryptor: createConfigEncryptor({ key: params.credentialEncryptionKey }),
+  });
+}
+
+/** 动态加载可选 AI 链路追踪模块（@ventostack/ai-trace 未安装时给出明确指引） */
+async function loadAiTraceModule(params: {
+  db: Database;
+  emitter: unknown;
+  configProvider: unknown;
+  jwt: JWTManager;
+  jwtSecret: string;
+  rbac: RBAC;
+  tenantId: string;
+}): Promise<AiTraceModule> {
+  let factory: (deps: unknown) => AiTraceModule;
+  try {
+    factory = (
+      (await import('@ventostack/ai-trace')) as {
+        createAiTraceModule: (deps: unknown) => AiTraceModule;
+      }
+    ).createAiTraceModule;
+  } catch (error) {
+    throw new Error(
+      `modules.aiTrace 已启用但未安装 @ventostack/ai-trace（可选依赖）。请安装该包，或将 modules.aiTrace 设为 false。原始错误：${String(error)}`,
+    );
+  }
+  return factory(params);
+}
+
 /**
  * 创建完整的 VentoStack 平台
  */
@@ -268,29 +358,35 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   if (enabled.oauth && !system) {
     throw new Error('OAuth module requires the system module');
   }
-  if (enabled.oauth && (!config.oauthSecretPepper || !config.oauthIssuer || !config.oauthSigningKey)) {
-    throw new Error('OAuth pepper, issuer and RS256 signing key are required when OAuth is enabled');
+  if (
+    enabled.oauth &&
+    (!config.oauthSecretPepper || !config.oauthIssuer || !config.oauthSigningKey)
+  ) {
+    throw new Error(
+      'OAuth pepper, issuer and RS256 signing key are required when OAuth is enabled',
+    );
   }
   if (enabled.oauth && !storageAdapter) throw new Error('OAuth module requires a storage adapter');
-  const oauthMod = enabled.oauth && system
-    ? createOAuthModule({
-        db,
-        rbac,
-        authMiddleware: system.liveAuthMiddleware,
-        sessionManager,
-        storage: storageAdapter!,
-        platformAdminMiddleware: system.services.governance.adminOnlyMiddleware,
-        secretPepper: config.oauthSecretPepper!,
-        tenantId: normalizedTenantId,
-        issuer: config.oauthIssuer!,
-        loginPath: config.oauthLoginPath ?? '/auth/login',
-        secureCookies: secureCookies ?? false,
-        signingKey: config.oauthSigningKey!,
-        ...(config.oauthAllowLoopbackHttp !== undefined
-          ? { allowLoopbackHttp: config.oauthAllowLoopbackHttp }
-          : {}),
-      })
-    : undefined;
+  const oauthMod =
+    enabled.oauth && system
+      ? createOAuthModule({
+          db,
+          rbac,
+          authMiddleware: system.liveAuthMiddleware,
+          sessionManager,
+          storage: storageAdapter!,
+          platformAdminMiddleware: system.services.governance.adminOnlyMiddleware,
+          secretPepper: config.oauthSecretPepper!,
+          tenantId: normalizedTenantId,
+          issuer: config.oauthIssuer!,
+          loginPath: config.oauthLoginPath ?? '/auth/login',
+          secureCookies: secureCookies ?? false,
+          signingKey: config.oauthSigningKey!,
+          ...(config.oauthAllowLoopbackHttp !== undefined
+            ? { allowLoopbackHttp: config.oauthAllowLoopbackHttp }
+            : {}),
+        })
+      : undefined;
 
   const monitor = enabled.monitor
     ? createMonitorModule({
@@ -391,17 +487,18 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
+  // AI 模块：仅在实际启用时动态加载 @ventostack/ai / @ventostack/ai-trace。
+  // 这两个包是 optionalDependencies，未启用 AI 的应用不必安装；
+  // 动态 import 使未安装时不影响包解析与构建（bun build --packages=external 保留 import 语句，仅运行时触发）。
   const aiMod = enabled.ai
-    ? createAIModule({
+    ? await loadAIModule({
         db,
         cache,
         // framework/ai 不依赖 platform/auth：认证与权限中间件由平台组装层注入
         authMiddleware: createAuthMiddleware(jwt, jwtSecret, normalizedTenantId),
         permMiddleware: createPermMiddleware(rbac),
         eventBus,
-        credentialEncryptor: createConfigEncryptor({
-          key: config.aiConfig!.credentialEncryptionKey,
-        }),
+        credentialEncryptionKey: config.aiConfig!.credentialEncryptionKey,
         llmProviders: config.aiConfig?.llmProviders ?? [],
         defaultModel: config.aiConfig?.defaultModel ?? 'gpt-4o-mini',
         storagePath: config.aiConfig?.storagePath ?? './data/knowledge-bases',
@@ -412,7 +509,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   // AI 链路追踪：订阅 ai 模块事件流（system 须先创建以提供配置读取）
   const aiTraceMod =
     enabled.aiTrace && aiMod && system
-      ? createAiTraceModule({
+      ? await loadAiTraceModule({
           db,
           emitter: aiMod.services.eventEmitter,
           configProvider: system.services.config,

@@ -54,6 +54,12 @@ jobs:
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: bun run build
 
+      # changesets publish 固定走 npm publish，npm 不会重写 workspace:*，
+      # 发布前统一重写为实际版本，保证 npm 产物可被下游安装。
+      - name: Rewrite workspace dependencies for npm
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: bun run scripts/prepare-publish.ts
+
       - name: Publish packages
         if: steps.changesets.outputs.hasChangesets == 'false'
         run: bunx changeset publish
