@@ -34,16 +34,16 @@ jobs:
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
 
+      # 不显式设置 NODE_AUTH_TOKEN：配置了 registry-url 后 setup-node 默认注入
+      # GITHUB_TOKEN（JWT），npm 据此走 OIDC token exchange 发布（trusted publishing），
+      # CI 全程不需要任何 npm 凭据。全部 25 个 @ventostack/* 包均已配置
+      # trusted publisher（npm trust github --file release.yml --allow-publish），
+      # 新包名需先在本地用 npm 账号创建后才能配置 trust。
       - name: Setup Node.js
         uses: actions/setup-node@v5
         with:
           node-version: 24
           registry-url: https://registry.npmjs.org
-        env:
-          # repo 级 full-access NPM_TOKEN：bypass-2FA 的 GITHUB_TOKEN 派生凭据
-          # 无法在 @ventostack scope 下创建新包名（oauth/ai-trace 首版发布 E404），
-          # 配置了 NPM_TOKEN 后优先使用它；未配置时回退 GITHUB_TOKEN 行为不变。
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
