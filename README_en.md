@@ -274,7 +274,7 @@ fullstack/
     scheduler/        - Scheduled jobs
     workflow/         - Workflow engine
     integration/      - Third-party callback verification
-    ai-trace/         - AI Q&A trace
+    ai-context/       - AI context insight (per-request context composition)
   docs/               - Documentation sources
 ```
 

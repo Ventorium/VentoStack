@@ -15,7 +15,7 @@ describe("DefinitionService", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     const { db } = createMockDatabase(mockExec);
-    service = createDefinitionService({ db });
+    service = createDefinitionService({ db, tenantId: 'default' });
   });
 
   describe("create", () => {
@@ -104,6 +104,7 @@ describe("DefinitionService", () => {
 
   describe("saveGraph", () => {
     it("should delete old and insert new nodes/edges", async () => {
+      results.set("SELECT * FROM sys_workflow_definition WHERE id", [{ id: "d1" }]);
       await service.saveGraph("d1", {
         nodes: [{ id: "n1", name: "开始", type: "start", config: null }],
         edges: [{ id: "e1", source_node_id: "n1", target_node_id: "n2" }],
@@ -117,6 +118,7 @@ describe("DefinitionService", () => {
 
   describe("getGraph", () => {
     it("should return nodes and edges", async () => {
+      results.set("SELECT * FROM sys_workflow_definition WHERE id", [{ id: "d1" }]);
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
         { id: "n1", definition_id: "d1", name: "开始", type: "start", config: null, position_x: 0, position_y: 0, sort: 0 },
       ]);
@@ -129,6 +131,7 @@ describe("DefinitionService", () => {
 
   describe("validateGraphData", () => {
     it("should return valid for correct graph", async () => {
+      results.set("SELECT * FROM sys_workflow_definition WHERE id", [{ id: "d1" }]);
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", [
         { id: "n1", name: "开始", type: "start", config: null, position_x: 0, position_y: 0, sort: 0 },
         { id: "n2", name: "结束", type: "end", config: null, position_x: 200, position_y: 0, sort: 1 },
@@ -142,6 +145,7 @@ describe("DefinitionService", () => {
     });
 
     it("should return invalid when no nodes", async () => {
+      results.set("SELECT * FROM sys_workflow_definition WHERE id", [{ id: "d1" }]);
       results.set("SELECT * FROM sys_workflow_node WHERE definition_id", []);
       results.set("SELECT * FROM sys_workflow_edge WHERE definition_id", []);
       const result = await service.validateGraphData("d1");
@@ -161,7 +165,7 @@ describe("DefinitionService — additional", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     const { db } = createMockDatabase(mockExec);
-    service = createDefinitionService({ db });
+    service = createDefinitionService({ db, tenantId: 'default' });
   });
 
   describe("disable", () => {

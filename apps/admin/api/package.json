@@ -11,7 +11,7 @@
   },
   "dependencies": {
     "@ventostack/ai": "workspace:*",
-    "@ventostack/ai-trace": "workspace:*",
+    "@ventostack/ai-context": "workspace:*",
     "@ventostack/auth": "workspace:*",
     "@ventostack/boot": "workspace:*",
     "@ventostack/cache": "workspace:*",

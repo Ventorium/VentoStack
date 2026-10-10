@@ -7,7 +7,7 @@
 export { createPlatform } from './create-platform';
 export type {
   AIModule,
-  AiTraceModule,
+  AiContextModule,
   LLMProviderConfig,
   PlatformConfig,
   Platform,

@@ -496,6 +496,8 @@ export interface AgentItem {
   status: string;
   isPublic: boolean;
   requiresVirtualEnvironment: boolean;
+  /** 上下文采集开关（调试信息，仅管理员可在对话内查看） */
+  contextCollectionEnabled: boolean;
   sandboxStatus?: string;
   tenantId: string;
   createdBy: string;

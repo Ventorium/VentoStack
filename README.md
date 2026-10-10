@@ -16,7 +16,7 @@ VentoStack 是一个基于 Bun 运行时构建的全栈后端框架，专为高�
 
 ## 包总览（npm）
 
-VentoStack 的全部能力以 `@ventostack/*` 系列包发布到 npm，共 **24 个包**，分为「框架层」与「平台层」两层，可按需组合、按场景选包。框架层提供与业务无关的通用能力；平台层提供可直接组合的业务模块，由 `@ventostack/boot` 统一装配。
+VentoStack 的全部能力以 `@ventostack/*` 系列包发布到 npm，共 **25 个包**，分为「框架层」与「平台层」两层，可按需组合、按场景选包。框架层提供与业务无关的通用能力；平台层提供可直接组合的业务模块，由 `@ventostack/boot` 统一装配。
 
 ### 框架层（12 个）
 
@@ -54,7 +54,8 @@ VentoStack 的全部能力以 `@ventostack/*` 系列包发布到 npm，共 **24 
 | `@ventostack/scheduler` | 持久化定时任务、Cron 管理、执行日志、手动触发 | core, database, auth, events |
 | `@ventostack/workflow` | 流程定义与图校验、串行/会签/或签/比例审批、驳回/转交/加签/撤回 | core, database, auth, events |
 | `@ventostack/integration` | 第三方回调签名验证（Stripe/GitHub/DingTalk/Slack/Shopify/微信支付/支付宝） | webhook |
-| `@ventostack/ai-trace` | AI 问答链路追踪（订阅 ai 模块事件流，记录会话/追踪/配置） | core, database, observability, ai, auth |
+| `@ventostack/oauth` | OAuth2 / OIDC 认证中心（IdP/OP，Authorization Code + PKCE） | core, database, auth, cache |
+| `@ventostack/ai-context` | AI 上下文洞察（订阅 ai 模块事件流，记录每次请求的上下文构成） | core, database, observability, ai, auth |
 
 ### 按应用场景选包
 

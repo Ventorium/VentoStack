@@ -60,24 +60,31 @@ export interface InstanceDetail {
 
 export interface InstanceService {
   start(params: StartInstanceParams): Promise<{ instanceId: string }>;
-  getDetail(instanceId: string, tenantId?: string): Promise<InstanceDetail | null>;
-  listMy(userId: string, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>>;
-  withdraw(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void>;
-  cancel(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void>;
-  resubmit(instanceId: string, userId: string, formData: Record<string, unknown>, tenantId?: string): Promise<{ instanceId: string }>;
-  getHistory(instanceId: string, tenantId?: string): Promise<WorkflowHistory[]>;
-  listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>>;
+  getDetail(instanceId: string): Promise<InstanceDetail | null>;
+  listMy(userId: string, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>>;
+  withdraw(instanceId: string, userId: string, comment?: string): Promise<void>;
+  cancel(instanceId: string, userId: string, comment?: string): Promise<void>;
+  resubmit(instanceId: string, userId: string, formData: Record<string, unknown>): Promise<{ instanceId: string }>;
+  getHistory(instanceId: string): Promise<WorkflowHistory[]>;
+  listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>>;
 }
 
-export interface InstanceServiceDeps { db: Database; eventBus?: EventBus; assigneeResolver: AssigneeResolver }
+export interface InstanceServiceDeps {
+  db: Database;
+  eventBus?: EventBus;
+  assigneeResolver: AssigneeResolver;
+  /** 部署期绑定的租户 ID（必填，租户隔离 fail-closed） */
+  tenantId: string;
+}
 
 export function createInstanceService(deps: InstanceServiceDeps): InstanceService {
   const { db, eventBus, assigneeResolver } = deps;
-  const flowDeps: FlowActionDeps = { db, assigneeResolver };
+  const scopedTenantId = deps.tenantId;
+  const flowDeps: FlowActionDeps = { db, assigneeResolver, tenantId: scopedTenantId };
   if (eventBus) flowDeps.eventBus = eventBus;
 
   async function start(params: StartInstanceParams): Promise<{ instanceId: string }> {
-    const tenantId = params.tenantId ?? "default";
+    const tenantId = scopedTenantId;
     const def = await db.query(WorkflowDefModel)
       .where("id", "=", params.definitionId)
       .where("tenant_id", "=", tenantId)
@@ -127,9 +134,9 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     return { instanceId };
   }
 
-  async function getDetail(instanceId: string, tenantId?: string): Promise<InstanceDetail | null> {
+  async function getDetail(instanceId: string): Promise<InstanceDetail | null> {
     let instQuery = db.query(WorkflowInstanceModel).where("id", "=", instanceId);
-    if (tenantId) instQuery = instQuery.where("tenant_id", "=", tenantId);
+    instQuery = instQuery.where("tenant_id", "=", scopedTenantId);
     const inst = await instQuery
       .select("id", "definition_id", "definition_ver", "business_type", "business_id",
         "initiator_id", "title", "status", "form_data", "variables", "graph_snapshot",
@@ -141,15 +148,15 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     const tasks = await db.query(WorkflowTaskModel).where("instance_id", "=", instanceId)
       .select("id", "instance_id", "node_id", "assignee_id", "action", "comment", "status", "transfer_to", "acted_at", "created_at")
       .orderBy("created_at", "asc").list();
-    const history = await getHistory(instanceId, tenantId);
+    const history = await getHistory(instanceId);
 
     return { instance: mapInstance(inst), graph, tasks, history };
   }
 
-  async function listMy(userId: string, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>> {
-    const { page = 1, pageSize = 10, tenantId } = params ?? {};
+  async function listMy(userId: string, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>> {
+    const { page = 1, pageSize = 10 } = params ?? {};
     let q = db.query(WorkflowInstanceModel).where("initiator_id", "=", userId);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const total = await q.count();
     const rows = await q.select("id", "definition_id", "definition_ver", "business_type", "business_id",
       "initiator_id", "title", "status", "form_data", "variables", "resubmit_of", "tenant_id",
@@ -158,10 +165,10 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     return { items: rows.map(mapInstance), total, page, pageSize };
   }
 
-  async function withdraw(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void> {
+  async function withdraw(instanceId: string, userId: string, comment?: string): Promise<void> {
     await db.transaction(async (tx) => {
       let instQuery = tx.query(WorkflowInstanceModel).where("id", "=", instanceId);
-      if (tenantId) instQuery = instQuery.where("tenant_id", "=", tenantId);
+      instQuery = instQuery.where("tenant_id", "=", scopedTenantId);
       const inst = await instQuery
         .select("id", "initiator_id", "status").get();
       if (!inst) throw workflowErrors.instanceNotFound();
@@ -177,15 +184,15 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
         [TaskStatus.VOIDED, instanceId, TaskStatus.PENDING]);
       await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .update({ status: InstanceStatus.WITHDRAWN, ended_at: new Date() });
-      await insertHistory(tx, instanceId, null, null, userId, "withdraw", comment ?? "发起人撤回", tenantId);
+      await insertHistory(tx, instanceId, null, null, userId, "withdraw", comment ?? "发起人撤回", scopedTenantId);
     });
     eventBus?.emit(workflowInstanceWithdrawn, { instanceId, withdrawnBy: userId });
   }
 
-  async function cancel(instanceId: string, userId: string, comment?: string, tenantId?: string): Promise<void> {
+  async function cancel(instanceId: string, userId: string, comment?: string): Promise<void> {
     await db.transaction(async (tx) => {
       let instQuery = tx.query(WorkflowInstanceModel).where("id", "=", instanceId);
-      if (tenantId) instQuery = instQuery.where("tenant_id", "=", tenantId);
+      instQuery = instQuery.where("tenant_id", "=", scopedTenantId);
       const inst = await instQuery
         .select("id", "status").get();
       if (!inst) throw workflowErrors.instanceNotFound();
@@ -195,13 +202,13 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
         [TaskStatus.VOIDED, instanceId, TaskStatus.PENDING]);
       await tx.query(WorkflowInstanceModel).where("id", "=", instanceId)
         .update({ status: InstanceStatus.CANCELLED, ended_at: new Date() });
-      await insertHistory(tx, instanceId, null, null, userId, "cancel", comment ?? "管理员终止", tenantId);
+      await insertHistory(tx, instanceId, null, null, userId, "cancel", comment ?? "管理员终止", scopedTenantId);
     });
   }
 
-  async function resubmit(instanceId: string, userId: string, formData: Record<string, unknown>, tenantId?: string): Promise<{ instanceId: string }> {
+  async function resubmit(instanceId: string, userId: string, formData: Record<string, unknown>): Promise<{ instanceId: string }> {
     let q = db.query(WorkflowInstanceModel).where("id", "=", instanceId);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const original = await q
       .select("id", "definition_id", "business_type", "business_id", "title", "status", "initiator_id", "tenant_id").get();
     if (!original) throw workflowErrors.instanceNotFound();
@@ -212,7 +219,7 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     const startParams: StartInstanceParams = {
       definitionId: original.definition_id, initiatorId: userId,
       formData, resubmitOf: instanceId,
-      tenantId: (original.tenant_id as string | null) ?? tenantId ?? "default",
+      tenantId: (original.tenant_id as string | null) ?? scopedTenantId,
     };
     if (original.business_type) startParams.businessType = original.business_type as string;
     if (original.business_id) startParams.businessId = original.business_id as string;
@@ -220,20 +227,20 @@ export function createInstanceService(deps: InstanceServiceDeps): InstanceServic
     return start(startParams);
   }
 
-  async function getHistory(instanceId: string, tenantId?: string): Promise<WorkflowHistory[]> {
+  async function getHistory(instanceId: string): Promise<WorkflowHistory[]> {
     let q = db.query(WorkflowHistoryModel).where("instance_id", "=", instanceId);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const rows = await q
       .select("id", "instance_id", "node_id", "task_id", "operator_id", "action", "comment", "tenant_id", "created_at")
       .orderBy("created_at", "asc").list();
     return rows.map(mapHistory);
   }
 
-  async function listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams & { tenantId?: string }): Promise<PaginatedResult<WorkflowInstance>> {
-    const { page = 1, pageSize = 10, tenantId } = params ?? {};
+  async function listByBusiness(businessType: string, businessId: string | undefined, params?: PageParams): Promise<PaginatedResult<WorkflowInstance>> {
+    const { page = 1, pageSize = 10 } = params ?? {};
     let q = db.query(WorkflowInstanceModel).where("business_type", "=", businessType);
     if (businessId) q = q.where("business_id", "=", businessId);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const total = await q.count();
     const rows = await q
       .select("id", "definition_id", "definition_ver", "business_type", "business_id", "initiator_id", "title", "status", "form_data", "variables", "resubmit_of", "tenant_id", "started_at", "ended_at", "created_at")

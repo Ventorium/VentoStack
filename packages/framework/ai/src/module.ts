@@ -636,6 +636,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           ...extractAgentConfigExtras(item.config),
           tenantId: item.tenantId,
           requiresVirtualEnvironment: item.requiresVirtualEnvironment,
+          // 采集开关随详情一并返回，编辑弹窗据此回填（默认关闭）
+          contextCollectionEnabled: item.contextCollectionEnabled ?? false,
           ...(item.sandboxStatus ? { sandboxStatus: item.sandboxStatus } : {}),
         };
       }),

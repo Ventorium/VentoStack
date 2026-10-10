@@ -54,7 +54,6 @@ const PROTECTED_KEYS = [
   'sys_mfa_force',
   'sys_passkey_enabled',
   'sys_register_enabled',
-  'ai_trace_enabled',
 ];
 
 export function isProtectedConfigKey(key: string): boolean {
@@ -67,7 +66,6 @@ const BOOLEAN_CONFIG_KEYS = new Set([
   'sys_mfa_force',
   'sys_passkey_enabled',
   'sys_register_enabled',
-  'ai_trace_enabled',
 ]);
 
 /** 系统预设参数的值域校验，避免错误文本导致安全开关被意外放开或失效。 */

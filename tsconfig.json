@@ -93,11 +93,11 @@
       "@ventostack/ai/*": [
         "./packages/framework/ai/src/*"
       ],
-      "@ventostack/ai-trace": [
-        "./packages/platform/ai-trace/src/index.ts"
+      "@ventostack/ai-context": [
+        "./packages/platform/ai-context/src/index.ts"
       ],
-      "@ventostack/ai-trace/*": [
-        "./packages/platform/ai-trace/src/*"
+      "@ventostack/ai-context/*": [
+        "./packages/platform/ai-context/src/*"
       ],
       "@ventostack/file2md": [
         "./packages/framework/file2md/src/index.ts"

@@ -20,7 +20,11 @@ describe("Workflow E2E Integration", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    service = createWorkflowService({ db });
+    // tenantId 是必填依赖：租户隔离要求 fail-closed（见 CLAUDE.md §5.2/§16）
+    service = createWorkflowService({ db, tenantId: "default" });
+    // 流程定义按 tenant_id 归属，saveGraph/getGraph 等会先做租户归属校验；
+    // 这里给一个默认命中，需要"不存在"的用例自行覆盖该 pattern。
+    results.set("SELECT * FROM sys_workflow_definition WHERE id", [{ id: "def-1", status: 1 }]);
   });
 
   describe("full lifecycle: define → publish → start → approve → complete", () => {

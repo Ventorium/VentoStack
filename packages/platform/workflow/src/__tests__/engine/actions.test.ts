@@ -151,7 +151,7 @@ describe('actions.ts', () => {
           tenant_id: 'default',
         },
       ]);
-      await completeInstance(db, 'inst-1', 'u1');
+      await completeInstance(db, 'inst-1', 'u1', 'default');
       expect(calls.some((c) => c.text.includes('UPDATE sys_workflow_instance SET'))).toBe(true);
       expect(calls.some((c) => c.text.includes('INSERT INTO sys_workflow_history'))).toBe(true);
     });
@@ -172,7 +172,7 @@ describe('actions.ts', () => {
           emitted = d;
         },
       } as any;
-      await completeInstance(db, 'inst-1', 'u1', eventBus);
+      await completeInstance(db, 'inst-1', 'u1', 'default', eventBus);
       expect(emitted).toEqual({
         instanceId: 'inst-1',
         businessType: 'notice',
@@ -184,7 +184,7 @@ describe('actions.ts', () => {
 
     it('should be idempotent — skip if not RUNNING', async () => {
       results.set('SELECT * FROM sys_workflow_instance WHERE id', [{ id: 'inst-1', status: 1 }]); // COMPLETED
-      await completeInstance(db, 'inst-1', 'u1');
+      await completeInstance(db, 'inst-1', 'u1', 'default');
       // 不应执行 UPDATE
       expect(calls.some((c) => c.text.includes('UPDATE sys_workflow_instance SET'))).toBe(false);
     });

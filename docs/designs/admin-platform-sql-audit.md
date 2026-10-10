@@ -19,19 +19,19 @@
 | 12 | `workflow/src/engine/assignee.ts` |
 | 10 | `system/src/module.ts` |
 | 8 | `workflow/src/services/task.ts` |
-| 8 | `ai-trace/src/services/trace-store.ts` |
+| 8 | `ai-context/src/services/context-store.ts` |
 | 6 | `notification/src/services/notification.ts` |
 | 5 | `system/src/services/user.ts` |
 | 5 | `system/src/services/notice.ts` |
 | 4 | `workflow/src/services/definition.ts` |
 | 4 | `scheduler/src/services/scheduler.ts` |
-| 4 | `ai-trace/src/services/trace-queries.ts` |
+| 4 | `ai-context/src/services/context-queries.ts` |
 | 2 | `workflow/src/services/instance.ts` |
 | 2 | `workflow/src/engine/actions.ts` |
 | 2 | `system/src/services/tag.ts` |
 | 2 | `monitor/src/services/monitor.ts` |
 | 2 | `i18n/src/services/i18n.ts` |
-| 2 | `ai-trace/src/services/trace-config.ts` |
+| 2 | `ai-context/src/services/context-config.ts` |
 | 1 | `system/src/services/auth.ts` |
 
 ## ORM 能力路线

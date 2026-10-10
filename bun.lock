@@ -17,7 +17,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@ventostack/ai": "workspace:*",
-        "@ventostack/ai-trace": "workspace:*",
+        "@ventostack/ai-context": "workspace:*",
         "@ventostack/auth": "workspace:*",
         "@ventostack/boot": "workspace:*",
         "@ventostack/cache": "workspace:*",
@@ -256,9 +256,9 @@
         "@types/bun": "latest",
       },
     },
-    "packages/platform/ai-trace": {
-      "name": "@ventostack/ai-trace",
-      "version": "0.1.1",
+    "packages/platform/ai-context": {
+      "name": "@ventostack/ai-context",
+      "version": "0.1.0",
       "dependencies": {
         "@ventostack/ai": "workspace:*",
         "@ventostack/auth": "workspace:*",
@@ -305,7 +305,7 @@
       },
       "optionalDependencies": {
         "@ventostack/ai": "workspace:*",
-        "@ventostack/ai-trace": "workspace:*",
+        "@ventostack/ai-context": "workspace:*",
       },
     },
     "packages/platform/gen": {
@@ -1403,7 +1403,7 @@
 
     "@ventostack/ai": ["@ventostack/ai@workspace:packages/framework/ai"],
 
-    "@ventostack/ai-trace": ["@ventostack/ai-trace@workspace:packages/platform/ai-trace"],
+    "@ventostack/ai-context": ["@ventostack/ai-context@workspace:packages/platform/ai-context"],
 
     "@ventostack/auth": ["@ventostack/auth@workspace:packages/platform/auth"],
 
@@ -2953,8 +2953,6 @@
 
     "@ventostack/oauth-bff-example/bun-types": ["bun-types@1.4.2", "", { "dependencies": { "@types/node": "*" } }, "sha512-bxV1FgK7yBIzjRe5zBozIM4Bem11ZJcCXSrjWRG3YWLt8yFDePu4cLjpebO8OvPeIE9trbyPF4fuj3Cia4Fj3w=="],
 
-    "@ventostack/vite-bridge/@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
-
     "@ventostack/webhook/@types/bun": ["@types/bun@1.4.0", "", { "dependencies": { "bun-types": "1.4.0" } }, "sha512-K+lZULY23vRgK/CfTjFIV+tyifaNdSMlPh9j+6mQ/cLfpOznLyAuzgV/JQysyECpkBQLVMSyvjlr2fBUSA9wFQ=="],
 
     "@vue/compiler-sfc/postcss": ["postcss@8.5.15", "", { "dependencies": { "nanoid": "^3.3.12", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-FfR8sjd4em2T6fb3I2MwAJU7HWVMr9zba+enmQeeWFfCbm+UOC/0X4DS8XtpUTMwWMGbjKYP7xjfNekzyGmB3A=="],
@@ -3054,8 +3052,6 @@
     "@expressive-code/plugin-shiki/shiki/@shikijs/types": ["@shikijs/types@3.23.0", "", { "dependencies": { "@shikijs/vscode-textmate": "^10.0.2", "@types/hast": "^3.0.4" } }, "sha512-3JZ5HXOZfYjsYSk0yPwBrkupyYSLpAE26Qc0HLghhZNGTZg/SKxXIIgoxOpmmeQP0RRSDJTk1/vPfw9tbw+jSQ=="],
 
     "@ventostack/cli/@types/bun/bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
-
-    "@ventostack/vite-bridge/@types/bun/bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
 
     "@ventostack/webhook/@types/bun/bun-types": ["bun-types@1.4.0", "", { "dependencies": { "@types/node": "*" } }, "sha512-iIKw23BspnQQYd3prITOBxeUsxBHnwzX6YJfGMuNOZzeNcMmVqzIIVGRm1l69ogaPQmb4wB6BN8mA5bE9YuC5Q=="],
 

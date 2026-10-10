@@ -145,6 +145,10 @@ export default defineConfig({
           autogenerate: { directory: 'framework/webhook' }
         },
         {
+          label: 'Vite Bridge',
+          autogenerate: { directory: 'framework/vite-bridge' }
+        },
+        {
           label: 'CLI 工具',
           autogenerate: { directory: 'framework/cli' }
         },
@@ -175,8 +179,8 @@ export default defineConfig({
           autogenerate: { directory: 'platform/scheduler' }
         },
         {
-          label: 'AI 链路追踪',
-          autogenerate: { directory: 'platform/ai-trace' }
+          label: 'AI 上下文洞察',
+          autogenerate: { directory: 'platform/ai-context' }
         },
         {
           label: '代码生成',

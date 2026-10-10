@@ -4,6 +4,7 @@ import {
   DatabaseOutlined,
   DownOutlined,
   FileOutlined,
+  NodeIndexOutlined,
   PlusOutlined,
   RobotOutlined,
   SoundOutlined,
@@ -21,6 +22,8 @@ interface BottomTab {
   label: string;
   icon: React.ReactNode;
   count?: number;
+  /** 仅管理员可见的页签（上下文洞察属调试信息） */
+  adminOnly?: boolean;
 }
 
 interface WorkspaceFile {
@@ -41,6 +44,8 @@ interface BottomInputProps {
   onModelChange?: (model: ModelOption) => void;
   contextUsage?: { used: number; total: number };
   workspaceFiles?: WorkspaceFile[];
+  /** 当前账号是否可查看上下文洞察（仅管理员） */
+  canViewContext?: boolean;
   attachments?: Array<{ path: string; name: string }>;
   uploadingAttachment?: boolean;
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -60,6 +65,8 @@ const BOTTOM_TABS: BottomTab[] = [
   { key: 'files', label: '文件', icon: <FileOutlined /> },
   { key: 'memory', label: '记忆', icon: <DatabaseOutlined /> },
   { key: 'knowledge', label: '知识库', icon: <DatabaseOutlined /> },
+  // 上下文构成属调试信息，仅管理员暴露该页签
+  { key: 'context', label: '上下文', icon: <NodeIndexOutlined />, adminOnly: true },
 ];
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -107,6 +114,7 @@ export default function BottomInput({
   onModelChange,
   contextUsage,
   workspaceFiles = [],
+  canViewContext = false,
   attachments = [],
   uploadingAttachment = false,
   thinkingLevel = 'off',
@@ -215,7 +223,7 @@ export default function BottomInput({
             onTabChange?.(key);
           }}
           size="small"
-          items={BOTTOM_TABS.map((tab) => ({
+          items={BOTTOM_TABS.filter((tab) => !tab.adminOnly || canViewContext).map((tab) => ({
             key: tab.key,
             label: (
               <Space size={4}>

@@ -32,7 +32,7 @@ describe("AssigneeResolver", () => {
     const mockExec = createMockExecutor();
     ({ results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    resolver = createAssigneeResolver({ db });
+    resolver = createAssigneeResolver({ db, tenantId: 'default' });
   });
 
   describe("mode: fixed", () => {

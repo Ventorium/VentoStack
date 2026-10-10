@@ -328,17 +328,33 @@ VentoStack 是基于 Bun 运行时构建的全栈框架，但当前研发重心�
 ```
 fullstack/
 ├── packages/
-│   ├── core/
-│   ├── database/
-│   ├── cache/
-│   ├── auth/
-│   ├── events/
-│   ├── observability/
-│   ├── openapi/
-│   ├── ai/
-│   ├── file2md/
-│   ├── cli/
-│   └── testing/
+│   ├── framework/     ← 自研框架层（core/database/cache/events/observability/openapi/webhook/vite-bridge/cli/testing/ai/file2md）
+│   │   ├── core/               ← 路由/中间件/Context/生命周期/配置/安全中间件 (102 files)
+│   │   ├── database/           ← 链式查询构建器/迁移/事务/连接池 (27 files)
+│   │   ├── cache/              ← Redis 封装/内存适配器 (16 files)
+│   │   ├── events/             ← 事件总线/消息队列/调度器 (25 files)
+│   │   ├── observability/      ← 日志/指标/链路追踪/健康检查/审计 (36 files)
+│   │   ├── openapi/            ← OpenAPI 3.1 文档生成 + 请求校验 (22 files)
+│   │   ├── webhook/            ← Webhook 入站/出站/签名校验 (8 files)
+│   │   ├── vite-bridge/        ← 后端与 Vite 开发服务器桥接（全栈本地开发）(6 files)
+│   │   ├── testing/            ← 测试工具/Mock/测试应用封装 (15 files)
+│   │   ├── cli/                ← 脚手架/构建/迁移/生成命令 (12 files)
+│   │   ├── ai/                 ← AI 引擎（Agent Loop/LLM 网关/Tool/MCP/Session/Memory/Skill/RAG）(197 files)
+│   │   └── file2md/            ← 文件转 Markdown（docx/pdf/xlsx/pptx/epub/html 等）(65 files)
+│   ├── platform/      ← 业务平台层（依赖 framework）
+│   │   ├── auth/               ← JWT/RBAC/ABAC/TOTP/OAuth/Session/Token 吊销 (31 files)
+│   │   ├── system/             ← 用户/角色/菜单/部门/岗位/字典/配置/公告 (59 files)
+│   │   ├── boot/               ← createPlatform() 聚合器 (3 files)
+│   │   ├── gen/                ← 代码生成（表导入/模板渲染）(16 files)
+│   │   ├── i18n/               ← 国际化（语言包/运行时翻译）(12 files)
+│   │   ├── monitor/            ← 服务器/缓存/健康监控 (8 files)
+│   │   ├── notification/       ← 通知（站内信/SMTP/SMS/Webhook）(18 files)
+│   │   ├── oss/                ← 对象存储（本地/S3）(17 files)
+│   │   ├── scheduler/          ← 定时任务管理 (11 files)
+│   │   ├── workflow/           ← 工作流（状态机/审批链）(38 files)
+│   │   ├── integration/        ← 第三方集成（Webhook 入站验签）(15 files)
+│   │   ├── oauth/              ← OAuth2/OIDC 认证中心（IdP/OP，Authorization Code + PKCE）(49 files)
+│   │   └── ai-context/         ← AI 上下文洞察（订阅 ai 模块事件流，记录每次请求的上下文构成）(22 files)
 ├── apps/
 │   └── example/
 ├── docs/
@@ -445,14 +461,16 @@ VentoStack/
 │   ├── oss/                ← 对象存储（本地/S3）(17 files)
 │   ├── scheduler/          ← 定时任务管理 (11 files)
 │   ├── workflow/           ← 工作流（状态机/审批链）(38 files)
-│   ├── integration/        ← 第三方集成 (15 files)
-│   └── ai-trace/           ← AI 问答链路追踪（订阅 ai 模块事件流）(21 files)
+│   ├── integration/        ← 第三方集成（Webhook 入站验签）(15 files)
+│   ├── oauth/              ← OAuth2/OIDC 认证中心（IdP/OP，Authorization Code + PKCE）(49 files)
+│   └── ai-context/         ← AI 上下文洞察（订阅 ai 模块事件流，记录每次请求的上下文构成）(22 files)
 │
 ├── apps/
 │   ├── admin/api/          ← 管理后台后端（Composition Root 模式）
 │   ├── admin/web/          ← 管理后台前端（React + Ant Design + Zustand）
 │   ├── docs/               ← 文档站（Astro Starlight → Cloudflare）
-│   └── example/            ← 示例应用
+│   ├── example/            ← 示例应用（框架用法示范）
+│   └── oauth-bff-example/  ← OAuth BFF 接入示例（OIDC + PKCE + RS256 验签）
 │
 ├── docs/                   ← 需求文档/设计文档/路线图
 │   ├── specs/              ← 原始需求规格
@@ -558,8 +576,9 @@ const { error, data } = await client.get('/api/system/users', { query: cleanPara
 
 ## 18. Test Status
 
-- **3540 tests, 0 failures** (100% pass rate)
-- 框架层: 204 test files, 平台层: 61 test files, 示例: 6 test files, 前端: 23 test files, admin/api: 0（待补）
+- **3797 tests, 0 failures** (100% pass rate，328 test files)
+- 框架层: 204 test files, 平台层: 77 test files, 示例: 6 test files, 前端: 3 test files
+- admin/api: 7 test files（均为 migration 测试，HTTP 集成测试仍待补）
 - Mock Database: 平台模块测试使用 `createMockDatabase(mockExec)` 创建 mock db
 - 测试 helper 中的 executor 支持灵活 SQL 模式匹配（精确匹配 + 表名模糊匹配）
 
@@ -673,7 +692,7 @@ notifyChannels: new Map([
 
 | 优先级 | 项目 | 状态 |
 |--------|------|------|
-| ~~P0~~ | ~~修复 140 个失败测试~~ | ✅ 已修复（3540/3540 通过） |
+| ~~P0~~ | ~~修复 140 个失败测试~~ | ✅ 已固定（3797/3797 通过） |
 | ~~P1~~ | ~~Dockerfile + docker-compose~~ | ✅ 已添加 |
 | P2 | 前端 `types.ts` 手写接口 → OpenAPI 自动生成 | 待处理 |
 | P2 | `schema.ts` 中 `any` 类型优化 | 待处理 |

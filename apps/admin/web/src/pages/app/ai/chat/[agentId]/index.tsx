@@ -12,6 +12,8 @@ import ChatArea from '../components/ChatArea';
 import FilesPanel from '../components/FilesPanel';
 import KnowledgePanel from '../components/KnowledgePanel';
 import MemoryPanel from '../components/MemoryPanel';
+import ContextPanel from '../components/ContextPanel';
+import { useAuth } from '@/store/useAuth';
 import type { RunMode } from '../components/RunModeSelect';
 import ThreadList from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
@@ -168,6 +170,8 @@ function AgentConversation(): React.ReactElement {
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState('chat');
+  // 上下文洞察属调试信息：仅超管角色暴露该页签（后端同样按角色门禁兜底）
+  const canViewContext = useAuth((s) => s.user?.roles?.includes('admin') ?? false);
   const [currentModel, setCurrentModel] = useState<ModelOption>(FALLBACK_MODEL);
   const [dbModels, setDbModels] = useState<ModelOption[]>([]);
   const [sessionId, setSessionId] = useState<string | undefined>();
@@ -1464,6 +1468,11 @@ function AgentConversation(): React.ReactElement {
                 <MemoryPanel sessionId={sessionId} />
               </div>
             )}
+            {activeTab === 'context' && canViewContext && (
+              <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
+                <ContextPanel sessionId={sessionId} />
+              </div>
+            )}
             {activeTab === 'knowledge' && (
               <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
                 <KnowledgePanel
@@ -1478,6 +1487,7 @@ function AgentConversation(): React.ReactElement {
           <BottomInput
             activeTab={activeTab}
             onTabChange={setActiveTab}
+            canViewContext={canViewContext}
             onSend={handleSend}
             onStop={handleStop}
             loading={loading}

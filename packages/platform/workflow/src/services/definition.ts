@@ -31,26 +31,27 @@ export interface UpdateDefParams {
   formConfig?: Record<string, unknown>; settings?: Record<string, unknown>;
 }
 
-export interface ListDefParams { status?: number; category?: string; businessType?: string; name?: string; tenantId?: string; page?: number; pageSize?: number }
+export interface ListDefParams { status?: number; category?: string; businessType?: string; name?: string; page?: number; pageSize?: number }
 export interface PaginatedResult<T> { items: T[]; total: number; page: number; pageSize: number }
 
 export interface DefinitionService {
   create(params: CreateDefParams): Promise<{ id: string }>;
-  update(id: string, params: UpdateDefParams, tenantId?: string): Promise<void>;
-  delete(id: string, tenantId?: string): Promise<void>;
-  getById(id: string, tenantId?: string): Promise<WorkflowDefinition | null>;
-  getByBusinessType(businessType: string, tenantId?: string): Promise<WorkflowDefinition | null>;
+  update(id: string, params: UpdateDefParams): Promise<void>;
+  delete(id: string): Promise<void>;
+  getById(id: string): Promise<WorkflowDefinition | null>;
+  getByBusinessType(businessType: string): Promise<WorkflowDefinition | null>;
   list(params?: ListDefParams): Promise<PaginatedResult<WorkflowDefinition>>;
-  publish(id: string, tenantId?: string): Promise<void>;
-  disable(id: string, tenantId?: string): Promise<void>;
-  clone(id: string, tenantId?: string): Promise<{ id: string }>;
-  saveGraph(defId: string, graph: { nodes: GraphNodeData[]; edges: GraphEdgeData[] }, tenantId?: string): Promise<void>;
-  getGraph(defId: string, tenantId?: string): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }>;
-  validateGraphData(defId: string, tenantId?: string): Promise<{ valid: boolean; errors: string[] }>;
+  publish(id: string): Promise<void>;
+  disable(id: string): Promise<void>;
+  clone(id: string): Promise<{ id: string }>;
+  saveGraph(defId: string, graph: { nodes: GraphNodeData[]; edges: GraphEdgeData[] }): Promise<void>;
+  getGraph(defId: string): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }>;
+  validateGraphData(defId: string): Promise<{ valid: boolean; errors: string[] }>;
 }
 
-export function createDefinitionService(deps: { db: Database }): DefinitionService {
+export function createDefinitionService(deps: { db: Database; tenantId: string }): DefinitionService {
   const { db } = deps;
+  const scopedTenantId = deps.tenantId;
 
   async function create(params: CreateDefParams): Promise<{ id: string }> {
     const id = crypto.randomUUID();
@@ -60,12 +61,12 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
       business_type: params.businessType ?? null,
       form_config: params.formConfig ?? null,
       settings: params.settings ?? null,
-      status: DefStatus.DRAFT, created_by: params.createdBy ?? null, tenant_id: params.tenantId ?? null,
+      status: DefStatus.DRAFT, created_by: params.createdBy ?? null, tenant_id: scopedTenantId,
     });
     return { id };
   }
 
-  async function update(id: string, params: UpdateDefParams, tenantId?: string): Promise<void> {
+  async function update(id: string, params: UpdateDefParams): Promise<void> {
     const updates: Record<string, unknown> = {};
     if (params.name !== undefined) updates.name = params.name;
     if (params.description !== undefined) updates.description = params.description;
@@ -75,29 +76,29 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     if (params.settings !== undefined) updates.settings = params.settings;
     if (Object.keys(updates).length === 0) return;
     let q = db.query(WorkflowDefModel).where("id", "=", id);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     await q.update(updates);
   }
 
-  async function deleteDef(id: string, tenantId?: string): Promise<void> {
-    await ensureDefinitionTenant(id, tenantId);
+  async function deleteDef(id: string): Promise<void> {
+    await ensureDefinitionTenant(id);
     await cascadeDeleteDefinition(db, id);
   }
 
-  async function getById(id: string, tenantId?: string): Promise<WorkflowDefinition | null> {
+  async function getById(id: string): Promise<WorkflowDefinition | null> {
     let q = db.query(WorkflowDefModel).where("id", "=", id);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const row = await q
       .select("id", "name", "code", "version", "description", "category", "business_type", "status", "created_by", "tenant_id", "created_at")
       .get();
     return row ? mapDefinition(row) : null;
   }
 
-  async function getByBusinessType(businessType: string, tenantId?: string): Promise<WorkflowDefinition | null> {
+  async function getByBusinessType(businessType: string): Promise<WorkflowDefinition | null> {
     let q = db.query(WorkflowDefModel)
       .where("business_type", "=", businessType)
       .where("status", "=", DefStatus.ACTIVE);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const row = await q
       .select("id", "name", "code", "version", "description", "category", "business_type", "status", "created_by", "tenant_id", "created_at")
       .orderBy("version", "desc")
@@ -106,13 +107,13 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
   }
 
   async function list(params?: ListDefParams): Promise<PaginatedResult<WorkflowDefinition>> {
-    const { status, category, businessType, name, tenantId, page = 1, pageSize = 10 } = params ?? {};
+    const { status, category, businessType, name, page = 1, pageSize = 10 } = params ?? {};
     let q = db.query(WorkflowDefModel);
     if (status !== undefined) q = q.where("status", "=", status);
     if (category) q = q.where("category", "=", category);
     if (businessType) q = q.where("business_type", "=", businessType);
     if (name) q = q.where("name", "LIKE", `%${name}%`);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const total = await q.count();
     const rows = await q
       .select("id", "name", "code", "version", "description", "category", "business_type", "status", "created_by", "tenant_id", "created_at")
@@ -120,38 +121,38 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     return { items: rows.map(mapDefinition), total, page, pageSize };
   }
 
-  async function publish(id: string, tenantId?: string): Promise<void> {
+  async function publish(id: string): Promise<void> {
     let q = db.query(WorkflowDefModel).where("id", "=", id);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const def = await q
       .select("id", "status", "version").get();
     if (!def) throw workflowErrors.defNotFound();
     if (def.status === DefStatus.ACTIVE) return;
-    const { valid, errors } = await validateGraphData(id, tenantId);
+    const { valid, errors } = await validateGraphData(id);
     if (!valid) throw workflowErrors.invalidGraph(errors.join("; "));
     let updateQ = db.query(WorkflowDefModel).where("id", "=", id);
-    if (tenantId) updateQ = updateQ.where("tenant_id", "=", tenantId);
+    updateQ = updateQ.where("tenant_id", "=", scopedTenantId);
     await updateQ.update({ status: DefStatus.ACTIVE, version: def.version + 1 });
   }
 
-  async function disable(id: string, tenantId?: string): Promise<void> {
+  async function disable(id: string): Promise<void> {
     let q = db.query(WorkflowDefModel).where("id", "=", id);
-    if (tenantId) q = q.where("tenant_id", "=", tenantId);
+    q = q.where("tenant_id", "=", scopedTenantId);
     const def = await q.select("id", "status").get();
     if (!def) throw workflowErrors.defNotFound();
     if (def.status !== DefStatus.ACTIVE) throw workflowErrors.invalidGraph("只有已发布的定义可以停用");
     let updateQ = db.query(WorkflowDefModel).where("id", "=", id);
-    if (tenantId) updateQ = updateQ.where("tenant_id", "=", tenantId);
+    updateQ = updateQ.where("tenant_id", "=", scopedTenantId);
     await updateQ.update({ status: DefStatus.DISABLED });
   }
 
-  async function cloneDef(id: string, tenantId?: string): Promise<{ id: string }> {
-    await ensureDefinitionTenant(id, tenantId);
+  async function cloneDef(id: string): Promise<{ id: string }> {
+    await ensureDefinitionTenant(id);
     return cloneDefinition(db, id);
   }
 
-  async function saveGraph(defId: string, graph: { nodes: GraphNodeData[]; edges: GraphEdgeData[] }, tenantId?: string): Promise<void> {
-    await ensureDefinitionTenant(defId, tenantId);
+  async function saveGraph(defId: string, graph: { nodes: GraphNodeData[]; edges: GraphEdgeData[] }): Promise<void> {
+    await ensureDefinitionTenant(defId);
     buildGraph(graph.nodes, graph.edges);
 
     await db.transaction(async (tx) => {
@@ -174,8 +175,8 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     });
   }
 
-  async function getGraph(defId: string, tenantId?: string): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }> {
-    await ensureDefinitionTenant(defId, tenantId);
+  async function getGraph(defId: string): Promise<{ nodes: GraphNodeData[]; edges: GraphEdgeData[] }> {
+    await ensureDefinitionTenant(defId);
     const nodes = await db.query(WorkflowNodeModel).where("definition_id", "=", defId)
       .select("id", "name", "type", "config", "position_x", "position_y", "sort").orderBy("sort", "asc").list();
     const edges = await db.query(WorkflowEdgeModel).where("definition_id", "=", defId)
@@ -193,8 +194,8 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
     };
   }
 
-  async function validateGraphData(defId: string, tenantId?: string): Promise<{ valid: boolean; errors: string[] }> {
-    const { nodes, edges } = await getGraph(defId, tenantId);
+  async function validateGraphData(defId: string): Promise<{ valid: boolean; errors: string[] }> {
+    const { nodes, edges } = await getGraph(defId);
     if (nodes.length === 0) return { valid: false, errors: ["流程无节点"] };
     try {
       const graph = buildGraph(nodes, edges);
@@ -207,11 +208,10 @@ export function createDefinitionService(deps: { db: Database }): DefinitionServi
 
   return { create, update, delete: deleteDef, getById, getByBusinessType, list, publish, disable, clone: cloneDef, saveGraph, getGraph, validateGraphData };
 
-  async function ensureDefinitionTenant(id: string, tenantId?: string): Promise<void> {
-    if (!tenantId) return;
+  async function ensureDefinitionTenant(id: string): Promise<void> {
     const def = await db.query(WorkflowDefModel)
       .where("id", "=", id)
-      .where("tenant_id", "=", tenantId)
+      .where("tenant_id", "=", scopedTenantId)
       .select("id")
       .get();
     if (!def) throw workflowErrors.defNotFound();

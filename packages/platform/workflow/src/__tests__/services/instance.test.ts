@@ -33,8 +33,8 @@ describe("InstanceService", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    const assigneeResolver = createAssigneeResolver({ db });
-    service = createInstanceService({ db, assigneeResolver });
+    const assigneeResolver = createAssigneeResolver({ db, tenantId: 'default' });
+    service = createInstanceService({ db, assigneeResolver, tenantId: 'default' });
   });
 
   describe("start", () => {
@@ -230,8 +230,8 @@ describe("InstanceService — additional edge cases", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    const assigneeResolver = createAssigneeResolver({ db });
-    service = createInstanceService({ db, assigneeResolver });
+    const assigneeResolver = createAssigneeResolver({ db, tenantId: 'default' });
+    service = createInstanceService({ db, assigneeResolver, tenantId: 'default' });
   });
 
   describe("cancel", () => {

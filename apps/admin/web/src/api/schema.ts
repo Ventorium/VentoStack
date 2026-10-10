@@ -1337,146 +1337,6 @@ export type OpenAPIs = {
       }
     },
     /**
-     * OAuth Application 列表
-     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。
-     */
-    '/api/oauth/admin/applications': {
-      query: {
-        page?: number,
-        pageSize?: number,
-        name?: string,
-        status?: string
-      },
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * OAuth Application 详情
-     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。
-     */
-    '/api/oauth/admin/applications/:id': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/applications/:id/icon': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/admin/applications/:applicationId/menus': {
-      query: never,
-      params: {
-        applicationId: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/authorize': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/logout': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/.well-known/openid-configuration': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/.well-known/oauth-authorization-server/api/oauth': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/jwks': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * 查询当前租户的 Application 授权
-     */
-    '/api/oauth/admin/applications/:id/grants': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * 当前用户可访问的 Application 门户列表
-     */
-    '/api/oauth/portal/applications': {
-      query: {
-        search?: string
-      },
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/me/context': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/userinfo': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * OAuth 认证日志
-     * @description 仅返回当前认证租户日志。
-     */
-    '/api/oauth/logs': {
-      query: {
-        page?: number,
-        pageSize?: number,
-        eventType?: string,
-        success?: boolean,
-        clientId?: string,
-        userId?: string,
-        startAt?: string,
-        endAt?: string
-      },
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
      * 获取服务器状态
      */
     '/api/system/monitor/server': {
@@ -2323,58 +2183,794 @@ export type OpenAPIs = {
       response: any
     },
     /**
-     * 获取追踪会话列表
+     * 获取上下文概览（KPI / 构成 / 每日账目）
      */
-    '/api/ai/trace/conversations': {
+    '/api/ai/context/overview': {
+      query: {
+        days?: number,
+        userId?: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 会话数
+         */
+        sessionCount?: number,
+        /**
+         * @description 模型请求数
+         */
+        requestCount?: number,
+        /**
+         * @description 计费 token 合计
+         */
+        billedTokens?: number,
+        /**
+         * @description 估算成本；未接入计价时为 undefined
+         */
+        estimatedCost?: number,
+        /**
+         * @description 缓存命中率；无缓存数据时为 undefined（不伪造 0）
+         */
+        cacheHitRate?: number,
+        /**
+         * @description 每日账目
+         */
+        days?: {
+          /**
+           * @description 日期 YYYY-MM-DD
+           */
+          day?: string,
+          /**
+           * @description 当日 token 合计
+           */
+          tokens?: number,
+          /**
+           * @description 当日请求数
+           */
+          requests?: number,
+          /**
+           * @description 当日成本；未接入计价时为 undefined
+           */
+          cost?: number
+        }[],
+        /**
+         * @description 上下文构成（估算 token）
+         */
+        composition?: {
+          /**
+           * @description 系统提示 token
+           */
+          system?: number,
+          /**
+           * @description 工具 schema token
+           */
+          tools?: number,
+          /**
+           * @description 用户消息 token
+           */
+          user?: number,
+          /**
+           * @description 注入上下文 token
+           */
+          inject?: number,
+          /**
+           * @description 技能内容 token
+           */
+          skill?: number,
+          /**
+           * @description 助手回复 token
+           */
+          assistant?: number,
+          /**
+           * @description 工具结果 token
+           */
+          tool?: number,
+          /**
+           * @description 七项合计
+           */
+          total?: number
+        }
+      }
+    },
+    /**
+     * 获取上下文会话列表（分页 + 筛选 + 排序）
+     */
+    '/api/ai/context/sessions': {
       query: {
         page?: number,
         pageSize?: number,
+        keyword?: string,
         agentId?: string,
         userId?: string,
-        keyword?: string,
         startTime?: string,
-        endTime?: string
+        endTime?: string,
+        sort?: string
       },
       params: never,
       headers: never,
       body: never,
-      response: any
+      response: {
+        /**
+         * @description 记录主键
+         */
+        id?: string,
+        /**
+         * @description 租户（由认证上下文确定，客户端无需传入）
+         */
+        tenantId?: string,
+        /**
+         * @description 会话 ID
+         */
+        sessionId?: string,
+        /**
+         * @description 会话标题（取首条用户消息）
+         */
+        title?: string,
+        /**
+         * @description Agent ID
+         */
+        agentId?: string,
+        /**
+         * @description Agent 名称
+         */
+        agentName?: string,
+        /**
+         * @description 用户 ID
+         */
+        userId?: string,
+        /**
+         * @description 用户名称
+         */
+        userName?: string,
+        /**
+         * @description 父 run（子 Agent 血缘）
+         */
+        parentRunId?: string,
+        /**
+         * @description run 次数
+         */
+        runCount?: number,
+        /**
+         * @description 模型 ID
+         */
+        model?: string,
+        /**
+         * @description 提供方 ID
+         */
+        provider?: string,
+        /**
+         * @description 模型上下文窗口
+         */
+        contextWindow?: number,
+        /**
+         * @description 会话状态
+         * @enum running,success,error,aborted
+         */
+        status?: string,
+        /**
+         * @description 会话级计数
+         */
+        counts?: {
+          /**
+           * @description 轮次数
+           */
+          turns?: number,
+          /**
+           * @description 模型请求步数
+           */
+          steps?: number,
+          /**
+           * @description 注入次数
+           */
+          injects?: number,
+          /**
+           * @description 压缩次数
+           */
+          compactions?: number,
+          /**
+           * @description 裁剪次数
+           */
+          prunes?: number,
+          /**
+           * @description 技能数
+           */
+          skills?: number,
+          /**
+           * @description 用户输入次数
+           */
+          humanInputs?: number,
+          /**
+           * @description 助手回复次数
+           */
+          answers?: number
+        },
+        /**
+         * @description 上下文构成（估算 token）
+         */
+        current?: {
+          /**
+           * @description 系统提示 token
+           */
+          system?: number,
+          /**
+           * @description 工具 schema token
+           */
+          tools?: number,
+          /**
+           * @description 用户消息 token
+           */
+          user?: number,
+          /**
+           * @description 注入上下文 token
+           */
+          inject?: number,
+          /**
+           * @description 技能内容 token
+           */
+          skill?: number,
+          /**
+           * @description 助手回复 token
+           */
+          assistant?: number,
+          /**
+           * @description 工具结果 token
+           */
+          tool?: number,
+          /**
+           * @description 七项合计
+           */
+          total?: number
+        },
+        /**
+         * @description 累计真实用量
+         */
+        usage?: {
+          /**
+           * @description 未命中缓存的输入 token
+           */
+          uncached?: number,
+          /**
+           * @description 缓存命中 token
+           */
+          cacheRead?: number,
+          /**
+           * @description 缓存写入 token
+           */
+          cacheWrite?: number,
+          /**
+           * @description 输出 token
+           */
+          output?: number
+        },
+        /**
+         * @description 累计耗时毫秒
+         */
+        durationMs?: number,
+        /**
+         * @description 最近一条用户消息预览
+         */
+        lastUser?: string,
+        /**
+         * @description 开始时间
+         */
+        startedAt?: string,
+        /**
+         * @description 结束时间
+         */
+        endedAt?: string
+      }
     },
     /**
-     * 获取会话消息时间线
+     * 获取会话上下文详情（快照序列 / 事件 / 活跃面 / 归档 / 文件操作）
      */
-    '/api/ai/trace/conversations/:id': {
-      query: {
-        limit?: number
-      },
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * 获取链路追踪详情
-     */
-    '/api/ai/trace/traces/:traceId': {
+    '/api/ai/context/sessions/:sessionId': {
       query: never,
       params: {
-        traceId: string
+        sessionId: string
       },
       headers: never,
       body: never,
-      response: any
-    },
-    /**
-     * 获取链路追踪开关状态
-     */
-    '/api/ai/trace/config': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
+      response: {
+        /**
+         * @description 上下文会话
+         */
+        session?: {
+          /**
+           * @description 记录主键
+           */
+          id?: string,
+          /**
+           * @description 租户（由认证上下文确定，客户端无需传入）
+           */
+          tenantId?: string,
+          /**
+           * @description 会话 ID
+           */
+          sessionId?: string,
+          /**
+           * @description 会话标题（取首条用户消息）
+           */
+          title?: string,
+          /**
+           * @description Agent ID
+           */
+          agentId?: string,
+          /**
+           * @description Agent 名称
+           */
+          agentName?: string,
+          /**
+           * @description 用户 ID
+           */
+          userId?: string,
+          /**
+           * @description 用户名称
+           */
+          userName?: string,
+          /**
+           * @description 父 run（子 Agent 血缘）
+           */
+          parentRunId?: string,
+          /**
+           * @description run 次数
+           */
+          runCount?: number,
+          /**
+           * @description 模型 ID
+           */
+          model?: string,
+          /**
+           * @description 提供方 ID
+           */
+          provider?: string,
+          /**
+           * @description 模型上下文窗口
+           */
+          contextWindow?: number,
+          /**
+           * @description 会话状态
+           * @enum running,success,error,aborted
+           */
+          status?: string,
+          /**
+           * @description 会话级计数
+           */
+          counts?: {
+            /**
+             * @description 轮次数
+             */
+            turns?: number,
+            /**
+             * @description 模型请求步数
+             */
+            steps?: number,
+            /**
+             * @description 注入次数
+             */
+            injects?: number,
+            /**
+             * @description 压缩次数
+             */
+            compactions?: number,
+            /**
+             * @description 裁剪次数
+             */
+            prunes?: number,
+            /**
+             * @description 技能数
+             */
+            skills?: number,
+            /**
+             * @description 用户输入次数
+             */
+            humanInputs?: number,
+            /**
+             * @description 助手回复次数
+             */
+            answers?: number
+          },
+          /**
+           * @description 上下文构成（估算 token）
+           */
+          current?: {
+            /**
+             * @description 系统提示 token
+             */
+            system?: number,
+            /**
+             * @description 工具 schema token
+             */
+            tools?: number,
+            /**
+             * @description 用户消息 token
+             */
+            user?: number,
+            /**
+             * @description 注入上下文 token
+             */
+            inject?: number,
+            /**
+             * @description 技能内容 token
+             */
+            skill?: number,
+            /**
+             * @description 助手回复 token
+             */
+            assistant?: number,
+            /**
+             * @description 工具结果 token
+             */
+            tool?: number,
+            /**
+             * @description 七项合计
+             */
+            total?: number
+          },
+          /**
+           * @description 累计真实用量
+           */
+          usage?: {
+            /**
+             * @description 未命中缓存的输入 token
+             */
+            uncached?: number,
+            /**
+             * @description 缓存命中 token
+             */
+            cacheRead?: number,
+            /**
+             * @description 缓存写入 token
+             */
+            cacheWrite?: number,
+            /**
+             * @description 输出 token
+             */
+            output?: number
+          },
+          /**
+           * @description 累计耗时毫秒
+           */
+          durationMs?: number,
+          /**
+           * @description 最近一条用户消息预览
+           */
+          lastUser?: string,
+          /**
+           * @description 开始时间
+           */
+          startedAt?: string,
+          /**
+           * @description 结束时间
+           */
+          endedAt?: string
+        },
+        /**
+         * @description 请求快照序列
+         */
+        requests?: {
+          /**
+           * @description 请求记录 ID
+           */
+          id?: string,
+          /**
+           * @description 会话 ID
+           */
+          sessionId?: string,
+          /**
+           * @description 序号
+           */
+          seq?: number,
+          /**
+           * @description 所属轮次
+           */
+          turnIndex?: number,
+          /**
+           * @description 模型 ID
+           */
+          model?: string,
+          /**
+           * @description 提供方 ID
+           */
+          provider?: string,
+          /**
+           * @description 本次请求携带的消息数
+           */
+          messageCount?: number,
+          /**
+           * @description 上下文窗口
+           */
+          contextWindow?: number,
+          /**
+           * @description 上下文构成（估算 token）
+           */
+          composition?: {
+            /**
+             * @description 系统提示 token
+             */
+            system?: number,
+            /**
+             * @description 工具 schema token
+             */
+            tools?: number,
+            /**
+             * @description 用户消息 token
+             */
+            user?: number,
+            /**
+             * @description 注入上下文 token
+             */
+            inject?: number,
+            /**
+             * @description 技能内容 token
+             */
+            skill?: number,
+            /**
+             * @description 助手回复 token
+             */
+            assistant?: number,
+            /**
+             * @description 工具结果 token
+             */
+            tool?: number,
+            /**
+             * @description 七项合计
+             */
+            total?: number
+          },
+          /**
+           * @description 提供方上报真实用量；未上报时整体为 undefined（不伪造 0）
+           */
+          actual?: {
+            /**
+             * @description 未命中缓存输入
+             */
+            uncachedInputTokens?: number,
+            /**
+             * @description 输出
+             */
+            outputTokens?: number,
+            /**
+             * @description 缓存命中
+             */
+            cacheReadTokens?: number,
+            /**
+             * @description 缓存写入
+             */
+            cacheWriteTokens?: number
+          },
+          /**
+           * @description 本次请求耗时
+           */
+          durationMs?: number,
+          /**
+           * @description 步骤简报（用户提问 / 中间注入 / 回复预览）
+           */
+          brief?: {
+            /**
+             * @description 本步用户提问
+             */
+            user?: string,
+            /**
+             * @description 本步注入内容
+             */
+            incoming?: string[],
+            /**
+             * @description 本步回复预览
+             */
+            response?: string
+          },
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string
+        }[],
+        /**
+         * @description 上下文事件
+         */
+        events?: {
+          /**
+           * @description 事件 ID
+           */
+          id?: string,
+          /**
+           * @description 会话 ID
+           */
+          sessionId?: string,
+          /**
+           * @description 序号
+           */
+          seq?: number,
+          /**
+           * @description 事件类型
+           * @enum inject,compact,prune,switch
+           */
+          kind?: string,
+          /**
+           * @description 产生者
+           */
+          producer?: string,
+          /**
+           * @description 净变化（压缩为负数）
+           */
+          deltaTokens?: number,
+          /**
+           * @description 所属轮次
+           */
+          turnIndex?: number,
+          /**
+           * @description 事件明细
+           */
+          detail?: {},
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string
+        }[],
+        /**
+         * @description 活跃面节点
+         */
+        nodes?: {
+          /**
+           * @description 节点 ID
+           */
+          id?: string,
+          /**
+           * @description 会话 ID
+           */
+          sessionId?: string,
+          /**
+           * @description 序号
+           */
+          seq?: number,
+          /**
+           * @description 上下文分类
+           * @enum system,tools,user,inject,skill,assistant,tool
+           */
+          category?: string,
+          /**
+           * @description 元素名称
+           */
+          name?: string,
+          /**
+           * @description 估算 token
+           */
+          tokens?: number,
+          /**
+           * @description 预览（折叠空白并截断）
+           */
+          preview?: string,
+          /**
+           * @description 完整内容（超长截断）
+           */
+          content?: string,
+          /**
+           * @description 图片块数
+           */
+          images?: number,
+          /**
+           * @description 被哪个事件 seq 移走；undefined = 仍存活
+           */
+          goneAtSeq?: number,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string
+        }[],
+        /**
+         * @description 因保留窗口被裁剪的节点数
+         */
+        droppedNodes?: number,
+        /**
+         * @description 归档（已移走）节点
+         */
+        archive?: {
+          /**
+           * @description 节点 ID
+           */
+          id?: string,
+          /**
+           * @description 会话 ID
+           */
+          sessionId?: string,
+          /**
+           * @description 序号
+           */
+          seq?: number,
+          /**
+           * @description 上下文分类
+           * @enum system,tools,user,inject,skill,assistant,tool
+           */
+          category?: string,
+          /**
+           * @description 元素名称
+           */
+          name?: string,
+          /**
+           * @description 估算 token
+           */
+          tokens?: number,
+          /**
+           * @description 预览（折叠空白并截断）
+           */
+          preview?: string,
+          /**
+           * @description 完整内容（超长截断）
+           */
+          content?: string,
+          /**
+           * @description 图片块数
+           */
+          images?: number,
+          /**
+           * @description 被哪个事件 seq 移走；undefined = 仍存活
+           */
+          goneAtSeq?: number,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string
+        }[],
+        /**
+         * @description 归档下界 seq
+         */
+        archiveFloor?: number,
+        /**
+         * @description 文件操作
+         */
+        fileOps?: {
+          /**
+           * @description 记录 ID
+           */
+          id?: string,
+          /**
+           * @description 会话 ID
+           */
+          sessionId?: string,
+          /**
+           * @description 序号
+           */
+          seq?: number,
+          /**
+           * @description 文件路径
+           */
+          path?: string,
+          /**
+           * @description 操作类型
+           * @enum read,write,search
+           */
+          kind?: string,
+          /**
+           * @description 调用的工具名
+           */
+          tool?: string,
+          /**
+           * @description 是否出错
+           */
+          err?: boolean,
+          /**
+           * @description 新增行数
+           */
+          added?: number,
+          /**
+           * @description 删除行数
+           */
+          removed?: number,
+          /**
+           * @description 操作明细
+           */
+          detail?: string,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string
+        }[],
+        /**
+         * @description 详情修订号
+         */
+        rev?: number
+      }
     }
   },
   post: {
@@ -3421,124 +4017,6 @@ export type OpenAPIs = {
         message?: string
       }
     },
-    /**
-     * 注册 OAuth Application
-     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。 clientSecret 仅在本次响应展示。
-     */
-    '/api/oauth/admin/applications': {
-      query: never,
-      params: never,
-      headers: never,
-      body: {
-        identifier: string,
-        name: string,
-        description?: string,
-        homepageUrl: string,
-        redirectUri: string,
-        postLogoutRedirectUri?: string,
-        backchannelLogoutUri?: string,
-        backchannelLogoutSessionRequired?: boolean,
-        allowedScopes: string[],
-        offlineAccessEnabled?: boolean,
-        enabled?: boolean,
-        sort?: number
-      },
-      response: any
-    },
-    /**
-     * 重新生成 Client Secret
-     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。 旧 Secret 立即失效，新 Secret 仅展示一次。
-     */
-    '/api/oauth/admin/applications/:id/secret': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/admin/applications/:id/icon': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: {
-        file: File
-      },
-      response: any
-    },
-    '/api/oauth/admin/applications/:applicationId/menus': {
-      query: never,
-      params: {
-        applicationId: string
-      },
-      headers: never,
-      body: {
-        parentId?: string,
-        name: string,
-        path?: string,
-        component?: string,
-        redirect?: string,
-        /**
-         * @enum 1,2,3
-         */
-        type: number,
-        permission?: string,
-        icon?: string,
-        sort: number,
-        visible: boolean,
-        /**
-         * @enum 0,1
-         */
-        status: number,
-        roleIds: string[]
-      },
-      response: any
-    },
-    '/api/oauth/session/bootstrap': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/token': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/revoke': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/introspect': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/logout': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/userinfo': {
-      query: never,
-      params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
     '/api/system/notification/send': {
       query: never,
       params: never,
@@ -3940,6 +4418,10 @@ export type OpenAPIs = {
          * @description 是否公开
          */
         isPublic?: boolean,
+        /**
+         * @description 是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）
+         */
+        contextCollectionEnabled?: boolean,
         /**
          * @description 是否为 Agent 创建独占虚拟环境（创建后不可修改）
          */
@@ -4584,29 +5066,6 @@ export type OpenAPIs = {
     '/api/system/login-logs': {
       query: never,
       params: never,
-      headers: never,
-      body: never,
-      response: any
-    },
-    /**
-     * 永久删除 OAuth Application
-     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。 唯一标识以 tombstone 保留且不可复用。
-     */
-    '/api/oauth/admin/applications/:id': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: never,
-      response: any
-    },
-    '/api/oauth/admin/applications/:applicationId/menus/:id': {
-      query: never,
-      params: {
-        applicationId: string,
-        id: string
-      },
       headers: never,
       body: never,
       response: any
@@ -5344,83 +5803,6 @@ export type OpenAPIs = {
       },
       response: any
     },
-    /**
-     * 更新 OAuth Application
-     * @description 全局 OAuth 客户端控制面；除权限校验外，还要求数据库实时平台管理员身份。
-     */
-    '/api/oauth/admin/applications/:id': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: {
-        name?: string,
-        description?: string,
-        homepageUrl?: string,
-        redirectUri?: string,
-        postLogoutRedirectUri?: string,
-        backchannelLogoutUri?: string,
-        backchannelLogoutSessionRequired?: boolean,
-        allowedScopes?: string[],
-        offlineAccessEnabled?: boolean,
-        enabled?: boolean,
-        sort?: number
-      },
-      response: any
-    },
-    '/api/oauth/admin/applications/:applicationId/menus/:id': {
-      query: never,
-      params: {
-        applicationId: string,
-        id: string
-      },
-      headers: never,
-      body: {
-        parentId?: string,
-        name: string,
-        path?: string,
-        component?: string,
-        redirect?: string,
-        /**
-         * @enum 1,2,3
-         */
-        type: number,
-        permission?: string,
-        icon?: string,
-        sort: number,
-        visible: boolean,
-        /**
-         * @enum 0,1
-         */
-        status: number,
-        roleIds: string[]
-      },
-      response: any
-    },
-    /**
-     * 全量替换当前租户的 Application 授权
-     * @description 租户由认证上下文确定，客户端不得提交 tenantId；跨租户主体按无效处理。
-     */
-    '/api/oauth/admin/applications/:id/grants': {
-      query: never,
-      params: {
-        id: string
-      },
-      headers: never,
-      body: {
-        roleIds: string[],
-        userIds: string[],
-        departments: {
-          deptId?: string,
-          /**
-           * @enum SELF,SELF_AND_DESCENDANTS
-           */
-          scope?: string
-        }[]
-      },
-      response: any
-    },
     '/api/system/notification/messages/:id/read': {
       query: never,
       params: {
@@ -5606,7 +5988,11 @@ export type OpenAPIs = {
         /**
          * @description 是否公开
          */
-        isPublic?: boolean
+        isPublic?: boolean,
+        /**
+         * @description 是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）
+         */
+        contextCollectionEnabled?: boolean
       },
       response: any
     },
@@ -5679,21 +6065,6 @@ export type OpenAPIs = {
       },
       headers: never,
       body: never,
-      response: any
-    },
-    /**
-     * 设置链路追踪开关
-     */
-    '/api/ai/trace/config': {
-      query: never,
-      params: never,
-      headers: never,
-      body: {
-        /**
-         * @description 是否开启链路追踪
-         */
-        enabled: boolean
-      },
       response: any
     }
   },

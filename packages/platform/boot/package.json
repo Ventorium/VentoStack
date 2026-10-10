@@ -38,6 +38,6 @@
   },
   "optionalDependencies": {
     "@ventostack/ai": "workspace:*",
-    "@ventostack/ai-trace": "workspace:*"
+    "@ventostack/ai-context": "workspace:*"
   }
 }

@@ -6,7 +6,7 @@ describe('019_normalize_preset_configs', () => {
     const executor = mock(async () => []);
     await normalizePresetConfigs.up(executor);
     expect(executor).toHaveBeenCalledWith(
-      "UPDATE sys_config SET type = 2 WHERE key = 'ai_trace_enabled' AND type <> 2",
+      "UPDATE sys_config SET type = 2 WHERE key = 'ai_context_enabled' AND type <> 2",
     );
   });
 });

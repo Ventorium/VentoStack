@@ -23,6 +23,8 @@ export interface CreateAgentParams {
   maxTokensPerTurn?: number;
   isPublic?: boolean;
   requiresVirtualEnvironment?: boolean;
+  /** 上下文采集开关（调试信息，仅管理员可见） */
+  contextCollectionEnabled?: boolean;
   tenantId: string;
   createdBy: string;
 }
@@ -43,11 +45,15 @@ export interface UpdateAgentParams {
   maxIterations?: number;
   maxTokensPerTurn?: number;
   isPublic?: boolean;
+  /** 上下文采集开关（调试信息，仅管理员可见） */
+  contextCollectionEnabled?: boolean;
   status?: string;
 }
 
 export interface AgentItem {
   id: string;
+  /** 上下文采集开关（调试信息，仅管理员可在对话内查看） */
+  contextCollectionEnabled?: boolean;
   name: string;
   description: string | null;
   welcomeMessage: string | null;
@@ -139,8 +145,8 @@ export function createAgentService(deps: {
       : undefined;
     try {
       await db.raw(
-        `INSERT INTO ai_agent (id, name, description, welcome_message, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id)
-       VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', $19, $20)`,
+        `INSERT INTO ai_agent (id, name, description, welcome_message, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id, context_collection_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', $19, $20, $21)`,
         [
           id,
           params.name,
@@ -162,6 +168,7 @@ export function createAgentService(deps: {
           params.createdBy,
           requiresVirtualEnvironment,
           sandbox?.sandboxId ?? null,
+          params.contextCollectionEnabled ?? false,
         ],
       );
     } catch (error) {
@@ -242,6 +249,10 @@ export function createAgentService(deps: {
       sets.push(`is_public = $${idx++}`);
       values.push(params.isPublic);
     }
+    if (params.contextCollectionEnabled !== undefined) {
+      sets.push(`context_collection_enabled = $${idx++}`);
+      values.push(params.contextCollectionEnabled);
+    }
     if (params.status !== undefined) {
       sets.push(`status = $${idx++}`);
       values.push(params.status);
@@ -280,6 +291,7 @@ export function createAgentService(deps: {
               max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
               requires_virtual_environment as "requiresVirtualEnvironment", sandbox_id as "sandboxId",
+              context_collection_enabled as "contextCollectionEnabled",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
       [id, tenantId],
@@ -322,6 +334,7 @@ export function createAgentService(deps: {
       updatedAt:
         r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ''),
       requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+      contextCollectionEnabled: r.contextCollectionEnabled === true,
       ...(sandboxStatus ? { sandboxStatus } : {}),
       ...(sandboxId ? { sandboxId } : {}),
     };
@@ -375,6 +388,7 @@ export function createAgentService(deps: {
               max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
               requires_virtual_environment as "requiresVirtualEnvironment", sandbox_id as "sandboxId",
+              context_collection_enabled as "contextCollectionEnabled",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent ${whereClause}
        ORDER BY updated_at DESC
@@ -420,6 +434,7 @@ export function createAgentService(deps: {
           updatedAt:
             r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ''),
           requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+          contextCollectionEnabled: r.contextCollectionEnabled === true,
           ...(sandboxStatus ? { sandboxStatus } : {}),
           ...(sandboxId ? { sandboxId } : {}),
         };

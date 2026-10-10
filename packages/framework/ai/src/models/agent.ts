@@ -25,6 +25,8 @@ export const AiAgentModel = defineModel(
     status: column.varchar({ length: 16, default: 'draft' }),
     is_public: column.boolean({ default: false }),
     requires_virtual_environment: column.boolean({ default: false }),
+    // 上下文采集开关：仅管理员可见的调试能力，默认关闭（显式开启才落库）
+    context_collection_enabled: column.boolean({ default: false }),
     sandbox_id: column.varchar({ length: 128, nullable: true }),
   },
   { timestamps: true },

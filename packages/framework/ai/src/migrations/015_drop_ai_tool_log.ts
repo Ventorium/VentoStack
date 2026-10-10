@@ -1,7 +1,7 @@
 import type { Migration } from '@ventostack/database';
 
 /**
- * 工具审计表下线：工具调用记录已由 ai-trace 的 tool span 全量覆盖
+ * 工具审计表下线：工具调用记录已由 ai-context 的 tool 节点全量覆盖
  * （name/args/result/status/duration + trace 上下文），ai_tool_log 不再写入也不再保留。
  */
 export const dropAiToolLog: Migration = {

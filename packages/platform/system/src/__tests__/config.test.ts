@@ -22,7 +22,7 @@ function setup() {
 describe('ConfigService', () => {
   test('validates preset config value domains', () => {
     expect(() => validatePresetConfigValue('sys_register_enabled', 'yes')).toThrow('true 或 false');
-    expect(() => validatePresetConfigValue('ai_trace_enabled', '1')).toThrow('true 或 false');
+    expect(() => validatePresetConfigValue('sys_dept_enabled', '1')).toThrow('true 或 false');
     expect(() => validatePresetConfigValue('sys_login_max_attempts', '0')).toThrow('范围');
     expect(() => validatePresetConfigValue('sys_password_expire_days', '0')).toThrow('范围');
     expect(() => validatePresetConfigValue('sys_password_expire_days', '-1')).not.toThrow();
@@ -79,7 +79,7 @@ describe('ConfigService', () => {
     expect(s.configService.delete('cfg-protected')).rejects.toThrow('不允许删除');
   });
 
-  test.each(['sys_register_enabled', 'ai_trace_enabled'])(
+  test.each(['sys_register_enabled', 'sys_dept_enabled'])(
     'delete rejects newly added preset config %s',
     async (key) => {
       const s = setup();

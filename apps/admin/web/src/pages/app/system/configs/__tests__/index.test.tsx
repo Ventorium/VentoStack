@@ -54,7 +54,7 @@ describe('系统参数页', () => {
 
   test('AI 链路追踪和用户自注册属于系统预设参数', () => {
     const rows = [
-      { key: 'ai_trace_enabled', isSystem: true },
+      { key: 'ai_context_enabled', isSystem: true },
       { key: 'sys_register_enabled', isSystem: true },
     ];
     expect(rows.every((row) => row.isSystem)).toBe(true);

@@ -6,23 +6,18 @@ import ActionColumn from '@/components/ActionColumn';
 import { msg } from '@/components/GlobalMessage';
 import {
   ApiOutlined,
-  AudioOutlined,
   CheckCircleOutlined,
   CloseCircleOutlined,
   CloudSyncOutlined,
-  CodeOutlined,
   DeleteOutlined,
   EyeInvisibleOutlined,
   EyeOutlined,
-  PictureOutlined,
   PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
   SaveOutlined,
   SettingOutlined,
-  StarFilled,
   ThunderboltOutlined,
-  VideoCameraOutlined,
 } from '@ant-design/icons';
 import {
   Button,
@@ -49,134 +44,22 @@ import {
 import type { ColumnsType } from 'antd/es/table';
 import { useCallback, useEffect, useState } from 'react';
 
+import AddModelModal from "./components/add-model-modal";
+import { createModelColumns } from "./components/model-columns";
+import ProvidersTab from "./components/providers-tab";
+import OcrTab from "./components/ocr-tab";
+import {
+  FORMAT_LABELS,
+  type ModelItem,
+  type ProviderItem,
+  type ProviderPreset,
+  type ReasoningBudgetTokens,
+  type ReasoningEffort,
+  type ReasoningOption,
+} from "./types";
+
 const { Text } = Typography;
 
-interface ProviderPreset {
-  id: string;
-  name: string;
-  displayName: string;
-  apiFormat: string;
-  baseUrl: string;
-  description: string;
-  modelsDevSlug?: string;
-}
-
-interface ProviderItem {
-  id: string;
-  name: string;
-  displayName: string | null;
-  apiFormat: string;
-  baseUrl: string;
-  apiKey: string;
-  hasApiKey: boolean;
-  headers: Record<string, string> | null;
-  extra: Record<string, unknown> | null;
-  presetId: string | null;
-  modelsDevSlug: string | null;
-  status: number;
-  sort: number;
-  modelCount: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// 推理选项类型（与 models.dev reasoning_options 兼容）
-interface ReasoningToggle {
-  type: 'toggle';
-}
-interface ReasoningEffort {
-  type: 'effort';
-  values: string[];
-}
-interface ReasoningBudgetTokens {
-  type: 'budget_tokens';
-  min?: number;
-  max?: number;
-}
-type ReasoningOption = ReasoningToggle | ReasoningEffort | ReasoningBudgetTokens;
-
-interface ModelItem {
-  id: string;
-  providerId: string;
-  modelId: string;
-  displayName: string | null;
-  contextLength: number;
-  maxOutputTokens: number;
-  supportsText: boolean;
-  supportsImage: boolean;
-  supportsVideo: boolean;
-  supportsAudio: boolean;
-  supportsFunctionCalling: boolean;
-  supportsStreaming: boolean;
-  supportsThinking: boolean;
-  supportsStructuredOutput: boolean;
-  reasoningOptions: ReasoningOption[] | null;
-  pricingInput: number | null;
-  pricingOutput: number | null;
-  autoFetched: boolean;
-  status: number;
-  sort: number;
-}
-
-const FORMAT_LABELS: Record<string, { label: string; color: string }> = {
-  openai_chat: { label: 'OpenAI Chat', color: 'green' },
-  openai_response: { label: 'OpenAI Response', color: 'blue' },
-  anthropic: { label: 'Anthropic', color: 'purple' },
-  custom: { label: '自定义', color: 'default' },
-};
-
-function CapIcons({ model }: { model: ModelItem }) {
-  const icons: React.ReactNode[] = [];
-  if (model.supportsImage)
-    icons.push(
-      <Tooltip key="img" title="图片">
-        <PictureOutlined className="text-[#1677ff]" />
-      </Tooltip>,
-    );
-  if (model.supportsVideo)
-    icons.push(
-      <Tooltip key="vid" title="视频">
-        <VideoCameraOutlined className="text-[#722ed1]" />
-      </Tooltip>,
-    );
-  if (model.supportsAudio)
-    icons.push(
-      <Tooltip key="aud" title="语音">
-        <AudioOutlined className="text-[#eb2f96]" />
-      </Tooltip>,
-    );
-  if (model.supportsFunctionCalling)
-    icons.push(
-      <Tooltip key="fn" title="函数调用">
-        <CodeOutlined className="text-[#52c41a]" />
-      </Tooltip>,
-    );
-  if (model.supportsThinking) {
-    const opts = model.reasoningOptions;
-    let thinkTip = '推理/思考';
-    if (opts && opts.length > 0) {
-      const parts = opts.map((o) => {
-        if (o.type === 'toggle') return '开关';
-        if (o.type === 'effort') return `强度: ${o.values.join(', ')}`;
-        if (o.type === 'budget_tokens') return `预算: ${o.min ?? 0}~${o.max ?? '∞'}`;
-        return o.type;
-      });
-      thinkTip = `推理/思考 — ${parts.join(' + ')}`;
-    }
-    icons.push(
-      <Tooltip key="think" title={thinkTip}>
-        <ThunderboltOutlined className="text-[#fa8c16]" />
-      </Tooltip>,
-    );
-  }
-  if (model.supportsStructuredOutput)
-    icons.push(
-      <Tooltip key="struct" title="结构化输出">
-        <CheckCircleOutlined className="text-[#13c2c2]" />
-      </Tooltip>,
-    );
-  return <Space size={4}>{icons}</Space>;
-}
 
 export default function AISettingsPage() {
   const [providers, setProviders] = useState<ProviderItem[]>([]);
@@ -742,130 +625,6 @@ export default function AISettingsPage() {
   );
 
   // === Model table columns (inside models drawer) ===
-  const modelColumns: ColumnsType<ModelItem> = [
-    {
-      title: '模型 ID',
-      dataIndex: 'modelId',
-      key: 'modelId',
-      // width: 'min-content',
-      fixed: 'left',
-      sorter: (a, b) => {
-        const aDefault = isDefaultModel(modelsProvider?.name ?? '', a.modelId) ? 0 : 1;
-        const bDefault = isDefaultModel(modelsProvider?.name ?? '', b.modelId) ? 0 : 1;
-        if (aDefault !== bDefault) return aDefault - bDefault;
-        return (a.displayName || a.modelId).localeCompare(b.displayName || b.modelId);
-      },
-      defaultSortOrder: 'ascend',
-      render: (text: string, r) => {
-        const isDefault = isDefaultModel(modelsProvider?.name ?? '', r.modelId);
-        return (
-          <Space>
-            {isDefault && <StarFilled className="text-[#faad14] text-sm" />}
-            <Text strong>{r.displayName || text}</Text>
-            {isDefault && <Tag color="gold">默认</Tag>}
-            {r.autoFetched && (
-              <Tag color="blue" className="text-[10px]">
-                自动
-              </Tag>
-            )}
-          </Space>
-        );
-      },
-    },
-    {
-      title: '上下文',
-      dataIndex: 'contextLength',
-      key: 'contextLength',
-      width: 90,
-      render: (v: number) =>
-        v >= 1000000 ? `${(v / 1000000).toFixed(0)}M` : `${(v / 1000).toFixed(0)}K`,
-    },
-    {
-      title: '输出上限',
-      dataIndex: 'maxOutputTokens',
-      key: 'maxOutputTokens',
-      width: 90,
-      render: (v: number) =>
-        v >= 1000000
-          ? `${(v / 1000000).toFixed(0)}M`
-          : v >= 1000
-            ? `${(v / 1000).toFixed(0)}K`
-            : String(v),
-    },
-    {
-      title: '能力',
-      key: 'caps',
-      width: 110,
-      render: (_, r) => <CapIcons model={r} />,
-    },
-    {
-      title: '价格 ($/M)',
-      key: 'price',
-      width: 120,
-      render: (_, r) =>
-        r.pricingInput != null && r.pricingInput > 0 ? (
-          <Text type="secondary" className="text-xs">
-            ${r.pricingInput} / ${r.pricingOutput}
-          </Text>
-        ) : (
-          <Tooltip title="点击编辑按钮手动填写价格">
-            <Text type="secondary" className="cursor-pointer text-[11px]">
-              未设置
-            </Text>
-          </Tooltip>
-        ),
-    },
-    {
-      title: '状态',
-      dataIndex: 'status',
-      key: 'status',
-      width: 70,
-      render: (v: number) => (
-        <Tag color={v === 1 ? 'green' : 'red'}>{v === 1 ? '启用' : '禁用'}</Tag>
-      ),
-    },
-    {
-      title: '操作',
-      key: 'action',
-      width: 'min-content',
-      fixed: 'right',
-      render: (_, r) => {
-        const isDefault = isDefaultModel(modelsProvider?.name ?? '', r.modelId);
-        return (() => {
-          const testResult = modelTestResults[r.id];
-          const testLabel = testingModels.has(r.id)
-            ? '测试中...'
-            : testResult?.status === 'ok'
-              ? `✓ ${testResult.elapsed}ms`
-              : testResult?.status === 'error'
-                ? '✗ 失败'
-                : '测试';
-          const items: Array<{
-            label: string;
-            onClick: () => void;
-            danger?: boolean;
-            confirm?: string;
-          }> = [
-            isDefault
-              ? { label: '取消默认', onClick: handleClearDefault }
-              : {
-                  label: '设为默认',
-                  onClick: () => handleSetDefault(modelsProvider?.name ?? '', r.modelId),
-                },
-            { label: testLabel, onClick: () => handleTestModel(r.id) },
-            { label: '编辑', onClick: () => openEditModel(r) },
-            {
-              label: '删除',
-              onClick: () => handleDeleteModel(r.id),
-              danger: true,
-              confirm: '确定删除此模型？',
-            },
-          ];
-          return <ActionColumn items={items} maxInline={3} />;
-        })();
-      },
-    },
-  ];
 
   // === Provider table columns ===
   const providerColumns: ColumnsType<ProviderItem> = [
@@ -958,27 +717,13 @@ export default function AISettingsPage() {
               </Space>
             ),
             children: (
-              <Card
-                extra={
-                  <Space>
-                    <Button icon={<ReloadOutlined />} onClick={fetchProviders}>
-                      刷新
-                    </Button>
-                    <Button type="primary" icon={<PlusOutlined />} onClick={() => setAddOpen(true)}>
-                      添加供应商
-                    </Button>
-                  </Space>
-                }
-              >
-                <Table
-                  rowKey="id"
-                  columns={providerColumns}
-                  dataSource={providers}
-                  loading={loading}
-                  size="small"
-                  pagination={false}
-                />
-              </Card>
+              <ProvidersTab
+                providers={providers}
+                loading={loading}
+                providerColumns={providerColumns}
+                onRefresh={fetchProviders}
+                onAdd={() => setAddOpen(true)}
+              />
             ),
           },
           {
@@ -989,45 +734,18 @@ export default function AISettingsPage() {
               </Space>
             ),
             children: (
-              <div className="max-w-[560px]">
-                <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]">
-                  💡 OCR（光学字符识别）用于解析扫描版 PDF与图片文件。配置服务地址和Token 后即可启用。
-                </div>
-                <Form layout="vertical">
-                  <Form.Item label="服务地址">
-                    <Input
-                      value={ocrServerUrl}
-                      placeholder="https://paddleocr.aistudio-app.com/api/v2/ocr/jobs"
-                      onChange={(e) => setOcrServerUrl(e.target.value)}
-                      allowClear
-                    />
-                  </Form.Item>
-                  <Form.Item label="Token">
-                    <Input.Password
-                      value={ocrToken}
-                      placeholder="识别服务访问 Token"
-                      onChange={(e) => setOcrToken(e.target.value)}
-                      allowClear
-                    />
-                  </Form.Item>
-                  <Form.Item label="模型">
-                    <Input
-                      value={ocrModel}
-                      placeholder="PaddleOCR-VL-1.6"
-                      onChange={(e) => setOcrModel(e.target.value)}
-                      allowClear
-                    />
-                  </Form.Item>
-                  <Space>
-                    <Button type="primary" icon={<SaveOutlined />} loading={ocrSaving} onClick={saveOcrConfig}>
-                      保存
-                    </Button>
-                    <Button icon={<ApiOutlined />} loading={ocrTesting} onClick={testOcrConfig}>
-                      测试连接
-                    </Button>
-                  </Space>
-                </Form>
-              </div>
+              <OcrTab
+                ocrServerUrl={ocrServerUrl}
+                ocrToken={ocrToken}
+                ocrModel={ocrModel}
+                ocrSaving={ocrSaving}
+                ocrTesting={ocrTesting}
+                onServerUrlChange={setOcrServerUrl}
+                onTokenChange={setOcrToken}
+                onModelChange={setOcrModel}
+                onSave={saveOcrConfig}
+                onTest={testOcrConfig}
+              />
             ),
           },
         ]}
@@ -1293,7 +1011,17 @@ export default function AISettingsPage() {
         )}
         <Table
           rowKey="id"
-          columns={modelColumns}
+          columns={createModelColumns({
+                modelsProvider,
+                modelTestResults,
+                testingModels,
+                isDefaultModel,
+                handleSetDefault,
+                handleClearDefault,
+                handleDeleteModel,
+                handleTestModel,
+                openEditModel,
+              })}
           dataSource={modelsList}
           loading={modelsLoading}
           size="small"
@@ -1356,176 +1084,14 @@ export default function AISettingsPage() {
         )}
       </Drawer>
 
-      {/* === Add Model Modal === */}
-      <Modal
-        title={`添加模型 — ${modelsProvider?.displayName || modelsProvider?.name}`}
+      <AddModelModal
         open={addModelOpen}
+        providerLabel={modelsProvider?.displayName || modelsProvider?.name || ""}
+        form={addModelForm}
+        submitting={addModelLoading}
         onOk={handleAddModel}
-        onCancel={() => setAddModelOpen(false)}
-        confirmLoading={addModelLoading}
-        destroyOnHidden
-        width={640}
-      >
-        <Form form={addModelForm} layout="vertical">
-          <Form.Item
-            name="modelId"
-            label="模型 ID"
-            rules={[{ required: true, message: '请输入模型 ID' }]}
-          >
-            <Input placeholder="如 gpt-4o, deepseek-v4-flash, claude-sonnet-4" />
-          </Form.Item>
-          <Form.Item name="displayName" label="显示名称">
-            <Input placeholder="留空则使用模型 ID" />
-          </Form.Item>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="contextLength" label="上下文长度" initialValue={128000}>
-                <InputNumber className="w-full" min={1} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="maxOutputTokens" label="最大输出 Tokens" initialValue={4096}>
-                <InputNumber className="w-full" min={1} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Divider className="mt-[8px] mb-[16px]">模态支持</Divider>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item name="supportsText" label="文本" valuePropName="checked" initialValue>
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="supportsImage" label="图片" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="supportsVideo" label="视频" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="supportsAudio" label="语音" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Divider className="mt-[8px] mb-[16px]">能力</Divider>
-          <Row gutter={16}>
-            <Col span={6}>
-              <Form.Item
-                name="supportsFunctionCalling"
-                label="函数调用"
-                valuePropName="checked"
-                initialValue
-              >
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item
-                name="supportsStreaming"
-                label="流式输出"
-                valuePropName="checked"
-                initialValue
-              >
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="supportsThinking" label="推理/思考" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-            <Col span={6}>
-              <Form.Item name="supportsStructuredOutput" label="结构化输出" valuePropName="checked">
-                <Switch />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Form.Item
-            noStyle
-            shouldUpdate={(prev, cur) => prev.supportsThinking !== cur.supportsThinking}
-          >
-            {() => {
-              const thinking = addModelForm.getFieldValue('supportsThinking');
-              if (!thinking) return null;
-              return (
-                <div
-                  className="bg-[#fafafa] rounded-lg mb-4"
-                  style={{ padding: '8px 12px', border: '1px solid #f0f0f0' }}
-                >
-                  <Row gutter={16}>
-                    <Col span={12}>
-                      <Form.Item
-                        name="effortValues"
-                        label="思考强度"
-                        extra="用户可选择的推理强度级别，输入后自动转为小写"
-                      >
-                        <Select
-                          mode="tags"
-                          placeholder="输入强度级别，如 low, medium, high"
-                          tokenSeparators={[',']}
-                          options={[
-                            { value: 'minimal', label: 'minimal' },
-                            { value: 'low', label: 'low' },
-                            { value: 'medium', label: 'medium' },
-                            { value: 'high', label: 'high' },
-                            { value: 'xhigh', label: 'xhigh' },
-                            { value: 'max', label: 'max' },
-                          ]}
-                        />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item name="budgetMin" label="Token 预算下限" extra="留空则无限制">
-                        <InputNumber className="w-full" min={0} placeholder="如 1024" />
-                      </Form.Item>
-                    </Col>
-                    <Col span={6}>
-                      <Form.Item name="budgetMax" label="Token 预算上限" extra="留空则无限制">
-                        <InputNumber className="w-full" min={0} placeholder="如 32768" />
-                      </Form.Item>
-                    </Col>
-                  </Row>
-                </div>
-              );
-            }}
-          </Form.Item>
-          <Divider className="mt-[8px] mb-[16px]">价格 ($/M tokens)</Divider>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="pricingInput" label="输入价格">
-                <InputNumber className="w-full" min={0} step={0.01} />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="pricingOutput" label="输出价格">
-                <InputNumber className="w-full" min={0} step={0.01} />
-              </Form.Item>
-            </Col>
-          </Row>
-          <Row gutter={16}>
-            <Col span={12}>
-              <Form.Item name="status" label="状态" initialValue={1}>
-                <Select
-                  options={[
-                    { value: 1, label: '启用' },
-                    { value: 0, label: '禁用' },
-                  ]}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item name="sort" label="排序" initialValue={0}>
-                <InputNumber className="w-full" />
-              </Form.Item>
-            </Col>
-          </Row>
-        </Form>
-      </Modal>
+        onClose={() => setAddModelOpen(false)}
+      />
 
       {/* === Edit Model Modal === */}
       <Modal

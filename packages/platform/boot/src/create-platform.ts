@@ -46,7 +46,7 @@ import type { WorkflowModule } from '@ventostack/workflow';
 
 // ---- AI 可选模块类型 ----
 //
-// @ventostack/ai 与 @ventostack/ai-trace 是 optionalDependencies：
+// @ventostack/ai 与 @ventostack/ai-context 是 optionalDependencies：
 // 未启用 AI 的应用（如纯管理后台）不需要安装这两个包。
 // 因此 boot 不在顶层 import 它们，仅在 modules.ai === true 时动态加载，
 // 并以下列最小结构化类型描述其模块形状（结构兼容即可，无运行时依赖）。
@@ -68,15 +68,15 @@ export interface LLMProviderConfig {
 /** AI 模块最小结构（createAIModule 返回值，结构兼容即可） */
 export interface AIModule {
   services: {
-    /** 事件发射器，供 ai-trace 订阅 */
+    /** 事件发射器，供 ai-context 订阅 */
     eventEmitter: unknown;
   };
   router: Router;
   init(): Promise<void>;
 }
 
-/** AI 链路追踪模块最小结构（createAiTraceModule 返回值，结构兼容即可） */
-export interface AiTraceModule {
+/** AI 上下文模块最小结构（createAiContextModule 返回值，结构兼容即可） */
+export interface AiContextModule {
   router: Router;
   init(): Promise<void>;
 }
@@ -131,8 +131,8 @@ export interface PlatformConfig {
     scheduler?: boolean;
     gen?: boolean;
     ai?: boolean;
-    /** AI 链路追踪（依赖 ai 模块，缺省跟随 ai 开关） */
-    aiTrace?: boolean;
+    /** AI 上下文洞察（依赖 ai 模块，缺省跟随 ai 开关） */
+    aiContext?: boolean;
     /** OAuth 2.0 / OpenID Connect 认证中心 */
     oauth?: boolean;
   };
@@ -200,8 +200,8 @@ export interface Platform {
   /** 代码生成模块 */
   gen?: GenModule;
   ai?: AIModule;
-  /** AI 链路追踪模块 */
-  aiTrace?: AiTraceModule;
+  /** AI 上下文模块 */
+  aiContext?: AiContextModule;
   /** OAuth 2.0 / OpenID Connect 模块 */
   oauth?: OAuthModule;
   /** 所有路由的聚合 */
@@ -244,26 +244,24 @@ async function loadAIModule(params: {
   });
 }
 
-/** 动态加载可选 AI 链路追踪模块（@ventostack/ai-trace 未安装时给出明确指引） */
-async function loadAiTraceModule(params: {
+/** 动态加载可选 AI 上下文模块（@ventostack/ai-context 未安装时给出明确指引） */
+async function loadAiContextModule(params: {
   db: Database;
   emitter: unknown;
-  configProvider: unknown;
   jwt: JWTManager;
   jwtSecret: string;
-  rbac: RBAC;
   tenantId: string;
-}): Promise<AiTraceModule> {
-  let factory: (deps: unknown) => AiTraceModule;
+}): Promise<AiContextModule> {
+  let factory: (deps: unknown) => AiContextModule;
   try {
     factory = (
-      (await import('@ventostack/ai-trace')) as {
-        createAiTraceModule: (deps: unknown) => AiTraceModule;
+      (await import('@ventostack/ai-context')) as {
+        createAiContextModule: (deps: unknown) => AiContextModule;
       }
-    ).createAiTraceModule;
+    ).createAiContextModule;
   } catch (error) {
     throw new Error(
-      `modules.aiTrace 已启用但未安装 @ventostack/ai-trace（可选依赖）。请安装该包，或将 modules.aiTrace 设为 false。原始错误：${String(error)}`,
+      `modules.aiContext 已启用但未安装 @ventostack/ai-context（可选依赖）。请安装该包，或将 modules.aiContext 设为 false。原始错误：${String(error)}`,
     );
   }
   return factory(params);
@@ -326,7 +324,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     gen: moduleFlags?.gen !== false,
     ai: moduleFlags?.ai === true,
     // 链路追踪依赖 ai 模块：ai 关闭时强制禁用
-    aiTrace: moduleFlags?.aiTrace !== false && moduleFlags?.ai === true,
+    aiContext: moduleFlags?.aiContext !== false && moduleFlags?.ai === true,
     oauth: moduleFlags?.oauth === true,
   };
 
@@ -487,7 +485,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
-  // AI 模块：仅在实际启用时动态加载 @ventostack/ai / @ventostack/ai-trace。
+  // AI 模块：仅在实际启用时动态加载 @ventostack/ai / @ventostack/ai-context。
   // 这两个包是 optionalDependencies，未启用 AI 的应用不必安装；
   // 动态 import 使未安装时不影响包解析与构建（bun build --packages=external 保留 import 语句，仅运行时触发）。
   const aiMod = enabled.ai
@@ -506,16 +504,14 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       })
     : undefined;
 
-  // AI 链路追踪：订阅 ai 模块事件流（system 须先创建以提供配置读取）
-  const aiTraceMod =
-    enabled.aiTrace && aiMod && system
-      ? await loadAiTraceModule({
+  // AI 上下文洞察：订阅 ai 模块事件流（system 须先创建以提供配置读取）
+  const aiContextMod =
+    enabled.aiContext && aiMod && system
+      ? await loadAiContextModule({
           db,
           emitter: aiMod.services.eventEmitter,
-          configProvider: system.services.config,
           jwt,
           jwtSecret,
-          rbac,
           tenantId: normalizedTenantId,
         })
       : undefined;
@@ -538,7 +534,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   if (schedulerMod) router.merge(schedulerMod.router);
   if (genMod) router.merge(genMod.router);
   if (aiMod) router.merge(aiMod.router);
-  if (aiTraceMod) router.merge(aiTraceMod.router);
+  if (aiContextMod) router.merge(aiContextMod.router);
 
   return {
     ...(system !== undefined ? { system } : {}),
@@ -551,7 +547,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(genMod !== undefined ? { gen: genMod } : {}),
     router,
     ...(aiMod !== undefined ? { ai: aiMod } : {}),
-    ...(aiTraceMod !== undefined ? { aiTrace: aiTraceMod } : {}),
+    ...(aiContextMod !== undefined ? { aiContext: aiContextMod } : {}),
     ...(oauthMod !== undefined ? { oauth: oauthMod } : {}),
     async init() {
       if (system) await system.init();
@@ -563,7 +559,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       if (schedulerMod) await schedulerMod.init();
       if (genMod) await genMod.init();
       if (aiMod) await aiMod.init();
-      if (aiTraceMod) await aiTraceMod.init();
+      if (aiContextMod) await aiContextMod.init();
       if (oauthMod) await oauthMod.init();
     },
   };

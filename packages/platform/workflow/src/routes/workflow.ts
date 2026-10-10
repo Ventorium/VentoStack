@@ -23,7 +23,9 @@ interface WorkflowAuthUser {
 
 function getActor(ctx: { user?: unknown }): { userId: string; tenantId: string } {
   const user = ctx.user as WorkflowAuthUser | undefined;
-  return { userId: user?.id ?? "", tenantId: user?.tenantId ?? "default" };
+  if (!user || !user.id) throw new VentoStackError("未认证", 401, "UNAUTHENTICATED");
+  if (!user.tenantId || user.tenantId.trim() === "") throw new VentoStackError("缺少租户归属", 403, "TENANT_REQUIRED");
+  return { userId: user.id, tenantId: user.tenantId };
 }
 
 export function createWorkflowRoutes(
@@ -39,10 +41,9 @@ export function createWorkflowRoutes(
   router.post("/api/workflow/definitions", perm("workflow:definition", "create"), async (ctx) => {
     try {
       const body = await parseBody(ctx.request);
-      const { userId, tenantId } = getActor(ctx);
+      const { userId } = getActor(ctx);
       const params = body as unknown as Parameters<WorkflowService["createDefinition"]>[0];
       params.createdBy = userId;
-      params.tenantId = tenantId;
       const result = await service.createDefinition(params);
       return success(result);
     } catch (e) { return handleError(e); }
@@ -51,8 +52,7 @@ export function createWorkflowRoutes(
   router.get("/api/workflow/definitions", perm("workflow:definition", "list"), async (ctx) => {
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const q = ctx.query as Record<string, unknown>;
-    const { tenantId } = getActor(ctx);
-    const params: Parameters<WorkflowService["listDefinitions"]>[0] = { tenantId, page, pageSize };
+    const params: Parameters<WorkflowService["listDefinitions"]>[0] = { page, pageSize };
     if (q.status !== undefined) params.status = Number(q.status);
     if (typeof q.category === "string") params.category = q.category;
     if (typeof q.businessType === "string") params.businessType = q.businessType;
@@ -65,7 +65,7 @@ export function createWorkflowRoutes(
     try {
       const bizType = (ctx.params as Record<string, string>).type!;
       const { tenantId } = getActor(ctx);
-      const def = await service.getDefinitionByBusinessType(bizType, tenantId);
+      const def = await service.getDefinitionByBusinessType(bizType);
       if (!def) return fail("未找到该业务类型对应的流程定义", 404, 404);
       return success(def);
     } catch (e) { return handleError(e); }
@@ -74,7 +74,7 @@ export function createWorkflowRoutes(
   router.get("/api/workflow/definitions/:id", perm("workflow:definition", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const { tenantId } = getActor(ctx);
-    const def = await service.getDefinition(id, tenantId);
+    const def = await service.getDefinition(id);
     if (!def) return fail("流程定义不存在", 404, 404);
     return success(def);
   });
@@ -84,7 +84,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       const { tenantId } = getActor(ctx);
-      await service.updateDefinition(id, body as Parameters<WorkflowService["updateDefinition"]>[1], tenantId);
+      await service.updateDefinition(id, body as Parameters<WorkflowService["updateDefinition"]>[1]);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -93,7 +93,7 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const { tenantId } = getActor(ctx);
-      await service.deleteDefinition(id, tenantId);
+      await service.deleteDefinition(id);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -102,7 +102,7 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const { tenantId } = getActor(ctx);
-      await service.publishDefinition(id, tenantId);
+      await service.publishDefinition(id);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -110,7 +110,7 @@ export function createWorkflowRoutes(
   router.post("/api/workflow/definitions/:id/disable", perm("workflow:definition", "disable"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const { tenantId } = getActor(ctx);
-    await service.disableDefinition(id, tenantId);
+    await service.disableDefinition(id);
     return success(null);
   });
 
@@ -118,7 +118,7 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const { tenantId } = getActor(ctx);
-      const result = await service.cloneDefinition(id, tenantId);
+      const result = await service.cloneDefinition(id);
       return success(result);
     } catch (e) { return handleError(e); }
   });
@@ -128,7 +128,7 @@ export function createWorkflowRoutes(
   router.get("/api/workflow/definitions/:id/graph", perm("workflow:definition", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const { tenantId } = getActor(ctx);
-    const graph = await service.getGraph(id, tenantId);
+    const graph = await service.getGraph(id);
     return success(graph);
   });
 
@@ -137,7 +137,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const body = await parseBody(ctx.request);
       const { tenantId } = getActor(ctx);
-      await service.saveGraph(id, body as { nodes: unknown[]; edges: unknown[] }, tenantId);
+      await service.saveGraph(id, body as { nodes: unknown[]; edges: unknown[] });
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -145,7 +145,7 @@ export function createWorkflowRoutes(
   router.post("/api/workflow/definitions/:id/graph/validate", perm("workflow:definition", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const { tenantId } = getActor(ctx);
-    const result = await service.validateGraphData(id, tenantId);
+    const result = await service.validateGraphData(id);
     return success(result);
   });
 
@@ -159,7 +159,6 @@ export function createWorkflowRoutes(
         definitionId: body.definitionId as string,
         initiatorId: userId,
         formData: (body.formData as Record<string, unknown>) ?? {},
-        tenantId,
       };
       if (typeof body.businessType === "string") params.businessType = body.businessType;
       if (typeof body.businessId === "string") params.businessId = body.businessId;
@@ -179,10 +178,10 @@ export function createWorkflowRoutes(
     const bizType = q.businessType as string | undefined;
     const bizId = q.businessId as string | undefined;
     if (bizType) {
-      const result = await service.listInstancesByBusiness(bizType, bizId, { page, pageSize, tenantId });
+      const result = await service.listInstancesByBusiness(bizType, bizId, { page, pageSize });
       return paginated(result.items, result.total, result.page, result.pageSize);
     }
-    const result = await service.listMyInstances(userId, { page, pageSize, tenantId });
+    const result = await service.listMyInstances(userId, { page, pageSize });
     return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
@@ -190,7 +189,7 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
-      const detail = await service.getInstanceDetail(id, tenantId);
+      const detail = await service.getInstanceDetail(id);
       if (!detail) return fail("实例不存在", 404, 404);
       // 最小化泄露：非发起人查看他人实例详情时，脱敏表单数据与变量
       // （公告等场景仅需展示流程状态/审批历史）
@@ -208,7 +207,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
       const body = await parseBody(ctx.request);
-      await service.withdrawInstance(id, userId, body.comment as string | undefined, tenantId);
+      await service.withdrawInstance(id, userId, body.comment as string | undefined);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -216,26 +215,26 @@ export function createWorkflowRoutes(
   router.get("/api/workflow/instances/:id/history", perm("workflow:instance", "query"), async (ctx) => {
     const id = (ctx.params as Record<string, string>).id!;
     const { tenantId } = getActor(ctx);
-    const history = await service.getInstanceHistory(id, tenantId);
+    const history = await service.getInstanceHistory(id);
     return success(history);
   });
 
   // === 任务 ===
 
   router.get("/api/workflow/tasks", perm("workflow:task", "list"), async (ctx) => {
-    const { userId, tenantId } = getActor(ctx);
+    const { userId } = getActor(ctx);
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
     const q = ctx.query as Record<string, unknown>;
-    const params: Parameters<WorkflowService["listMyTasks"]>[1] = { tenantId, page, pageSize };
-    if (q.status !== undefined) params.status = Number(q.status);
-    const result = await service.listMyTasks(userId, params);
+    const params = { page, pageSize } as Parameters<WorkflowService["listMyTasks"]>[1];
+    if (q.status !== undefined) params!.status = Number(q.status);
+    const result = await service.listMyTasks(userId, params!);
     return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
   router.get("/api/workflow/tasks/done", perm("workflow:task", "list"), async (ctx) => {
     const { userId, tenantId } = getActor(ctx);
     const { page, pageSize } = pageOf(ctx.query as Record<string, unknown>);
-    const result = await service.listMyDoneTasks(userId, { page, pageSize, tenantId });
+    const result = await service.listMyDoneTasks(userId, { page, pageSize });
     return paginated(result.items, result.total, result.page, result.pageSize);
   });
 
@@ -244,7 +243,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
       const body = await parseBody(ctx.request);
-      await service.approveTask(id, userId, body.comment as string | undefined, tenantId);
+      await service.approveTask(id, userId, body.comment as string | undefined);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -254,7 +253,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
       const body = await parseBody(ctx.request);
-      await service.rejectTask(id, userId, body.comment as string | undefined, tenantId);
+      await service.rejectTask(id, userId, body.comment as string | undefined);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -264,7 +263,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
       const body = await parseBody(ctx.request);
-      await service.transferTask(id, userId, body.targetUserId as string, body.comment as string | undefined, tenantId);
+      await service.transferTask(id, userId, body.targetUserId as string, body.comment as string | undefined);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -274,7 +273,7 @@ export function createWorkflowRoutes(
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
       const body = await parseBody(ctx.request);
-      await service.addSign(id, userId, body.targetUserIds as string[], body.comment as string | undefined, tenantId);
+      await service.addSign(id, userId, body.targetUserIds as string[], body.comment as string | undefined);
       return success(null);
     } catch (e) { return handleError(e); }
   });
@@ -283,7 +282,7 @@ export function createWorkflowRoutes(
     try {
       const id = (ctx.params as Record<string, string>).id!;
       const { userId, tenantId } = getActor(ctx);
-      await service.urgeTask(id, userId, tenantId);
+      await service.urgeTask(id, userId);
       return success(null);
     } catch (e) { return handleError(e); }
   });

@@ -182,7 +182,7 @@ oss          → core, database, auth
 notification → core, database, auth, observability
 i18n         → core, database, auth
 workflow     → core, database, auth, events
-ai-trace     → core, database, observability, ai, auth
+ai-context   → core, database, observability, ai, auth
 ```
 
 平台层包之间**仅允许依赖 auth 能力包**（JWT/RBAC/ABAC/Session 引擎），不互相依赖业务包（横向解耦）。

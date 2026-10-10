@@ -24,6 +24,8 @@ export interface FlowActionDeps {
   db: Database;
   eventBus?: EventBus;
   assigneeResolver: AssigneeResolver;
+  /** 部署期绑定的租户 ID（必填，租户隔离 fail-closed） */
+  tenantId: string;
 }
 
 export async function insertHistory(
@@ -34,7 +36,7 @@ export async function insertHistory(
   operatorId: string,
   action: string,
   comment: string | null,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   await dbOrTx.query(WorkflowHistoryModel).insert({
     id: crypto.randomUUID(),
@@ -44,7 +46,7 @@ export async function insertHistory(
     operator_id: operatorId,
     action,
     comment,
-    tenant_id: tenantId ?? null,
+    tenant_id: tenantId,
   });
 }
 
@@ -52,8 +54,8 @@ export async function completeInstance(
   dbOrTx: Database,
   instanceId: string,
   operatorId: string,
+  tenantId: string,
   eventBus?: EventBus,
-  tenantId?: string,
 ): Promise<void> {
   // 幂等性保护：只有 RUNNING 状态才执行完结
   const current = await dbOrTx
@@ -81,7 +83,7 @@ export async function completeInstance(
     instanceId,
     businessType: current.business_type ?? null,
     businessId: current.business_id ?? null,
-    tenantId: current.tenant_id ?? tenantId ?? null,
+    tenantId: current.tenant_id ?? tenantId,
     completedBy: operatorId,
   });
 }
@@ -92,7 +94,7 @@ export async function createTasksForNode(
   instanceId: string,
   node: GraphNode,
   ctx: EngineContext,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const config = node.config as unknown as ApproveNodeConfig | null;
   const strategy: ApprovalStrategy = config?.strategy ?? 'sequential';
@@ -109,7 +111,7 @@ export async function createTasksForNode(
       node_id: node.id,
       assignee_id: assignees[0]!,
       status: TS.PENDING,
-      tenant_id: tenantId ?? null,
+      tenant_id: tenantId,
     });
     deps.eventBus?.emit(workflowTaskCreated, {
       instanceId,
@@ -124,7 +126,7 @@ export async function createTasksForNode(
         node_id: node.id,
         assignee_id: assigneeId,
         status: TS.PENDING,
-        tenant_id: tenantId ?? null,
+        tenant_id: tenantId,
       });
       deps.eventBus?.emit(workflowTaskCreated, { instanceId, assigneeId, nodeId: node.id });
     }
@@ -138,7 +140,7 @@ export async function advanceFromNode(
   graph: WorkflowGraph,
   currentNodeId: string,
   ctx: EngineContext,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   await insertHistory(
     dbOrTx,
@@ -165,7 +167,7 @@ export async function advanceFromNode(
       null,
       tenantId,
     );
-    await completeInstance(dbOrTx, instanceId, ctx.operatorId, deps.eventBus, tenantId);
+    await completeInstance(dbOrTx, instanceId, ctx.operatorId, tenantId, deps.eventBus);
     return;
   }
 
@@ -190,7 +192,7 @@ export async function advanceFromNode(
           null,
           tenantId,
         );
-        await completeInstance(dbOrTx, instanceId, ctx.operatorId, deps.eventBus, tenantId);
+        await completeInstance(dbOrTx, instanceId, ctx.operatorId, tenantId, deps.eventBus);
         break;
       case 'approve':
         await insertHistory(
@@ -232,7 +234,7 @@ export async function processNodeCompletion(
   graph: WorkflowGraph,
   nodeId: string,
   ctx: EngineContext,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const node = graph.nodes.get(nodeId)!;
   const config = node.config as unknown as ApproveNodeConfig | null;
@@ -261,7 +263,7 @@ export async function processNodeCompletion(
           node_id: nodeId,
           assignee_id: nextAssignee,
           status: TS.PENDING,
-          tenant_id: tenantId ?? null,
+          tenant_id: tenantId,
         });
         deps.eventBus?.emit(workflowTaskCreated, { instanceId, assigneeId: nextAssignee, nodeId });
         return;
@@ -303,7 +305,7 @@ export async function handleNodeReject(
   graph: WorkflowGraph,
   nodeId: string,
   ctx: EngineContext,
-  tenantId?: string,
+  tenantId: string,
 ): Promise<void> {
   const node = graph.nodes.get(nodeId)!;
   const config = node.config as unknown as ApproveNodeConfig | null;

@@ -69,8 +69,8 @@ export interface AssigneeResolver {
 /**
  * 创建审批人解析器
  */
-export function createAssigneeResolver(deps: { db: Database }): AssigneeResolver {
-  const { db } = deps;
+export function createAssigneeResolver(deps: { db: Database; tenantId: string }): AssigneeResolver {
+  const { db, tenantId } = deps;
 
   async function resolve(node: GraphNode, ctx: EngineContext): Promise<string[]> {
     const config = node.config as unknown as ApproveNodeConfig | null;

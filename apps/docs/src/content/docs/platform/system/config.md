@@ -26,7 +26,6 @@ description: '系统参数提供按租户隔离、可在线修改并实时生效
 | `sys_mfa_force` | `false` | 登录后标记未配置 MFA 的用户并提示设置；仅在 MFA 总开关开启时生效 |
 | `sys_passkey_enabled` | `true` | 控制 Passkey 登录和新凭据注册；关闭后仍允许查看、删除已有凭据 |
 | `sys_register_enabled` | `false` | 控制注册 API 和登录页注册入口；缺失或非法值按关闭处理 |
-| `ai_trace_enabled` | `true` | 控制 AI recorder 是否写入新的链路记录，修改后即时生效 |
 
 这些记录属于系统预设参数：`key` 和元数据固定，只允许修改参数值及排序，不允许删除。后端返回 `isSystem: true`，页面据此隐藏删除操作；删除限制同时在服务层强制执行，不能通过直接调用 API 绕过。
 
@@ -60,6 +59,11 @@ GET /api/system/configs/public
 
 敏感参数在列表和按 key 查询接口中返回 `******`。编辑时原样回传该占位符表示保持原值，真实密文不会通过管理 API 返回。
 
-## AI 链路追踪开关
+## AI 上下文采集开关已下线
 
-AI 链路追踪页的 `/api/ai/trace/config` 与系统参数页操作的是同一个租户下的 `ai_trace_enabled`。该专用接口要求 `ai:trace:config` 权限；系统参数页则要求管理员权限。开关不存在时 recorder 按“开启”处理以保证默认可审计，种子会为新租户创建该预设记录。
+早期版本用全局系统参数 `ai_context_enabled` 控制上下文采集，已随迁移 `021` / `022` 移除：
+该键不再预置，`/api/ai/context/config` 接口也已删除。
+
+采集开关现改为**按 Agent** 独立控制，存放在 `ai_agent.context_collection_enabled`，
+在 **Agent 管理 → 编辑弹窗** 中设置，默认关闭。详见
+[AI 上下文洞察概述](../ai-context/overview.md)。

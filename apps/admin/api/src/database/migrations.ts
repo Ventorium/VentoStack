@@ -19,7 +19,7 @@ import {
   dropAgentType,
   dropAiToolLog,
 } from '@ventostack/ai';
-import { createTraceTables } from '@ventostack/ai-trace';
+import { createContextTables } from '@ventostack/ai-context';
 import { createTagLogger } from '@ventostack/core';
 import { type SqlExecutor, createMigrationRunner } from '@ventostack/database';
 import { createI18nTables } from '@ventostack/i18n';
@@ -51,6 +51,9 @@ import { tenantScopeSystemTables } from './migrations/016_tenant_scope_system_ta
 import { addOperationLogLocation } from './migrations/017_operation_log_location';
 import { addDictPublicAccess } from './migrations/018_dict_public_access';
 import { normalizePresetConfigs } from './migrations/019_normalize_preset_configs';
+import { dropAiTraceArtifacts } from './migrations/020_drop_ai_trace_artifacts';
+import { addAgentContextToggleAndPruneAiMenus } from './migrations/021_agent_context_toggle_and_prune_ai_menus';
+import { pruneAiContextAndAuditMenus } from './migrations/022_prune_ai_context_and_audit_menus';
 
 const logger = createTagLogger('migrations');
 
@@ -119,8 +122,13 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   // 审批单关联会话：审批台账写回会话历史 + 任意决议路径反查会话
   runner.addMigration(addApprovalSessionId);
 
-  // AI 链路追踪
-  runner.addMigration(createTraceTables);
+  // AI 上下文洞察
+  runner.addMigration(createContextTables);
+
+  // 清除 ai-trace 遗留（菜单/配置/表），须在建表之后、种子之前
+  runner.addMigration(dropAiTraceArtifacts);
+  runner.addMigration(addAgentContextToggleAndPruneAiMenus);
+  runner.addMigration(pruneAiContextAndAuditMenus);
 
   const executed = await runner.up();
 

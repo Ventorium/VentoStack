@@ -15,7 +15,6 @@ import { noticeWorkflowSeed } from './seeds/006_notice_workflow';
 import { addAIMenusSeed } from './seeds/007_ai_menus';
 import { skillCreatorAgentSeed } from './seeds/008_skill_creator_agent';
 import { addDeepResearchSkillSeed } from './seeds/010_deep_research_skill';
-import { addAITraceSeed } from './seeds/011_ai_trace';
 import { addOAuthMenusSeed } from './seeds/012_oauth_menus';
 
 const log = createTagLogger('seeds');
@@ -31,7 +30,6 @@ export async function runSeeds(executor: SqlExecutor): Promise<void> {
   runner.addSeed(addAIMenusSeed);
   runner.addSeed(skillCreatorAgentSeed);
   runner.addSeed(addDeepResearchSkillSeed);
-  runner.addSeed(addAITraceSeed);
   runner.addSeed(addOAuthMenusSeed);
 
   await runner.run();

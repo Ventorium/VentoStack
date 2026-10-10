@@ -430,6 +430,7 @@ const AgentsPage = () => {
       isPublic: record.isPublic,
       maxIterations: record.maxIterations ?? 200,
       requiresVirtualEnvironment: record.requiresVirtualEnvironment,
+      contextCollectionEnabled: record.contextCollectionEnabled,
     });
 
     // 设置记忆配置
@@ -888,6 +889,15 @@ const AgentsPage = () => {
                   checkedChildren="启用"
                   unCheckedChildren="关闭"
                 />
+              </Form.Item>
+              <Form.Item
+                label="上下文采集"
+                name="contextCollectionEnabled"
+                valuePropName="checked"
+                initialValue={false}
+                tooltip="记录该 Agent 每次模型请求装配出的上下文（系统提示 / 工具 schema / 各分桶消息）。属调试信息，仅管理员可在对话内查看，默认关闭"
+              >
+                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
               </Form.Item>
               <Form.Item
                 label="最大迭代轮数"

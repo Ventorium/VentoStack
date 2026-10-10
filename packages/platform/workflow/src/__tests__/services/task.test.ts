@@ -62,8 +62,8 @@ describe("TaskService", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    const assigneeResolver = createAssigneeResolver({ db });
-    service = createTaskService({ db, assigneeResolver });
+    const assigneeResolver = createAssigneeResolver({ db, tenantId: 'default' });
+    service = createTaskService({ db, assigneeResolver, tenantId: 'default' });
   });
 
   describe("approve", () => {
@@ -240,8 +240,8 @@ describe("TaskService — additional edge cases", () => {
     const mockExec = createMockExecutor();
     ({ calls, results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    const assigneeResolver = createAssigneeResolver({ db });
-    service = createTaskService({ db, assigneeResolver });
+    const assigneeResolver = createAssigneeResolver({ db, tenantId: 'default' });
+    service = createTaskService({ db, assigneeResolver, tenantId: 'default' });
   });
 
   describe("transfer — error distinction", () => {
@@ -332,8 +332,8 @@ describe("TaskService — transfer self", () => {
     const mockExec = createMockExecutor();
     ({ results } = mockExec);
     ({ db } = createMockDatabase(mockExec));
-    const assigneeResolver = createAssigneeResolver({ db });
-    service = createTaskService({ db, assigneeResolver });
+    const assigneeResolver = createAssigneeResolver({ db, tenantId: 'default' });
+    service = createTaskService({ db, assigneeResolver, tenantId: 'default' });
   });
 
   it("should throw when transferring to self", async () => {

@@ -74,6 +74,7 @@ const AGENT_BODY_FIELDS = [
   'maxTokensPerTurn',
   'isPublic',
   'requiresVirtualEnvironment',
+  'contextCollectionEnabled',
 ] as const;
 
 /** 迭代轮数 / 单轮 Token / 能力清单长度的硬上限（防止单条消息放大成天文数字的 LLM 成本）；maxIterations 额外允许 -1（无上限） */
@@ -189,6 +190,10 @@ export function createAgentRoutes(
         maxIterations: { type: 'int', description: '最大迭代轮数' },
         maxTokensPerTurn: { type: 'int', description: '每轮 Token 上限' },
         isPublic: { type: 'bool', description: '是否公开' },
+        contextCollectionEnabled: {
+          type: 'bool',
+          description: '是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）',
+        },
         requiresVirtualEnvironment: {
           type: 'bool',
           description: '是否为 Agent 创建独占虚拟环境（创建后不可修改）',
@@ -303,6 +308,10 @@ export function createAgentRoutes(
         maxIterations: { type: 'int', description: '最大迭代轮数' },
         maxTokensPerTurn: { type: 'int', description: '每轮 Token 上限' },
         isPublic: { type: 'bool', description: '是否公开' },
+        contextCollectionEnabled: {
+          type: 'bool',
+          description: '是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）',
+        },
       },
     }),
     async (ctx) => {

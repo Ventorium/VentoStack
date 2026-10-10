@@ -168,8 +168,8 @@ export async function buildApp(opts?: {
       oss: true,
       scheduler: true,
       ai: env.AI_ENABLED,
-      // 链路追踪跟随 ai 开关（运行时可通过后台配置 ai_trace_enabled 单独关闭记录）
-      aiTrace: env.AI_ENABLED,
+      // 上下文洞察跟随 ai 开关（运行时可通过后台配置 ai_context_enabled 单独关闭采集）
+      aiContext: env.AI_ENABLED,
       oauth: env.OAUTH_ENABLED,
     },
     ...(env.AI_ENABLED

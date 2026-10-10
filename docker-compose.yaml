@@ -19,6 +19,8 @@ services:
     container_name: ventostack-postgres
     restart: unless-stopped
     environment:
+      # 复用既有卷中的 pgdata 集群（历史数据保留）；与卷布局保持一致
+      PGDATA: /var/lib/postgresql/data/pgdata
       POSTGRES_USER: ${DB_USER:?required}
       POSTGRES_PASSWORD: ${DB_PASSWORD:?required}
       POSTGRES_DB: ${DB_NAME:?required}
