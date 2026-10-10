@@ -45,6 +45,7 @@ interface BottomInputProps {
   contextUsage?: { used: number; total: number };
   workspaceFiles?: WorkspaceFile[];
   /** 当前账号是否可查看上下文洞察（仅管理员） */
+  /** 管理员 + 当前 Agent 开启上下文采集 */
   canViewContext?: boolean;
   attachments?: Array<{ path: string; name: string }>;
   uploadingAttachment?: boolean;

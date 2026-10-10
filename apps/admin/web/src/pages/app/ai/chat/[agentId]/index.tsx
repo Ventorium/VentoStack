@@ -141,6 +141,8 @@ interface AgentInfo {
   description: string | null;
   welcomeMessage: string | null;
   requiresVirtualEnvironment: boolean;
+  /** 上下文采集开关（调试信息，仅管理员可在对话内查看） */
+  contextCollectionEnabled: boolean;
   /** 可用模型 ID 白名单（第一项为默认模型） */
   models: string[];
   systemPrompt: string;
@@ -418,6 +420,7 @@ function AgentConversation(): React.ReactElement {
             models: a.model ?? [],
             systemPrompt: a.systemPrompt,
             requiresVirtualEnvironment: a.requiresVirtualEnvironment,
+            contextCollectionEnabled: a.contextCollectionEnabled ?? false,
             tools: a.tools ?? [],
             skills: [], // Will be populated after matching
             mcpServers: [], // Will be populated after matching
@@ -503,6 +506,10 @@ function AgentConversation(): React.ReactElement {
       setSessionId(undefined);
       setAttachments([]);
       setBoundKbIds([]);
+      // 若当前在上下文页签但新 Agent 未开启采集，切回对话
+      if (activeTab === 'context' && !agent.contextCollectionEnabled) {
+        setActiveTab('chat');
+      }
       // 同步到路径参数，刷新后可恢复；链接带 ?s= 时暂留，交给恢复逻辑消费
       const pendingSession = pendingUrlSessionRef.current;
       navigate(
@@ -1468,7 +1475,7 @@ function AgentConversation(): React.ReactElement {
                 <MemoryPanel sessionId={sessionId} />
               </div>
             )}
-            {activeTab === 'context' && canViewContext && (
+            {activeTab === 'context' && canViewContext && selectedAgent?.contextCollectionEnabled && (
               <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
                 <ContextPanel sessionId={sessionId} />
               </div>
@@ -1487,7 +1494,7 @@ function AgentConversation(): React.ReactElement {
           <BottomInput
             activeTab={activeTab}
             onTabChange={setActiveTab}
-            canViewContext={canViewContext}
+            canViewContext={canViewContext && !!selectedAgent?.contextCollectionEnabled}
             onSend={handleSend}
             onStop={handleStop}
             loading={loading}
