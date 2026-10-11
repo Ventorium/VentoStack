@@ -75,6 +75,18 @@ export default defineConfig(({ mode }) => {
       host: "0.0.0.0",
       port: 9321,
       allowedHosts: ['stack.erguotou.me'],
+      // 直连 Vite(:9321) 时，前端用相对路径请求 /api/*，若不代理，
+      // Vite 会按 SPA 回落规则对 /api/* 一律返回 index.html（200 + text/html）。
+      // 前端拿 HTML 当 JSON 解析，登录/菜单等接口静默失败，
+      // 菜单数据缺失 → 路由表半残 → findLeafMenuTitle 抛 "rs is not iterable"。
+      // 经后端 vite-bridge(:9320) 访问时由桥接层转发，此代理仅用于直连场景。
+      proxy: {
+        "/api": {
+          // 后端 dev server 端口，与 apps/admin/api 的启动端口一致
+          target: "http://localhost:9320",
+          changeOrigin: true,
+        },
+      },
       hmr: {
         protocol: hmrProtocol,
         host: hmrHost,
