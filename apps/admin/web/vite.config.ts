@@ -82,7 +82,32 @@ export default defineConfig(({ mode }) => {
       },
     },
     optimizeDeps: {
-      include: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "react/jsx-dev-runtime"],
+      // 必须把页面会**动态导入**的外部包一次性列全。
+      // 否则 Vite 会在你访问页面时才「发现」新依赖、优化完再强制整页 reload，
+      // 动态 import 在那个窗口里失败，表现为
+      // "Failed to fetch dynamically imported module" 或白屏。
+      include: [
+        "react",
+        "react-dom",
+        "react-dom/client",
+        "react/jsx-runtime",
+        "react/jsx-dev-runtime",
+        "react-router",
+        "react-router-dom",
+        "zustand",
+        "antd",
+        "@ant-design/icons",
+        "@simplewebauthn/browser",
+        "@doremijs/o2t-client",
+        "clsx",
+        "dayjs",
+        "echarts-for-react",
+        "@milkdown/core",
+        "@milkdown/crepe",
+        "@milkdown/kit",
+        "@milkdown/react",
+        "@xyflow/react",
+      ],
       esbuildOptions: {
         plugins: [createReactCjsEntryPlugin()],
       },
