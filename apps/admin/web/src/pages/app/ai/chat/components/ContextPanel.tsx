@@ -110,8 +110,10 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
       setNotFound(true);
       return;
     }
-    setNotFound(false);
-    setDetail(data as Detail | undefined);
+    const d = data as Detail | undefined;
+    // 后端对无记录的会话返回 200 + 空详情（rev === 0），视作「未采集」引导态
+    setNotFound((d?.rev ?? 0) === 0);
+    setDetail(d);
   }, [sessionId]);
 
   useEffect(() => {

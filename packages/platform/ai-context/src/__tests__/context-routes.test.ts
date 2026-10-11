@@ -241,16 +241,28 @@ describe("上下文洞察路由", () => {
   });
 
   describe("4. 跨租户不可见", () => {
-    test("其他租户的会话详情按 404 处理", async () => {
+    test("其他租户的会话详情返回空数据，不泄露对方数据", async () => {
+      // getDetail 带租户过滤：跨租户查询返回 null。路由将其降级为空详情（200），
+      // 与「本会话无记录」同形状 —— 无论会话是否真实存在、是否跨租户，
+      // 响应都一致，不暴露资源存在性（也消除了 404 侧信道）。
       const queries = createQueriesStub({ getDetail: async () => null });
       const router = createContextRoutes(queries, withUser(adminUser));
 
       const res = await invoke(router, "GET", "/api/ai/context/sessions/:sessionId");
 
-      expect(res.status).toBe(404);
+      expect(res.status).toBe(200);
       const body = await res.json();
-      expect(body.message).toBe("会话不存在");
-      expect(JSON.stringify(body)).not.toContain("t-a");
+      // 空详情：与「本会话无记录」同形状，无任何数据
+      expect(body.data.requests).toEqual([]);
+      expect(body.data.nodes).toEqual([]);
+      expect(body.data.events).toEqual([]);
+      expect(body.data.archive).toEqual([]);
+      expect(body.data.fileOps).toEqual([]);
+      expect(body.data.rev).toBe(0);
+      // getDetail 返回 null（跨租户 / 无记录）时路由不会把它透传给客户端，
+      // 响应里不含任何会话内容字段（如正常详情才有的 lastUser / 模型 / runCount 计数）
+      expect(body.data.session.lastUser).toBeNull();
+      expect(body.data.session.runCount).toBe(0);
     });
   });
 

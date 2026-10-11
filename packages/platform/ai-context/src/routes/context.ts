@@ -29,6 +29,7 @@ import {
   sessionListQuery,
 } from "./schema";
 import type { ContextQueries, SessionListParams } from "../services/context-queries";
+import type { ContextDetail } from "../shared/types";
 
 /** ISO 8601 时间串校验（空串/非法串拒绝，避免透传进 SQL 时间比较） */
 function isIsoDate(value: unknown): value is string {
@@ -44,6 +45,52 @@ interface AuthUser {
 
 /** 超级管理员角色代码，与 auth 的 SUPER_ADMIN_ROLE 保持一致 */
 const ADMIN_ROLE = "admin";
+
+/** 会话无上下文记录时返回的空详情：形状与正常详情一致，仅数据为空 */
+function emptyDetail(tenantId: string, sessionId: string): ContextDetail {
+  return {
+    session: {
+      id: "",
+      tenantId,
+      sessionId,
+      title: null,
+      agentId: null,
+      agentName: null,
+      userId: null,
+      userName: null,
+      parentRunId: null,
+      runCount: 0,
+      model: null,
+      provider: null,
+      contextWindow: null,
+      status: "success",
+      counts: {
+        turns: 0,
+        steps: 0,
+        injects: 0,
+        compactions: 0,
+        prunes: 0,
+        skills: 0,
+        humanInputs: 0,
+        answers: 0,
+      },
+      current: { system: 0, tools: 0, user: 0, inject: 0, skill: 0, assistant: 0, tool: 0, total: 0 },
+      usage: { uncached: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
+      durationMs: 0,
+      lastUser: null,
+      startedAt: "",
+      endedAt: null,
+    },
+    requests: [],
+    events: [],
+    nodes: [],
+    droppedNodes: 0,
+    archive: [],
+    archiveFloor: null,
+    fileOps: [],
+    rev: 0,
+  };
+}
 
 /**
  * 管理员专属门禁 + 租户解析，合并成一个中间件。
@@ -167,8 +214,10 @@ export function createContextRoutes(
         const { tenantId } = requireAdmin(ctx);
         const sessionId = (ctx.params as Record<string, string>).sessionId!;
         const detail = await queries.getDetail(tenantId, sessionId);
-        // 跨租户会话按 404 处理，避免泄露资源是否存在
-        if (!detail) return fail("会话不存在", 404, 404);
+        // 无上下文记录（会话尚未产生模型请求，或采集已过期）返回空详情而非 404：
+        // 前端据此渲染空态。统一 200 也消除了「探测会话是否存在」的侧信道——
+        // 无论会话是否真实存在、是否跨租户，响应形状都一致，不泄露资源存在性。
+        if (!detail) return success(emptyDetail(tenantId, sessionId));
         return success(detail);
       } catch (e) {
         return handleError(e);
