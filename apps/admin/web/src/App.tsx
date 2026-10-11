@@ -67,15 +67,16 @@ const _App = () => {
   useEffect(() => {
     if (authReady) {
       if (logged) {
-        // fetch menus when logged in and not already fetched
-        fetchRoutes();
+        // 仅在菜单尚未就绪时拉取。fetchRoutes 内部已做并发去重，
+        // 此处再挡一层，避免每次路由跳转都重新请求菜单与权限
+        if (!menuReady) fetchRoutes();
       } else if (pathname !== LOGIN_PATH) {
         // 与 RequireAuth 守卫保持一致：携带原始目标，登录成功后可回跳
         const { to, state: loginState } = buildLoginRedirect(pathname, search);
         navigate(to, { replace: true, state: loginState });
       }
     }
-  }, [authReady, logged, pathname, search, navigate, fetchRoutes]);
+  }, [authReady, logged, pathname, search, navigate, fetchRoutes, menuReady]);
 
   // 动态更新 document.title：系统名称 - 当前菜单标题
   useEffect(() => {

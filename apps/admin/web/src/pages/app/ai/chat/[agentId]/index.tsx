@@ -408,6 +408,7 @@ function AgentConversation(): React.ReactElement {
               mcpServerIds: string[] | null;
               knowledgeBaseIds: string[] | null;
               requiresVirtualEnvironment: boolean;
+              contextCollectionEnabled: boolean;
             }>;
           }
         )?.list;
