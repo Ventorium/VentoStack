@@ -120,7 +120,11 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
 
   // 未开启采集：后端无记录，这是预期状态而非错误，用引导态而不是「会话不存在」
   if (!sessionId) {
-    return <Empty description="先选择一个会话，再查看它装配出的上下文" />;
+    return (
+      <div className="pt-16">
+        <Empty description="先选择一个会话，再查看它装配出的上下文" />
+      </div>
+    );
   }
 
   if (loading) {
@@ -132,7 +136,11 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
   }
 
   if (notFound) {
-    return <Empty description="该会话没有上下文记录（未为该 Agent 开启采集，或数据已过期）" />;
+    return (
+      <div className="pt-16">
+        <Empty description="该会话没有上下文记录（未为该 Agent 开启采集，或数据已过期）" />
+      </div>
+    );
   }
 
   const session = detail?.session;
