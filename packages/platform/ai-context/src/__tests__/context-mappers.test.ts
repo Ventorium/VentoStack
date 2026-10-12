@@ -69,6 +69,25 @@ describe("行映射：Bun SQL 驱动类型收敛", () => {
     expect(s.current.total).toBe(203);
   });
 
+  test("会话行：current.user 取 current_user_msgs（列名与请求表不同，此前恒为 0）", () => {
+    const s = toContextSession({
+      id: "s1",
+      session_id: "sess-1",
+      // 真实列名是 current_user_msgs；若误读 current_user 则恒为 0，
+      // 组成占比各分桶之和也会与 current_total 对不上
+      current_system: 160,
+      current_user_msgs: 38,
+      current_assistant: 72,
+      current_tool: 72,
+      current_total: 342,
+    });
+    expect(s.current.user).toBe(38);
+    expect(
+      s.current.system + s.current.tools + s.current.user + s.current.inject +
+        s.current.skill + s.current.assistant + s.current.tool,
+    ).toBe(s.current.total);
+  });
+
   test("会话行：无 started_at 时保持空串（空详情标记不被破坏）", () => {
     const s = toContextSession({ id: "", session_id: "", started_at: null, ended_at: null });
     expect(s.startedAt).toBe("");

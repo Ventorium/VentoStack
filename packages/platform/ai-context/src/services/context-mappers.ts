@@ -77,6 +77,15 @@ export function parseComposition(row: RawRow, prefix = "comp_"): Composition {
   };
 }
 
+/**
+ * 会话「当前构成」：列名与请求表不一致（用户消息列是 current_user_msgs），
+ * 复用 parseComposition(row, "current_") 会去读不存在的 current_user，
+ * 使组成占比里的「用户消息」恒为 0（且各分桶之和对不上 current_total）。
+ */
+function parseCurrentComposition(row: RawRow): Composition {
+  return { ...parseComposition(row, "current_"), user: num(row, "current_user_msgs") };
+}
+
 export function toContextSession(row: RawRow): ContextSession {
   return {
     id: str(row, "id") ?? "",
@@ -103,7 +112,7 @@ export function toContextSession(row: RawRow): ContextSession {
       humanInputs: num(row, "human_input_count"),
       answers: num(row, "answer_count"),
     },
-    current: parseComposition(row, "current_"),
+    current: parseCurrentComposition(row),
     usage: {
       uncached: num(row, "usage_uncached"),
       cacheRead: num(row, "usage_cache_read"),
