@@ -18,6 +18,8 @@ interface Node {
   name?: string;
   tokens?: number;
   preview?: string;
+  /** 完整内容（最长 2 万字符），展开行展示；系统提示 / 用户消息全文在这里 */
+  content?: string | null;
   goneAtSeq?: number;
 }
 
@@ -39,6 +41,7 @@ type Filter = "all" | "survived";
 export default function ContextBrowser({ nodes, archive, requests }: Props) {
   const [filter, setFilter] = useState<Filter>("survived");
   const [targetSeq, setTargetSeq] = useState<number | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   // 活跃面 + 归档 合并为一个可重建集合
   const allNodes = useMemo(() => {
@@ -99,34 +102,51 @@ export default function ContextBrowser({ nodes, archive, requests }: Props) {
         {visible.map((n) => {
           const style = CATEGORY_STYLE[n.category ?? ""];
           const isGhost = filter === "all" && n.goneAtSeq !== null && n.goneAtSeq !== undefined;
+          const isExpanded = n.id === expandedId;
           return (
             <div
               key={n.id}
-              className={`flex items-start gap-2 px-2 py-1.5 rounded border border-solid border-gray-200 dark:border-gray-700 ${
-                isGhost ? "opacity-45" : ""
+              className={`flex flex-col rounded border border-solid border-gray-200 dark:border-gray-700 ${
+                isGhost ? "opacity-45" : isExpanded ? "bg-gray-50 dark:bg-gray-800" : ""
               }`}
             >
-              <span className="text-xs text-gray-400 w-12 shrink-0 pt-0.5">#{n.seq}</span>
-              <Tag
-                color={style?.color}
-                className="shrink-0 m-0"
-                style={{ minWidth: 68, textAlign: "center" }}
+              {/* 行主体：点击切换展开，展示完整内容（系统提示 / 用户消息全文） */}
+              <button
+                type="button"
+                onClick={() => setExpandedId(isExpanded ? null : n.id)}
+                className="flex w-full items-start gap-2 px-2 py-1.5 rounded text-left hover:bg-gray-50 dark:hover:bg-gray-700"
               >
-                {style?.label ?? n.category}
-              </Tag>
-              <span className="w-24 shrink-0 text-xs truncate text-gray-500 pt-0.5">
-                {n.name ?? "-"}
-              </span>
-              <Tooltip title={n.preview} placement="topLeft">
-                <span className="flex-1 text-xs truncate">{n.preview ?? "(无内容)"}</span>
-              </Tooltip>
-              <span className="text-xs text-gray-400 shrink-0 pt-0.5">
-                {(n.tokens ?? 0).toLocaleString()}
-              </span>
-              {isGhost && (
-                <span className="text-xs text-orange-500 shrink-0 pt-0.5">
-                  已被 #{n.goneAtSeq} 移走
+                <span className="text-xs text-gray-400 w-12 shrink-0 pt-0.5">#{n.seq}</span>
+                <Tag
+                  color={style?.color}
+                  className="shrink-0 m-0"
+                  style={{ minWidth: 68, textAlign: "center" }}
+                >
+                  {style?.label ?? n.category}
+                </Tag>
+                <span className="w-24 shrink-0 text-xs truncate text-gray-500 pt-0.5">
+                  {n.name ?? "-"}
                 </span>
+                <Tooltip title={n.preview} placement="topLeft">
+                  <span className="flex-1 text-xs truncate">{n.preview ?? "(无内容)"}</span>
+                </Tooltip>
+                <span className="text-xs text-gray-400 shrink-0 pt-0.5">
+                  {(n.tokens ?? 0).toLocaleString()}
+                </span>
+                <span className="text-xs text-gray-400 shrink-0 pt-0.5">
+                  {isExpanded ? "▲" : "▼"}
+                </span>
+                {isGhost && (
+                  <span className="text-xs text-orange-500 shrink-0 pt-0.5">
+                    已被 #{n.goneAtSeq} 移走
+                  </span>
+                )}
+              </button>
+              {/* 展开区：完整内容 */}
+              {isExpanded && (
+                <pre className="m-0 mx-2 mb-2 p-3 rounded bg-gray-100 dark:bg-gray-900 text-xs whitespace-pre-wrap break-all max-h-96 overflow-auto">
+                  {n.content && n.content.length > 0 ? n.content : (n.preview ?? "(无内容)")}
+                </pre>
               )}
             </div>
           );

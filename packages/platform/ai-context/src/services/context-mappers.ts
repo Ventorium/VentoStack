@@ -25,12 +25,30 @@ export const MAX_PREVIEW_LENGTH = 500;
 
 export function num(row: RawRow, key: string): number {
   const v = row[key];
-  return typeof v === "number" && Number.isFinite(v) ? v : 0;
+  if (typeof v === "number" && Number.isFinite(v)) return v;
+  // Bun SQL 驱动把 int8(bigint) 以字符串返回（避免超出 JS 安全整数范围丢精度），
+  // 若只认 number，usage_*/duration_ms/SUM(...)::bigint 会被静默读成 0。
+  if (typeof v === "string") {
+    const parsed = Number(v);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+  return 0;
 }
 
 export function str(row: RawRow, key: string): string | null {
   const v = row[key];
   return typeof v === "string" ? v : null;
+}
+
+/**
+ * 时间戳列映射：Bun SQL 把 timestamp 列解码为 Date，而不是字符串。
+ * 统一收敛为 ISO 字符串（前端再按本地时区格式化），避免时间字段静默变成 null。
+ */
+export function ts(row: RawRow, key: string): string | null {
+  const v = row[key];
+  if (v instanceof Date) return Number.isNaN(v.getTime()) ? null : v.toISOString();
+  if (typeof v === "string" && v !== "") return v;
+  return null;
 }
 
 export function truncate(text: string, limit: number): string {
@@ -94,8 +112,8 @@ export function toContextSession(row: RawRow): ContextSession {
     },
     durationMs: num(row, "duration_ms"),
     lastUser: str(row, "last_user"),
-    startedAt: str(row, "started_at") ?? "",
-    endedAt: str(row, "ended_at"),
+    startedAt: ts(row, "started_at") ?? "",
+    endedAt: ts(row, "ended_at"),
   };
 }
 
@@ -121,7 +139,7 @@ export function toRequestRecord(row: RawRow): RequestRecord {
           } satisfies ActualUsage),
     durationMs: row.duration_ms === null ? null : num(row, "duration_ms"),
     brief: parseBrief(row.brief),
-    createdAt: str(row, "created_at") ?? "",
+    createdAt: ts(row, "created_at") ?? "",
   };
 }
 
@@ -161,7 +179,7 @@ export function toContextEvent(row: RawRow): ContextEventRecord {
     deltaTokens: num(row, "delta_tokens"),
     turnIndex: num(row, "turn_index"),
     detail,
-    createdAt: str(row, "created_at") ?? "",
+    createdAt: ts(row, "created_at") ?? "",
   };
 }
 
@@ -177,7 +195,7 @@ export function toSurfaceNode(row: RawRow): SurfaceNode {
     content: str(row, "content"),
     images: num(row, "images"),
     goneAtSeq: row.gone_at_seq === null || row.gone_at_seq === undefined ? null : num(row, "gone_at_seq"),
-    createdAt: str(row, "created_at") ?? "",
+    createdAt: ts(row, "created_at") ?? "",
   };
 }
 

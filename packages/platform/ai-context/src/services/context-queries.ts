@@ -16,7 +16,7 @@ import type {
   ContextEventRecord,
   FileOpRecord,
 } from "../shared/types";
-import { emptyOverview, num, str, toContextEvent, toContextSession, toRequestRecord, toSurfaceNode } from "./context-mappers";
+import { emptyOverview, num, str, toContextEvent, toContextSession, toRequestRecord, toSurfaceNode, ts } from "./context-mappers";
 import type { RawRow } from "./context-mappers";
 
 export interface SessionListParams {
@@ -180,7 +180,7 @@ export function createContextQueries(db: Database): ContextQueries {
       added: num(r, "added"),
       removed: num(r, "removed"),
       detail: str(r, "detail"),
-      createdAt: str(r, "created_at") ?? "",
+      createdAt: ts(r, "created_at") ?? "",
     }));
 
     return {

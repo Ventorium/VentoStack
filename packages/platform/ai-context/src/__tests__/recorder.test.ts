@@ -32,12 +32,14 @@ interface Deps {
   recorder: ContextRecorder;
   applied: Array<{ tenantId: string; sessionId: string; ops: WriteOp[] }>;
   currentSeqCalls: Array<{ tenantId: string; sessionId: string }>;
+  closed: Array<{ tenantId: string; sessionId: string; status: string; durationMs?: number }>;
   emit: (e: AgentEvent) => Promise<void>;
 }
 
 function makeDeps(existingSeq: number): Deps {
   const applied: Array<{ tenantId: string; sessionId: string; ops: WriteOp[] }> = [];
   const currentSeqCalls: Array<{ tenantId: string; sessionId: string }> = [];
+  const closed: Array<{ tenantId: string; sessionId: string; status: string; durationMs?: number }> = [];
   let handler: ((e: AgentEvent) => Promise<void> | void) | null = null;
 
   const emitter = {
@@ -54,7 +56,14 @@ function makeDeps(existingSeq: number): Deps {
     async applyOps(tenantId: string, sessionId: string, ops: WriteOp[]): Promise<void> {
       applied.push({ tenantId, sessionId, ops });
     },
-    async closeSession(_tenantId: string, _sessionId: string, _status: string): Promise<void> {},
+    async closeSession(
+      tenantId: string,
+      sessionId: string,
+      status: string,
+      durationMs?: number,
+    ): Promise<void> {
+      closed.push({ tenantId, sessionId, status, durationMs });
+    },
     async markStaleSessions(_olderThanMs: number): Promise<number> {
       return 0;
     },
@@ -72,6 +81,7 @@ function makeDeps(existingSeq: number): Deps {
     recorder,
     applied,
     currentSeqCalls,
+    closed,
     emit: async (e) => {
       if (!handler) throw new Error("recorder 未订阅 emitter");
       await handler(e);
@@ -157,5 +167,27 @@ describe("采集记录器：跨 run seq 续接", () => {
     expect(currentSeqCalls).toHaveLength(0);
     expect(applied).toHaveLength(0);
     recorder.stop();
+  });
+
+  test("agent 结束把本 run 耗时交给 closeSession", async () => {
+    const deps = makeDeps(0);
+
+    await deps.emit({
+      type: "agent_start",
+      run: { runId: "run-c", sessionId: "sess-9", tenantId: "t", agentId: "a1" },
+    });
+    await deps.emit(ctx("t", "sess-9", "run-c", "你好"));
+    await deps.emit({
+      type: "agent_end",
+      run: { runId: "run-c", sessionId: "sess-9", tenantId: "t", agentId: "a1" },
+    });
+
+    expect(deps.closed).toHaveLength(1);
+    expect(deps.closed[0]!.status).toBe("success");
+    expect(deps.closed[0]!.sessionId).toBe("sess-9");
+    // 耗时来自 run 起始时间，必须是非负数字（此前恒为 undefined，前端显示 0ms）
+    expect(typeof deps.closed[0]!.durationMs).toBe("number");
+    expect(deps.closed[0]!.durationMs).toBeGreaterThanOrEqual(0);
+    deps.recorder.stop();
   });
 });

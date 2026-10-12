@@ -17,6 +17,7 @@ import { client } from "@/api";
 import { fmtDate } from "@/utils/fmtDate";
 import ContextBrowser from "./ContextBrowser";
 import RequestTrend from "./RequestTrend";
+import CompositionCard from "./CompositionCard";
 
 interface Detail {
   session?: {
@@ -58,6 +59,8 @@ interface Detail {
     name?: string;
     tokens?: number;
     preview?: string;
+    /** 完整内容（最长 2 万字符），展开行展示；系统提示 / 用户消息全文在这里 */
+    content?: string | null;
   }>;
   archive?: Array<{
     id: string;
@@ -66,6 +69,7 @@ interface Detail {
     name?: string;
     tokens?: number;
     preview?: string;
+    content?: string | null;
     goneAtSeq?: number;
   }>;
   fileOps?: Array<{
@@ -151,10 +155,10 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
 
   const session = detail?.session;
   const billed =
-    (session?.usage?.uncachedInputTokens ?? 0) +
-    (session?.usage?.cachedInputTokens ?? 0) +
-    (session?.usage?.cacheCreationInputTokens ?? 0) +
-    (session?.usage?.outputTokens ?? 0);
+    (session?.usage?.uncached ?? 0) +
+    (session?.usage?.cacheRead ?? 0) +
+    (session?.usage?.cacheWrite ?? 0) +
+    (session?.usage?.output ?? 0);
 
   const requestColumns: ColumnsType<NonNullable<Detail["requests"]>[number]> = [
     { title: "请求", dataIndex: "seq", key: "seq", width: 80, render: (v: number) => `#${v}` },
@@ -177,20 +181,20 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
   return (
     <div className="h-full min-h-0 overflow-auto py-2">
       <Row gutter={16} className="mb-4">
-        <Col xs={12} md={6}>
-          <Statistic title="当前上下文" value={session?.current?.total ?? 0} />
+        <Col xs={24} md={12}>
+          <CompositionCard current={session?.current} />
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={8} md={4}>
           <Statistic title="请求步数" value={session?.counts?.steps ?? 0} />
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={8} md={4}>
           <Statistic
             title="计费 tokens"
             value={billed}
             formatter={(v) => Number(v ?? 0).toLocaleString()}
           />
         </Col>
-        <Col xs={12} md={6}>
+        <Col xs={8} md={4}>
           <Statistic title="耗时" value={session?.durationMs ?? 0} suffix="ms" />
         </Col>
       </Row>

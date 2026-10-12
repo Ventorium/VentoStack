@@ -23,8 +23,8 @@ export interface ContextStore {
   upsertSession(input: UpsertSessionInput): Promise<void>;
   /** 批量落库折叠器的写操作（单次事务） */
   applyOps(tenantId: string, sessionId: string, ops: WriteOp[]): Promise<void>;
-  /** 把会话标记为结束 */
-  closeSession(tenantId: string, sessionId: string, status: string): Promise<void>;
+  /** 把会话标记为结束；durationMs 为该 run 耗时，累加进会话总耗时 */
+  closeSession(tenantId: string, sessionId: string, status: string, durationMs?: number): Promise<void>;
   /** 清理崩溃遗留的 running 会话，返回清理条数 */
   markStaleSessions(olderThanMs: number): Promise<number>;
   /**
@@ -103,12 +103,20 @@ export function createContextStore(deps: { db: Database }): ContextStore {
     });
   }
 
-  async function closeSession(tenantId: string, sessionId: string, status: string): Promise<void> {
+  async function closeSession(
+    tenantId: string,
+    sessionId: string,
+    status: string,
+    durationMs?: number,
+  ): Promise<void> {
+    // 会话可能由多个 run 组成（多轮对话）：耗时累加，非法值一律按 0 处理
+    const raw = durationMs ?? 0;
+    const elapsed = Number.isFinite(raw) && raw > 0 ? Math.round(raw) : 0;
     await db.raw(
       `UPDATE ai_context_session
-          SET status = $1, ended_at = NOW(), rev = rev + 1
+          SET status = $1, ended_at = NOW(), duration_ms = COALESCE(duration_ms, 0) + $4, rev = rev + 1
         WHERE tenant_id = $2 AND session_id = $3`,
-      [status, tenantId, sessionId],
+      [status, tenantId, sessionId, elapsed],
     );
   }
 

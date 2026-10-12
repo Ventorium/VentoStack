@@ -110,7 +110,7 @@ export function createContextRecorder(deps: ContextRecorderDeps): ContextRecorde
 
     runs.delete(run.runId);
     const status = event.type === "agent_end" ? "success" : event.type === "error" ? "error" : "aborted";
-    await store.closeSession(state.tenantId, state.sessionId, status);
+    await store.closeSession(state.tenantId, state.sessionId, status, Date.now() - state.startedAt);
   }
 
   let unsubscribe: (() => void) | null = null;

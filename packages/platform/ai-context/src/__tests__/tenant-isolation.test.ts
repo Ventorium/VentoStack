@@ -94,6 +94,23 @@ describe("租户隔离 fail-closed", () => {
       expect(calls[0]!.params).toContain("tenant-a");
     });
 
+    test("closeSession 累加 run 耗时，非法值按 0 处理", async () => {
+      const mockExec = createMockExecutor();
+      const { calls } = mockExec;
+      const { db } = createMockDatabase(mockExec);
+      const store = createContextStore({ db });
+
+      await store.closeSession("tenant-a", "s1", "success", 1234.6);
+      expect(calls[0]!.text).toContain("duration_ms = COALESCE(duration_ms, 0) + $4");
+      expect(calls[0]!.params).toEqual(["success", "tenant-a", "s1", 1235]);
+
+      await store.closeSession("tenant-a", "s1", "success", Number.NaN);
+      expect(calls[1]!.params).toEqual(["success", "tenant-a", "s1", 0]);
+
+      await store.closeSession("tenant-a", "s1", "success", -10);
+      expect(calls[2]!.params).toEqual(["success", "tenant-a", "s1", 0]);
+    });
+
     test("currentSeq 缺少 tenantId 时抛错", async () => {
       const { db } = createMockDatabase(createMockExecutor());
       const store = createContextStore({ db });
