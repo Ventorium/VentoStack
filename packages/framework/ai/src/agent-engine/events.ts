@@ -130,12 +130,21 @@ export interface BeforeProviderRequestEvent {
   contextWindow?: number;
 }
 
-/** 工具结果引入了新工具，已注册到运行时工具集（对齐参考实现 addedToolNames） */
+/** 工具 schema（name/description/parameters），供订阅方估算工具定义的 token 占用 */
+export interface AgentToolSchema {
+  name: string;
+  description: string;
+  parameters: unknown;
+}
+
+/** 工具进入运行时工具集（初始工具集在 run 开始时上报一次，工具结果也可动态引入） */
 export interface ToolsAddedEvent {
   type: "tools_added";
   run?: AgentRunContext;
   toolNames: string[];
   previousToolNames: string[];
+  /** 本次生效的工具 schema；订阅方按 schema 估算 token（只数名字会严重低估） */
+  tools?: AgentToolSchema[];
 }
 
 export interface AbortEvent {

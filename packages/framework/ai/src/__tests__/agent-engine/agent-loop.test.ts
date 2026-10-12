@@ -181,6 +181,29 @@ describe("Agent loop conformance", () => {
     expect(executed).toBe(false);
   });
 
+  test("run 开始上报初始工具集与 schema（工具 schema 桶不能恒为 0）", async () => {
+    const toolEvents: Array<{ names: string[]; tools?: Array<{ name: string; description?: string }> }> = [];
+    const emitter = createEventEmitter();
+    emitter.on((event) => {
+      if (event.type === "tools_added") {
+        toolEvents.push({ names: event.toolNames, ...(event.tools ? { tools: event.tools } : {}) });
+      }
+    });
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]]),
+      eventEmitter: emitter,
+      agentTools: [createTool(async () => ({ content: [], details: {} }))],
+    });
+
+    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "hi" }));
+
+    expect(toolEvents.length).toBeGreaterThan(0);
+    expect(toolEvents[0]?.names).toEqual(["lookup"]);
+    // 带上 schema（描述 + 参数），订阅方才能估算工具定义占用的 token
+    expect(toolEvents[0]?.tools?.[0]?.name).toBe("lookup");
+    expect(toolEvents[0]?.tools?.[0]?.description).toBe("Look something up");
+  });
+
   test("before_provider_request 带上 provider 声明的上下文窗口", async () => {
     const events: Array<{ type: string; contextWindow?: number }> = [];
     const emitter = createEventEmitter();

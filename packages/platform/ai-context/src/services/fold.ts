@@ -90,7 +90,7 @@ export function applyEvent(prev: FoldState, event: AgentEvent, now = Date.now())
       case "tool_execution_end":
         return { state: prev, ops: [] };
       case "tools_added":
-        return onToolsAdded(prev, event.toolNames);
+        return onToolsAdded(prev, event.toolNames, event.tools);
       case "abort":
         return onAbort(prev, event.clearedMessages.length);
       default:
@@ -98,6 +98,15 @@ export function applyEvent(prev: FoldState, event: AgentEvent, now = Date.now())
     }
   } catch {
     return { state: prev, ops: [] };
+  }
+}
+
+/** 任意值 → 文本长度估算用字符串；序列化失败返回空串（计 0，不抛） */
+function toJsonText(value: unknown): string {
+  try {
+    return JSON.stringify(value) ?? "";
+  } catch {
+    return "";
   }
 }
 
@@ -280,18 +289,26 @@ function onMessageEnd(prev: FoldState, message: AgentEventMessage, now: number):
 }
 
 // ---- tools_added：工具 schema 变更（注入事件） ----
-function onToolsAdded(prev: FoldState, toolNames: string[]): FoldResult {
+function onToolsAdded(
+  prev: FoldState,
+  toolNames: string[],
+  tools?: ReadonlyArray<unknown>,
+): FoldResult {
   if (toolNames.length === 0) return { state: prev, ops: [] };
   const s = clone(prev);
   s.seq += 1;
   s.injectCount += 1;
-  s.toolsTokens += estimateStringTokens(toolNames.join(","));
+  // 工具 schema 才是这一桶的大头（描述 + 参数 JSON）：有 schema 就按 schema 估算，
+  // 只有名字时退化为按名字估算（会把「工具 schema」算成接近于 0）
+  const payload = tools && tools.length > 0 ? toJsonText(tools) : toolNames.join(",");
+  const tokens = estimateStringTokens(payload);
+  s.toolsTokens += tokens;
   const event: ContextEventInsert = {
     id: `e-${s.seq}`,
     seq: s.seq,
     kind: "inject",
     producer: PRODUCER_TOOLS,
-    deltaTokens: 0,
+    deltaTokens: tokens,
     turnIndex: s.turnIndex,
     detail: { tools: toolNames.slice(0, 50) },
   };
@@ -299,7 +316,9 @@ function onToolsAdded(prev: FoldState, toolNames: string[]): FoldResult {
     state: s,
     ops: [
       { kind: "insertEvent", event },
-      { kind: "upsertSession", patch: { injectCount: s.injectCount, currentTools: s.toolsTokens } },
+      // 用 sessionPatchFrom 统一出补丁：工具 schema 进 currentTools 时必须同步 currentTotal，
+      // 否则占比各桶之和对不上总量（前端百分比会超过 100%）
+      { kind: "upsertSession", patch: sessionPatchFrom(s, { injectCount: s.injectCount }) },
     ],
   };
 }

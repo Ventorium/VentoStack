@@ -172,6 +172,15 @@ export function createContextQueries(db: Database): ContextQueries {
     // 请求步数以实际落库的请求快照为准：step_count 是「本 run 绝对值」的会话补丁，
     // 多轮对话下会被后一轮覆盖，而请求行只增不改，是唯一可信口径。
     session.counts.steps = requests.length;
+    // 会话真实用量以请求行为准（与「真实用量」列、日账目同源）：
+    // 历史版本曾按「本 run 绝对值」覆盖 usage_*，残留值无法回溯，
+    // 只有 Σ 每条请求的提供方上报值是可逐行核对的
+    session.usage = {
+      uncached: requests.reduce((n, r) => n + (r.actual?.uncachedInputTokens ?? 0), 0),
+      cacheRead: requests.reduce((n, r) => n + (r.actual?.cacheReadTokens ?? 0), 0),
+      cacheWrite: requests.reduce((n, r) => n + (r.actual?.cacheWriteTokens ?? 0), 0),
+      output: requests.reduce((n, r) => n + (r.actual?.outputTokens ?? 0), 0),
+    };
     const fileOps: FileOpRecord[] = fileOpRows.map((r) => ({
       id: str(r, "id") ?? "",
       sessionId: str(r, "session_id") ?? "",
@@ -222,10 +231,15 @@ export function createContextQueries(db: Database): ContextQueries {
 
     const sessionRows = (await db.raw(
       `SELECT COUNT(*)::int AS session_count,
-              COALESCE(SUM(usage_uncached), 0)::bigint AS uncached,
-              COALESCE(SUM(usage_cache_read), 0)::bigint AS cache_read,
-              COALESCE(SUM(usage_cache_write), 0)::bigint AS cache_write,
-              COALESCE(SUM(usage_output), 0)::bigint AS output,
+              -- 真实用量按请求行聚合：与日账目（同表同源）和会话详情口径一致
+              (SELECT COALESCE(SUM(r.act_uncached), 0)::bigint FROM ai_context_request r
+                WHERE r.tenant_id = $1 AND r.created_at >= $2) AS uncached,
+              (SELECT COALESCE(SUM(r.act_cache_read), 0)::bigint FROM ai_context_request r
+                WHERE r.tenant_id = $1 AND r.created_at >= $2) AS cache_read,
+              (SELECT COALESCE(SUM(r.act_cache_write), 0)::bigint FROM ai_context_request r
+                WHERE r.tenant_id = $1 AND r.created_at >= $2) AS cache_write,
+              (SELECT COALESCE(SUM(r.act_output), 0)::bigint FROM ai_context_request r
+                WHERE r.tenant_id = $1 AND r.created_at >= $2) AS output,
               -- 请求数按实际落库的请求快照统计：step_count 是「本 run 绝对值」的会话补丁，
               -- 多轮对话下会被后一轮覆盖，用它求和会少算
               (SELECT COUNT(*)::int FROM ai_context_request r

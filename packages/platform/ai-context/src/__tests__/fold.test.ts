@@ -338,6 +338,68 @@ describe("上下文折叠器", () => {
       expect(event.event.producer).toBe("tools");
     });
 
+    test("有 schema 时按 schema 估算工具占用（只数名字会严重低估）", () => {
+      const schema = [
+        {
+          name: "web_search",
+          description: "在互联网上检索资料并返回摘要",
+          parameters: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+        },
+      ];
+      const withSchema = run(createFoldState(), {
+        type: "tools_added",
+        toolNames: ["web_search"],
+        previousToolNames: [],
+        tools: schema,
+      });
+      const withoutSchema = run(createFoldState(), {
+        type: "tools_added",
+        toolNames: ["web_search"],
+        previousToolNames: [],
+      });
+
+      expect(withSchema.state.toolsTokens).toBeGreaterThan(withoutSchema.state.toolsTokens);
+      // 事件净变化给出这一批 schema 的估算值
+      const event = withSchema.ops.find((o) => o.kind === "insertEvent") as {
+        event: ContextEventInsert;
+      };
+      expect(event.event.deltaTokens).toBe(withSchema.state.toolsTokens);
+
+      // 会话补丁把工具 schema 计入 currentTools
+      const patch = withSchema.ops.find((o) => o.kind === "upsertSession");
+      expect(patch && patch.kind === "upsertSession" ? patch.patch.currentTools : 0).toBe(
+        withSchema.state.toolsTokens,
+      );
+    });
+
+    test("工具 schema 进 currentTools 时同步 currentTotal（否则各桶之和对不上总量）", () => {
+      const withContext = run(createFoldState(), {
+        type: "context",
+        messages: [msg({ role: "user", content: "你好" })],
+        systemPrompt: "系统提示",
+      });
+      const { ops } = run(withContext.state, {
+        type: "tools_added",
+        toolNames: ["web_search"],
+        previousToolNames: [],
+        tools: [{ name: "web_search", description: "检索互联网资料", parameters: { type: "object" } }],
+      });
+
+      const patch = ops.find((o) => o.kind === "upsertSession");
+      if (patch?.kind !== "upsertSession") throw new Error("缺少 upsertSession");
+      const p = patch.patch;
+      expect(p.currentTools).toBeGreaterThan(0);
+      const sum =
+        (p.currentSystem ?? 0) +
+        (p.currentTools ?? 0) +
+        (p.currentUser ?? 0) +
+        (p.currentInject ?? 0) +
+        (p.currentSkill ?? 0) +
+        (p.currentAssistant ?? 0) +
+        (p.currentTool ?? 0);
+      expect(p.currentTotal).toBe(sum);
+    });
+
     test("空工具列表不产生事件", () => {
       const { ops } = run(createFoldState(), {
         type: "tools_added",

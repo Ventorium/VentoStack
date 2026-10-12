@@ -1183,6 +1183,19 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         },
         signal,
       );
+      // 初始工具集上报一次：订阅方（上下文洞察）据此估算「工具 schema」在上下文里的
+      // token 占用 —— 只报名字会把这一桶算成 0，而 schema 才是它的大头。
+      if (runtimeTools.length > 0) {
+        await emit(
+          {
+            type: 'tools_added',
+            toolNames: runtimeTools.map((t) => t.name),
+            previousToolNames: [],
+            tools: buildToolDefs() ?? [],
+          },
+          signal,
+        );
+      }
       // ---- Telemetry spans ----
       const tracer = deps.tracer;
       const runSpan: SpanHandle | null = tracer
@@ -1241,7 +1254,16 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         }
         if (added.length > 0) {
           await emit(
-            { type: 'tools_added', toolNames: added.map((t) => t.name), previousToolNames },
+            {
+              type: 'tools_added',
+              toolNames: added.map((t) => t.name),
+              previousToolNames,
+              tools: added.map((t) => ({
+                name: t.name,
+                description: t.description,
+                parameters: t.parameters,
+              })),
+            },
             signal,
           );
         }
