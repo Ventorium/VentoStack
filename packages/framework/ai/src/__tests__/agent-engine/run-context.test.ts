@@ -31,6 +31,7 @@ function createGateway(turns: StreamChunk[][]): LLMGateway {
     getProvider: () => provider,
     getDefaultProvider: () => provider,
     listProviders: () => [provider],
+    resolveProviderFor: async () => provider,
   };
 }
 

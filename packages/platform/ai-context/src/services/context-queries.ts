@@ -169,6 +169,9 @@ export function createContextQueries(db: Database): ContextQueries {
     const archive: SurfaceNode[] = archiveRows.map(toSurfaceNode);
     const requests: RequestRecord[] = requestRows.map(toRequestRecord);
     const events: ContextEventRecord[] = eventRows.map(toContextEvent);
+    // 请求步数以实际落库的请求快照为准：step_count 是「本 run 绝对值」的会话补丁，
+    // 多轮对话下会被后一轮覆盖，而请求行只增不改，是唯一可信口径。
+    session.counts.steps = requests.length;
     const fileOps: FileOpRecord[] = fileOpRows.map((r) => ({
       id: str(r, "id") ?? "",
       sessionId: str(r, "session_id") ?? "",
@@ -223,7 +226,10 @@ export function createContextQueries(db: Database): ContextQueries {
               COALESCE(SUM(usage_cache_read), 0)::bigint AS cache_read,
               COALESCE(SUM(usage_cache_write), 0)::bigint AS cache_write,
               COALESCE(SUM(usage_output), 0)::bigint AS output,
-              COALESCE(SUM(step_count), 0)::int AS request_count,
+              -- 请求数按实际落库的请求快照统计：step_count 是「本 run 绝对值」的会话补丁，
+              -- 多轮对话下会被后一轮覆盖，用它求和会少算
+              (SELECT COUNT(*)::int FROM ai_context_request r
+                WHERE r.tenant_id = $1 AND r.created_at >= $2) AS request_count,
               COALESCE(SUM(current_system), 0)::bigint AS cur_system,
               COALESCE(SUM(current_tools), 0)::bigint AS cur_tools,
               COALESCE(SUM(current_user_msgs), 0)::bigint AS cur_user,

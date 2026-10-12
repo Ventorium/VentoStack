@@ -95,6 +95,9 @@ export function createContextStore(deps: { db: Database }): ContextStore {
           case "insertFileOp":
             await insertFileOp(tx, tenantId, sessionId, op.op);
             break;
+          case "archiveSuperseded":
+            await archiveSuperseded(tx, tenantId, sessionId, op.categories, op.goneAtSeq);
+            break;
           case "upsertSession":
             await patchSession(tx, tenantId, sessionId, op.patch);
             break;
@@ -153,6 +156,16 @@ export function createContextStore(deps: { db: Database }): ContextStore {
   return { upsertSession, applyOps, closeSession, markStaleSessions, currentSeq };
 }
 
+/**
+ * JS string[] → PG 数组字面量（text[] 参数绑定）。
+ * Bun.sql 会把 JS 数组序列化为逗号拼接字符串（"a,b"），PG 会报
+ * malformed array literal —— 必须显式构造 '{...}' 字面量并 ::text[] 转型。
+ * 与 packages/framework/ai/src/services/agent.ts 的同名助手保持一致。
+ */
+function toPgTextArray(items: string[]): string {
+  return `{${items.map((s) => `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"')}"`).join(",")}}`;
+}
+
 // ---- 内部写操作（均在事务内，携带 tenantId + sessionId 双重限定）----
 
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -188,8 +201,28 @@ async function archiveNodes(
   await tx.raw(
     `UPDATE ai_context_node
         SET gone_at_seq = $1
-      WHERE tenant_id = $2 AND session_id = $3 AND gone_at_seq IS NULL AND id = ANY($4)`,
-    [goneAtSeq, tenantId, sessionId, ids],
+      WHERE tenant_id = $2 AND session_id = $3 AND gone_at_seq IS NULL AND id = ANY($4::text[])`,
+    [goneAtSeq, tenantId, sessionId, toPgTextArray(ids)],
+  );
+}
+
+/**
+ * 按分类归档当前存活的节点（多 run 重放的取代语义）。
+ * 只影响本次事务之前已落库的行：新 run 的节点是在这个 op 之后才插入的。
+ */
+async function archiveSuperseded(
+  tx: Tx,
+  tenantId: string,
+  sessionId: string,
+  categories: string[],
+  goneAtSeq: number,
+): Promise<void> {
+  if (categories.length === 0) return;
+  await tx.raw(
+    `UPDATE ai_context_node
+        SET gone_at_seq = $1
+      WHERE tenant_id = $2 AND session_id = $3 AND gone_at_seq IS NULL AND category = ANY($4::text[])`,
+    [goneAtSeq, tenantId, sessionId, toPgTextArray(categories)],
   );
 }
 
@@ -245,6 +278,25 @@ async function patchRequest(
       tenantId,
       sessionId,
       id,
+    ],
+  );
+  // 会话级真实用量 = 各请求真实用量之和（提供方按请求上报，累加是唯一不丢不重的口径）。
+  // 多轮对话（多 run）下若由 fold 以「本 run 绝对值」写会话行，会把前几轮的用量覆盖掉。
+  await tx.raw(
+    `UPDATE ai_context_session
+        SET usage_uncached = COALESCE(usage_uncached, 0) + $1,
+            usage_cache_read = COALESCE(usage_cache_read, 0) + $2,
+            usage_cache_write = COALESCE(usage_cache_write, 0) + $3,
+            usage_output = COALESCE(usage_output, 0) + $4,
+            rev = rev + 1
+      WHERE tenant_id = $5 AND session_id = $6`,
+    [
+      actual.uncached,
+      actual.cacheRead,
+      actual.cacheWrite,
+      actual.output,
+      tenantId,
+      sessionId,
     ],
   );
 }
@@ -312,11 +364,8 @@ const SESSION_PATCH_COLUMNS: Record<string, string> = {
   currentAssistant: "current_assistant",
   currentTool: "current_tool",
   currentTotal: "current_total",
-  usageUncached: "usage_uncached",
-  usageCacheRead: "usage_cache_read",
-  usageCacheWrite: "usage_cache_write",
-  usageOutput: "usage_output",
-  durationMs: "duration_ms",
+  // usage_* 与 duration_ms 不在此表内：它们由 patchRequest（按请求累加）与
+  // closeSession（按 run 累加）维护，补丁若写入会以「本 run 绝对值」覆盖历史轮次。
   model: "model",
   provider: "provider",
   contextWindow: "context_window",

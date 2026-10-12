@@ -1314,8 +1314,23 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         // 记录本轮起始消息数，用于 prepareNextTurn 的 newMessages
         turnStartIndex = messages.length;
 
+        // 动态 API Key（对齐参考实现 getApiKey；无 provider 前缀时回退网关默认 provider）
+        const apiKeyProvider = model.includes('/')
+          ? (model.split('/')[0] ?? model)
+          : (deps.llmGateway.listProviders()[0]?.name ?? model);
+
+        // provider 声明的上下文窗口（token）：供上下文洞察计算占用率。
+        // 走网关的动态解析（静态 provider 列表为空时也能拿到能力）；未声明时 undefined，不猜测。
+        const contextWindow = (
+          await deps.llmGateway.resolveProviderFor(model, tenantId)
+        )?.capabilities.maxContextLength;
         await emit(
-          { type: 'before_provider_request', model, messageCount: messages.length },
+          {
+            type: 'before_provider_request',
+            model,
+            messageCount: messages.length,
+            ...(contextWindow !== undefined ? { contextWindow } : {}),
+          },
           signal,
         );
 
@@ -1333,10 +1348,6 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         // Token 预算裁剪
         const trimmedMessages = fitMessagesToBudget(turnMessages, systemPrompt);
 
-        // 动态 API Key（对齐参考实现 getApiKey；无 provider 前缀时回退网关默认 provider）
-        const apiKeyProvider = model.includes('/')
-          ? (model.split('/')[0] ?? model)
-          : (deps.llmGateway.listProviders()[0]?.name ?? model);
         const resolvedApiKey = deps.getApiKey ? await deps.getApiKey(apiKeyProvider) : undefined;
 
         // 调用 LLM

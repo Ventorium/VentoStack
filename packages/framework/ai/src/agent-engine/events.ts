@@ -123,6 +123,11 @@ export interface BeforeProviderRequestEvent {
   run?: AgentRunContext;
   model: string;
   messageCount: number;
+  /**
+   * 当前 provider 的上下文窗口上限（token）。
+   * 供上下文洞察等订阅方计算占用率；provider 未声明能力时为 undefined，调用方按「未知」处理，不猜测。
+   */
+  contextWindow?: number;
 }
 
 /** 工具结果引入了新工具，已注册到运行时工具集（对齐参考实现 addedToolNames） */

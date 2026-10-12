@@ -52,17 +52,19 @@ export function createFoldState(partial?: Partial<FoldState>): FoldState {
     model: null,
     provider: null,
     contextWindow: null,
-    usage: { uncached: 0, cacheRead: 0, cacheWrite: 0, output: 0 },
     humanInputs: 0,
     answers: 0,
     skills: new Set<string>(),
-    durationMs: 0,
     lastUser: null,
     title: null,
     requestCount: 0,
     injectCount: 0,
     compactCount: 0,
     pruneCount: 0,
+    pendingRequestId: null,
+    pendingRequestAt: 0,
+    pendingNodeFloor: 0,
+    isReplay: false,
     ...partial,
   };
 }
@@ -73,7 +75,7 @@ export function createFoldState(partial?: Partial<FoldState>): FoldState {
  * 不可信输入宁可丢事件也不抛（对齐 dsh-context all-or-nothing）：
  * 单个 handler 抛错时返回原状态与空 ops，保证折叠不中断。
  */
-export function applyEvent(prev: FoldState, event: AgentEvent): FoldResult {
+export function applyEvent(prev: FoldState, event: AgentEvent, now = Date.now()): FoldResult {
   try {
     switch (event.type) {
       case "context":
@@ -81,9 +83,9 @@ export function applyEvent(prev: FoldState, event: AgentEvent): FoldResult {
       case "turn_start":
         return onTurnStart(prev);
       case "before_provider_request":
-        return onBeforeRequest(prev, event.model);
+        return onBeforeRequest(prev, event.model, event.contextWindow ?? null, now);
       case "message_end":
-        return onMessageEnd(prev, event.message);
+        return onMessageEnd(prev, event.message, now);
       case "tool_execution_start":
       case "tool_execution_end":
         return { state: prev, ops: [] };
@@ -105,21 +107,34 @@ function clone(state: FoldState): FoldState {
     ...state,
     nodes: [...state.nodes],
     sums: { ...state.sums },
-    usage: { ...state.usage },
     skills: new Set(state.skills),
   };
 }
 
-// ---- context：初始系统提示 + 首轮消息面 ----
+// ---- context：本 run 装配出的完整上下文（系统提示 + 历史 + 本轮输入） ----
 function onContext(prev: FoldState, messages: AgentEventMessage[], systemPrompt: string): FoldResult {
   const s = clone(prev);
   const ops: WriteOp[] = [];
   s.systemTokens = estimateSystemTokens(systemPrompt);
 
+  s.seq += 1;
+  // 每个 run 重放整段上下文：上一轮的节点全部被本次重放取代，必须退出活跃面，
+  // 否则「重建某一请求时刻的装配结果」会把同一条消息算很多遍，DNA 指纹与元素计数虚高。
+  // 归档 epoch 取本 run 首个 seq：更早的请求（seq < epoch）仍能重建出旧节点。
+  // 归档按分类在库里完成：新 run 的 fold 是空的，看不到上一轮节点，只能交给 store。
+  if (prev.isReplay) {
+    ops.push({
+      kind: "archiveSuperseded",
+      categories: ["system", ...MESSAGE_CATEGORIES],
+      goneAtSeq: s.seq,
+    });
+    s.isReplay = false;
+  }
+
   // 系统提示作为独立节点（信封类，不进消息面 sums）
   const sysNode: FoldNode = {
-    id: `n-${s.seq + 1}-sys`,
-    seq: s.seq + 1,
+    id: `n-${s.seq}-sys`,
+    seq: s.seq,
     category: "system",
     name: "系统提示",
     tokens: s.systemTokens,
@@ -128,19 +143,23 @@ function onContext(prev: FoldState, messages: AgentEventMessage[], systemPrompt:
     images: 0,
     goneAtSeq: null,
   };
-  s.seq += 1;
   s.nodes.push(sysNode);
   ops.push({ kind: "insertNode", node: sysNode });
 
-  // 首轮用户消息进消息面
+  // 重放出的历史与本轮输入一并进消息面：这一刻模型真正读到的东西就是它们，
+  // 只记 role=user 会让「上下文总量」远小于实际（模型读到的历史全被漏掉）。
+  // system 跳过：它已由 systemPrompt 单独建节点，避免同一条提示算两遍。
   for (const m of messages) {
-    if (m.role !== "user") continue;
+    if (m.role === "system") continue;
     const node = makeMessageNode(s, m, undefined);
     s.nodes.push(node);
-    s.sums.user += node.tokens;
-    s.humanInputs += 1;
-    s.lastUser = previewOf(m.content);
-    s.title ??= previewOf(m.content, 60);
+    const cat = node.category;
+    if (isMessageCategory(cat)) s.sums[cat] += node.tokens;
+    if (m.role === "user") {
+      s.humanInputs += 1;
+      s.lastUser = previewOf(m.content);
+      s.title ??= previewOf(m.content, 60);
+    }
     ops.push({ kind: "insertNode", node });
   }
 
@@ -156,11 +175,18 @@ function onTurnStart(prev: FoldState): FoldResult {
 }
 
 // ---- before_provider_request：在新响应入面「前」拍请求快照 ----
-function onBeforeRequest(prev: FoldState, model: string): FoldResult {
+function onBeforeRequest(
+  prev: FoldState,
+  model: string,
+  contextWindow: number | null,
+  now: number,
+): FoldResult {
   const s = clone(prev);
   s.seq += 1;
   s.model = model;
   s.requestCount += 1;
+  // provider 声明的窗口只在有值时覆盖，避免下游订阅方没带能力时把已知窗口抹掉
+  if (contextWindow !== null && contextWindow > 0) s.contextWindow = contextWindow;
 
   const insert: RequestInsert = {
     id: `r-${s.seq}`,
@@ -186,11 +212,25 @@ function onBeforeRequest(prev: FoldState, model: string): FoldResult {
       s.sums.assistant +
       s.sums.tool,
   };
-  return { state: s, ops: [{ kind: "insertRequest", request: insert }] };
+  // 锚点：assistant 响应回来后据此回填真实用量 / 耗时 / 本轮新增内容
+  s.pendingRequestId = insert.id;
+  s.pendingRequestAt = now;
+  s.pendingNodeFloor = s.nodes.length;
+  return {
+    state: s,
+    ops: [
+      { kind: "insertRequest", request: insert },
+      // 上下文窗口只有请求时刻才探测得到，随会话行一起落库（当前构成由消息事件维护）
+      {
+        kind: "upsertSession",
+        patch: { contextWindow: s.contextWindow, model: s.model, provider: s.provider },
+      },
+    ],
+  };
 }
 
 // ---- message_end：assistant/tool/user 消息进入活跃面 ----
-function onMessageEnd(prev: FoldState, message: AgentEventMessage): FoldResult {
+function onMessageEnd(prev: FoldState, message: AgentEventMessage, now: number): FoldResult {
   const s = clone(prev);
   const ops: WriteOp[] = [];
 
@@ -202,13 +242,35 @@ function onMessageEnd(prev: FoldState, message: AgentEventMessage): FoldResult {
   }
 
   if (message.role === "assistant") {
-    if (message.usage) {
-      s.usage.uncached += message.usage.promptTokens;
-      s.usage.output += message.usage.completionTokens;
-    }
     if (message.content.trim().length > 0) s.answers += 1;
     if (message.model) s.model = message.model;
     if (message.provider) s.provider = message.provider;
+    // 真实用量只认提供方上报：一个 provider 请求对应一条 assistant 消息，
+    // 因此这里回填的是「本次请求」的用量与耗时，归属会话的累加交给 store。
+    if (message.usage && s.pendingRequestId !== null) {
+      ops.push({
+        kind: "patchRequest",
+        id: s.pendingRequestId,
+        actual: {
+          uncached: message.usage.promptTokens,
+          output: message.usage.completionTokens,
+          // 网关未上报缓存读写分桶，诚实记 0（不猜测）
+          cacheRead: 0,
+          cacheWrite: 0,
+        },
+        durationMs: Math.max(0, now - s.pendingRequestAt),
+        brief: {
+          user: s.lastUser ?? "",
+          incoming: s.nodes
+            .slice(s.pendingNodeFloor)
+            .filter((n) => n.category === "tool")
+            .slice(0, 5)
+            .map((n) => n.preview),
+          response: previewOf(message.content),
+        },
+      });
+      s.pendingRequestId = null;
+    }
   }
 
   const patch = sessionPatchFrom(s, { answerCount: s.answers });
@@ -284,17 +346,9 @@ function onAbort(prev: FoldState, clearedCount: number): FoldResult {
     ops: [
       { kind: "archiveNodes", ids, goneAtSeq: s.seq },
       { kind: "insertEvent", event },
-      {
-        kind: "upsertSession",
-        patch: {
-          compactCount: s.compactCount,
-          currentUser: s.sums.user,
-          currentInject: s.sums.inject,
-          currentSkill: s.sums.skill,
-          currentAssistant: s.sums.assistant,
-          currentTool: s.sums.tool,
-        },
-      },
+      // 用 sessionPatchFrom 统一出补丁：裁剪后 currentTotal 必须跟着各分桶一起缩，
+      // 手写子集会漏掉 currentTotal，导致会话构成总量停在裁剪前的值
+      { kind: "upsertSession", patch: sessionPatchFrom(s, { compactCount: s.compactCount }) },
     ],
   };
 }
@@ -317,11 +371,6 @@ function sessionPatchFrom(s: FoldState, extra: SessionPatch = {}): SessionPatch 
       s.sums.skill +
       s.sums.assistant +
       s.sums.tool,
-    usageUncached: s.usage.uncached,
-    usageCacheRead: s.usage.cacheRead,
-    usageCacheWrite: s.usage.cacheWrite,
-    usageOutput: s.usage.output,
-    durationMs: s.durationMs,
     model: s.model,
     provider: s.provider,
     contextWindow: s.contextWindow,

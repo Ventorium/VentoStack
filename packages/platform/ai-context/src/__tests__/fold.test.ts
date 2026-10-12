@@ -7,11 +7,16 @@ function msg(partial: Partial<AgentEventMessage> & { role: AgentEventMessage["ro
   return { timestamp: Date.now(), ...partial };
 }
 
-function run(state: ReturnType<typeof createFoldState>, ...events: AgentEvent[]) {
+/**
+ * 依次应用事件；末尾可选的数字作为这些事件的墙钟时刻（用于验证请求耗时回填）。
+ */
+function run(state: ReturnType<typeof createFoldState>, ...args: Array<AgentEvent | number>) {
   let s = state;
   const ops = [];
-  for (const e of events) {
-    const r = applyEvent(s, e);
+  const tail = args[args.length - 1];
+  const now = typeof tail === "number" ? (args.pop() as number) : undefined;
+  for (const e of args as AgentEvent[]) {
+    const r = now === undefined ? applyEvent(s, e) : applyEvent(s, e, now);
     s = r.state;
     ops.push(...r.ops);
   }
@@ -45,6 +50,70 @@ describe("上下文折叠器", () => {
       });
       expect(state.humanInputs).toBe(1);
       expect(state.title).toBe("帮我写个函数");
+    });
+  });
+
+  describe("context：重放整段上下文的构成", () => {
+    test("历史里的 assistant / tool 消息也计入消息面（否则上下文总量远小于实际）", () => {
+      const { state, ops } = run(createFoldState(), {
+        type: "context",
+        messages: [
+          msg({ role: "system", content: "系统提示" }),
+          msg({ role: "user", content: "第一问" }),
+          msg({ role: "assistant", content: "第一答" }),
+          msg({ role: "tool", content: "工具结果内容" }),
+          msg({ role: "user", content: "第二问" }),
+        ],
+        systemPrompt: "系统提示",
+      });
+
+      // system 只由 systemPrompt 建一个节点，重放里的 system 消息不重复建
+      const systems = state.nodes.filter((n) => n.category === "system");
+      expect(systems).toHaveLength(1);
+      expect(state.sums.user).toBeGreaterThan(0);
+      expect(state.sums.assistant).toBeGreaterThan(0);
+      expect(state.sums.tool).toBeGreaterThan(0);
+      expect(state.humanInputs).toBe(2);
+      expect(ops.filter((o) => o.kind === "insertNode")).toHaveLength(5);
+    });
+  });
+
+  describe("多 run 重放：同一条消息不被算很多遍", () => {
+    test("续接会话的 context 归档上一轮全部节点（按分类在库里完成）", () => {
+      // 新 run 的 fold 是空的：上一轮节点不在内存里，只能按分类交给 store 归档
+      const { state, ops } = run(createFoldState({ isReplay: true, seq: 20 }), {
+        type: "context",
+        messages: [msg({ role: "user", content: "第一问" })],
+        systemPrompt: "系统提示",
+      });
+
+      const archive = ops.find((o) => o.kind === "archiveSuperseded");
+      expect(archive).toBeDefined();
+      if (archive?.kind !== "archiveSuperseded") throw new Error("缺少 archiveSuperseded");
+      // 整段上下文被重放取代，七个分类一起归档
+      expect(archive.categories).toEqual([
+        "system",
+        "user",
+        "inject",
+        "skill",
+        "assistant",
+        "tool",
+      ]);
+      // 归档 epoch = 本 run 首个节点 seq：更早的请求仍能重建出旧节点
+      expect(archive.goneAtSeq).toBe(state.nodes[0]!.seq);
+      // 归档是本 run 的第一个写操作，必须先于本轮节点插入生效
+      expect(ops[0]!.kind).toBe("archiveSuperseded");
+      // 标记只消费一次，同 run 内不会重复归档
+      expect(state.isReplay).toBe(false);
+    });
+
+    test("新会话首个 context 不产生归档（没有上一轮）", () => {
+      const { ops } = run(createFoldState(), {
+        type: "context",
+        messages: [msg({ role: "user", content: "你好" })],
+        systemPrompt: "s",
+      });
+      expect(ops.some((o) => o.kind === "archiveSuperseded")).toBe(false);
     });
   });
 
@@ -98,21 +167,89 @@ describe("上下文折叠器", () => {
       expect(req3.request.assistant).toBeGreaterThan(0);
       expect(req3.request.total).toBeGreaterThan(req1.request.total);
     });
+
+    test("provider 声明的上下文窗口写进请求快照与会话补丁", () => {
+      const { ops } = run(createFoldState(), {
+        type: "before_provider_request",
+        model: "m",
+        contextWindow: 200_000,
+      });
+
+      const req = ops.find((o) => o.kind === "insertRequest") as { request: RequestInsert };
+      expect(req.request.contextWindow).toBe(200_000);
+      const patch = ops.find((o) => o.kind === "upsertSession");
+      expect(patch && patch.kind === "upsertSession" ? patch.patch.contextWindow : null).toBe(
+        200_000,
+      );
+    });
+
+    test("窗口未知时不把已探测到的窗口抹成 0/undefined", () => {
+      const r1 = run(createFoldState(), {
+        type: "before_provider_request",
+        model: "m",
+        contextWindow: 128_000,
+      });
+      const r2 = run(r1.state, { type: "before_provider_request", model: "m" });
+      const req = r2.ops.find((o) => o.kind === "insertRequest") as { request: RequestInsert };
+      expect(req.request.contextWindow).toBe(128_000);
+    });
+
+    test("会话补丁不再写 usage 与 durationMs（归属请求增量与会话收尾）", () => {
+      const { ops } = run(createFoldState(), {
+        type: "before_provider_request",
+        model: "m",
+        contextWindow: 1_000,
+      });
+      const patch = ops.find((o) => o.kind === "upsertSession");
+      if (patch?.kind !== "upsertSession") throw new Error("缺少 upsertSession");
+      for (const key of ["usageUncached", "usageCacheRead", "usageCacheWrite", "usageOutput", "durationMs"]) {
+        expect(Object.keys(patch.patch)).not.toContain(key);
+      }
+    });
   });
 
   describe("message_end：消息进入活跃面", () => {
-    test("assistant 消息计入 answers 与 usage", () => {
-      const { state } = run(createFoldState(), {
+    test("assistant 消息计入 answers，并把真实用量回填到对应请求", () => {
+      const s0 = createFoldState();
+      // 先拍一次请求快照（锚点），再让 assistant 响应带回 usage
+      const r1 = run(s0, { type: "before_provider_request", model: "m" }, 1_000);
+      const { state, ops } = run(
+        r1.state,
+        {
+          type: "message_end",
+          message: msg({
+            role: "assistant",
+            content: "这是回答",
+            usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+          }),
+        },
+        4_500,
+      );
+
+      expect(state.answers).toBe(1);
+      const patch = ops.find((o) => o.kind === "patchRequest");
+      expect(patch).toBeDefined();
+      if (patch?.kind !== "patchRequest") throw new Error("缺少 patchRequest");
+      // 回填到刚拍的那条请求，而不是新建请求
+      expect(patch.id).toBe("r-1");
+      expect(patch.actual).toEqual({ uncached: 100, output: 20, cacheRead: 0, cacheWrite: 0 });
+      // 耗时 = 响应到达 - 请求拍快照
+      expect(patch.durationMs).toBe(3_500);
+      expect(patch.brief.user).toBe("");
+      expect(patch.brief.response).toContain("这是回答");
+    });
+
+    test("没有请求锚点时（乱序事件）不产生 patchRequest", () => {
+      const { state, ops } = run(createFoldState(), {
         type: "message_end",
         message: msg({
           role: "assistant",
-          content: "这是回答",
-          usage: { promptTokens: 100, completionTokens: 20, totalTokens: 120 },
+          content: "孤立回答",
+          usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 },
         }),
       });
+      expect(ops.some((o) => o.kind === "patchRequest")).toBe(false);
       expect(state.answers).toBe(1);
-      expect(state.usage.uncached).toBe(100);
-      expect(state.usage.output).toBe(20);
     });
 
     test("空回复不计入 answers", () => {

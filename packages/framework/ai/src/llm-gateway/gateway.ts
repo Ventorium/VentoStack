@@ -20,6 +20,14 @@ export function createLLMGateway(config: LLMGatewayConfig): LLMGateway {
     providers.set(p.name, p);
   }
 
+  /**
+   * 动态解析过的 provider 缓存，供能力查询（如上下文窗口）复用。
+   * key 必须带 tenantId：不同租户可以指向不同的 provider 配置，跨租户共享会串配置。
+   */
+  const dynamicProviders = new Map<string, LLMProvider>();
+  const dynamicKey = (tenantId: string | undefined, model: string) =>
+    `${tenantId ?? ''}|${model}`;
+
   const queue = createRequestQueue({
     ...(config.maxConcurrent !== undefined ? { maxConcurrent: config.maxConcurrent } : {}),
     ...(config.maxQueued !== undefined ? { maxQueued: config.maxQueued } : {}),
@@ -46,11 +54,37 @@ export function createLLMGateway(config: LLMGatewayConfig): LLMGateway {
     const dynamic = config.resolveProvider
       ? await config.resolveProvider(requestedModel, params.tenantId)
       : null;
+    if (dynamic) {
+      dynamicProviders.set(dynamicKey(params.tenantId, requestedModel), dynamic.provider);
+    }
     const resolved = dynamic ?? getStaticProviderForModel(requestedModel);
     return {
       provider: resolved.provider,
       params: { ...params, model: resolved.model },
     };
+  }
+
+  /**
+   * 按 model 引用解析 provider（沿用 chat 的动态解析与缓存）。
+   * 供调用方在真正发起请求前查询 provider 能力（如上下文窗口）。
+   */
+  async function resolveProviderFor(
+    model: string,
+    tenantId?: string,
+  ): Promise<LLMProvider | undefined> {
+    const requestedModel = !model || model === 'default' ? config.defaultModel : model;
+    const cached = dynamicProviders.get(dynamicKey(tenantId, requestedModel));
+    if (cached) return cached;
+    const dynamic = config.resolveProvider
+      ? await config.resolveProvider(requestedModel, tenantId)
+      : null;
+    if (dynamic) {
+      dynamicProviders.set(dynamicKey(tenantId, requestedModel), dynamic.provider);
+      return dynamic.provider;
+    }
+    const slashIdx = requestedModel.indexOf('/');
+    const staticName = slashIdx > 0 ? requestedModel.slice(0, slashIdx) : undefined;
+    return staticName ? providers.get(staticName) : undefined;
   }
 
   function getDefaultProvider(): LLMProvider {
@@ -84,6 +118,8 @@ export function createLLMGateway(config: LLMGatewayConfig): LLMGateway {
     getProvider(name: string): LLMProvider | undefined {
       return providers.get(name);
     },
+
+    resolveProviderFor,
 
     getDefaultProvider(): LLMProvider {
       return getDefaultProvider();

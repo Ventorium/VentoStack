@@ -53,7 +53,7 @@ export function createContextRecorder(deps: ContextRecorderDeps): ContextRecorde
       const state = runs.get(run.runId);
       if (!state) return; // 未采集的 run（开关关闭或非 runStream）
 
-      const { state: next, ops } = applyEvent(state.fold, event);
+      const { state: next, ops } = applyEvent(state.fold, event, Date.now());
       state.fold = next;
       if (ops.length > 0) {
         await store.applyOps(state.tenantId, state.sessionId, ops);
@@ -88,6 +88,8 @@ export function createContextRecorder(deps: ContextRecorderDeps): ContextRecorde
         seq,
         model: event.meta?.model ?? null,
         skills: new Set(event.meta?.skillIds ?? []),
+        // 会话已有采集数据 → 本 run 是续接，context 需要归档上一轮重放节点
+        isReplay: seq > 0,
       }),
       tenantId: run.tenantId,
       sessionId: run.sessionId,

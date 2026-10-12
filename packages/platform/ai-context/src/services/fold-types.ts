@@ -7,7 +7,6 @@
  */
 
 import type {
-  ActualUsageTotals,
   ContextCategory,
   ContextEventKind,
 } from "../shared/types";
@@ -50,13 +49,10 @@ export interface FoldState {
   model: string | null;
   provider: string | null;
   contextWindow: number | null;
-  /** 累计真实用量 */
-  usage: ActualUsageTotals;
   humanInputs: number;
   answers: number;
   /** 已加载技能名（用于 session 级去重计数） */
   skills: Set<string>;
-  durationMs: number;
   lastUser: string | null;
   title: string | null;
   /** 已发出的请求数 */
@@ -65,6 +61,16 @@ export interface FoldState {
   injectCount: number;
   compactCount: number;
   pruneCount: number;
+  /**
+   * 最近一次 provider 请求的快照锚点：assistant 响应带 usage 回来时，
+   * 用它把「真实用量 / 耗时 / 本轮新增内容」回填到对应请求行。
+   * 归属会话的 usage 与 duration 由 store 侧按请求增量维护，fold 不做累加。
+   */
+  pendingRequestId: string | null;
+  pendingRequestAt: number;
+  pendingNodeFloor: number;
+  /** 本 run 是否为「续接已采集过的会话」（决定 context 是否要归档上一轮重放节点） */
+  isReplay: boolean;
 }
 
 /** 待落库的写操作 */
@@ -76,6 +82,12 @@ export type WriteOp =
     }
   | { kind: "insertNode"; node: FoldNode }
   | { kind: "archiveNodes"; ids: string[]; goneAtSeq: number }
+  /**
+   * 按分类归档会话内当前存活的节点（不需要逐个 id）。
+   * 用于多 run 重放：新 run 会重新声明系统提示与历史用户消息，
+   * 上一轮为同一批内容建的节点必须退出活跃面，否则同一条消息会被算很多遍。
+   */
+  | { kind: "archiveSuperseded"; categories: ContextCategory[]; goneAtSeq: number }
   | { kind: "insertRequest"; request: RequestInsert }
   | { kind: "patchRequest"; id: string; actual: ActualUsagePatch; durationMs: number; brief: RequestBriefPatch }
   | { kind: "insertEvent"; event: ContextEventInsert }
@@ -100,11 +112,6 @@ export interface SessionPatch {
   currentAssistant?: number;
   currentTool?: number;
   currentTotal?: number;
-  usageUncached?: number;
-  usageCacheRead?: number;
-  usageCacheWrite?: number;
-  usageOutput?: number;
-  durationMs?: number;
   model?: string | null;
   provider?: string | null;
   contextWindow?: number | null;

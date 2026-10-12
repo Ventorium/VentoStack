@@ -66,4 +66,43 @@ describe('createLLMGateway', () => {
 
     expect(calls[0]?.model).toBe('tenant-model');
   });
+
+  test('resolveProviderFor 解析动态 provider 并暴露能力，按 tenant 隔离缓存', async () => {
+    const calls: ChatParams[] = [];
+    const resolved: string[] = [];
+    const gateway = createLLMGateway({
+      providers: [],
+      defaultModel: 'default',
+      async resolveProvider(model, tenantId) {
+        resolved.push(`${tenantId}|${model}`);
+        return { provider: createProvider(`p-${tenantId}`, calls), model };
+      },
+    });
+
+    const a = await gateway.resolveProviderFor('coding-free', 'tenant-a');
+    expect(a?.capabilities.maxContextLength).toBe(128000);
+    expect(a?.name).toBe('p-tenant-a');
+
+    // 命中缓存：同一 tenant + model 不再回源
+    await gateway.resolveProviderFor('coding-free', 'tenant-a');
+    expect(resolved).toEqual(['tenant-a|coding-free']);
+
+    // 换租户必须重新解析（不同租户可能是完全不同的 provider 配置）
+    const b = await gateway.resolveProviderFor('coding-free', 'tenant-b');
+    expect(b?.name).toBe('p-tenant-b');
+    expect(resolved).toEqual(['tenant-a|coding-free', 'tenant-b|coding-free']);
+  });
+
+  test('resolveProviderFor 静态 provider 走前缀解析，未知引用返回 undefined', async () => {
+    const calls: ChatParams[] = [];
+    const gateway = createLLMGateway({
+      providers: [createProvider('openai', calls)],
+      defaultModel: 'gpt-4o-mini',
+    });
+
+    const found = await gateway.resolveProviderFor('openai/gpt-4o');
+    expect(found?.name).toBe('openai');
+
+    expect(await gateway.resolveProviderFor('nope/model')).toBeUndefined();
+  });
 });

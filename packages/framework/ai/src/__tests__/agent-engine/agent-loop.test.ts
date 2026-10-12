@@ -32,6 +32,7 @@ function createGateway(turns: StreamChunk[][], requests?: ChatParams[]): LLMGate
     getProvider: () => provider,
     getDefaultProvider: () => provider,
     listProviders: () => [provider],
+    resolveProviderFor: async () => provider,
   };
 }
 
@@ -178,6 +179,32 @@ describe("Agent loop conformance", () => {
       message: "run",
     }));
     expect(executed).toBe(false);
+  });
+
+  test("before_provider_request 带上 provider 声明的上下文窗口", async () => {
+    const events: Array<{ type: string; contextWindow?: number }> = [];
+    const emitter = createEventEmitter();
+    emitter.on((event) => {
+      if (event.type === "before_provider_request") {
+        events.push({ type: event.type, ...(event.contextWindow !== undefined ? { contextWindow: event.contextWindow } : {}) });
+      }
+    });
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]]),
+      eventEmitter: emitter,
+      agentTools: [],
+    });
+
+    await collect(loop.runStream({
+      agentId: "agent",
+      userId: "user",
+      tenantId: "tenant",
+      message: "hi",
+    }));
+
+    expect(events.length).toBeGreaterThan(0);
+    // 测试 provider 声明 maxContextLength=128000，订阅方据此算占用率
+    expect(events[0]?.contextWindow).toBe(128_000);
   });
 
   test("emits the complete tool lifecycle and applies afterToolCall overrides", async () => {

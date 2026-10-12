@@ -176,4 +176,9 @@ export interface LLMGateway {
   getProvider(name: string): LLMProvider | undefined;
   getDefaultProvider(): LLMProvider;
   listProviders(): LLMProvider[];
+  /**
+   * 按 model 引用解析 provider（含配置里的动态解析，结果按 tenant + model 缓存）。
+   * 用于在发起请求前查询 provider 能力，如上下文窗口；解析不到返回 undefined。
+   */
+  resolveProviderFor(model: string, tenantId?: string): Promise<LLMProvider | undefined>;
 }

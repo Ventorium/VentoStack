@@ -32,6 +32,7 @@ function createGateway(turns: StreamChunk[][], requests: ChatParams[]): LLMGatew
     getProvider: () => provider,
     getDefaultProvider: () => provider,
     listProviders: () => [provider],
+    resolveProviderFor: async () => provider,
   };
 }
 
