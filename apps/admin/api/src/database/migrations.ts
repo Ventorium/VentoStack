@@ -54,6 +54,7 @@ import { normalizePresetConfigs } from './migrations/019_normalize_preset_config
 import { dropAiTraceArtifacts } from './migrations/020_drop_ai_trace_artifacts';
 import { addAgentContextToggleAndPruneAiMenus } from './migrations/021_agent_context_toggle_and_prune_ai_menus';
 import { pruneAiContextAndAuditMenus } from './migrations/022_prune_ai_context_and_audit_menus';
+import { addContextSessionTenantSessionUnique } from './migrations/023_context_session_tenant_session_unique';
 
 const logger = createTagLogger('migrations');
 
@@ -129,6 +130,7 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(dropAiTraceArtifacts);
   runner.addMigration(addAgentContextToggleAndPruneAiMenus);
   runner.addMigration(pruneAiContextAndAuditMenus);
+  runner.addMigration(addContextSessionTenantSessionUnique);
 
   const executed = await runner.up();
 

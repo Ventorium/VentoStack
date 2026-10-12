@@ -27,6 +27,13 @@ export interface ContextStore {
   closeSession(tenantId: string, sessionId: string, status: string): Promise<void>;
   /** 清理崩溃遗留的 running 会话，返回清理条数 */
   markStaleSessions(olderThanMs: number): Promise<number>;
+  /**
+   * 会话当前已用到的最大 seq（跨 node/request/event/file_op 取最大）。
+   * 多轮对话 = 同一 session 多个 run，每个 run 的 fold 必须从这里续起，
+   * 否则确定性 ID（n-${seq}/r-${seq}/e-${seq}）与历史行冲突，
+   * 且 getDetail 按 seq 重建时间线要求 seq 在 session 内全局唯一。
+   */
+  currentSeq(tenantId: string, sessionId: string): Promise<number>;
 }
 
 export function createContextStore(deps: { db: Database }): ContextStore {
@@ -40,8 +47,8 @@ export function createContextStore(deps: { db: Database }): ContextStore {
     }
     await db.raw(
       `INSERT INTO ai_context_session
-         (id, tenant_id, session_id, agent_id, user_id, parent_run_id, status, started_at, rev)
-       VALUES ($1, $2, $3, $4, $5, $6, 'running', $7, 0)
+         (id, tenant_id, session_id, agent_id, user_id, parent_run_id, status, started_at, rev, run_count)
+       VALUES ($1, $2, $3, $4, $5, $6, 'running', $7, 0, 1)
        ON CONFLICT (tenant_id, session_id) DO UPDATE SET
          agent_id = COALESCE(EXCLUDED.agent_id, ai_context_session.agent_id),
          user_id = COALESCE(EXCLUDED.user_id, ai_context_session.user_id),
@@ -117,7 +124,25 @@ export function createContextStore(deps: { db: Database }): ContextStore {
     return rows.length;
   }
 
-  return { upsertSession, applyOps, closeSession, markStaleSessions };
+  async function currentSeq(tenantId: string, sessionId: string): Promise<number> {
+    if (!tenantId || tenantId.trim() === "") {
+      throw new Error("ai-context: tenantId 不能为空（租户隔离要求 fail-closed）");
+    }
+    const rows = (await db.raw(
+      `SELECT GREATEST(
+         COALESCE((SELECT MAX(seq) FROM ai_context_node     WHERE tenant_id = $1 AND session_id = $2), 0),
+         COALESCE((SELECT MAX(seq) FROM ai_context_request  WHERE tenant_id = $1 AND session_id = $2), 0),
+         COALESCE((SELECT MAX(seq) FROM ai_context_event    WHERE tenant_id = $1 AND session_id = $2), 0),
+         COALESCE((SELECT MAX(seq) FROM ai_context_file_op  WHERE tenant_id = $1 AND session_id = $2), 0)
+       ) AS max_seq`,
+      [tenantId, sessionId],
+    )) as Array<{ max_seq?: number | string | null }>;
+    const v = rows?.[0]?.max_seq;
+    const n = typeof v === "string" ? Number(v) : (v ?? 0);
+    return Number.isFinite(n) && n > 0 ? n : 0;
+  }
+
+  return { upsertSession, applyOps, closeSession, markStaleSessions, currentSeq };
 }
 
 // ---- 内部写操作（均在事务内，携带 tenantId + sessionId 双重限定）----

@@ -76,8 +76,16 @@ export function createContextRecorder(deps: ContextRecorderDeps): ContextRecorde
       : false;
     if (!enabled) return;
 
+    // seq 必须在 session 内全局唯一：getDetail 按 seq 重建时间线，且只按
+    // tenant+session 过滤（不含 runId）。多轮对话 = 同一 session 多个 run，
+    // 每个 run 的 fold 必须从库中已有 max(seq) 续起；否则确定性 ID
+    // （n-${seq}/r-${seq}/e-${seq}）与历史行主键冲突，整个 applyOps 事务回滚。
+    const seq = await store.currentSeq(run.tenantId, run.sessionId);
+
     runs.set(run.runId, {
       fold: createFoldState({
+        // 接续历史 seq，保证跨 run 单调递增
+        seq,
         model: event.meta?.model ?? null,
         skills: new Set(event.meta?.skillIds ?? []),
       }),

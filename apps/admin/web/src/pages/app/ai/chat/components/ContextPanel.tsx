@@ -20,6 +20,8 @@ import RequestTrend from "./RequestTrend";
 
 interface Detail {
   session?: {
+    /** 空详情（无记录）时后端返回 id 为空串，真实会话必有 UUID，据此区分空态 */
+    id?: string;
     sessionId?: string;
     title?: string;
     model?: string;
@@ -111,8 +113,10 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
       return;
     }
     const d = data as Detail | undefined;
-    // 后端对无记录的会话返回 200 + 空详情（rev === 0），视作「未采集」引导态
-    setNotFound((d?.rev ?? 0) === 0);
+    // 后端对无记录的会话返回 200 + 空详情：空详情的 session.id 为空串，
+    // 真实会话必有 UUID id —— 据此区分「未采集」与「有数据」。
+    // （不能用 rev：getDetail 的 rev 恒为 0，真实数据也是 0）
+    setNotFound(!d?.session?.id);
     setDetail(d);
   }, [sessionId]);
 

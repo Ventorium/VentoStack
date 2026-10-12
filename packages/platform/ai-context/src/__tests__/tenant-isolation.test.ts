@@ -93,5 +93,35 @@ describe("租户隔离 fail-closed", () => {
       expect(calls[0]!.text).toContain("session_id = $3");
       expect(calls[0]!.params).toContain("tenant-a");
     });
+
+    test("currentSeq 缺少 tenantId 时抛错", async () => {
+      const { db } = createMockDatabase(createMockExecutor());
+      const store = createContextStore({ db });
+      await expect(store.currentSeq("", "s1")).rejects.toThrow(/tenantId/);
+    });
+
+    test("currentSeq 查询四张表的 MAX(seq) 且携带 tenant + session 过滤", async () => {
+      const mockExec = createMockExecutor();
+      const { calls } = mockExec;
+      const { db } = createMockDatabase(mockExec);
+      const store = createContextStore({ db });
+
+      await store.currentSeq("tenant-a", "s1");
+
+      expect(calls).toHaveLength(1);
+      const sql = calls[0]!.text;
+      for (const table of ["ai_context_node", "ai_context_request", "ai_context_event", "ai_context_file_op"]) {
+        expect(sql).toContain(table);
+      }
+      expect(sql).toContain("GREATEST");
+      expect(calls[0]!.params).toEqual(["tenant-a", "s1"]);
+    });
+
+    test("currentSeq 对空结果返回 0（新会话无历史）", async () => {
+      // mock 对未注册的 SQL 返回 []，模拟四张表都无记录
+      const { db } = createMockDatabase(createMockExecutor());
+      const store = createContextStore({ db });
+      expect(await store.currentSeq("tenant-a", "s1")).toBe(0);
+    });
   });
 });
