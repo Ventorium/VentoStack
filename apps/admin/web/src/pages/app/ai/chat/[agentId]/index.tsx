@@ -626,12 +626,22 @@ function AgentConversation(): React.ReactElement {
     });
   }, [allKnowledgeBases, boundKbIds]);
 
-  // 路径参数自动选择 agent
+  // 路径参数自动选择 agent。同一个参数只消费一次：
+  // 否则任何「清空选中态」的动作（如点击返回）都会被本 effect 按旧 URL 参数
+  // 立刻选回来，表现为返回按钮点不动（URL 又跳回 /app/ai/chat/:agentId）。
+  // react-router 的 navigate 是 transition，清空选中态这次提交先落地时 URL 参数仍在。
+  const appliedAgentParamRef = useRef<string | null>(null);
   useEffect(() => {
-    if (agentId && agents.length > 0 && !selectedAgent) {
-      const matched = agents.find((a) => a.name === agentId || a.id === agentId);
-      if (matched) handleSelectAgent(matched);
+    if (!agentId || agents.length === 0) return;
+    if (appliedAgentParamRef.current === agentId) return;
+    // 已选中同一 agent（handleSelectAgent 会把 URL 归一化成 id）时只记账，不重复拉详情
+    if (selectedAgent && (selectedAgent.id === agentId || selectedAgent.name === agentId)) {
+      appliedAgentParamRef.current = agentId;
+      return;
     }
+    appliedAgentParamRef.current = agentId;
+    const matched = agents.find((a) => a.name === agentId || a.id === agentId);
+    if (matched) void handleSelectAgent(matched);
   }, [agents, agentId, selectedAgent, handleSelectAgent]);
 
   // 获取当前会话产物文件
@@ -1389,10 +1399,11 @@ function AgentConversation(): React.ReactElement {
           setEnabledKbs((prev) => (enabled ? [...prev, id] : prev.filter((k) => k !== id)));
         }}
         onBack={() => {
-          setSelectedAgent(null);
-          setMessages([]);
-          setThreads([]);
-          navigate('/app/ai/chat', { replace: true });
+          // 返回智能体列表：只做路由跳转，状态随组件卸载丢弃。
+          // 不要在这里先清空 selectedAgent —— navigate 是 transition，
+          // 清空会先渲染「智能体不存在」空态闪一下再被路由切换覆盖，
+          // 且会被「路径参数自动选择 agent」effect 按旧 URL 参数立刻弹回来。
+          navigate('/app/ai/chat');
         }}
       />
 
