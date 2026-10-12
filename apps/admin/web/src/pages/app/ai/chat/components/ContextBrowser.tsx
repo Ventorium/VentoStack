@@ -133,7 +133,7 @@ export default function ContextBrowser({
           }))}
         />
         <Typography.Text type="secondary" className="text-xs">
-          共 {visible.length} 个元素 · {totalTokens.toLocaleString()} tokens
+          共 {visible.length} 个节点 · {totalTokens.toLocaleString()} tokens（不含工具 schema）
         </Typography.Text>
       </div>
 

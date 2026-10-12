@@ -183,6 +183,19 @@ describe("上下文折叠器", () => {
       );
     });
 
+    test("未知的 provider/model 不写入会话补丁（不覆盖已知值）", () => {
+      const { ops } = run(createFoldState(), {
+        type: "before_provider_request",
+        model: "m",
+      });
+      const patch = ops.find((o) => o.kind === "upsertSession");
+      if (patch?.kind !== "upsertSession") throw new Error("缺少 upsertSession");
+      // model 已知则写，provider 未知（null）则省略，避免抹掉上一轮已知的 provider
+      expect(patch.patch.model).toBe("m");
+      expect(Object.keys(patch.patch)).not.toContain("provider");
+      expect(Object.keys(patch.patch)).not.toContain("contextWindow");
+    });
+
     test("窗口未知时不把已探测到的窗口抹成 0/undefined", () => {
       const r1 = run(createFoldState(), {
         type: "before_provider_request",

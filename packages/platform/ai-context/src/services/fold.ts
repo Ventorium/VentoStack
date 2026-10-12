@@ -229,10 +229,15 @@ function onBeforeRequest(
     state: s,
     ops: [
       { kind: "insertRequest", request: insert },
-      // 上下文窗口只有请求时刻才探测得到，随会话行一起落库（当前构成由消息事件维护）
+      // 上下文窗口只有请求时刻才探测得到，随会话行一起落库（当前构成由消息事件维护）；
+      // 未知（null）不覆盖已知：provider 要等响应回来才知道，别在 run 开始就抹掉
       {
         kind: "upsertSession",
-        patch: { contextWindow: s.contextWindow, model: s.model, provider: s.provider },
+        patch: {
+          ...(s.contextWindow !== null ? { contextWindow: s.contextWindow } : {}),
+          ...(s.model !== null ? { model: s.model } : {}),
+          ...(s.provider !== null ? { provider: s.provider } : {}),
+        },
       },
     ],
   };
@@ -390,9 +395,11 @@ function sessionPatchFrom(s: FoldState, extra: SessionPatch = {}): SessionPatch 
       s.sums.skill +
       s.sums.assistant +
       s.sums.tool,
-    model: s.model,
-    provider: s.provider,
-    contextWindow: s.contextWindow,
+    // 未知（null）不覆盖已知：provider 只有响应回来后才拿得到，
+    // 若在 run 开始就把 null 写进会话行，会把上一轮已知的 provider 抹掉
+    ...(s.model !== null ? { model: s.model } : {}),
+    ...(s.provider !== null ? { provider: s.provider } : {}),
+    ...(s.contextWindow !== null ? { contextWindow: s.contextWindow } : {}),
     lastUser: s.lastUser,
     stepCount: s.requestCount,
     ...extra,
