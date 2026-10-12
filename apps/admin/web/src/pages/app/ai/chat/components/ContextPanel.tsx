@@ -18,72 +18,8 @@ import { fmtDate } from "@/utils/fmtDate";
 import ContextBrowser from "./ContextBrowser";
 import RequestTrend from "./RequestTrend";
 import CompositionCard from "./CompositionCard";
-
-interface Detail {
-  session?: {
-    /** 空详情（无记录）时后端返回 id 为空串，真实会话必有 UUID，据此区分空态 */
-    id?: string;
-    sessionId?: string;
-    title?: string;
-    model?: string;
-    provider?: string;
-    status?: string;
-    durationMs?: number;
-    startedAt?: string;
-    counts?: Record<string, number>;
-    usage?: Record<string, number>;
-    current?: Record<string, number>;
-  };
-  requests?: Array<{
-    id: string;
-    seq: number;
-    turnIndex?: number;
-    composition?: Record<string, number>;
-    actual?: { uncachedInputTokens?: number; outputTokens?: number };
-    durationMs?: number;
-    createdAt?: string;
-  }>;
-  events?: Array<{
-    id: string;
-    seq: number;
-    kind?: string;
-    producer?: string;
-    deltaTokens?: number;
-    turnIndex?: number;
-    createdAt?: string;
-  }>;
-  nodes?: Array<{
-    id: string;
-    seq: number;
-    category?: string;
-    name?: string;
-    tokens?: number;
-    preview?: string;
-    /** 完整内容（最长 2 万字符），展开行展示；系统提示 / 用户消息全文在这里 */
-    content?: string | null;
-  }>;
-  archive?: Array<{
-    id: string;
-    seq: number;
-    category?: string;
-    name?: string;
-    tokens?: number;
-    preview?: string;
-    content?: string | null;
-    goneAtSeq?: number;
-  }>;
-  fileOps?: Array<{
-    id: string;
-    seq: number;
-    path?: string;
-    kind?: string;
-    tool?: string;
-    err?: boolean;
-    added?: number;
-    removed?: number;
-    createdAt?: string;
-  }>;
-}
+import RequestComposition from "./RequestComposition";
+import type { ContextDetail } from "./context-detail-types";
 
 interface ContextPanelProps {
   /** 当前会话 id；未选定会话时为空，面板展示引导态 */
@@ -98,8 +34,10 @@ const KIND_COLOR: Record<string, string> = {
 
 export default function ContextPanel({ sessionId }: ContextPanelProps) {
   const [loading, setLoading] = useState(false);
-  const [detail, setDetail] = useState<Detail | undefined>(undefined);
+  const [detail, setDetail] = useState<ContextDetail | undefined>(undefined);
   const [notFound, setNotFound] = useState(false);
+  /** 联动悬停的分桶：组成占比 / DNA 指纹 / 元素行共享同一个高亮 */
+  const [hoverKey, setHoverKey] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     if (!sessionId) {
@@ -116,7 +54,7 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
       setNotFound(true);
       return;
     }
-    const d = data as Detail | undefined;
+    const d = data as ContextDetail | undefined;
     // 后端对无记录的会话返回 200 + 空详情：空详情的 session.id 为空串，
     // 真实会话必有 UUID id —— 据此区分「未采集」与「有数据」。
     // （不能用 rev：getDetail 的 rev 恒为 0，真实数据也是 0）
@@ -160,12 +98,35 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
     (session?.usage?.cacheWrite ?? 0) +
     (session?.usage?.output ?? 0);
 
-  const requestColumns: ColumnsType<NonNullable<Detail["requests"]>[number]> = [
+  const requestColumns: ColumnsType<NonNullable<ContextDetail["requests"]>[number]> = [
     { title: "请求", dataIndex: "seq", key: "seq", width: 80, render: (v: number) => `#${v}` },
     { title: "轮次", dataIndex: "turnIndex", key: "turnIndex", width: 70 },
+    {
+      title: "上下文 tokens",
+      key: "total",
+      width: 120,
+      render: (_v, r) => (r.composition?.total ?? 0).toLocaleString(),
+    },
+    {
+      title: "真实用量",
+      key: "actual",
+      width: 120,
+      render: (_v, r) => {
+        const a = r.actual;
+        const t =
+          (a?.uncachedInputTokens ?? 0) + (a?.outputTokens ?? 0) + (a?.cacheReadTokens ?? 0) + (a?.cacheWriteTokens ?? 0);
+        return t > 0 ? t.toLocaleString() : "-";
+      },
+    },
+    {
+      title: "耗时",
+      key: "durationMs",
+      width: 110,
+      render: (_v, r) => (typeof r.durationMs === "number" ? `${r.durationMs.toLocaleString()} ms` : "-"),
+    },
   ];
 
-  const fileColumns: ColumnsType<NonNullable<Detail["fileOps"]>[number]> = [
+  const fileColumns: ColumnsType<NonNullable<ContextDetail["fileOps"]>[number]> = [
     { title: "序号", dataIndex: "seq", key: "seq", width: 80 },
     { title: "路径", dataIndex: "path", key: "path", ellipsis: true },
     {
@@ -182,10 +143,15 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
     <div className="h-full min-h-0 overflow-auto py-2">
       <Row gutter={16} className="mb-4">
         <Col xs={24} md={12}>
-          <CompositionCard current={session?.current} />
+          <CompositionCard
+            current={session?.current}
+            contextWindow={session?.contextWindow}
+            hoverKey={hoverKey}
+            onHoverKey={setHoverKey}
+          />
         </Col>
         <Col xs={8} md={4}>
-          <Statistic title="请求步数" value={session?.counts?.steps ?? 0} />
+          <Statistic title="请求步数" value={detail?.requests?.length ?? 0} />
         </Col>
         <Col xs={8} md={4}>
           <Statistic
@@ -204,6 +170,7 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
         <Descriptions.Item label="模型">{session?.model ?? "-"}</Descriptions.Item>
         <Descriptions.Item label="提供方">{session?.provider ?? "-"}</Descriptions.Item>
         <Descriptions.Item label="开始时间">{fmtDate(session?.startedAt ?? "")}</Descriptions.Item>
+        <Descriptions.Item label="运行轮次">{session?.runCount ?? 0}</Descriptions.Item>
       </Descriptions>
 
       <Tabs
@@ -216,6 +183,8 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
                 nodes={detail?.nodes ?? []}
                 archive={detail?.archive ?? []}
                 requests={detail?.requests ?? []}
+                hoverKey={hoverKey}
+                onHoverKey={setHoverKey}
               />
             ),
           },
@@ -233,6 +202,16 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
                   dataSource={detail?.requests ?? []}
                   pagination={{ pageSize: 10, showSizeChanger: true }}
                   scroll={{ x: 1100 }}
+                  expandable={{
+                    // 逐请求构成明细（对齐 dsh-context 的 requestDetail）
+                    expandedRowRender: (r) => (
+                      <RequestComposition
+                        composition={r.composition}
+                        durationMs={r.durationMs}
+                        actual={r.actual}
+                      />
+                    ),
+                  }}
                 />
               </div>
             ),

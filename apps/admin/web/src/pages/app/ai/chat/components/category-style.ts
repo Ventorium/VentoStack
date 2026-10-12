@@ -10,6 +10,27 @@ export interface CategoryStyle {
   color: string;
 }
 
+/** 七个分桶的 key（固定顺序见 CATEGORY_ORDER） */
+export type CategoryKey =
+  | "system"
+  | "tools"
+  | "user"
+  | "inject"
+  | "skill"
+  | "assistant"
+  | "tool";
+
+/** 分桶展示顺序：信封（system/tools）→ 消息面（按进入上下文的先后） */
+export const CATEGORY_ORDER: readonly CategoryKey[] = [
+  "system",
+  "tools",
+  "user",
+  "inject",
+  "skill",
+  "assistant",
+  "tool",
+];
+
 export const CATEGORY_STYLE: Record<string, CategoryStyle> = {
   system: { label: "系统提示", color: "#1677ff" },
   tools: { label: "工具 schema", color: "#faad14" },

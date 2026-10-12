@@ -6,10 +6,15 @@
  * 重建规则（对齐 dsh-context types.ts:335）：
  *   节点在请求 R 时存活 ⟺ node.seq < R.seq && (node.goneAtSeq == null || node.goneAtSeq > R.seq)
  * 活跃面(nodes) + 归档(archive) 合起来即可还原任意请求的组装结果。
+ *
+ * 顶部 DNA 指纹条按模型读取顺序摊开这一刻的组装结果，
+ * 点击带子在下方展开该元素全文（系统提示 / 用户消息原文都在这里）。
  */
 import { useMemo, useState } from "react";
 import { Empty, Segmented, Select, Tag, Tooltip, Typography } from "antd";
 import { CATEGORY_STYLE } from "./category-style";
+import DnaStrip from "./DnaStrip";
+import type { DnaBand } from "./DnaStrip";
 
 interface Node {
   id: string;
@@ -34,11 +39,20 @@ interface Props {
   nodes: Node[];
   archive: Node[];
   requests: Request[];
+  /** 与组成占比联动的悬停分桶（由父级持有） */
+  hoverKey?: string | null;
+  onHoverKey?: (key: string | null) => void;
 }
 
 type Filter = "all" | "survived";
 
-export default function ContextBrowser({ nodes, archive, requests }: Props) {
+export default function ContextBrowser({
+  nodes,
+  archive,
+  requests,
+  hoverKey,
+  onHoverKey,
+}: Props) {
   const [filter, setFilter] = useState<Filter>("survived");
   const [targetSeq, setTargetSeq] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -52,6 +66,7 @@ export default function ContextBrowser({ nodes, archive, requests }: Props) {
 
   // 目标请求：默认取最后一个（有请求才有上下文快照）
   const effectiveSeq = targetSeq ?? requests[requests.length - 1]?.seq ?? null;
+  const currentRequest = requests.find((r) => r.seq === effectiveSeq) ?? null;
 
   /** 重建某一请求时刻的活跃面 */
   const reconstructed = useMemo(() => {
@@ -64,6 +79,30 @@ export default function ContextBrowser({ nodes, archive, requests }: Props) {
   const visible = filter === "survived" ? reconstructed : allNodes;
 
   const totalTokens = visible.reduce((s, n) => s + (n.tokens ?? 0), 0);
+
+  /**
+   * DNA 指纹：模型读取顺序 = 系统提示 → 工具 schema → 消息面按 seq。
+   * 工具 schema 在我们的采集里是聚合标量（没有逐工具节点），用请求快照的 tools 值合成一条带。
+   */
+  const bands = useMemo<DnaBand[]>(() => {
+    if (effectiveSeq === null) return [];
+    const out: DnaBand[] = [];
+    const sys = reconstructed.find((n) => n.category === "system");
+    if (sys) out.push({ id: sys.id, label: sys.name ?? "系统提示", category: "system", tokens: sys.tokens ?? 0, expandable: true });
+    const toolsTokens = currentRequest?.composition?.tools ?? 0;
+    if (toolsTokens > 0) out.push({ id: "band-tools", label: "工具 schema", category: "tools", tokens: toolsTokens });
+    for (const n of reconstructed) {
+      if (n.category === "system" || n.category === "tools") continue;
+      out.push({
+        id: n.id,
+        label: `${n.name ?? n.category ?? "元素"} #${n.seq}`,
+        category: n.category ?? "inject",
+        tokens: n.tokens ?? 0,
+        expandable: true,
+      });
+    }
+    return out;
+  }, [reconstructed, currentRequest, effectiveSeq]);
 
   if (requests.length === 0) {
     return <Empty description="该会话还没有模型请求快照" />;
@@ -98,17 +137,29 @@ export default function ContextBrowser({ nodes, archive, requests }: Props) {
         </Typography.Text>
       </div>
 
+      {filter === "survived" && (
+        <DnaStrip
+          bands={bands}
+          hoverKey={hoverKey}
+          onHoverKey={onHoverKey}
+          onSelectBand={(b) => setExpandedId(b.id === expandedId ? null : b.id)}
+        />
+      )}
+
       <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto">
         {visible.map((n) => {
           const style = CATEGORY_STYLE[n.category ?? ""];
           const isGhost = filter === "all" && n.goneAtSeq !== null && n.goneAtSeq !== undefined;
           const isExpanded = n.id === expandedId;
+          const isHovered = hoverKey != null && hoverKey === n.category;
           return (
             <div
               key={n.id}
-              className={`flex flex-col rounded border border-solid border-gray-200 dark:border-gray-700 ${
-                isGhost ? "opacity-45" : isExpanded ? "bg-gray-50 dark:bg-gray-800" : ""
-              }`}
+              className={`flex flex-col rounded border border-solid ${
+                isHovered
+                  ? "border-blue-400 dark:border-blue-500"
+                  : "border-gray-200 dark:border-gray-700"
+              } ${isGhost ? "opacity-45" : isExpanded ? "bg-gray-50 dark:bg-gray-800" : ""}`}
             >
               {/* 行主体：点击切换展开，展示完整内容（系统提示 / 用户消息全文） */}
               <button
