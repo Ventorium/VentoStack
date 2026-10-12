@@ -9,16 +9,21 @@
  *  - 请求序列：每次模型请求的构成快照
  *  - 上下文事件：注入 / 压缩 / 裁剪
  *  - 文件活动：本会话触碰过的文件
+ *
+ * 布局：顶部左侧「组成占比」、右侧「统计 + 会话信息」，两者等高；
+ * 下方是二级页签。所有面板用 antd Card，深色模式跟随全局主题。
  */
 import { useCallback, useEffect, useState } from "react";
-import { Col, Descriptions, Empty, Row, Spin, Statistic, Table, Tabs, Tag } from "antd";
+import { Col, Empty, Row, Spin, Table, Tabs, Tag, Tooltip, Typography } from "antd";
 import type { ColumnsType } from "antd/es/table";
 import { client } from "@/api";
 import { fmtDate } from "@/utils/fmtDate";
 import ContextBrowser from "./ContextBrowser";
 import RequestTrend from "./RequestTrend";
 import CompositionCard from "./CompositionCard";
+import CompositionLegend from "./CompositionLegend";
 import RequestComposition from "./RequestComposition";
+import SessionStats from "./SessionStats";
 import type { ContextDetail } from "./context-detail-types";
 
 interface ContextPanelProps {
@@ -92,23 +97,26 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
   }
 
   const session = detail?.session;
-  const billed =
-    (session?.usage?.uncached ?? 0) +
-    (session?.usage?.cacheRead ?? 0) +
-    (session?.usage?.cacheWrite ?? 0) +
-    (session?.usage?.output ?? 0);
 
   const requestColumns: ColumnsType<NonNullable<ContextDetail["requests"]>[number]> = [
     { title: "请求", dataIndex: "seq", key: "seq", width: 80, render: (v: number) => `#${v}` },
     { title: "轮次", dataIndex: "turnIndex", key: "turnIndex", width: 70 },
     {
-      title: "上下文 tokens",
+      title: (
+        <Tooltip title="该请求装配出的上下文估算值（与左上的组成占比同源）">
+          <span>上下文 tokens</span>
+        </Tooltip>
+      ),
       key: "total",
-      width: 120,
+      width: 130,
       render: (_v, r) => (r.composition?.total ?? 0).toLocaleString(),
     },
     {
-      title: "真实用量",
+      title: (
+        <Tooltip title="提供方上报的输入+输出 tokens；请求失败或提供方未上报时显示 -">
+          <span>真实用量</span>
+        </Tooltip>
+      ),
       key: "actual",
       width: 120,
       render: (_v, r) => {
@@ -119,10 +127,15 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
       },
     },
     {
-      title: "耗时",
+      title: (
+        <Tooltip title="从发出请求到收到响应的时间；未拿到响应时显示 -">
+          <span>耗时</span>
+        </Tooltip>
+      ),
       key: "durationMs",
       width: 110,
-      render: (_v, r) => (typeof r.durationMs === "number" ? `${r.durationMs.toLocaleString()} ms` : "-"),
+      render: (_v, r) =>
+        typeof r.durationMs === "number" ? `${r.durationMs.toLocaleString()} ms` : "-",
     },
   ];
 
@@ -141,37 +154,21 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
 
   return (
     <div className="h-full min-h-0 overflow-auto py-2">
-      <Row gutter={16} className="mb-4">
-        <Col xs={24} md={12}>
+      {/* align="top"：两列各自按内容高度排列，避免等高拉伸把卡片撑出大片空白 */}
+      <Row gutter={[12, 12]} className="mb-3" align="top">
+        <Col xs={24} xl={9}>
           <CompositionCard
             current={session?.current}
             contextWindow={session?.contextWindow}
             hoverKey={hoverKey}
             onHoverKey={setHoverKey}
           />
+          <CompositionLegend />
         </Col>
-        <Col xs={8} md={4}>
-          <Statistic title="请求步数" value={detail?.requests?.length ?? 0} />
-        </Col>
-        <Col xs={8} md={4}>
-          <Statistic
-            title="计费 tokens"
-            value={billed}
-            formatter={(v) => Number(v ?? 0).toLocaleString()}
-          />
-        </Col>
-        <Col xs={8} md={4}>
-          <Statistic title="耗时" value={session?.durationMs ?? 0} suffix="ms" />
+        <Col xs={24} xl={15}>
+          <SessionStats session={session} requestCount={detail?.requests?.length ?? 0} />
         </Col>
       </Row>
-
-      <Descriptions size="small" column={{ xs: 1, sm: 2, md: 4 }} className="mb-4">
-        <Descriptions.Item label="会话">{session?.title ?? session?.sessionId ?? "-"}</Descriptions.Item>
-        <Descriptions.Item label="模型">{session?.model ?? "-"}</Descriptions.Item>
-        <Descriptions.Item label="提供方">{session?.provider ?? "-"}</Descriptions.Item>
-        <Descriptions.Item label="开始时间">{fmtDate(session?.startedAt ?? "")}</Descriptions.Item>
-        <Descriptions.Item label="运行轮次">{session?.runCount ?? 0}</Descriptions.Item>
-      </Descriptions>
 
       <Tabs
         items={[
@@ -193,6 +190,10 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
             label: "请求序列",
             children: (
               <div>
+                <Typography.Text type="secondary" className="mb-2 block text-xs">
+                  一行一次模型请求（同一轮对话可能多次）；展开行看该次请求的七分桶构成与真实用量。
+                  「上下文 tokens」是估算值，「真实用量」是提供方上报值，两者不混算。
+                </Typography.Text>
                 <RequestTrend requests={detail?.requests ?? []} events={detail?.events ?? []} />
                 <Table
                   rowKey="id"
@@ -201,7 +202,7 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
                   columns={requestColumns}
                   dataSource={detail?.requests ?? []}
                   pagination={{ pageSize: 10, showSizeChanger: true }}
-                  scroll={{ x: 1100 }}
+                  scroll={{ x: 640 }}
                   expandable={{
                     // 逐请求构成明细（对齐 dsh-context 的 requestDetail）
                     expandedRowRender: (r) => (
@@ -219,6 +220,7 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
           {
             key: "events",
             label: `上下文事件 (${detail?.events?.length ?? 0})`,
+            // 事件 = 压缩/裁剪/工具 schema 注入等会改变上下文规模的动作
             children: (
               <Table
                 rowKey="id"

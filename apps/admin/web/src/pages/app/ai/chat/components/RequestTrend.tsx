@@ -5,10 +5,13 @@
  *  - 累计：每次请求的七分桶堆叠面积 —— 上下文「由什么构成、什么时候涨的」
  *  - 增量：相对上一次请求的分桶净变化，零轴上下发散 —— 「这一轮到底加了什么」
  * 并叠加压缩/裁剪事件的净释放标记。
+ *
+ * 主题：ECharts 不会自动跟随 antd 主题，坐标轴/图例/提示框颜色全部取 token，
+ * 否则深色模式下是「深底深字」看不见。
  */
 import { useState } from "react";
 import ReactECharts from "echarts-for-react";
-import { Empty, Segmented, Spin } from "antd";
+import { Empty, Segmented, Spin, theme } from "antd";
 import { CATEGORY_ORDER, CATEGORY_STYLE } from "./category-style";
 
 interface Request {
@@ -40,6 +43,7 @@ const EVENT_LABEL: Record<string, string> = {
 type Mode = "total" | "delta";
 
 export default function RequestTrend({ requests, events, loading }: Props) {
+  const { token } = theme.useToken();
   const [mode, setMode] = useState<Mode>("total");
 
   if (loading) {
@@ -76,12 +80,31 @@ export default function RequestTrend({ requests, events, loading }: Props) {
     return cur - prev;
   };
 
+  const axisColor = { color: token.colorTextTertiary };
   const option = {
-    tooltip: { trigger: "axis" },
-    legend: { bottom: 0, type: "scroll" },
+    textStyle: { color: token.colorTextSecondary },
+    tooltip: {
+      trigger: "axis",
+      backgroundColor: token.colorBgElevated,
+      borderColor: token.colorBorderSecondary,
+      textStyle: { color: token.colorText },
+    },
+    legend: { bottom: 0, type: "scroll", textStyle: { color: token.colorTextSecondary } },
     grid: { left: 8, right: 8, top: 24, bottom: 48, containLabel: true },
-    xAxis: { type: "category", data: xs, boundaryGap: mode === "delta", axisLabel: { fontSize: 10 } },
-    yAxis: { type: "value", name: "tokens" },
+    xAxis: {
+      type: "category",
+      data: xs,
+      boundaryGap: mode === "delta",
+      axisLabel: { fontSize: 10, ...axisColor },
+      axisLine: { lineStyle: { color: token.colorBorderSecondary } },
+    },
+    yAxis: {
+      type: "value",
+      name: "tokens",
+      nameTextStyle: axisColor,
+      axisLabel: axisColor,
+      splitLine: { lineStyle: { color: token.colorSplit } },
+    },
     series:
       mode === "total"
         ? [
@@ -114,10 +137,18 @@ export default function RequestTrend({ requests, events, loading }: Props) {
           ],
   };
 
-  const summary = events
-    .filter((e) => (e.deltaTokens ?? 0) !== 0)
+  // 同类同幅度的重复事件合并计数（每个 run 都会重放一次工具 schema，
+  // 不合并的话这里会是「注入 703 · 注入 703 · …」的噪音）
+  const merged = new Map<string, number>();
+  for (const e of events) {
+    const delta = e.deltaTokens ?? 0;
+    if (delta === 0) continue;
+    const key = `${EVENT_LABEL[e.kind ?? ""] ?? e.kind} ${Math.abs(delta).toLocaleString()}`;
+    merged.set(key, (merged.get(key) ?? 0) + 1);
+  }
+  const summary = [...merged.entries()]
     .slice(0, 6)
-    .map((e) => `${EVENT_LABEL[e.kind ?? ""] ?? e.kind} ${Math.abs(e.deltaTokens ?? 0).toLocaleString()}`)
+    .map(([label, count]) => (count > 1 ? `${label} ×${count}` : label))
     .join(" · ");
 
   return (
@@ -138,7 +169,13 @@ export default function RequestTrend({ requests, events, loading }: Props) {
             : "相对上一次请求的净变化（零轴上下发散）"}
         </span>
       </div>
-      <ReactECharts option={option} style={{ height: 280 }} notMerge />
+      <ReactECharts
+        // 主题切换时重建实例：ECharts 自己缓存了 canvas，靠 option 变更不一定重绘底色
+        key={token.colorBgContainer}
+        option={option}
+        style={{ height: 280 }}
+        notMerge
+      />
       {summary && (
         <div className="text-xs text-gray-500 mt-1">近期事件：{summary}</div>
       )}

@@ -9,9 +9,13 @@
  *
  * 顶部 DNA 指纹条按模型读取顺序摊开这一刻的组装结果，
  * 点击带子在下方展开该元素全文（系统提示 / 用户消息原文都在这里）。
+ *
+ * 主题：文本颜色走 antd token，避免深色模式下灰阶对比度不足；
+ * 行是 <button>，必须显式 bg-transparent —— 本项目用的是 tailwind-compat reset，
+ * 它保留浏览器默认按钮底色（深色模式下会渲染成亮色块）。
  */
 import { useMemo, useState } from "react";
-import { Empty, Segmented, Select, Tag, Tooltip, Typography } from "antd";
+import { Empty, Segmented, Select, Tag, Tooltip, Typography, theme } from "antd";
 import { CATEGORY_STYLE } from "./category-style";
 import DnaStrip from "./DnaStrip";
 import type { DnaBand } from "./DnaStrip";
@@ -53,6 +57,7 @@ export default function ContextBrowser({
   hoverKey,
   onHoverKey,
 }: Props) {
+  const { token } = theme.useToken();
   const [filter, setFilter] = useState<Filter>("survived");
   const [targetSeq, setTargetSeq] = useState<number | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -88,9 +93,19 @@ export default function ContextBrowser({
     if (effectiveSeq === null) return [];
     const out: DnaBand[] = [];
     const sys = reconstructed.find((n) => n.category === "system");
-    if (sys) out.push({ id: sys.id, label: sys.name ?? "系统提示", category: "system", tokens: sys.tokens ?? 0, expandable: true });
+    if (sys) {
+      out.push({
+        id: sys.id,
+        label: sys.name ?? "系统提示",
+        category: "system",
+        tokens: sys.tokens ?? 0,
+        expandable: true,
+      });
+    }
     const toolsTokens = currentRequest?.composition?.tools ?? 0;
-    if (toolsTokens > 0) out.push({ id: "band-tools", label: "工具 schema", category: "tools", tokens: toolsTokens });
+    if (toolsTokens > 0) {
+      out.push({ id: "band-tools", label: "工具 schema", category: "tools", tokens: toolsTokens });
+    }
     for (const n of reconstructed) {
       if (n.category === "system" || n.category === "tools") continue;
       out.push({
@@ -110,7 +125,8 @@ export default function ContextBrowser({
 
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-3 mb-3">
+      {/* 工具条：请求选择 + 视图过滤 + 计数 */}
+      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-2">
         <Segmented
           size="small"
           options={[
@@ -122,7 +138,7 @@ export default function ContextBrowser({
         />
         <Select
           size="small"
-          style={{ minWidth: 260 }}
+          className="min-w-[280px]"
           value={effectiveSeq ?? undefined}
           onChange={(v) => setTargetSeq(v)}
           options={requests.map((r) => ({
@@ -133,7 +149,7 @@ export default function ContextBrowser({
           }))}
         />
         <Typography.Text type="secondary" className="text-xs">
-          共 {visible.length} 个节点 · {totalTokens.toLocaleString()} tokens（不含工具 schema）
+          {visible.length} 个节点 · {totalTokens.toLocaleString()} tokens（不含工具 schema）
         </Typography.Text>
       </div>
 
@@ -146,7 +162,7 @@ export default function ContextBrowser({
         />
       )}
 
-      <div className="flex flex-col gap-1 max-h-[520px] overflow-y-auto">
+      <div className="flex max-h-[46vh] flex-col gap-1 overflow-y-auto pr-1">
         {visible.map((n) => {
           const style = CATEGORY_STYLE[n.category ?? ""];
           const isGhost = filter === "all" && n.goneAtSeq !== null && n.goneAtSeq !== undefined;
@@ -155,47 +171,65 @@ export default function ContextBrowser({
           return (
             <div
               key={n.id}
-              className={`flex flex-col rounded border border-solid ${
-                isHovered
-                  ? "border-blue-400 dark:border-blue-500"
-                  : "border-gray-200 dark:border-gray-700"
-              } ${isGhost ? "opacity-45" : isExpanded ? "bg-gray-50 dark:bg-gray-800" : ""}`}
+              className={`flex flex-col overflow-hidden rounded border border-solid ${
+                isGhost ? "opacity-45" : ""
+              }`}
+              style={{
+                borderColor: isHovered ? token.colorPrimary : token.colorBorderSecondary,
+                background: isExpanded ? token.colorFillQuaternary : token.colorBgContainer,
+              }}
             >
               {/* 行主体：点击切换展开，展示完整内容（系统提示 / 用户消息全文） */}
               <button
                 type="button"
                 onClick={() => setExpandedId(isExpanded ? null : n.id)}
-                className="flex w-full items-start gap-2 px-2 py-1.5 rounded text-left hover:bg-gray-50 dark:hover:bg-gray-700"
+                className="flex w-full cursor-pointer items-start gap-2 rounded bg-transparent px-2 py-1.5 text-left"
               >
-                <span className="text-xs text-gray-400 w-12 shrink-0 pt-0.5">#{n.seq}</span>
+                <span
+                  className="w-12 shrink-0 pt-0.5 text-xs"
+                  style={{ color: token.colorTextTertiary }}
+                >
+                  #{n.seq}
+                </span>
                 <Tag
                   color={style?.color}
-                  className="shrink-0 m-0"
+                  className="m-0 shrink-0"
                   style={{ minWidth: 68, textAlign: "center" }}
                 >
                   {style?.label ?? n.category}
                 </Tag>
-                <span className="w-24 shrink-0 text-xs truncate text-gray-500 pt-0.5">
-                  {n.name ?? "-"}
-                </span>
+                {/* name 与分类标签重复时（如系统提示节点）不再占一列，减少噪音 */}
+                {n.name && n.name !== style?.label ? (
+                  <span
+                    className="w-24 shrink-0 truncate pt-0.5 text-xs"
+                    style={{ color: token.colorTextTertiary }}
+                  >
+                    {n.name}
+                  </span>
+                ) : null}
                 <Tooltip title={n.preview} placement="topLeft">
-                  <span className="flex-1 text-xs truncate">{n.preview ?? "(无内容)"}</span>
+                  <span className="flex-1 truncate text-xs" style={{ color: token.colorText }}>
+                    {n.preview && n.preview.length > 0 ? n.preview : "(空内容)"}
+                  </span>
                 </Tooltip>
-                <span className="text-xs text-gray-400 shrink-0 pt-0.5">
+                <span className="shrink-0 pt-0.5 text-xs" style={{ color: token.colorTextTertiary }}>
                   {(n.tokens ?? 0).toLocaleString()}
                 </span>
-                <span className="text-xs text-gray-400 shrink-0 pt-0.5">
+                <span className="shrink-0 pt-0.5 text-xs" style={{ color: token.colorTextQuaternary }}>
                   {isExpanded ? "▲" : "▼"}
                 </span>
                 {isGhost && (
-                  <span className="text-xs text-orange-500 shrink-0 pt-0.5">
+                  <span className="shrink-0 pt-0.5 text-xs" style={{ color: token.colorWarning }}>
                     已被 #{n.goneAtSeq} 移走
                   </span>
                 )}
               </button>
               {/* 展开区：完整内容 */}
               {isExpanded && (
-                <pre className="m-0 mx-2 mb-2 p-3 rounded bg-gray-100 dark:bg-gray-900 text-xs whitespace-pre-wrap break-all max-h-96 overflow-auto">
+                <pre
+                  className="m-0 mx-2 mb-2 max-h-96 overflow-auto whitespace-pre-wrap break-all rounded p-3 text-xs"
+                  style={{ background: token.colorFillTertiary, color: token.colorText }}
+                >
                   {n.content && n.content.length > 0 ? n.content : (n.preview ?? "(无内容)")}
                 </pre>
               )}

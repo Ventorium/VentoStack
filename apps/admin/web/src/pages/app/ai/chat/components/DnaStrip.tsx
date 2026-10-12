@@ -6,16 +6,16 @@
  * 占比回答「哪一类占了多少」，指纹回答「具体是哪些东西、按什么顺序被读了」。
  *
  * 交互：悬停某条带高亮同分类（与组成占比联动），点击在浏览器里展开该元素的全文。
+ * 主题：容器与文字用 antd token，分类色保持语义色相不变。
  */
-import { Tooltip } from "antd";
+import { Tooltip, Typography, theme } from "antd";
 import { CATEGORY_STYLE } from "./category-style";
-import type { CategoryKey } from "./category-style";
 
 export interface DnaBand {
   /** 元素 id（系统/工具 schema 等信封元素用合成 id） */
   id: string;
   label: string;
-  category: CategoryKey | string;
+  category: string;
   tokens: number;
   /** 点击回调仅对可展开的真实节点有意义 */
   expandable?: boolean;
@@ -34,6 +34,7 @@ export default function DnaStrip({
   onHoverKey,
   onSelectBand,
 }: DnaStripProps) {
+  const { token } = theme.useToken();
   const total = bands.reduce((s, b) => s + b.tokens, 0);
   // 最小带宽 3px：零/极小 token 的元素也要在读取顺序里可见（不撒谎的省略）
   const widthOf = (tokens: number) =>
@@ -43,18 +44,21 @@ export default function DnaStrip({
 
   return (
     <div className="mb-3">
-      <div className="flex items-baseline justify-between mb-1">
-        <span className="text-xs font-medium text-gray-600 dark:text-gray-300">
+      <div className="mb-1 flex items-baseline justify-between">
+        <Typography.Text strong className="text-xs">
           DNA 指纹 · 模型读取顺序
-        </span>
-        <span className="text-xs text-gray-400">
+        </Typography.Text>
+        <Typography.Text type="secondary" className="text-xs">
           {bands.length} 个元素 · {total.toLocaleString()} tokens
-        </span>
+        </Typography.Text>
       </div>
-      <div className="flex h-6 w-full overflow-hidden rounded border border-solid border-gray-200 dark:border-gray-700">
+      <div
+        className="flex h-6 w-full overflow-hidden rounded border border-solid"
+        style={{ borderColor: token.colorBorderSecondary, background: token.colorFillQuaternary }}
+      >
         {bands.map((b) => {
           const style = CATEGORY_STYLE[b.category];
-          const dim = hoverKey && hoverKey !== b.category;
+          const dim = hoverKey != null && hoverKey !== b.category;
           return (
             <Tooltip
               key={b.id}
@@ -67,12 +71,12 @@ export default function DnaStrip({
                 onMouseEnter={() => onHoverKey?.(b.category)}
                 onMouseLeave={() => onHoverKey?.(null)}
                 onClick={() => (b.expandable ? onSelectBand?.(b) : undefined)}
-                className={`h-full shrink-0 p-0 border-0 ${
+                className={`h-full shrink-0 border-0 p-0 transition-opacity ${
                   b.expandable ? "cursor-pointer" : "cursor-default"
                 }`}
                 style={{
                   width: `${widthOf(b.tokens)}%`,
-                  background: style?.color ?? "#999",
+                  background: style?.color ?? token.colorTextTertiary,
                   opacity: dim ? 0.35 : 1,
                 }}
               />
