@@ -162,7 +162,13 @@ export default function ContextBrowser({
         />
       )}
 
-      <div className="flex max-h-[46vh] flex-col gap-1 overflow-y-auto pr-1">
+      {/*
+        区块列表用块级布局 + space-y，不要用 flex-col：
+        行是 overflow-hidden 的 flex 项，在「max-h + overflow-y-auto」的列 flex 容器里
+        flex-shrink 会把它们压到十几像素（min-height:auto 因 overflow:hidden 失效），
+        内容被裁切、行与行互相压叠。
+      */}
+      <div className="max-h-[46vh] space-y-1 overflow-y-auto pr-1">
         {visible.map((n) => {
           const style = CATEGORY_STYLE[n.category ?? ""];
           const isGhost = filter === "all" && n.goneAtSeq !== null && n.goneAtSeq !== undefined;
