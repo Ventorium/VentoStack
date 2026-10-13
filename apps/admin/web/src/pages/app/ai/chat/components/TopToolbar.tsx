@@ -44,6 +44,11 @@ interface TopToolbarProps {
   onTabChange?: (key: string) => void;
   canViewContext?: boolean;
   fileCount?: number;
+  /**
+   * 左侧「返回 + 头像 + 智能体名」区块宽度（px）：传会话列表当前宽度，
+   * 标题区与下方会话列表等宽、拖拽列表时同步变化；不传（列表收起为窄栏）则自适应内容。
+   */
+  leftWidth?: number;
 }
 
 function AbilityPopover({
@@ -96,16 +101,21 @@ function AbilityPopover({
 export default function TopToolbar({
   agentName, agent, toolDescriptions, enabledTools = [], enabledSkills = [], enabledMcp = [], enabledKbs = [],
   onToggleTool, onToggleSkill, onToggleMcp, onToggleKb, onBack,
-  activeTab = "chat", onTabChange, canViewContext = false, fileCount = 0,
+  activeTab = "chat", onTabChange, canViewContext = false, fileCount = 0, leftWidth,
 }: TopToolbarProps) {
   const { token } = theme.useToken();
 
   return (
     <div
-      className="flex items-center gap-4" style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
+      // 左侧不留 padding：让标题区与下方会话列表左边缘对齐，宽度也一致
+      // gap-6：页签距离左侧标题区 24px
+      className="flex items-center gap-6" style={{ padding: "8px 16px 8px 0", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
-      {/* Left: Back + Agent Info（标题限宽省略，右侧留 16px 与页签分隔） */}
-      <div className="flex min-w-0 shrink-0 items-center gap-2 pr-4">
+      {/* Left: Back + Agent Info（宽度跟随会话列表，标题超长省略） */}
+      <div
+        className="flex min-w-0 shrink-0 items-center gap-2 pl-2"
+        style={leftWidth === undefined ? undefined : { width: leftWidth }}
+      >
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} size="small" title="返回智能体列表" />
         <Avatar
           size={32}
@@ -113,7 +123,7 @@ export default function TopToolbar({
         >
           {agentName.slice(0, 2)}
         </Avatar>
-        <Text strong className="block max-w-[180px] truncate text-sm" title={agentName}>
+        <Text strong className="block max-w-[180px] min-w-0 flex-1 truncate text-sm" title={agentName}>
           {agentName}
         </Text>
       </div>

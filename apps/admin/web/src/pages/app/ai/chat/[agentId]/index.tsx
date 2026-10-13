@@ -1404,6 +1404,8 @@ function AgentConversation(): React.ReactElement {
         onTabChange={setActiveTab}
         canViewContext={canViewContext && !!selectedAgent?.contextCollectionEnabled}
         fileCount={workspaceFiles.length}
+        // 标题区宽度与会话列表一致，拖拽列表时同步；列表收起为窄栏时自适应
+        leftWidth={threadListCollapsed ? undefined : threadListWidth}
         onBack={() => {
           // 返回智能体列表：只做路由跳转，状态随组件卸载丢弃。
           // 不要在这里先清空 selectedAgent —— navigate 是 transition，
