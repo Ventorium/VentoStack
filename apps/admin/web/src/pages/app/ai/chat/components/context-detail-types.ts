@@ -23,6 +23,8 @@ export interface ContextDetailSession {
   counts?: Record<string, number>;
   usage?: Record<string, number>;
   current?: Record<string, number>;
+  /** 最近一次用户输入（用于会话总览的行内提示） */
+  lastUser?: string | null;
 }
 
 export interface ContextDetailRequest {
@@ -60,6 +62,8 @@ export interface ContextDetailNode {
   /** 完整内容（最长 2 万字符），展开行展示；系统提示 / 用户消息全文在这里 */
   content?: string | null;
   goneAtSeq?: number;
+  /** 该节点携带的图片数量 */
+  images?: number;
 }
 
 export interface ContextDetailFileOp {

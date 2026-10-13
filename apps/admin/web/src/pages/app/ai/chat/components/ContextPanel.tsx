@@ -22,6 +22,9 @@ import ContextBrowser from "./ContextBrowser";
 import RequestTrend from "./RequestTrend";
 import CompositionCard from "./CompositionCard";
 import RequestComposition from "./RequestComposition";
+import SessionOverview from "./SessionOverview";
+import SessionStats from "./SessionStats";
+import TokenDonut from "./TokenDonut";
 
 import type { ContextDetail } from "./context-detail-types";
 
@@ -155,13 +158,30 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
     <div className="h-full min-h-0 overflow-auto py-2">
       {/* align="top"：两列各自按内容高度排列，避免等高拉伸把卡片撑出大片空白 */}
       <Row gutter={[12, 12]} className="mb-3" align="top">
-        <Col xs={24} xl={9}>
+        <Col xs={24} xl={10}>
           <CompositionCard
             current={session?.current}
             contextWindow={session?.contextWindow}
             hoverKey={hoverKey}
             onHoverKey={setHoverKey}
           />
+        </Col>
+        <Col xs={24} xl={14}>
+          <TokenDonut
+            current={session?.current}
+            contextWindow={session?.contextWindow}
+            hoverKey={hoverKey}
+            onHoverKey={setHoverKey}
+          />
+        </Col>
+      </Row>
+
+      <Row gutter={[12, 12]} className="mb-3" align="top">
+        <Col xs={24} xl={10}>
+          <SessionStats session={session} requestCount={detail?.requests?.length ?? 0} />
+        </Col>
+        <Col xs={24} xl={14}>
+          <SessionOverview detail={detail} />
         </Col>
       </Row>
 
