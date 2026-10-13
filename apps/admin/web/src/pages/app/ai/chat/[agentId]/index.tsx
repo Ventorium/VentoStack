@@ -15,7 +15,7 @@ import MemoryPanel from '../components/MemoryPanel';
 import ContextPanel from '../components/ContextPanel';
 import { useAuth } from '@/store/useAuth';
 import type { RunMode } from '../components/RunModeSelect';
-import ThreadList from '../components/ThreadList';
+import ThreadList, { DEFAULT_WIDTH as DEFAULT_THREAD_LIST_WIDTH } from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
 import TrashDialog from '../components/TrashDialog';
 
@@ -187,6 +187,8 @@ function AgentConversation(): React.ReactElement {
   );
   // 会话列表收起/展开 + 回收站
   const [threadListCollapsed, setThreadListCollapsed] = useState(false);
+  // 会话列表宽度由页面持有：收起再展开不丢用户拖出来的宽度
+  const [threadListWidth, setThreadListWidth] = useState(DEFAULT_THREAD_LIST_WIDTH);
   const [trashOpen, setTrashOpen] = useState(false);
   const [thinkingLevel, setThinkingLevel] = useState<
     'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh'
@@ -1398,6 +1400,10 @@ function AgentConversation(): React.ReactElement {
         onToggleKb={(id, enabled) => {
           setEnabledKbs((prev) => (enabled ? [...prev, id] : prev.filter((k) => k !== id)));
         }}
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        canViewContext={canViewContext && !!selectedAgent?.contextCollectionEnabled}
+        fileCount={workspaceFiles.length}
         onBack={() => {
           // 返回智能体列表：只做路由跳转，状态随组件卸载丢弃。
           // 不要在这里先清空 selectedAgent —— navigate 是 transition，
@@ -1446,6 +1452,8 @@ function AgentConversation(): React.ReactElement {
             loadingMore={loadingMoreThreads}
             onCollapse={() => setThreadListCollapsed(true)}
             onOpenTrash={() => setTrashOpen(true)}
+            width={threadListWidth}
+            onWidthChange={setThreadListWidth}
           />
         )}
 
@@ -1505,8 +1513,6 @@ function AgentConversation(): React.ReactElement {
           {/* Bottom Input */}
           <BottomInput
             activeTab={activeTab}
-            onTabChange={setActiveTab}
-            canViewContext={canViewContext && !!selectedAgent?.contextCollectionEnabled}
             onSend={handleSend}
             onStop={handleStop}
             loading={loading}

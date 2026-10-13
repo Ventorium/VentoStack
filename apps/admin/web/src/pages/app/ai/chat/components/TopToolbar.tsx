@@ -8,6 +8,7 @@ import {
   ToolOutlined,
 } from "@ant-design/icons";
 import { Avatar, Button, Checkbox, Popover, Space, Tag, theme, Typography } from "antd";
+import FunctionTabs from "./FunctionTabs";
 
 const { Text } = Typography;
 
@@ -38,6 +39,11 @@ interface TopToolbarProps {
   onToggleMcp?: (id: string, enabled: boolean) => void;
   onToggleKb?: (id: string, enabled: boolean) => void;
   onBack?: () => void;
+  /** 功能页签（对话/文件/记忆/知识库/上下文）——原在对话框上方，现由本行承载 */
+  activeTab?: string;
+  onTabChange?: (key: string) => void;
+  canViewContext?: boolean;
+  fileCount?: number;
 }
 
 function AbilityPopover({
@@ -90,30 +96,40 @@ function AbilityPopover({
 export default function TopToolbar({
   agentName, agent, toolDescriptions, enabledTools = [], enabledSkills = [], enabledMcp = [], enabledKbs = [],
   onToggleTool, onToggleSkill, onToggleMcp, onToggleKb, onBack,
+  activeTab = "chat", onTabChange, canViewContext = false, fileCount = 0,
 }: TopToolbarProps) {
   const { token } = theme.useToken();
 
   return (
     <div
-      className="flex items-center justify-between" style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
+      className="flex items-center gap-4" style={{ padding: "8px 16px", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
-      {/* Left: Back + Agent Info */}
-      <Space size={10}>
-        <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} size="small" />
+      {/* Left: Back + Agent Info（标题限宽省略，右侧留 16px 与页签分隔） */}
+      <div className="flex min-w-0 shrink-0 items-center gap-2 pr-4">
+        <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} size="small" title="返回智能体列表" />
         <Avatar
           size={32}
-          className="text-xs font-semibold" style={{ background: token.colorPrimary, borderRadius: token.borderRadiusSM }}
+          className="shrink-0 text-xs font-semibold" style={{ background: token.colorPrimary, borderRadius: token.borderRadiusSM }}
         >
           {agentName.slice(0, 2)}
         </Avatar>
-        <Text strong className="text-sm">
+        <Text strong className="block max-w-[180px] truncate text-sm" title={agentName}>
           {agentName}
         </Text>
-      </Space>
+      </div>
+
+      {/* Middle: Function Tabs */}
+      <FunctionTabs
+        activeTab={activeTab}
+        onTabChange={onTabChange}
+        canViewContext={canViewContext}
+        fileCount={fileCount}
+        className="min-w-0 flex-1"
+      />
 
       {/* Right: Ability Toggles */}
       {agent && (
-        <Space size={6}>
+        <Space size={6} className="shrink-0">
           {/* Tools */}
           <Popover
             trigger="click"

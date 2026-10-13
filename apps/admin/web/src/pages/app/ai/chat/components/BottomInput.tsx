@@ -1,30 +1,18 @@
 import {
   ArrowUpOutlined,
   BulbOutlined,
-  DatabaseOutlined,
   DownOutlined,
   FileOutlined,
-  NodeIndexOutlined,
   PlusOutlined,
   RobotOutlined,
-  SoundOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import { App, Button, Popover, Space, Tabs, Tag, Tooltip, Typography, theme } from 'antd';
+import { App, Button, Popover, Space, Tag, Tooltip, Typography, theme } from 'antd';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ModelOption } from '../types';
 import RunModeSelect, { type RunMode } from './RunModeSelect';
 
 const { Text } = Typography;
-
-interface BottomTab {
-  key: string;
-  label: string;
-  icon: React.ReactNode;
-  count?: number;
-  /** 仅管理员可见的页签（上下文洞察属调试信息） */
-  adminOnly?: boolean;
-}
 
 interface WorkspaceFile {
   path: string;
@@ -33,8 +21,8 @@ interface WorkspaceFile {
 }
 
 interface BottomInputProps {
+  /** 页签已挪到顶部工具栏，本组件仅在 'chat' 页签下渲染输入区 */
   activeTab?: string;
-  onTabChange?: (key: string) => void;
   onSend?: (message: string) => void;
   onStop?: () => void;
   loading?: boolean;
@@ -44,9 +32,6 @@ interface BottomInputProps {
   onModelChange?: (model: ModelOption) => void;
   contextUsage?: { used: number; total: number };
   workspaceFiles?: WorkspaceFile[];
-  /** 当前账号是否可查看上下文洞察（仅管理员） */
-  /** 管理员 + 当前 Agent 开启上下文采集 */
-  canViewContext?: boolean;
   attachments?: Array<{ path: string; name: string }>;
   uploadingAttachment?: boolean;
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
@@ -60,15 +45,6 @@ interface BottomInputProps {
   skills?: Array<{ id: string; name: string; description: string | null }>;
   onSelectSkill?: (id: string) => void;
 }
-
-const BOTTOM_TABS: BottomTab[] = [
-  { key: 'chat', label: '对话', icon: <SoundOutlined /> },
-  { key: 'files', label: '文件', icon: <FileOutlined /> },
-  { key: 'memory', label: '记忆', icon: <DatabaseOutlined /> },
-  { key: 'knowledge', label: '知识库', icon: <DatabaseOutlined /> },
-  // 上下文构成属调试信息，仅管理员暴露该页签
-  { key: 'context', label: '上下文', icon: <NodeIndexOutlined />, adminOnly: true },
-];
 
 type ThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
 
@@ -106,7 +82,6 @@ function formatTokens(n: number): string {
 
 export default function BottomInput({
   activeTab: controlledActiveTab,
-  onTabChange,
   onSend,
   onStop,
   loading = false,
@@ -115,7 +90,6 @@ export default function BottomInput({
   onModelChange,
   contextUsage,
   workspaceFiles = [],
-  canViewContext = false,
   attachments = [],
   uploadingAttachment = false,
   thinkingLevel = 'off',
@@ -129,9 +103,8 @@ export default function BottomInput({
   onSelectSkill,
 }: BottomInputProps): React.ReactElement {
   const [input, setInput] = useState('');
-  const [localActiveTab, setLocalActiveTab] = useState('chat');
   const [dragging, setDragging] = useState(false);
-  const activeTab = controlledActiveTab ?? localActiveTab;
+  const activeTab = controlledActiveTab ?? 'chat';
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { token } = theme.useToken();
@@ -214,37 +187,11 @@ export default function BottomInput({
   }, []);
 
   return (
-    <div className="shrink-0 px-3 pb-4 sm:px-6" style={{ background: token.colorBgContainer }}>
-      {/* Function Tabs */}
-      <div className="mx-auto max-w-[960px] pt-2">
-        <Tabs
-          activeKey={activeTab}
-          onChange={(key) => {
-            setLocalActiveTab(key);
-            onTabChange?.(key);
-          }}
-          size="small"
-          items={BOTTOM_TABS.filter((tab) => !tab.adminOnly || canViewContext).map((tab) => ({
-            key: tab.key,
-            label: (
-              <Space size={4}>
-                {tab.icon}
-                <span>{tab.label}</span>
-                {tab.key === 'files' && workspaceFiles.length > 0 && (
-                  <Tag className="text-[10px] m-0 leading-[14px] px-1 py-0">
-                    {workspaceFiles.length}
-                  </Tag>
-                )}
-              </Space>
-            ),
-          }))}
-          className="mb-0 pl-5 [&_.ant-tabs-nav]:mb-2 [&_.ant-tabs-nav]:before:border-none"
-        />
-      </div>
-
+    // 页签已挪到顶部工具栏；非对话页签下本组件不渲染内容，外层不留内边距
+    <div className="shrink-0 px-3 sm:px-6" style={{ background: token.colorBgContainer }}>
       {/* Input Area */}
       {activeTab === 'chat' && (
-        <div className="mx-auto max-w-[960px]">
+        <div className="mx-auto max-w-[960px] pb-4">
           <div
             className={`relative flex flex-col gap-3 rounded-[24px] border border-solid px-4 pt-4 pb-3 transition-all sm:px-5 ${dragging ? 'shadow-lg' : ''}`}
             style={{ borderColor: token.colorBorder, background: token.colorBgContainer }}
@@ -502,24 +449,24 @@ export default function BottomInput({
                       onClick={onStop}
                     />
                   ) : (
-                    <Button
-                      type="primary"
-                      shape="circle"
-                      aria-label="发送消息"
-                      icon={<ArrowUpOutlined />}
-                      onClick={handleSend}
-                      disabled={!input.trim()}
-                    />
+                    // 键盘提示收进发送按钮 tooltip（原先是发送框下方的一行小字）
+                    <Tooltip title="Enter 发送 · Shift + Enter 换行">
+                      <span className="inline-flex">
+                        <Button
+                          type="primary"
+                          shape="circle"
+                          aria-label="发送消息（Enter 发送，Shift + Enter 换行）"
+                          icon={<ArrowUpOutlined />}
+                          onClick={handleSend}
+                          disabled={!input.trim()}
+                        />
+                      </span>
+                    </Tooltip>
                   )}
                 </Space>
               </div>
             </div>
           </div>
-        </div>
-      )}
-      {activeTab === 'chat' && (
-        <div className="mt-2 text-center text-[11px]" style={{ color: token.colorTextQuaternary }}>
-          Enter 发送 · Shift + Enter 换行
         </div>
       )}
     </div>
