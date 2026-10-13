@@ -160,6 +160,18 @@ export function createOSSRoutes(
   );
 
   // Download file
+  // 上传者本人始终可下载（头像等个人文件以 <img> 直链渲染，普通用户没有 oss:file:download 权限）；
+  // 非上传者仍需 oss:file:download 权限。
+  const downloadPerm = perm("oss:file", "download");
+  const ownerOrPermDownload: Middleware = async (ctx, next) => {
+    const user = ctx.user as OSSAuthUser | undefined;
+    if (user?.id) {
+      const id = (ctx.params as Record<string, string>).id!;
+      const file = await ossService.getById(id, getTenantId(ctx));
+      if (file && file.uploaderId === user.id) return next();
+    }
+    return downloadPerm(ctx, next);
+  };
   router.get(
     "/api/system/oss/:id/download",
     {
@@ -178,7 +190,7 @@ export function createOSSRoutes(
         },
       });
     },
-    perm("oss:file", "download"),
+    ownerOrPermDownload,
   );
 
   // Get signed URL

@@ -1537,8 +1537,12 @@ export function createSystemModule(deps: SystemModuleDeps): SystemModule {
         // 使用文件存储服务（本地 / S3）
         avatarUrl = await fileUploader.upload(file.name, data, file.type, 'avatars', user.id);
       } else {
-        // 兜底：base64 存入数据库
+        // 兜底：base64 存入数据库（仅无任何存储适配器时启用）。
+        // sys_user.avatar 是 varchar(512)，超长的直接报 400，不要等落库报错变 500。
         avatarUrl = `data:${file.type};base64,${data.toString('base64')}`;
+        if (avatarUrl.length > 512) {
+          return fail('头像过大：未配置文件存储时不支持该大小的图片', 400, 400);
+        }
       }
 
       await db

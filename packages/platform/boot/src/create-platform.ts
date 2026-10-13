@@ -40,7 +40,7 @@ import type { OSSModule, StorageAdapter } from '@ventostack/oss';
 import { createSchedulerModule } from '@ventostack/scheduler';
 import type { JobHandlerMap, SchedulerModule } from '@ventostack/scheduler';
 import { createSystemModule } from '@ventostack/system';
-import type { SystemModule } from '@ventostack/system';
+import type { FileUploader, SystemModule } from '@ventostack/system';
 import { createWorkflowModule, workflowInstanceCompleted } from '@ventostack/workflow';
 import type { WorkflowModule } from '@ventostack/workflow';
 
@@ -329,6 +329,35 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   };
 
   // Create modules
+  // OSS 需先于 system 创建：system 的头像上传依赖 fileUploader（OSS 本地/S3 存储），
+  // 不配的话头像走 base64 兜底，data URL 会撑爆 sys_user.avatar 的 varchar(512) 直接 500。
+  const oss =
+    enabled.oss && storageAdapter
+      ? createOSSModule({
+          db,
+          storage: storageAdapter,
+          jwt,
+          jwtSecret,
+          rbac,
+          tenantId: normalizedTenantId,
+        })
+      : undefined;
+
+  // sys_user.avatar 只存短 URL（如 /api/system/oss/<id>/download），不再存 base64。
+  // 兜底 base64 分支仅在没有任何存储适配器时保留。
+  const fileUploader: FileUploader | undefined = oss
+    ? {
+        upload: async (filename, data, contentType, bucket, uploaderId) => {
+          const record = await oss.services.oss.upload(
+            { filename, data, contentType, bucket },
+            uploaderId,
+            normalizedTenantId,
+          );
+          return `/api/system/oss/${record.id}/download`;
+        },
+      }
+    : undefined;
+
   const systemDeps = {
     db,
     cache,
@@ -350,6 +379,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(tenantEnabled !== undefined ? { tenantEnabled } : {}),
     tenantId: normalizedTenantId,
     ...(secureCookies !== undefined ? { secureCookies } : {}),
+    ...(fileUploader !== undefined ? { fileUploader } : {}),
   };
   const system = enabled.system ? createSystemModule(systemDeps) : undefined;
 
@@ -448,18 +478,6 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       }
     });
   }
-
-  const oss =
-    enabled.oss && storageAdapter
-      ? createOSSModule({
-          db,
-          storage: storageAdapter,
-          jwt,
-          jwtSecret,
-          rbac,
-          tenantId: normalizedTenantId,
-        })
-      : undefined;
 
   const schedulerMod = enabled.scheduler
     ? createSchedulerModule({
