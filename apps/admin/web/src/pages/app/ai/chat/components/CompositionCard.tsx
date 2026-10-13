@@ -8,7 +8,7 @@
  * 主题：外层用 antd Card、文本用 Typography/token，深色模式跟随全局主题，
  * 不额外维护一套 dark: 色板（分类色是语义色，两种模式下保持同一色相）。
  */
-import { Card, Typography, theme } from "antd";
+import { Card, Tooltip, Typography, theme } from "antd";
 import { CATEGORY_ORDER, CATEGORY_STYLE } from "./category-style";
 
 interface CompositionCardProps {
@@ -34,13 +34,25 @@ export default function CompositionCard({
     key: k,
     value: current?.[k] ?? 0,
     label: CATEGORY_STYLE[k]?.label ?? k,
+    meaning: CATEGORY_STYLE[k]?.meaning ?? "",
     color: CATEGORY_STYLE[k]?.color ?? token.colorTextTertiary,
   }));
 
   return (
     <Card
       size="small"
-      title="组成占比"
+      title={
+        <Tooltip
+          title={
+            <span className="text-xs leading-normal">
+              占比按 ~4 字符 ≈ 1 token 的固定密度估算（与参考实现同规则），与「计费 tokens」的提供方上报值口径不同，两者不混算。每个 run 都会重放整段历史，旧节点归档后不计入当前装配。
+            </span>
+          }
+          mouseEnterDelay={0.15}
+        >
+          <span className="cursor-help">组成占比</span>
+        </Tooltip>
+      }
       extra={
         <Typography.Text type="secondary" className="text-xs">
           共 {total.toLocaleString()}
@@ -58,7 +70,7 @@ export default function CompositionCard({
           p.value > 0 ? (
             <div
               key={p.key}
-              title={`${p.label}：${p.value.toLocaleString()} tokens（${pct(p.value)}%）`}
+              title={`${p.label}：${p.value.toLocaleString()} tokens（${pct(p.value)}%）${p.meaning ? ' — ' + p.meaning : ''}`}
               onMouseEnter={() => onHoverKey?.(p.key)}
               onMouseLeave={() => onHoverKey?.(null)}
               className="h-full cursor-default transition-opacity"
@@ -89,9 +101,11 @@ export default function CompositionCard({
               }}
             >
               <span className="h-2.5 w-2.5 shrink-0 rounded-sm" style={{ background: p.color }} />
-              <span style={{ color: token.colorTextSecondary }} className="w-20 shrink-0">
-                {p.label}
-              </span>
+              <Tooltip title={p.meaning} mouseEnterDelay={0.15}>
+                <span style={{ color: token.colorTextSecondary }} className="w-20 shrink-0">
+                  {p.label}
+                </span>
+              </Tooltip>
               <span className="flex-1 text-right" style={{ color: token.colorTextTertiary }}>
                 {(p.value ?? 0).toLocaleString()}
               </span>

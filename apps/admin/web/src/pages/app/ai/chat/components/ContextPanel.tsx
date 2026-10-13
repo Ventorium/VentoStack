@@ -21,9 +21,8 @@ import { fmtDate } from "@/utils/fmtDate";
 import ContextBrowser from "./ContextBrowser";
 import RequestTrend from "./RequestTrend";
 import CompositionCard from "./CompositionCard";
-import CompositionLegend from "./CompositionLegend";
 import RequestComposition from "./RequestComposition";
-import SessionStats from "./SessionStats";
+
 import type { ContextDetail } from "./context-detail-types";
 
 interface ContextPanelProps {
@@ -163,10 +162,6 @@ export default function ContextPanel({ sessionId }: ContextPanelProps) {
             hoverKey={hoverKey}
             onHoverKey={setHoverKey}
           />
-          <CompositionLegend />
-        </Col>
-        <Col xs={24} xl={15}>
-          <SessionStats session={session} requestCount={detail?.requests?.length ?? 0} />
         </Col>
       </Row>
 

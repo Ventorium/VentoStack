@@ -8,6 +8,8 @@
 export interface CategoryStyle {
   label: string;
   color: string;
+  /** 分桶口径说明（悬停组成占比 label 时展示） */
+  meaning: string;
 }
 
 /** 七个分桶的 key（固定顺序见 CATEGORY_ORDER） */
@@ -32,11 +34,11 @@ export const CATEGORY_ORDER: readonly CategoryKey[] = [
 ];
 
 export const CATEGORY_STYLE: Record<string, CategoryStyle> = {
-  system: { label: "系统提示", color: "#1677ff" },
-  tools: { label: "工具 schema", color: "#faad14" },
-  user: { label: "用户消息", color: "#52c41a" },
-  inject: { label: "注入上下文", color: "#722ed1" },
-  skill: { label: "技能内容", color: "#fa541c" },
-  assistant: { label: "助手回复", color: "#2f54eb" },
-  tool: { label: "工具结果", color: "#13c2c2" },
+  system: { label: "系统提示", color: "#1677ff", meaning: "系统提示全文，每轮请求都带" },
+  tools: { label: "工具 schema", color: "#faad14", meaning: "工具的 name / description / parameters 定义" },
+  user: { label: "用户消息", color: "#52c41a", meaning: "用户消息（含历史重放）" },
+  inject: { label: "注入上下文", color: "#722ed1", meaning: "运行中注入的上下文（工具结果引入新工具等）" },
+  skill: { label: "技能内容", color: "#fa541c", meaning: "被识别为技能内容的片段" },
+  assistant: { label: "助手回复", color: "#2f54eb", meaning: "助手回复（含工具调用指令）" },
+  tool: { label: "工具结果", color: "#13c2c2", meaning: "工具执行结果" },
 };
