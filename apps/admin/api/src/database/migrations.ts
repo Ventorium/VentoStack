@@ -19,7 +19,7 @@ import {
   dropAgentType,
   dropAiToolLog,
 } from '@ventostack/ai';
-import { createContextTables } from '@ventostack/ai-context';
+import { createContextTables, scopeContextRowIds } from '@ventostack/ai-context';
 import { createTagLogger } from '@ventostack/core';
 import { type SqlExecutor, createMigrationRunner } from '@ventostack/database';
 import { createI18nTables } from '@ventostack/i18n';
@@ -131,6 +131,8 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addAgentContextToggleAndPruneAiMenus);
   runner.addMigration(pruneAiContextAndAuditMenus);
   runner.addMigration(addContextSessionTenantSessionUnique);
+  // 明细表行 id 只在会话内唯一，主键必须收到 (tenant_id, session_id, id)
+  runner.addMigration(scopeContextRowIds);
 
   const executed = await runner.up();
 

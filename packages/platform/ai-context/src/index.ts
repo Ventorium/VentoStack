@@ -9,6 +9,7 @@
  */
 
 export { createContextTables } from "./migrations/001_create_context_tables";
+export { scopeContextRowIds } from "./migrations/002_scope_context_row_ids";
 export {
   AiContextSessionModel,
   AiContextRequestModel,
