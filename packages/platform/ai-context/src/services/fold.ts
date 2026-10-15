@@ -110,6 +110,33 @@ function toJsonText(value: unknown): string {
   }
 }
 
+/**
+ * tools_added 里的工具 schema（结构对齐 @ventostack/ai 的 AgentToolSchema）。
+ * 这里做结构化收窄而不是直接引 ai 包的内部类型：事件字段声明为 unknown，
+ * 采集侧只依赖 name/description/parameters 三个字段，避免为一处展示耦合整包类型。
+ */
+interface ToolSchemaLike {
+  name: string;
+  description?: string;
+  parameters?: unknown;
+}
+
+/** 按工具名索引 schema；非法项直接跳过（采集端不因脏数据抛错） */
+function indexToolSchemas(tools?: ReadonlyArray<unknown>): Map<string, ToolSchemaLike> {
+  const byName = new Map<string, ToolSchemaLike>();
+  for (const raw of tools ?? []) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const candidate = raw as { name?: unknown; description?: unknown; parameters?: unknown };
+    if (typeof candidate.name !== "string" || candidate.name.length === 0) continue;
+    byName.set(candidate.name, {
+      name: candidate.name,
+      ...(typeof candidate.description === "string" ? { description: candidate.description } : {}),
+      ...(candidate.parameters !== undefined ? { parameters: candidate.parameters } : {}),
+    });
+  }
+  return byName;
+}
+
 /** 惰性克隆会原地修改的集合 */
 function clone(state: FoldState): FoldState {
   return {
@@ -134,7 +161,11 @@ function onContext(prev: FoldState, messages: AgentEventMessage[], systemPrompt:
   if (prev.isReplay) {
     ops.push({
       kind: "archiveSuperseded",
-      categories: ["system", ...MESSAGE_CATEGORIES],
+      // tools 与 system 同属「信封」：每个 run 都会重新注入整套工具定义，
+      // 不归档上一轮的会让浏览器里堆出一份份重复的工具定义。
+      // 本 run 的 tools_added 在 context 之后才到（见 agent-loop 发射顺序），
+      // 所以这里归档到的只会是历史 run 的行。
+      categories: ["system", "tools", ...MESSAGE_CATEGORIES],
       goneAtSeq: s.seq,
     });
     s.isReplay = false;
@@ -302,15 +333,42 @@ function onToolsAdded(
   if (toolNames.length === 0) return { state: prev, ops: [] };
   const s = clone(prev);
   s.seq += 1;
+  // 注入事件占一个 seq；工具定义节点各自再占一个 —— 节点按 seq 排序，
+  // 同 seq 的行顺序在 SQL 里没有保证，分散开才能稳定重建读取顺序。
+  const eventSeq = s.seq;
   s.injectCount += 1;
-  // 工具 schema 才是这一桶的大头（描述 + 参数 JSON）：有 schema 就按 schema 估算，
-  // 只有名字时退化为按名字估算（会把「工具 schema」算成接近于 0）
-  const payload = tools && tools.length > 0 ? toJsonText(tools) : toolNames.join(",");
-  const tokens = estimateStringTokens(payload);
+
+  const schemaByName = indexToolSchemas(tools);
+  const ops: WriteOp[] = [];
+  let tokens = 0;
+
+  for (const name of toolNames) {
+    const def = schemaByName.get(name);
+    // 有 schema 按 schema 估算（描述 + 参数 JSON 才是大头），只有名字时退化为按名字估算
+    const payload = def ? toJsonText(def) : name;
+    const toolTokens = estimateStringTokens(payload);
+    tokens += toolTokens;
+    s.seq += 1;
+    const node: FoldNode = {
+      id: `n-${s.seq}-tool`,
+      seq: s.seq,
+      category: "tools",
+      name,
+      tokens: toolTokens,
+      // 预览给描述，展开给整段 schema：浏览器里能逐个核对工具定义，而不是只看到一个总数
+      preview: previewOf(def?.description ?? name),
+      content: payload,
+      images: 0,
+      goneAtSeq: null,
+    };
+    s.nodes.push(node);
+    ops.push({ kind: "insertNode", node });
+  }
+
   s.toolsTokens += tokens;
   const event: ContextEventInsert = {
-    id: `e-${s.seq}`,
-    seq: s.seq,
+    id: `e-${eventSeq}`,
+    seq: eventSeq,
     kind: "inject",
     producer: PRODUCER_TOOLS,
     deltaTokens: tokens,
@@ -320,6 +378,7 @@ function onToolsAdded(
   return {
     state: s,
     ops: [
+      ...ops,
       { kind: "insertEvent", event },
       // 用 sessionPatchFrom 统一出补丁：工具 schema 进 currentTools 时必须同步 currentTotal，
       // 否则占比各桶之和对不上总量（前端百分比会超过 100%）

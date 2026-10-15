@@ -102,9 +102,24 @@ export default function ContextBrowser({
         expandable: true,
       });
     }
-    const toolsTokens = currentRequest?.composition?.tools ?? 0;
-    if (toolsTokens > 0) {
-      out.push({ id: "band-tools", label: "工具 schema", category: "tools", tokens: toolsTokens });
+    const toolNodes = reconstructed.filter((n) => n.category === "tools");
+    if (toolNodes.length > 0) {
+      // 采集侧已按「一个工具一个节点」落库：逐个摊开，能看到具体是哪些工具定义
+      for (const n of toolNodes) {
+        out.push({
+          id: n.id,
+          label: n.name ?? "工具定义",
+          category: "tools",
+          tokens: n.tokens ?? 0,
+          expandable: true,
+        });
+      }
+    } else {
+      // 旧数据（工具定义只有聚合值、没有节点）退回合成带，不让这一桶凭空消失
+      const toolsTokens = currentRequest?.composition?.tools ?? 0;
+      if (toolsTokens > 0) {
+        out.push({ id: "band-tools", label: "工具 schema", category: "tools", tokens: toolsTokens });
+      }
     }
     for (const n of reconstructed) {
       if (n.category === "system" || n.category === "tools") continue;
@@ -149,7 +164,10 @@ export default function ContextBrowser({
           }))}
         />
         <Typography.Text type="secondary" className="text-xs">
-          {visible.length} 个节点 · {totalTokens.toLocaleString()} tokens（不含工具 schema）
+          {visible.length} 个节点 · {totalTokens.toLocaleString()} tokens
+          {visible.some((n) => n.category === "tools")
+            ? ""
+            : "（不含工具 schema）"}
         </Typography.Text>
       </div>
 

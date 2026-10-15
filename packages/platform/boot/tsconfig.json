@@ -32,7 +32,8 @@
       "@ventostack/workflow": ["../workflow/src/index.ts"],
       "@ventostack/oss": ["../oss/src/index.ts"],
       "@ventostack/scheduler": ["../scheduler/src/index.ts"],
-      "@ventostack/oauth": ["../oauth/src/index.ts"]
+      "@ventostack/oauth": ["../oauth/src/index.ts"],
+      "@ventostack/ai-context": ["../ai-context/src/index.ts"]
     }
   }
 }

@@ -90,9 +90,11 @@ describe("上下文折叠器", () => {
       const archive = ops.find((o) => o.kind === "archiveSuperseded");
       expect(archive).toBeDefined();
       if (archive?.kind !== "archiveSuperseded") throw new Error("缺少 archiveSuperseded");
-      // 整段上下文被重放取代，七个分类一起归档
+      // 整段上下文被重放取代，消息面六个分类 + 两个信封分类一起归档；
+      // tools 必须在内：工具定义每个 run 都整批重注入，不归档就会在浏览器里堆出重复定义
       expect(archive.categories).toEqual([
         "system",
+        "tools",
         "user",
         "inject",
         "skill",
@@ -420,6 +422,54 @@ describe("上下文折叠器", () => {
         previousToolNames: ["x"],
       });
       expect(ops.filter((o) => o.kind === "insertEvent").length).toBe(0);
+    });
+
+    test("每个工具落一个 tools 节点：浏览器要能逐个展开工具定义，而不是只看到一个总数", () => {
+      const { state, ops } = run(createFoldState(), {
+        type: "tools_added",
+        toolNames: ["web_search", "read"],
+        previousToolNames: [],
+        tools: [
+          { name: "web_search", description: "检索互联网资料", parameters: { type: "object" } },
+          { name: "read", description: "读取文件内容", parameters: { type: "object" } },
+        ],
+      });
+
+      const nodes = ops.filter((o) => o.kind === "insertNode") as Array<{
+        kind: "insertNode";
+        node: { id: string; seq: number; category: string; name: string; tokens: number; content: string | null };
+      }>;
+      expect(nodes).toHaveLength(2);
+      expect(nodes.map((n) => n.node.category)).toEqual(["tools", "tools"]);
+      expect(nodes.map((n) => n.node.name)).toEqual(["web_search", "read"]);
+      // seq 必须互不相同：节点按 seq 排序，同 seq 的库内顺序没有保证
+      expect(new Set(nodes.map((n) => n.node.seq)).size).toBe(2);
+      expect(new Set(nodes.map((n) => n.node.id)).size).toBe(2);
+      // content 存整段 schema，展开即可核对定义
+      expect(nodes[0]!.node.content).toContain("web_search");
+      expect(nodes.every((n) => n.node.tokens > 0)).toBe(true);
+
+      // 合计口径不变：注入事件的净变化 = 各工具节点之和 = currentTools
+      const event = ops.find((o) => o.kind === "insertEvent") as {
+        event: { deltaTokens: number };
+      };
+      const nodeSum = nodes.reduce((acc, n) => acc + n.node.tokens, 0);
+      expect(event.event.deltaTokens).toBe(nodeSum);
+      expect(state.toolsTokens).toBe(nodeSum);
+    });
+
+    test("没带 schema 时退化为按工具名估算，仍然建节点", () => {
+      const { ops } = run(createFoldState(), {
+        type: "tools_added",
+        toolNames: ["web_search"],
+        previousToolNames: [],
+      });
+      const node = ops.find((o) => o.kind === "insertNode") as {
+        node: { name: string; category: string; content: string | null };
+      };
+      expect(node.node.name).toBe("web_search");
+      expect(node.node.category).toBe("tools");
+      expect(node.node.content).toBe("web_search");
     });
   });
 
