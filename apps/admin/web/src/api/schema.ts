@@ -2147,6 +2147,29 @@ export type OpenAPIs = {
       body: never,
       response: any
     },
+    '/api/ai/experts/hub/manifest': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
     '/api/ai/mcp-servers': {
       query: never,
       params: never,
@@ -4619,6 +4642,10 @@ export type OpenAPIs = {
          */
         skillIds?: string[],
         /**
+         * @description 会话级专家（Role Override，本次对话覆盖 Agent 人设）
+         */
+        expertId?: string,
+        /**
          * @description MCP 过滤
          */
         mcpServerIds?: string[],
@@ -4688,6 +4715,10 @@ export type OpenAPIs = {
          * @description 技能过滤
          */
         skillIds?: string[],
+        /**
+         * @description 会话级专家（Role Override，本次对话覆盖 Agent 人设）
+         */
+        expertId?: string,
         /**
          * @description MCP 过滤
          */
@@ -4888,6 +4919,38 @@ export type OpenAPIs = {
     '/api/ai/skills/install-from-workspace': {
       query: never,
       params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/hub/install': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/check-updates': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/:id/upgrade': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/:id/instantiate': {
+      query: never,
+      params: {
+        id: string
+      },
       headers: never,
       body: never,
       response: any
@@ -5210,6 +5273,15 @@ export type OpenAPIs = {
       response: any
     },
     '/api/ai/skills/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/:id': {
       query: never,
       params: {
         id: string
@@ -6041,6 +6113,15 @@ export type OpenAPIs = {
       response: any
     },
     '/api/ai/skills/:id/file': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    '/api/ai/experts/:id': {
       query: never,
       params: {
         id: string

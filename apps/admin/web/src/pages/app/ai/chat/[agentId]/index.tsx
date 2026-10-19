@@ -15,6 +15,7 @@ import MemoryPanel from '../components/MemoryPanel';
 import ContextPanel from '../components/ContextPanel';
 import { useAuth } from '@/store/useAuth';
 import type { RunMode } from '../components/RunModeSelect';
+import type { SummonedExpert } from '../components/ExpertSummon';
 import ThreadList, { DEFAULT_WIDTH as DEFAULT_THREAD_LIST_WIDTH } from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
 import TrashDialog from '../components/TrashDialog';
@@ -195,6 +196,36 @@ function AgentConversation(): React.ReactElement {
   >('off');
   // 审批策略：默认需人工审批；只对「本次发送」生效，发送后回到默认，不静默延续
   const [runMode, setRunMode] = useState<RunMode>('ask');
+  // 召唤专家（会话级）：null = 未召唤（使用 Agent 自身人设）；按会话持久化到 localStorage
+  const [summonedExpert, setSummonedExpert] = useState<SummonedExpert | null>(null);
+  const summonedStorageKey = sessionId ? `expert-summon:${sessionId}` : null;
+  // 切换会话时恢复该会话的召唤状态
+  useEffect(() => {
+    if (!summonedStorageKey) {
+      setSummonedExpert(null);
+      return;
+    }
+    try {
+      const raw = localStorage.getItem(summonedStorageKey);
+      setSummonedExpert(raw ? (JSON.parse(raw) as SummonedExpert) : null);
+    } catch {
+      setSummonedExpert(null);
+    }
+  }, [summonedStorageKey]);
+  const changeSummonedExpert = useCallback(
+    (expert: SummonedExpert | null) => {
+      setSummonedExpert(expert);
+      try {
+        if (summonedStorageKey) {
+          if (expert) localStorage.setItem(summonedStorageKey, JSON.stringify(expert));
+          else localStorage.removeItem(summonedStorageKey);
+        }
+      } catch {
+        /* 存储不可用时仅内存态生效 */
+      }
+    },
+    [summonedStorageKey],
+  );
   // Agent 配置的默认思考强度：等模型列表就绪后由白名单同步 effect 应用（null 表示未暂存）
   const pendingThinkingRef = useRef<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null>(
     null,
@@ -901,6 +932,8 @@ function AgentConversation(): React.ReactElement {
         knowledgeBaseIds: enabledKbs,
         thinkingLevel,
         runMode,
+        // 召唤专家：本次消息以专家逻辑覆盖 Agent 人设（会话级 Role Override）
+        ...(summonedExpert ? { expertId: summonedExpert.id } : {}),
         attachmentPaths: attachments.map((file) => file.path),
         ...(options?.truncateUserMessages === undefined
           ? {}
@@ -1541,6 +1574,8 @@ function AgentConversation(): React.ReactElement {
             onThinkingLevelChange={setThinkingLevel}
             runMode={runMode}
             onRunModeChange={setRunMode}
+            summonedExpert={summonedExpert}
+            onSummonExpertChange={changeSummonedExpert}
             skills={selectedAgent?.skills ?? []}
             onSelectSkill={(id) =>
               setEnabledSkills((current) => (current.includes(id) ? current : [...current, id]))

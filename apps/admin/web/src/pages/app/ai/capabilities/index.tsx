@@ -1,19 +1,21 @@
 /**
  * AI 智能能力管理页面
- * Tabs: 技能 (Skills) | MCP 服务 | 工具 (Tools)
+ * Tabs: 技能 (Skills) | 专家 (Experts) | MCP 服务 | 工具 (Tools)
  *
  * 各 Tab 的实现拆到 ./components/ 下独立维护。
  */
 import {
   ApiOutlined,
   BlockOutlined,
+  TeamOutlined,
   ThunderboltOutlined,
   ToolOutlined,
-} from "@ant-design/icons";
-import { Card, Space, Tabs } from "antd";
-import McpTab from "./components/mcp-tab";
-import SkillsTab from "./components/skills-tab";
-import ToolsTab from "./components/tools-tab";
+} from '@ant-design/icons';
+import { Card, Space, Tabs } from 'antd';
+import ExpertsTab from './components/experts-tab';
+import McpTab from './components/mcp-tab';
+import SkillsTab from './components/skills-tab';
+import ToolsTab from './components/tools-tab';
 
 export default function AICapabilitiesPage() {
   return (
@@ -29,18 +31,39 @@ export default function AICapabilitiesPage() {
         defaultActiveKey="skills"
         items={[
           {
-            key: "skills",
-            label: <span><BlockOutlined /> 技能 Skills</span>,
+            key: 'skills',
+            label: (
+              <span>
+                <BlockOutlined /> 技能 Skills
+              </span>
+            ),
             children: <SkillsTab />,
           },
           {
-            key: "mcp",
-            label: <span><ApiOutlined /> MCP 服务</span>,
+            key: 'experts',
+            label: (
+              <span>
+                <TeamOutlined /> 专家 Experts
+              </span>
+            ),
+            children: <ExpertsTab />,
+          },
+          {
+            key: 'mcp',
+            label: (
+              <span>
+                <ApiOutlined /> MCP 服务
+              </span>
+            ),
             children: <McpTab />,
           },
           {
-            key: "tools",
-            label: <span><ToolOutlined /> 工具 Tools</span>,
+            key: 'tools',
+            label: (
+              <span>
+                <ToolOutlined /> 工具 Tools
+              </span>
+            ),
             children: <ToolsTab />,
           },
         ]}

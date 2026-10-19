@@ -10,6 +10,7 @@ import {
 import { App, Button, Popover, Space, Tag, Tooltip, Typography, theme } from 'antd';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { ModelOption } from '../types';
+import ExpertSummon, { type SummonedExpert } from './ExpertSummon';
 import RunModeSelect, { type RunMode } from './RunModeSelect';
 
 const { Text } = Typography;
@@ -42,6 +43,9 @@ interface BottomInputProps {
   /** 审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批 */
   runMode?: RunMode;
   onRunModeChange?: (mode: RunMode) => void;
+  /** 当前召唤的专家（会话级 Role Override）；null = 未召唤（使用 Agent 自身人设） */
+  summonedExpert?: SummonedExpert | null;
+  onSummonExpertChange?: (expert: SummonedExpert | null) => void;
   skills?: Array<{ id: string; name: string; description: string | null }>;
   onSelectSkill?: (id: string) => void;
 }
@@ -99,6 +103,8 @@ export default function BottomInput({
   onThinkingLevelChange,
   runMode = 'ask',
   onRunModeChange,
+  summonedExpert = null,
+  onSummonExpertChange,
   skills = [],
   onSelectSkill,
 }: BottomInputProps): React.ReactElement {
@@ -325,6 +331,11 @@ export default function BottomInput({
                 />
               </Tooltip>
               <div className="flex min-w-0 flex-wrap items-center justify-end gap-1 sm:gap-2">
+                <ExpertSummon
+                  value={summonedExpert}
+                  onChange={onSummonExpertChange}
+                  disabled={loading}
+                />
                 <RunModeSelect value={runMode} onChange={onRunModeChange} disabled={loading} />
                 <Popover
                   trigger="click"
