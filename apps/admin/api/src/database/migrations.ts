@@ -16,6 +16,7 @@ import {
   createAiMcpTables,
   createAiProviderTables,
   createAiSkillTables,
+  createAiExpertTables,
   dropAgentType,
   dropAiToolLog,
 } from '@ventostack/ai';
@@ -122,6 +123,8 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addAgentWelcomeMessage);
   // 审批单关联会话：审批台账写回会话历史 + 任意决议路径反查会话
   runner.addMigration(addApprovalSessionId);
+  // AI 专家管理注册表（专家数据文件化存储，DB 仅管理）
+  runner.addMigration(createAiExpertTables);
 
   // AI 上下文洞察
   runner.addMigration(createContextTables);

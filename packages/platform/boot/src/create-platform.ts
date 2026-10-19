@@ -159,6 +159,12 @@ export interface PlatformConfig {
     /** 恰好 32 字节的 Provider 凭据加密密钥 */
     credentialEncryptionKey: string;
     agentRuntime?: { baseUrl: string; token: string; timeoutMs: number };
+    /** 专家数据目录（磁盘权威存储）；默认 ${storagePath}/experts，生产 /app/data/experts */
+    expertDataDir?: string;
+    /** ExpertHub 地址；默认 CloudSmith 公开前缀 */
+    expertHubBaseUrl?: string;
+    /** ExpertHub manifest 签名公钥（ed25519 hex）；配置后强制校验 manifest.sig */
+    expertHubSigningPubkey?: string;
   };
 
   /** 当前部署的可信租户标识；所有 Admin 资源必须绑定该值 */
@@ -518,6 +524,13 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         llmProviders: config.aiConfig?.llmProviders ?? [],
         defaultModel: config.aiConfig?.defaultModel ?? 'gpt-4o-mini',
         storagePath: config.aiConfig?.storagePath ?? './data/knowledge-bases',
+        ...(config.aiConfig?.expertDataDir ? { expertDataDir: config.aiConfig.expertDataDir } : {}),
+        ...(config.aiConfig?.expertHubBaseUrl
+          ? { expertHubBaseUrl: config.aiConfig.expertHubBaseUrl }
+          : {}),
+        ...(config.aiConfig?.expertHubSigningPubkey
+          ? { expertHubSigningPubkey: config.aiConfig.expertHubSigningPubkey }
+          : {}),
         ...(config.aiConfig?.agentRuntime ? { agentRuntime: config.aiConfig.agentRuntime } : {}),
       })
     : undefined;

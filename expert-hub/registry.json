@@ -1,0 +1,759 @@
+{
+  "version": "1.0.0",
+  "categories": [
+    {
+      "id": "01-engineering",
+      "name": "技术工程",
+      "nameEn": "Engineering"
+    },
+    {
+      "id": "02-data-ai",
+      "name": "数据与AI",
+      "nameEn": "Data & AI"
+    },
+    {
+      "id": "03-design",
+      "name": "设计体验",
+      "nameEn": "Design"
+    },
+    {
+      "id": "04-product",
+      "name": "产品",
+      "nameEn": "Product"
+    },
+    {
+      "id": "05-marketing",
+      "name": "内容与增长",
+      "nameEn": "Marketing & Growth"
+    },
+    {
+      "id": "06-security",
+      "name": "安全合规",
+      "nameEn": "Security & Privacy"
+    },
+    {
+      "id": "07-office",
+      "name": "办公效率",
+      "nameEn": "Office & Productivity"
+    },
+    {
+      "id": "08-media",
+      "name": "多媒体与运营",
+      "nameEn": "Media & Operations"
+    }
+  ],
+  "experts": [
+    {
+      "slug": "backend-architect",
+      "categoryId": "01-engineering",
+      "nameEn": "Backend Architect",
+      "tags": [
+        "架构",
+        "API",
+        "分布式",
+        "技术选型"
+      ],
+      "quickPrompts": [
+        "帮我设计一个订单系统的架构",
+        "评审这个系统的服务拆分是否合理"
+      ],
+      "defaultInitPrompt": "我正在设计一个新的后端系统，请帮我梳理架构方案。"
+    },
+    {
+      "slug": "frontend-developer",
+      "categoryId": "01-engineering",
+      "nameEn": "Frontend Developer",
+      "tags": [
+        "前端",
+        "React",
+        "性能优化",
+        "TypeScript"
+      ],
+      "quickPrompts": [
+        "帮我优化这个页面的首屏加载",
+        "设计一个可复用的表格组件"
+      ],
+      "defaultInitPrompt": "请帮我实现一个前端页面/组件。"
+    },
+    {
+      "slug": "code-reviewer",
+      "categoryId": "01-engineering",
+      "nameEn": "Code Reviewer",
+      "tags": [
+        "代码评审",
+        "代码质量",
+        "安全"
+      ],
+      "quickPrompts": [
+        "评审这段代码",
+        "这个改动有什么风险"
+      ],
+      "defaultInitPrompt": "请评审我贴出的代码变更，按严重程度给出意见。"
+    },
+    {
+      "slug": "devops-automator",
+      "categoryId": "01-engineering",
+      "nameEn": "DevOps Automator",
+      "tags": [
+        "CI/CD",
+        "Docker",
+        "K8s",
+        "自动化"
+      ],
+      "quickPrompts": [
+        "帮我写一个 CI/CD 流水线",
+        "优化这个 Dockerfile"
+      ],
+      "defaultInitPrompt": "我想把部署流程自动化，请帮我设计方案。"
+    },
+    {
+      "slug": "database-optimizer",
+      "categoryId": "01-engineering",
+      "nameEn": "Database Optimizer",
+      "tags": [
+        "SQL",
+        "索引",
+        "性能调优",
+        "PostgreSQL"
+      ],
+      "quickPrompts": [
+        "这条 SQL 很慢，帮我优化",
+        "帮我设计这个表的索引"
+      ],
+      "defaultInitPrompt": "我有一条慢查询需要优化，我会贴出表结构与执行计划。"
+    },
+    {
+      "slug": "ai-engineer",
+      "categoryId": "01-engineering",
+      "nameEn": "AI Application Engineer",
+      "tags": [
+        "LLM",
+        "Agent",
+        "RAG",
+        "提示词"
+      ],
+      "quickPrompts": [
+        "帮我设计一个 AI 客服的方案",
+        "这个 LLM 应用如何降本"
+      ],
+      "defaultInitPrompt": "我想用大模型做一个应用功能，请帮我设计落地方案权衡。"
+    },
+    {
+      "slug": "rapid-prototyper",
+      "categoryId": "01-engineering",
+      "nameEn": "Rapid Prototyper",
+      "tags": [
+        "原型",
+        "MVP",
+        "快速验证"
+      ],
+      "quickPrompts": [
+        "帮我做个可点击的原型",
+        "这个想法怎么最快验证"
+      ],
+      "defaultInitPrompt": "我有一个产品想法，请帮我用最短路径做出可验证的原型。"
+    },
+    {
+      "slug": "technical-writer",
+      "categoryId": "01-engineering",
+      "nameEn": "Technical Writer",
+      "tags": [
+        "文档",
+        "API 文档",
+        "教程"
+      ],
+      "quickPrompts": [
+        "帮我写这个 API 的文档",
+        "整理一份上手教程"
+      ],
+      "defaultInitPrompt": "请帮我把这个技术实现写成开发者文档。"
+    },
+    {
+      "slug": "data-engineer",
+      "categoryId": "02-data-ai",
+      "nameEn": "Data Engineer",
+      "tags": [
+        "数据管道",
+        "数仓",
+        "ETL",
+        "建模"
+      ],
+      "quickPrompts": [
+        "帮我设计数仓分层模型",
+        "这个 ETL 任务经常失败怎么治理"
+      ],
+      "defaultInitPrompt": "我需要构建一条数据管道，请帮我设计分层与调度方案。"
+    },
+    {
+      "slug": "rag-pipeline-engineer",
+      "categoryId": "02-data-ai",
+      "nameEn": "RAG Pipeline Engineer",
+      "tags": [
+        "RAG",
+        "向量检索",
+        "知识库",
+        "评测"
+      ],
+      "quickPrompts": [
+        "帮我搭建企业知识库问答",
+        "RAG 答案不准怎么排查"
+      ],
+      "defaultInitPrompt": "我要做一个基于自有资料的问答系统，请帮我设计 RAG 管线。"
+    },
+    {
+      "slug": "prompt-engineer",
+      "categoryId": "02-data-ai",
+      "nameEn": "Prompt Engineer",
+      "tags": [
+        "提示词",
+        "输出约束",
+        "评测"
+      ],
+      "quickPrompts": [
+        "帮我优化这个系统提示词",
+        "让模型稳定输出 JSON"
+      ],
+      "defaultInitPrompt": "请帮我为以下任务设计一个稳定可评测的提示词。"
+    },
+    {
+      "slug": "data-visualization-engineer",
+      "categoryId": "02-data-ai",
+      "nameEn": "Data Visualization Engineer",
+      "tags": [
+        "图表",
+        "仪表盘",
+        "ECharts"
+      ],
+      "quickPrompts": [
+        "这组数据用什么图表合适",
+        "帮我搭一个销售仪表盘"
+      ],
+      "defaultInitPrompt": "我有一组数据需要可视化，请帮我选型并实现。"
+    },
+    {
+      "slug": "ui-designer",
+      "categoryId": "03-design",
+      "nameEn": "UI Designer",
+      "tags": [
+        "UI",
+        "设计系统",
+        "组件",
+        "视觉"
+      ],
+      "quickPrompts": [
+        "帮我设计一个设置页",
+        "评审这个界面的视觉层级"
+      ],
+      "defaultInitPrompt": "请帮我设计一个界面，我会描述场景与内容。"
+    },
+    {
+      "slug": "ux-architect",
+      "categoryId": "03-design",
+      "nameEn": "UX Architect",
+      "tags": [
+        "信息架构",
+        "交互",
+        "任务流"
+      ],
+      "quickPrompts": [
+        "帮我梳理这个产品的信息架构",
+        "注册流程怎么简化"
+      ],
+      "defaultInitPrompt": "请帮我分析并优化这个流程的用户体验。"
+    },
+    {
+      "slug": "image-prompt-engineer",
+      "categoryId": "03-design",
+      "nameEn": "Image Prompt Engineer",
+      "tags": [
+        "文生图",
+        "Midjourney",
+        "提示词"
+      ],
+      "quickPrompts": [
+        "帮我写一张海报图的提示词",
+        "生成结果不对怎么改提示词"
+      ],
+      "defaultInitPrompt": "我想要生成一张图片，请帮我写文生图提示词。"
+    },
+    {
+      "slug": "product-manager",
+      "categoryId": "04-product",
+      "nameEn": "Product Manager",
+      "tags": [
+        "需求分析",
+        "PRD",
+        "产品规划"
+      ],
+      "quickPrompts": [
+        "帮我写这个功能的 PRD",
+        "这个需求值不值得做"
+      ],
+      "defaultInitPrompt": "我有一个产品需求，请帮我分析并撰写方案。"
+    },
+    {
+      "slug": "sprint-prioritizer",
+      "categoryId": "04-product",
+      "nameEn": "Sprint Prioritizer",
+      "tags": [
+        "优先级",
+        "排期",
+        "RICE"
+      ],
+      "quickPrompts": [
+        "帮我给这批需求排优先级",
+        "这个迭代怎么规划"
+      ],
+      "defaultInitPrompt": "我有一批待排期的需求，请帮我做优先级决策。"
+    },
+    {
+      "slug": "feedback-synthesizer",
+      "categoryId": "04-product",
+      "nameEn": "Feedback Synthesizer",
+      "tags": [
+        "用户反馈",
+        "洞察",
+        "调研"
+      ],
+      "quickPrompts": [
+        "帮我分析这批用户评价",
+        "这些反馈里最该先修什么"
+      ],
+      "defaultInitPrompt": "我会贴一批用户反馈，请帮我归类提炼洞察。"
+    },
+    {
+      "slug": "content-creator",
+      "categoryId": "05-marketing",
+      "nameEn": "Content Creator",
+      "tags": [
+        "内容创作",
+        "选题",
+        "写作"
+      ],
+      "quickPrompts": [
+        "帮我策划一篇推文选题",
+        "改写这篇文章让它更有传播力"
+      ],
+      "defaultInitPrompt": "请帮我创作一篇内容，我会说明平台与目标读者。"
+    },
+    {
+      "slug": "seo-specialist",
+      "categoryId": "05-marketing",
+      "nameEn": "SEO Specialist",
+      "tags": [
+        "SEO",
+        "关键词",
+        "百度",
+        "内容优化"
+      ],
+      "quickPrompts": [
+        "帮我做关键词规划",
+        "这个页面为什么排名差"
+      ],
+      "defaultInitPrompt": "我想提升网站的自然搜索流量，请帮我做 SEO 诊断。"
+    },
+    {
+      "slug": "growth-hacker",
+      "categoryId": "05-marketing",
+      "nameEn": "Growth Hacker",
+      "tags": [
+        "增长",
+        "A/B 测试",
+        "转化漏斗",
+        "留存"
+      ],
+      "quickPrompts": [
+        "帮我诊断转化漏斗",
+        "设计一个增长实验"
+      ],
+      "defaultInitPrompt": "我想提升产品的增长指标，请帮我设计实验。"
+    },
+    {
+      "slug": "wechat-official-account-operator",
+      "categoryId": "05-marketing",
+      "nameEn": "WeChat Official Account Operator",
+      "tags": [
+        "公众号",
+        "微信生态",
+        "内容运营",
+        "涨粉"
+      ],
+      "quickPrompts": [
+        "帮我规划公众号栏目",
+        "这篇推文帮我改标题"
+      ],
+      "defaultInitPrompt": "请帮我运营公众号，我会说明账号现状与目标。"
+    },
+    {
+      "slug": "security-privacy-engineer",
+      "categoryId": "06-security",
+      "nameEn": "Privacy & Compliance Engineer",
+      "tags": [
+        "隐私",
+        "合规",
+        "数据安全",
+        "个保法"
+      ],
+      "quickPrompts": [
+        "帮我做隐私合规检查",
+        "这个功能的数据收集是否合规"
+      ],
+      "defaultInitPrompt": "请帮我评审系统的数据隐私合规风险。"
+    },
+    {
+      "slug": "delivery-quality-team",
+      "categoryId": "06-security",
+      "nameEn": "Delivery Quality Team",
+      "expertType": "team",
+      "members": [
+        "code-reviewer",
+        "security-privacy-engineer",
+        "technical-writer"
+      ],
+      "tags": [
+        "团队",
+        "交付质量",
+        "评审",
+        "合规"
+      ],
+      "quickPrompts": [
+        "评审这个功能交付物",
+        "这次发布前的质量检查"
+      ],
+      "defaultInitPrompt": "请对我的交付物做多维度质量评审（正确性/合规/文档）。"
+    },
+    {
+      "slug": "meeting-assistant",
+      "categoryId": "07-office",
+      "nameEn": "Meeting Assistant",
+      "tags": [
+        "会议纪要",
+        "行动项",
+        "复盘"
+      ],
+      "quickPrompts": [
+        "把这段转写稿整理成会议纪要",
+        "帮我把行动项按责任人归组"
+      ],
+      "defaultInitPrompt": "我会粘贴会议转写稿或口述要点，请帮我整理成纪要。"
+    },
+    {
+      "slug": "business-email-writer",
+      "categoryId": "07-office",
+      "nameEn": "Business Email Writer",
+      "tags": [
+        "邮件",
+        "商务沟通",
+        "职场"
+      ],
+      "quickPrompts": [
+        "写一封项目延期的说明邮件",
+        "把这段微信消息改写成正式邮件"
+      ],
+      "defaultInitPrompt": "请帮写一封邮件，我会说明对象、事项与期望。"
+    },
+    {
+      "slug": "excel-formula-expert",
+      "categoryId": "07-office",
+      "nameEn": "Spreadsheet Expert",
+      "tags": [
+        "Excel",
+        "函数",
+        "数据清洗",
+        "透视表"
+      ],
+      "quickPrompts": [
+        "写一个多条件匹配的公式",
+        "这个公式为什么返回 #N/A"
+      ],
+      "defaultInitPrompt": "我描述表格结构与需求，请给出可用的公式。"
+    },
+    {
+      "slug": "ppt-designer",
+      "categoryId": "07-office",
+      "nameEn": "Presentation Designer",
+      "tags": [
+        "PPT",
+        "演示",
+        "结构化",
+        "汇报"
+      ],
+      "quickPrompts": [
+        "帮我把这份材料改成 10 页汇报",
+        "给这个方案设计演示大纲"
+      ],
+      "defaultInitPrompt": "请帮我把内容组织成演示文稿，我会说明场景与时长。"
+    },
+    {
+      "slug": "weekly-report-writer",
+      "categoryId": "07-office",
+      "nameEn": "Weekly Report Writer",
+      "tags": [
+        "周报",
+        "汇报",
+        "总结"
+      ],
+      "quickPrompts": [
+        "把我的工作流水账整理成周报",
+        "帮我把周报里的风险写得更得体"
+      ],
+      "defaultInitPrompt": "我口述本周工作，请帮我整理成周报。"
+    },
+    {
+      "slug": "document-polisher",
+      "categoryId": "07-office",
+      "nameEn": "Document Polisher",
+      "tags": [
+        "公文",
+        "润色",
+        "规范",
+        "制度"
+      ],
+      "quickPrompts": [
+        "把这段通知润色成规范公文",
+        "检查这份请示的格式问题"
+      ],
+      "defaultInitPrompt": "请润色我的文档草稿，我会说明文种与对象。"
+    },
+    {
+      "slug": "professional-translator",
+      "categoryId": "07-office",
+      "nameEn": "Professional Translator",
+      "tags": [
+        "翻译",
+        "中英互译",
+        "本地化",
+        "术语"
+      ],
+      "quickPrompts": [
+        "把这段产品文档翻成英文",
+        "检查这段译文的问题"
+      ],
+      "defaultInitPrompt": "请帮我翻译，我会说明用途与受众。"
+    },
+    {
+      "slug": "resume-interview-coach",
+      "categoryId": "07-office",
+      "nameEn": "Resume & Interview Coach",
+      "tags": [
+        "简历",
+        "面试",
+        "求职",
+        "STAR"
+      ],
+      "quickPrompts": [
+        "帮我重写这段项目经历",
+        "针对这个 JD 列面试题清单"
+      ],
+      "defaultInitPrompt": "请帮我优化简历或准备面试，我会说明目标岗位。"
+    },
+    {
+      "slug": "document-distiller",
+      "categoryId": "07-office",
+      "nameEn": "Document Distiller",
+      "tags": [
+        "速读",
+        "摘要",
+        "报告",
+        "合同"
+      ],
+      "quickPrompts": [
+        "把这份 50 页报告压缩成一页摘要",
+        "找出这份合同的关键条款"
+      ],
+      "defaultInitPrompt": "我会粘贴文档内容，请按我的阅读目的提炼要点。"
+    },
+    {
+      "slug": "logo-designer",
+      "categoryId": "03-design",
+      "nameEn": "Logo Designer",
+      "tags": [
+        "Logo",
+        "标志",
+        "品牌",
+        "图形"
+      ],
+      "quickPrompts": [
+        "给我的咖啡品牌设计 3 个 Logo 方向",
+        "评审这个 Logo 的辨识度"
+      ],
+      "defaultInitPrompt": "请帮我设计 Logo，我会说明品牌名称与气质期望。"
+    },
+    {
+      "slug": "brand-identity-designer",
+      "categoryId": "03-design",
+      "nameEn": "Brand Identity Designer",
+      "tags": [
+        "VI",
+        "品牌规范",
+        "色彩系统",
+        "物料"
+      ],
+      "quickPrompts": [
+        "帮我搭建一套基础 VI 规范",
+        "审查我们的物料是否偏离品牌规范"
+      ],
+      "defaultInitPrompt": "请帮我规划品牌视觉体系，我会提供现有品牌资产。"
+    },
+    {
+      "slug": "poster-visual-designer",
+      "categoryId": "03-design",
+      "nameEn": "Poster Visual Designer",
+      "tags": [
+        "海报",
+        "版式",
+        "配色",
+        "视觉物料"
+      ],
+      "quickPrompts": [
+        "设计一张活动海报方案",
+        "给这张海报写 AI 绘图提示词"
+      ],
+      "defaultInitPrompt": "请帮我设计海报，我会说明主题、渠道与尺寸。"
+    },
+    {
+      "slug": "short-video-scriptwriter",
+      "categoryId": "05-marketing",
+      "nameEn": "Short Video Scriptwriter",
+      "tags": [
+        "短视频",
+        "脚本",
+        "抖音",
+        "口播"
+      ],
+      "quickPrompts": [
+        "把这个主题写成 60 秒口播脚本",
+        "给我 3 个视频开头钩子"
+      ],
+      "defaultInitPrompt": "请帮我写短视频脚本，我会说明平台与账号定位。"
+    },
+    {
+      "slug": "community-operator",
+      "categoryId": "05-marketing",
+      "nameEn": "Community Operator",
+      "tags": [
+        "社群",
+        "微信群",
+        "SOP",
+        "私域"
+      ],
+      "quickPrompts": [
+        "帮我设计新群的冷启动方案",
+        "策划一场社群打卡活动"
+      ],
+      "defaultInitPrompt": "请帮我做社群运营方案，我会说明社群现状与目标。"
+    },
+    {
+      "slug": "user-researcher",
+      "categoryId": "04-product",
+      "nameEn": "User Researcher",
+      "tags": [
+        "用户研究",
+        "访谈",
+        "问卷",
+        "洞察"
+      ],
+      "quickPrompts": [
+        "设计一份用户访谈提纲",
+        "帮我分析这批用户反馈的主题"
+      ],
+      "defaultInitPrompt": "请帮我做用户调研，我会说明决策问题与现状。"
+    },
+    {
+      "slug": "sql-analyst",
+      "categoryId": "02-data-ai",
+      "nameEn": "SQL Analyst",
+      "tags": [
+        "SQL",
+        "取数",
+        "数据分析",
+        "口径"
+      ],
+      "quickPrompts": [
+        "写一个统计月度复购率的 SQL",
+        "帮我确认这个指标的口径"
+      ],
+      "defaultInitPrompt": "我会描述表结构与取数需求，请写 SQL 并说明口径。"
+    },
+    {
+      "slug": "image-creation-director",
+      "categoryId": "08-media",
+      "nameEn": "Image Creation Director",
+      "tags": [
+        "AI绘图",
+        "提示词",
+        "配图",
+        "视觉"
+      ],
+      "quickPrompts": [
+        "给公众号文章配一张头图的完整方案",
+        "这段出图效果不对，帮我改提示词"
+      ],
+      "defaultInitPrompt": "我会描述想要的图片，请给出制作方案与提示词。"
+    },
+    {
+      "slug": "video-editing-director",
+      "categoryId": "08-media",
+      "nameEn": "Video Editing Director",
+      "tags": [
+        "剪辑",
+        "节奏",
+        "字幕",
+        "BGM"
+      ],
+      "quickPrompts": [
+        "帮我规划这条 60 秒视频的剪辑结构",
+        "口播视频怎么剪才不拖沓"
+      ],
+      "defaultInitPrompt": "我会说明素材与成片目标，请给剪辑方案。"
+    },
+    {
+      "slug": "ai-drama-creator",
+      "categoryId": "08-media",
+      "nameEn": "AI Drama Creator",
+      "tags": [
+        "短剧",
+        "剧本",
+        "AI制作",
+        "分集"
+      ],
+      "quickPrompts": [
+        "帮我策划一部 80 集逆袭短剧的前三集",
+        "给这场戏出 AI 生成分镜提示词"
+      ],
+      "defaultInitPrompt": "我想做一部 AI 短剧，请帮我从题材开始策划。"
+    },
+    {
+      "slug": "livestream-operator",
+      "categoryId": "08-media",
+      "nameEn": "Livestream Operator",
+      "tags": [
+        "直播",
+        "话术",
+        "排品",
+        "复盘"
+      ],
+      "quickPrompts": [
+        "帮我写一场美妆直播的完整话术脚本",
+        "直播数据不好怎么归因"
+      ],
+      "defaultInitPrompt": "请帮我做直播运营方案，我会说明平台与品类。"
+    },
+    {
+      "slug": "campaign-planner",
+      "categoryId": "05-marketing",
+      "nameEn": "Campaign Planner",
+      "tags": [
+        "活动策划",
+        "增长",
+        "排期",
+        "预算"
+      ],
+      "quickPrompts": [
+        "策划一个拉新活动",
+        "帮我把这个活动想法落成执行方案"
+      ],
+      "defaultInitPrompt": "我想做一个活动，请帮我策划，我会说明目标与预算。"
+    }
+  ]
+}

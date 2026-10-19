@@ -190,6 +190,21 @@ const rawConfig = createConfig(
       env: 'AI_STORAGE_PATH',
       default: './data/ai',
     },
+    EXPERT_HUB_BASE_URL: {
+      type: 'string',
+      env: 'EXPERT_HUB_BASE_URL',
+      description: '专家 Hub 地址；缺省使用内置 CloudSmith 公开前缀',
+    },
+    EXPERT_HUB_SIGNING_PUBKEY: {
+      type: 'string',
+      env: 'EXPERT_HUB_SIGNING_PUBKEY',
+      description: 'ExpertHub manifest 签名公钥（ed25519 hex）；配置后强制校验 manifest.sig',
+    },
+    EXPERT_DATA_DIR: {
+      type: 'string',
+      env: 'EXPERT_DATA_DIR',
+      description: '专家数据目录（磁盘权威存储）；缺省 ${AI_STORAGE_PATH}/experts',
+    },
     VENTO_RUNTIME_URL: { type: 'string', env: 'VENTO_RUNTIME_URL' },
     VENTO_RUNTIME_TOKEN: { type: 'string', env: 'VENTO_RUNTIME_TOKEN', sensitive: true },
     VENTO_RUNTIME_TIMEOUT_MS: { type: 'number', env: 'VENTO_RUNTIME_TIMEOUT_MS', default: 30_000 },

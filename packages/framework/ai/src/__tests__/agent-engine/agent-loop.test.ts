@@ -1,14 +1,20 @@
-import { describe, expect, test } from "bun:test";
-import { createAgentLoop, withStallTimeout } from "../../agent-engine/agent-loop";
-import { createEventEmitter } from "../../agent-engine/events";
-import { createToolRegistry } from "../../tool-registry";
-import type { AgentTool } from "../../agent-engine/types";
-import type { ChatParams, ChatResult, LLMGateway, LLMProvider, StreamChunk } from "../../llm-gateway/types";
+import { describe, expect, test } from 'bun:test';
+import { createAgentLoop, withStallTimeout } from '../../agent-engine/agent-loop';
+import { createEventEmitter } from '../../agent-engine/events';
+import type { AgentTool } from '../../agent-engine/types';
+import type {
+  ChatParams,
+  ChatResult,
+  LLMGateway,
+  LLMProvider,
+  StreamChunk,
+} from '../../llm-gateway/types';
+import { createToolRegistry } from '../../tool-registry';
 
 function createGateway(turns: StreamChunk[][], requests?: ChatParams[]): LLMGateway {
   let index = 0;
   const provider: LLMProvider = {
-    name: "test",
+    name: 'test',
     capabilities: {
       functionCalling: true,
       maxContextLength: 128_000,
@@ -16,11 +22,11 @@ function createGateway(turns: StreamChunk[][], requests?: ChatParams[]): LLMGate
       supportsStreaming: true,
     },
     async chat(_params: ChatParams): Promise<ChatResult> {
-      throw new Error("not used");
+      throw new Error('not used');
     },
     async *chatStream(_params: ChatParams): AsyncIterable<StreamChunk> {
       requests?.push(_params);
-      for (const chunk of turns[index++] ?? [{ type: "done" as const }]) yield chunk;
+      for (const chunk of turns[index++] ?? [{ type: 'done' as const }]) yield chunk;
     },
     async listModels() {
       return [];
@@ -36,14 +42,14 @@ function createGateway(turns: StreamChunk[][], requests?: ChatParams[]): LLMGate
   };
 }
 
-function createTool(execute: AgentTool["execute"]): AgentTool {
+function createTool(execute: AgentTool['execute']): AgentTool {
   return {
-    name: "lookup",
-    description: "Look something up",
+    name: 'lookup',
+    description: 'Look something up',
     parameters: {
-      type: "object",
-      properties: { query: { type: "string" } },
-      required: ["query"],
+      type: 'object',
+      properties: { query: { type: 'string' } },
+      required: ['query'],
       additionalProperties: false,
     },
     execute,
@@ -56,520 +62,730 @@ async function collect(stream: AsyncIterable<StreamChunk>): Promise<StreamChunk[
   return chunks;
 }
 
-describe("Agent loop conformance", () => {
-  test("runs with a database-resolved model when no static provider is registered", async () => {
-    const dynamicGateway = createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]]);
+describe('Agent loop conformance', () => {
+  test('runs with a database-resolved model when no static provider is registered', async () => {
+    const dynamicGateway = createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]]);
     dynamicGateway.listProviders = () => [];
-    dynamicGateway.getDefaultProvider = () => { throw new Error("no static provider"); };
+    dynamicGateway.getDefaultProvider = () => {
+      throw new Error('no static provider');
+    };
     const loop = createAgentLoop({ llmGateway: dynamicGateway });
 
-    const chunks = await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "hello",
-      model: "database-model",
-    }));
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hello',
+        model: 'database-model',
+      }),
+    );
 
-    expect(chunks.some((chunk) => chunk.type === "content" && chunk.delta === "ok")).toBe(true);
+    expect(chunks.some((chunk) => chunk.type === 'content' && chunk.delta === 'ok')).toBe(true);
   });
 
-  test("includes bound knowledge base ids in the tool instructions", async () => {
+  test('includes bound knowledge base ids in the tool instructions', async () => {
     const requests: ChatParams[] = [];
     const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
       agentService: {
         async getById() {
           return {
-            id: "agent", name: "assistant", models: ["default"], systemPrompt: "base",
-            knowledgeBaseIds: ["kb-actual"], tenantId: "tenant", requiresVirtualEnvironment: false,
+            id: 'agent',
+            name: 'assistant',
+            models: ['default'],
+            systemPrompt: 'base',
+            knowledgeBaseIds: ['kb-actual'],
+            tenantId: 'tenant',
+            requiresVirtualEnvironment: false,
           };
         },
       },
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "search",
-      knowledgeBaseIds: ["kb-actual", "kb-unbound"],
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'search',
+        knowledgeBaseIds: ['kb-actual', 'kb-unbound'],
+      }),
+    );
 
-    const prompt = requests[0]?.messages.find((message) => message.role === "system")?.content;
-    expect(prompt).toContain("kb-actual");
-    expect(prompt).not.toContain("kb-unbound");
-    expect(prompt).toContain("作为 kbId");
-  });
-
-  test("describes only environment, workspace, and terminal for virtual-environment agents", async () => {
-    const requests: ChatParams[] = [];
-    const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
-      agentService: {
-        async getById() {
-          return {
-            id: "agent", name: "coder", models: ["default"], systemPrompt: "base",
-            tenantId: "tenant", requiresVirtualEnvironment: true,
-          };
-        },
-      },
-    });
-
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
     const prompt = requests[0]?.messages.find((message) => message.role === 'system')?.content;
-    expect(prompt).toContain("环境：隔离的 Linux 虚拟环境");
-    expect(prompt).toContain("工作目录：/workspace");
-    expect(prompt).toContain("终端：terminal");
-    expect(prompt).not.toContain("sandboxId");
+    expect(prompt).toContain('kb-actual');
+    expect(prompt).not.toContain('kb-unbound');
+    expect(prompt).toContain('作为 kbId');
   });
-  test("executes directly supplied AgentTools without a ToolRegistry", async () => {
+
+  test('expertId applies role override: expert prompt leads, agent persona demoted', async () => {
+    const requests: ChatParams[] = [];
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
+      agentService: {
+        async getById() {
+          return {
+            id: 'agent',
+            name: 'assistant',
+            models: ['default'],
+            systemPrompt: 'base-persona',
+            tenantId: 'tenant',
+            requiresVirtualEnvironment: false,
+          };
+        },
+      },
+      resolveExpert: async (expertId, tenantId) => {
+        expect(expertId).toBe('exp-1');
+        expect(tenantId).toBe('tenant');
+        return { name: '代码评审专家', prompt: '你是「代码评审专家」' };
+      },
+    });
+
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'review this',
+        expertId: 'exp-1',
+      }),
+    );
+
+    const prompt =
+      requests[0]?.messages.find((message) => message.role === 'system')?.content ?? '';
+    expect(prompt.startsWith('你是「代码评审专家」')).toBe(true);
+    expect(prompt).toContain('代码评审专家');
+    expect(prompt).toContain('base-persona');
+  });
+
+  test('expertId unavailable expert fails closed with EXPERT_NOT_FOUND', async () => {
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]]),
+      resolveExpert: async () => null,
+    });
+
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hello',
+        expertId: 'exp-missing',
+      }),
+    );
+
+    const errorChunk = chunks.find((chunk) => chunk.type === 'error');
+    expect(errorChunk).toBeDefined();
+    expect((errorChunk as { error: { code: string } }).error.code).toBe('EXPERT_NOT_FOUND');
+  });
+
+  test('expertId without resolveExpert support fails with EXPERT_NOT_SUPPORTED', async () => {
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]]),
+    });
+
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hello',
+        expertId: 'exp-1',
+      }),
+    );
+
+    const errorChunk = chunks.find((chunk) => chunk.type === 'error');
+    expect(errorChunk).toBeDefined();
+    expect((errorChunk as { error: { code: string } }).error.code).toBe('EXPERT_NOT_SUPPORTED');
+  });
+
+  test('describes only environment, workspace, and terminal for virtual-environment agents', async () => {
+    const requests: ChatParams[] = [];
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
+      agentService: {
+        async getById() {
+          return {
+            id: 'agent',
+            name: 'coder',
+            models: ['default'],
+            systemPrompt: 'base',
+            tenantId: 'tenant',
+            requiresVirtualEnvironment: true,
+          };
+        },
+      },
+    });
+
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
+    const prompt = requests[0]?.messages.find((message) => message.role === 'system')?.content;
+    expect(prompt).toContain('环境：隔离的 Linux 虚拟环境');
+    expect(prompt).toContain('工作目录：/workspace');
+    expect(prompt).toContain('终端：terminal');
+    expect(prompt).not.toContain('sandboxId');
+  });
+  test('executes directly supplied AgentTools without a ToolRegistry', async () => {
     const calls: unknown[] = [];
     const gateway = createGateway([
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "vento" } } },
-        { type: "done" },
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'vento' } },
+        },
+        { type: 'done' },
       ],
-      [{ type: "content", delta: "finished" }, { type: "done" }],
+      [{ type: 'content', delta: 'finished' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async (_id, args) => {
-        calls.push(args);
-        return { content: [{ type: "text", text: "result" }], details: {} };
-      })],
+      agentTools: [
+        createTool(async (_id, args) => {
+          calls.push(args);
+          return { content: [{ type: 'text', text: 'result' }], details: {} };
+        }),
+      ],
     });
 
-    const chunks = await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-    }));
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
 
-    expect(calls).toEqual([{ query: "vento" }]);
-    expect(chunks.some((chunk) => chunk.type === "content" && chunk.delta === "finished")).toBe(true);
+    expect(calls).toEqual([{ query: 'vento' }]);
+    expect(chunks.some((chunk) => chunk.type === 'content' && chunk.delta === 'finished')).toBe(
+      true,
+    );
   });
 
-  test("honors block hooks and never executes the blocked tool", async () => {
+  test('honors block hooks and never executes the blocked tool', async () => {
     let executed = false;
     const gateway = createGateway([
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "secret" } } },
-        { type: "done" },
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'secret' } },
+        },
+        { type: 'done' },
       ],
-      [{ type: "content", delta: "blocked" }, { type: "done" }],
+      [{ type: 'content', delta: 'blocked' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async () => {
-        executed = true;
-        return { content: [], details: {} };
-      })],
+      agentTools: [
+        createTool(async () => {
+          executed = true;
+          return { content: [], details: {} };
+        }),
+      ],
       beforeToolCall: async ({ context }) => {
         expect(context.messages.length).toBeGreaterThan(0);
-        return { block: true, reason: "policy" };
+        return { block: true, reason: 'policy' };
       },
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
     expect(executed).toBe(false);
   });
 
-  test("run 开始上报初始工具集与 schema（工具 schema 桶不能恒为 0）", async () => {
-    const toolEvents: Array<{ names: string[]; tools?: Array<{ name: string; description?: string }> }> = [];
+  test('run 开始上报初始工具集与 schema（工具 schema 桶不能恒为 0）', async () => {
+    const toolEvents: Array<{
+      names: string[];
+      tools?: Array<{ name: string; description?: string }>;
+    }> = [];
     const emitter = createEventEmitter();
     emitter.on((event) => {
-      if (event.type === "tools_added") {
+      if (event.type === 'tools_added') {
         toolEvents.push({ names: event.toolNames, ...(event.tools ? { tools: event.tools } : {}) });
       }
     });
     const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]]),
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]]),
       eventEmitter: emitter,
       agentTools: [createTool(async () => ({ content: [], details: {} }))],
     });
 
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "hi" }));
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'hi' }),
+    );
 
     expect(toolEvents.length).toBeGreaterThan(0);
-    expect(toolEvents[0]?.names).toEqual(["lookup"]);
+    expect(toolEvents[0]?.names).toEqual(['lookup']);
     // 带上 schema（描述 + 参数），订阅方才能估算工具定义占用的 token
-    expect(toolEvents[0]?.tools?.[0]?.name).toBe("lookup");
-    expect(toolEvents[0]?.tools?.[0]?.description).toBe("Look something up");
+    expect(toolEvents[0]?.tools?.[0]?.name).toBe('lookup');
+    expect(toolEvents[0]?.tools?.[0]?.description).toBe('Look something up');
   });
 
-  test("before_provider_request 带上 provider 声明的上下文窗口", async () => {
+  test('before_provider_request 带上 provider 声明的上下文窗口', async () => {
     const events: Array<{ type: string; contextWindow?: number }> = [];
     const emitter = createEventEmitter();
     emitter.on((event) => {
-      if (event.type === "before_provider_request") {
-        events.push({ type: event.type, ...(event.contextWindow !== undefined ? { contextWindow: event.contextWindow } : {}) });
+      if (event.type === 'before_provider_request') {
+        events.push({
+          type: event.type,
+          ...(event.contextWindow !== undefined ? { contextWindow: event.contextWindow } : {}),
+        });
       }
     });
     const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]]),
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]]),
       eventEmitter: emitter,
       agentTools: [],
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "hi",
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hi',
+      }),
+    );
 
     expect(events.length).toBeGreaterThan(0);
     // 测试 provider 声明 maxContextLength=128000，订阅方据此算占用率
     expect(events[0]?.contextWindow).toBe(128_000);
   });
 
-  test("emits the complete tool lifecycle and applies afterToolCall overrides", async () => {
+  test('emits the complete tool lifecycle and applies afterToolCall overrides', async () => {
     const eventTypes: string[] = [];
     const emitter = createEventEmitter();
     emitter.on((event) => eventTypes.push(event.type));
     const gateway = createGateway([
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-        { type: "done" },
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
       ],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
       eventEmitter: emitter,
-      agentTools: [createTool(async (_id, _args, _signal, update) => {
-        update?.({ content: [{ type: "text", text: "half" }], details: {} });
-        return { content: [{ type: "text", text: "raw" }], details: {} };
-      })],
+      agentTools: [
+        createTool(async (_id, _args, _signal, update) => {
+          update?.({ content: [{ type: 'text', text: 'half' }], details: {} });
+          return { content: [{ type: 'text', text: 'raw' }], details: {} };
+        }),
+      ],
       afterToolCall: async ({ args, context, isError }) => {
-        expect(args).toEqual({ query: "x" });
+        expect(args).toEqual({ query: 'x' });
         expect(context.messages.length).toBeGreaterThan(0);
         expect(isError).toBe(false);
         return {
-          content: [{ type: "text", text: "redacted" }],
+          content: [{ type: 'text', text: 'redacted' }],
           terminate: true,
         };
       },
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
 
-    expect(eventTypes).toContain("tool_execution_start");
-    expect(eventTypes).toContain("tool_execution_update");
-    expect(eventTypes).toContain("tool_execution_end");
+    expect(eventTypes).toContain('tool_execution_start');
+    expect(eventTypes).toContain('tool_execution_update');
+    expect(eventTypes).toContain('tool_execution_end');
   });
 
-  test("rejects arguments that do not satisfy the AgentTool schema", async () => {
+  test('rejects arguments that do not satisfy the AgentTool schema', async () => {
     let executed = false;
     const gateway = createGateway([
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: {} } },
-        { type: "done" },
+        { type: 'tool_call_start', toolCall: { id: 'call-1', name: 'lookup', arguments: {} } },
+        { type: 'done' },
       ],
-      [{ type: "done" }],
+      [{ type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async () => {
-        executed = true;
-        return { content: [], details: {} };
-      })],
+      agentTools: [
+        createTool(async () => {
+          executed = true;
+          return { content: [], details: {} };
+        }),
+      ],
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
     expect(executed).toBe(false);
   });
 
-  test("denies approval-required tools unless an authorizer approves them", async () => {
+  test('denies approval-required tools unless an authorizer approves them', async () => {
     let executed = 0;
     const approvalTool: AgentTool = {
       ...createTool(async () => {
         executed += 1;
-        return { content: [{ type: "text", text: "ok" }], details: {} };
+        return { content: [{ type: 'text', text: 'ok' }], details: {} };
       }),
       requiresApproval: true,
     };
     const deniedLoop = createAgentLoop({
       llmGateway: createGateway([
-        [{ type: "tool_call_start", toolCall: { id: "denied", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-        [{ type: "done" }],
+        [
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'denied', name: 'lookup', arguments: { query: 'x' } },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'done' }],
       ]),
       agentTools: [approvalTool],
     });
 
-    await collect(deniedLoop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      deniedLoop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
     expect(executed).toBe(0);
 
     const approvedLoop = createAgentLoop({
       llmGateway: createGateway([
-        [{ type: "tool_call_start", toolCall: { id: "approved", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-        [{ type: "content", delta: "finished" }, { type: "done" }],
+        [
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'approved', name: 'lookup', arguments: { query: 'x' } },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'content', delta: 'finished' }, { type: 'done' }],
       ]),
       agentTools: [approvalTool],
       authorizeToolCall: async ({ toolCall, tool, context }) => {
-        expect(toolCall.id).toBe("approved");
-        expect(tool.name).toBe("lookup");
-        expect(context.tenantId).toBe("tenant");
+        expect(toolCall.id).toBe('approved');
+        expect(tool.name).toBe('lookup');
+        expect(context.tenantId).toBe('tenant');
         return { approved: true };
       },
     });
 
-    await collect(approvedLoop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      approvedLoop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
     expect(executed).toBe(1);
   });
 
-  test("a sequential tool forces the whole model tool batch to execute in order", async () => {
+  test('a sequential tool forces the whole model tool batch to execute in order', async () => {
     let running = 0;
     let overlapped = false;
-    const execute: AgentTool["execute"] = async () => {
+    const execute: AgentTool['execute'] = async () => {
       running += 1;
       if (running > 1) overlapped = true;
       await new Promise((resolve) => setTimeout(resolve, 5));
       running -= 1;
       return { content: [], details: {} };
     };
-    const first = { ...createTool(execute), name: "first", executionMode: "sequential" as const };
-    const second = { ...createTool(execute), name: "second" };
+    const first = { ...createTool(execute), name: 'first', executionMode: 'sequential' as const };
+    const second = { ...createTool(execute), name: 'second' };
     const loop = createAgentLoop({
       llmGateway: createGateway([
         [
-          { type: "tool_call_start", toolCall: { id: "one", name: "first", arguments: { query: "x" } } },
-          { type: "tool_call_start", toolCall: { id: "two", name: "second", arguments: { query: "y" } } },
-          { type: "done" },
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'one', name: 'first', arguments: { query: 'x' } },
+          },
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'two', name: 'second', arguments: { query: 'y' } },
+          },
+          { type: 'done' },
         ],
-        [{ type: "done" }],
+        [{ type: 'done' }],
       ]),
       agentTools: [first, second],
-      toolExecutionMode: "parallel",
+      toolExecutionMode: 'parallel',
     });
 
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
     expect(overlapped).toBe(false);
   });
 
-  test("forwards provider-neutral runtime generation controls", async () => {
+  test('forwards provider-neutral runtime generation controls', async () => {
     const requests: ChatParams[] = [];
     const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "done" }]], requests),
+      llmGateway: createGateway([[{ type: 'done' }]], requests),
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-      thinkingLevel: "medium",
-      temperature: 0.2,
-      maxTokens: 4096,
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+        thinkingLevel: 'medium',
+        temperature: 0.2,
+        maxTokens: 4096,
+      }),
+    );
 
-    expect(requests[0]?.thinkingLevel).toBe("medium");
+    expect(requests[0]?.thinkingLevel).toBe('medium');
     expect(requests[0]?.temperature).toBe(0.2);
     expect(requests[0]?.maxTokens).toBe(4096);
   });
 
-  test("transformContext rewrites the messages sent to the LLM", async () => {
+  test('transformContext rewrites the messages sent to the LLM', async () => {
     const requests: ChatParams[] = [];
     const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
       transformContext: async (messages) => [
         ...messages,
-        { role: "system", content: "injected by transformContext" },
+        { role: 'system', content: 'injected by transformContext' },
       ],
     });
 
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
-    expect(requests[0]?.messages.some((m) => m.content === "injected by transformContext")).toBe(true);
+    expect(requests[0]?.messages.some((m) => m.content === 'injected by transformContext')).toBe(
+      true,
+    );
   });
 
-  test("prepareNextTurn swaps the model used by the following request", async () => {
+  test('prepareNextTurn swaps the model used by the following request', async () => {
     const requests: ChatParams[] = [];
-    const gateway = createGateway([
+    const gateway = createGateway(
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-        { type: "done" },
+        [
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'content', delta: 'after' }, { type: 'done' }],
       ],
-      [{ type: "content", delta: "after" }, { type: "done" }],
-    ], requests);
+      requests,
+    );
     let firstCallToolResults = -1;
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      agentTools: [
+        createTool(async () => ({ content: [{ type: 'text', text: 'ok' }], details: {} })),
+      ],
       prepareNextTurn: async ({ toolResults }) => {
         if (firstCallToolResults === -1) firstCallToolResults = toolResults.length;
-        return { model: "test/new-model" };
+        return { model: 'test/new-model' };
       },
     });
 
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
     // prepareNextTurn 在每轮 turn_end 后都会调用：第一轮（工具轮）有 1 个工具结果
     expect(firstCallToolResults).toBe(1);
-    expect(requests[0]?.model).toBe("default");
-    expect(requests[1]?.model).toBe("test/new-model");
+    expect(requests[0]?.model).toBe('default');
+    expect(requests[1]?.model).toBe('test/new-model');
   });
 
-  test("getApiKey resolves a per-request API key forwarded to the provider", async () => {
+  test('getApiKey resolves a per-request API key forwarded to the provider', async () => {
     const requests: ChatParams[] = [];
     const loop = createAgentLoop({
-      llmGateway: createGateway([[{ type: "done" }]], requests),
-      getApiKey: (provider) => (provider === "test" ? "dynamic-key" : undefined),
+      llmGateway: createGateway([[{ type: 'done' }]], requests),
+      getApiKey: (provider) => (provider === 'test' ? 'dynamic-key' : undefined),
     });
 
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-      model: "test/x",
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+        model: 'test/x',
+      }),
+    );
 
-    expect(requests[0]?.apiKey).toBe("dynamic-key");
+    expect(requests[0]?.apiKey).toBe('dynamic-key');
   });
 
-  test("addedToolNames registers dynamic tools for the following turn", async () => {
+  test('addedToolNames registers dynamic tools for the following turn', async () => {
     const requests: ChatParams[] = [];
     const eventTypes: string[] = [];
     const emitter = createEventEmitter();
     emitter.on((event) => eventTypes.push(event.type));
     let dynamicCalls = 0;
 
-    const gateway = createGateway([
+    const gateway = createGateway(
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-        { type: "done" },
+        [
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+          },
+          { type: 'done' },
+        ],
+        [
+          { type: 'tool_call_start', toolCall: { id: 'call-2', name: 'extra', arguments: {} } },
+          { type: 'done' },
+        ],
+        [{ type: 'content', delta: 'done' }, { type: 'done' }],
       ],
-      [
-        { type: "tool_call_start", toolCall: { id: "call-2", name: "extra", arguments: {} } },
-        { type: "done" },
-      ],
-      [{ type: "content", delta: "done" }, { type: "done" }],
-    ], requests);
+      requests,
+    );
 
     const dynamicTool: AgentTool = {
-      name: "extra",
-      description: "Dynamically added tool",
-      parameters: { type: "object", properties: {} },
+      name: 'extra',
+      description: 'Dynamically added tool',
+      parameters: { type: 'object', properties: {} },
       execute: async () => {
         dynamicCalls += 1;
-        return { content: [{ type: "text", text: "extra-result" }], details: {} };
+        return { content: [{ type: 'text', text: 'extra-result' }], details: {} };
       },
     };
 
     const loop = createAgentLoop({
       llmGateway: gateway,
       eventEmitter: emitter,
-      agentTools: [createTool(async () => ({
-        content: [{ type: "text", text: "ok" }],
-        details: {},
-        addedToolNames: ["extra"],
-      }))],
-      dynamicToolResolver: async (name) => (name === "extra" ? dynamicTool : undefined),
+      agentTools: [
+        createTool(async () => ({
+          content: [{ type: 'text', text: 'ok' }],
+          details: {},
+          addedToolNames: ['extra'],
+        })),
+      ],
+      dynamicToolResolver: async (name) => (name === 'extra' ? dynamicTool : undefined),
     });
 
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
-    expect(eventTypes).toContain("tools_added");
+    expect(eventTypes).toContain('tools_added');
     const secondTurnTools = requests[1]?.tools?.map((t) => t.name) ?? [];
-    expect(secondTurnTools).toContain("extra");
+    expect(secondTurnTools).toContain('extra');
     // 动态工具在下一轮被实际调用并执行
     expect(dynamicCalls).toBe(1);
   });
 
-  test("emits ai.run / ai.turn / ai.tool spans when a tracer is provided", async () => {
-    const { createTracer } = await import("@ventostack/observability");
+  test('emits ai.run / ai.turn / ai.tool spans when a tracer is provided', async () => {
+    const { createTracer } = await import('@ventostack/observability');
     const tracer = createTracer();
     const gateway = createGateway([
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-        { type: "done" },
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
       ],
-      [{ type: "content", delta: "done" }, { type: "done" }],
+      [{ type: 'content', delta: 'done' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
       tracer,
-      agentTools: [createTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      agentTools: [
+        createTool(async () => ({ content: [{ type: 'text', text: 'ok' }], details: {} })),
+      ],
     });
 
-    await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
     const spans = tracer.flush();
     const names = spans.map((s) => s.name);
-    expect(names).toContain("ai.run");
-    expect(names).toContain("ai.tool");
-    const runSpan = spans.find((s) => s.name === "ai.run")!;
-    expect(runSpan.attributes.model).toBe("default");
-    expect(runSpan.attributes.agent_id).toBe("agent");
-    expect(runSpan.status).toBe("ok");
-    const toolSpan = spans.find((s) => s.name === "ai.tool")!;
-    expect(toolSpan.attributes.tool).toBe("lookup");
+    expect(names).toContain('ai.run');
+    expect(names).toContain('ai.tool');
+    const runSpan = spans.find((s) => s.name === 'ai.run')!;
+    expect(runSpan.attributes.model).toBe('default');
+    expect(runSpan.attributes.agent_id).toBe('agent');
+    expect(runSpan.status).toBe('ok');
+    const toolSpan = spans.find((s) => s.name === 'ai.tool')!;
+    expect(toolSpan.attributes.tool).toBe('lookup');
     expect(toolSpan.attributes.is_error).toBe(false);
     // ai.run 应包含 turn 事件
-    expect(runSpan.events.some((e) => e.name === "ai.turn")).toBe(true);
+    expect(runSpan.events.some((e) => e.name === 'ai.turn')).toBe(true);
   });
 });
 
-describe("Agent loop tool policy（默认拒绝）", () => {
-  test("rejects the run when the configured agent does not exist", async () => {
-    const gateway = createGateway([[{ type: "content", delta: "should not run" }, { type: "done" }]]);
+describe('Agent loop tool policy（默认拒绝）', () => {
+  test('rejects the run when the configured agent does not exist', async () => {
+    const gateway = createGateway([
+      [{ type: 'content', delta: 'should not run' }, { type: 'done' }],
+    ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
       agentService: { getById: async () => null },
     });
 
-    const chunks = await collect(loop.runStream({
-      agentId: "missing-agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-    }));
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'missing-agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
 
-    const errorChunk = chunks.find((c) => c.type === "error");
+    const errorChunk = chunks.find((c) => c.type === 'error');
     expect(errorChunk).toBeDefined();
-    expect((errorChunk as { error: { code: string } }).error.code).toBe("AGENT_NOT_FOUND");
-    expect(chunks.some((c) => c.type === "content")).toBe(false);
+    expect((errorChunk as { error: { code: string } }).error.code).toBe('AGENT_NOT_FOUND');
+    expect(chunks.some((c) => c.type === 'content')).toBe(false);
   });
 
-  test("exposes no registry tools when the agent has no tool whitelist（默认拒绝）", async () => {
+  test('exposes no registry tools when the agent has no tool whitelist（默认拒绝）', async () => {
     const requests: ChatParams[] = [];
-    const gateway = createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests);
+    const gateway = createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests);
     const registry = createToolRegistry();
     registry.register({
-      name: "file-read",
-      description: "read files",
-      parameters: [{ name: "path", type: "string" as const, required: true }],
-      handler: async () => "content",
+      name: 'file-read',
+      description: 'read files',
+      parameters: [{ name: 'path', type: 'string' as const, required: true }],
+      handler: async () => 'content',
     });
 
     const loop = createAgentLoop({ llmGateway: gateway, toolRegistry: registry });
 
     // 无白名单：请求体即使携带 tools 过滤器也不能扩权
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-      tools: ["file-read"],
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+        tools: ['file-read'],
+      }),
+    );
 
     expect(requests.length).toBe(1);
     expect(requests[0]!.tools).toBeUndefined();
@@ -589,34 +805,44 @@ describe("Agent loop tool policy（默认拒绝）", () => {
       toolRegistry: registry,
     });
 
-    await collect(loop.runStream({
-      agentId: 'agent',
-      userId: 'user',
-      tenantId: 'tenant',
-      message: 'summarize',
-      attachmentPaths: ['attachments/report.pdf'],
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'summarize',
+        attachmentPaths: ['attachments/report.pdf'],
+      }),
+    );
 
     expect(requests[0]?.tools?.map((tool) => tool.name)).toContain('read_document');
-    expect(requests[0]?.messages.find((message) => message.role === 'system')?.content).toContain('attachments/report.pdf');
+    expect(requests[0]?.messages.find((message) => message.role === 'system')?.content).toContain(
+      'attachments/report.pdf',
+    );
   });
 
-  test("intersects the request filter with the agent whitelist", async () => {
+  test('intersects the request filter with the agent whitelist', async () => {
     const requests: ChatParams[] = [];
-    const gateway = createGateway([
+    const gateway = createGateway(
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "calculator", arguments: {} } },
-        { type: "done" },
+        [
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'call-1', name: 'calculator', arguments: {} },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'content', delta: 'done' }, { type: 'done' }],
       ],
-      [{ type: "content", delta: "done" }, { type: "done" }],
-    ], requests);
+      requests,
+    );
     const registry = createToolRegistry();
-    for (const name of ["calculator", "datetime"]) {
+    for (const name of ['calculator', 'datetime']) {
       registry.register({
         name,
         description: name,
         parameters: [],
-        handler: async () => "ok",
+        handler: async () => 'ok',
       });
     }
 
@@ -625,338 +851,479 @@ describe("Agent loop tool policy（默认拒绝）", () => {
       toolRegistry: registry,
       agentService: {
         getById: async () => ({
-          id: "agent",
-          name: "agent",
-          systemPrompt: "",
-          models: ["test/model"],
-          tenantId: "tenant",
-          tools: ["calculator"],
+          id: 'agent',
+          name: 'agent',
+          systemPrompt: '',
+          models: ['test/model'],
+          tenantId: 'tenant',
+          tools: ['calculator'],
         }),
       },
     });
 
     // datetime 不在白名单内，请求过滤器无法将其引入
-    await collect(loop.runStream({
-      agentId: "agent",
-      userId: "user",
-      tenantId: "tenant",
-      message: "run",
-      tools: ["datetime", "calculator"],
-    }));
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+        tools: ['datetime', 'calculator'],
+      }),
+    );
 
     expect(requests.length).toBeGreaterThanOrEqual(1);
     const offered = (requests[0]!.tools ?? []).map((t) => t.name);
-    expect(offered).toEqual(["calculator"]);
+    expect(offered).toEqual(['calculator']);
   });
 
-  describe("model whitelist", () => {
+  describe('model whitelist', () => {
     function createLoopWithModels(models: string[], requests: ChatParams[]) {
       return createAgentLoop({
-        llmGateway: createGateway([[{ type: "content", delta: "ok" }, { type: "done" }]], requests),
+        llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
         agentService: {
           async getById() {
             return {
-              id: "agent", name: "agent", systemPrompt: "base", models,
-              tenantId: "tenant",
+              id: 'agent',
+              name: 'agent',
+              systemPrompt: 'base',
+              models,
+              tenantId: 'tenant',
             };
           },
         },
       });
     }
 
-    test("params.model within whitelist is used", async () => {
+    test('params.model within whitelist is used', async () => {
       const requests: ChatParams[] = [];
-      const loop = createLoopWithModels(["m/a", "m/b"], requests);
-      const chunks = await collect(loop.runStream({
-        agentId: "agent", userId: "user", tenantId: "tenant", message: "run", model: "m/b",
-      }));
-      expect(chunks.some((c) => c.type === "error")).toBe(false);
-      expect(requests[0]?.model).toBe("m/b");
+      const loop = createLoopWithModels(['m/a', 'm/b'], requests);
+      const chunks = await collect(
+        loop.runStream({
+          agentId: 'agent',
+          userId: 'user',
+          tenantId: 'tenant',
+          message: 'run',
+          model: 'm/b',
+        }),
+      );
+      expect(chunks.some((c) => c.type === 'error')).toBe(false);
+      expect(requests[0]?.model).toBe('m/b');
     });
 
-    test("params.model outside whitelist is rejected with MODEL_NOT_ALLOWED", async () => {
+    test('params.model outside whitelist is rejected with MODEL_NOT_ALLOWED', async () => {
       const requests: ChatParams[] = [];
-      const loop = createLoopWithModels(["m/a", "m/b"], requests);
-      const chunks = await collect(loop.runStream({
-        agentId: "agent", userId: "user", tenantId: "tenant", message: "run", model: "m/other",
-      }));
-      const errors = chunks.filter((c) => c.type === "error");
+      const loop = createLoopWithModels(['m/a', 'm/b'], requests);
+      const chunks = await collect(
+        loop.runStream({
+          agentId: 'agent',
+          userId: 'user',
+          tenantId: 'tenant',
+          message: 'run',
+          model: 'm/other',
+        }),
+      );
+      const errors = chunks.filter((c) => c.type === 'error');
       expect(errors.length).toBe(1);
-      expect((errors[0] as { error: { code: string } }).error.code).toBe("MODEL_NOT_ALLOWED");
+      expect((errors[0] as { error: { code: string } }).error.code).toBe('MODEL_NOT_ALLOWED');
       expect(requests.length).toBe(0);
     });
 
-    test("without params.model defaults to the first whitelisted model", async () => {
+    test('without params.model defaults to the first whitelisted model', async () => {
       const requests: ChatParams[] = [];
-      const loop = createLoopWithModels(["m/first", "m/second"], requests);
-      const chunks = await collect(loop.runStream({
-        agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
-      }));
-      expect(chunks.some((c) => c.type === "error")).toBe(false);
-      expect(requests[0]?.model).toBe("m/first");
+      const loop = createLoopWithModels(['m/first', 'm/second'], requests);
+      const chunks = await collect(
+        loop.runStream({
+          agentId: 'agent',
+          userId: 'user',
+          tenantId: 'tenant',
+          message: 'run',
+        }),
+      );
+      expect(chunks.some((c) => c.type === 'error')).toBe(false);
+      expect(requests[0]?.model).toBe('m/first');
     });
 
     test("'default' in whitelist is allowed as an explicit model", async () => {
       const requests: ChatParams[] = [];
-      const loop = createLoopWithModels(["default", "m/a"], requests);
-      const chunks = await collect(loop.runStream({
-        agentId: "agent", userId: "user", tenantId: "tenant", message: "run", model: "default",
-      }));
-      expect(chunks.some((c) => c.type === "error")).toBe(false);
-      expect(requests[0]?.model).toBe("default");
+      const loop = createLoopWithModels(['default', 'm/a'], requests);
+      const chunks = await collect(
+        loop.runStream({
+          agentId: 'agent',
+          userId: 'user',
+          tenantId: 'tenant',
+          message: 'run',
+          model: 'default',
+        }),
+      );
+      expect(chunks.some((c) => c.type === 'error')).toBe(false);
+      expect(requests[0]?.model).toBe('default');
     });
   });
 });
 
-describe("in-stream tool approval handshake", () => {
-  function createApprovalTool(execute: AgentTool["execute"]): AgentTool {
+describe('in-stream tool approval handshake', () => {
+  function createApprovalTool(execute: AgentTool['execute']): AgentTool {
     return { ...createTool(execute), requiresApproval: true };
   }
 
-  test("emits approval_required and executes the tool after waitForApproval approves", async () => {
+  test('emits approval_required and executes the tool after waitForApproval approves', async () => {
     let executed = 0;
     const gateway = createGateway([
-      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-      [{ type: "content", delta: "finished" }, { type: "done" }],
+      [
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'c1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
+      ],
+      [{ type: 'content', delta: 'finished' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createApprovalTool(async () => {
-        executed += 1;
-        return { content: [{ type: "text", text: "ok" }], details: {} };
-      })],
+      agentTools: [
+        createApprovalTool(async () => {
+          executed += 1;
+          return { content: [{ type: 'text', text: 'ok' }], details: {} };
+        }),
+      ],
       authorizeToolCall: async () => ({
         approved: false,
-        approvalRequest: { id: "req-1", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        approvalRequest: {
+          id: 'req-1',
+          toolName: 'lookup',
+          input: { query: 'x' },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       }),
-      waitForApproval: async () => ({ approved: true, reason: "用户已确认" }),
+      waitForApproval: async () => ({ approved: true, reason: '用户已确认' }),
     });
 
-    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    const chunks = await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
-    const approvalChunk = chunks.find((c) => c.type === "approval_required") as
-      | { type: "approval_required"; approval: { id: string } }
+    const approvalChunk = chunks.find((c) => c.type === 'approval_required') as
+      | { type: 'approval_required'; approval: { id: string } }
       | undefined;
-    expect(approvalChunk?.approval.id).toBe("req-1");
+    expect(approvalChunk?.approval.id).toBe('req-1');
     expect(executed).toBe(1);
-    expect(chunks.some((c) => c.type === "content" && c.delta === "finished")).toBe(true);
+    expect(chunks.some((c) => c.type === 'content' && c.delta === 'finished')).toBe(true);
   });
 
-  test("feeds the deny reason back as an error tool result when waitForApproval rejects", async () => {
+  test('feeds the deny reason back as an error tool result when waitForApproval rejects', async () => {
     let executed = 0;
     const gateway = createGateway([
-      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-      [{ type: "content", delta: "denied-turn" }, { type: "done" }],
+      [
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'c1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
+      ],
+      [{ type: 'content', delta: 'denied-turn' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createApprovalTool(async () => {
-        executed += 1;
-        return { content: [{ type: "text", text: "ok" }], details: {} };
-      })],
+      agentTools: [
+        createApprovalTool(async () => {
+          executed += 1;
+          return { content: [{ type: 'text', text: 'ok' }], details: {} };
+        }),
+      ],
       authorizeToolCall: async () => ({
         approved: false,
-        approvalRequest: { id: "req-2", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        approvalRequest: {
+          id: 'req-2',
+          toolName: 'lookup',
+          input: { query: 'x' },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       }),
-      waitForApproval: async () => ({ approved: false, reason: "用户已拒绝" }),
+      waitForApproval: async () => ({ approved: false, reason: '用户已拒绝' }),
     });
 
-    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    const chunks = await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
     expect(executed).toBe(0);
     // 拒绝后流不终止：LLM 收到 deny 的 tool result 并继续产出内容
-    expect(chunks.some((c) => c.type === "content" && c.delta === "denied-turn")).toBe(true);
+    expect(chunks.some((c) => c.type === 'content' && c.delta === 'denied-turn')).toBe(true);
   });
 
-  test("denies immediately when waitForApproval is not configured", async () => {
+  test('denies immediately when waitForApproval is not configured', async () => {
     let executed = 0;
     const gateway = createGateway([
-      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-      [{ type: "done" }],
+      [
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'c1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
+      ],
+      [{ type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createApprovalTool(async () => {
-        executed += 1;
-        return { content: [{ type: "text", text: "ok" }], details: {} };
-      })],
+      agentTools: [
+        createApprovalTool(async () => {
+          executed += 1;
+          return { content: [{ type: 'text', text: 'ok' }], details: {} };
+        }),
+      ],
       authorizeToolCall: async () => ({
         approved: false,
-        approvalRequest: { id: "req-3", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        approvalRequest: {
+          id: 'req-3',
+          toolName: 'lookup',
+          input: { query: 'x' },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       }),
     });
 
-    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    const chunks = await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
     expect(executed).toBe(0);
-    expect(chunks.some((c) => c.type === "approval_required")).toBe(true);
+    expect(chunks.some((c) => c.type === 'approval_required')).toBe(true);
   });
 
-  test("emits approval_resolved(approved) after the waiter approves", async () => {
+  test('emits approval_resolved(approved) after the waiter approves', async () => {
     const gateway = createGateway([
-      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-      [{ type: "content", delta: "after" }, { type: "done" }],
+      [
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'c1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
+      ],
+      [{ type: 'content', delta: 'after' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createApprovalTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      agentTools: [
+        createApprovalTool(async () => ({ content: [{ type: 'text', text: 'ok' }], details: {} })),
+      ],
       authorizeToolCall: async () => ({
         approved: false,
-        approvalRequest: { id: "req-4", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        approvalRequest: {
+          id: 'req-4',
+          toolName: 'lookup',
+          input: { query: 'x' },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       }),
-      waitForApproval: async () => ({ approved: true, status: "approved" }),
+      waitForApproval: async () => ({ approved: true, status: 'approved' }),
     });
 
-    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    const chunks = await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
-    const resolved = chunks.find((c) => c.type === "approval_resolved") as
-      | { type: "approval_resolved"; approvalId: string; status: string }
+    const resolved = chunks.find((c) => c.type === 'approval_resolved') as
+      | { type: 'approval_resolved'; approvalId: string; status: string }
       | undefined;
-    expect(resolved?.approvalId).toBe("req-4");
-    expect(resolved?.status).toBe("approved");
+    expect(resolved?.approvalId).toBe('req-4');
+    expect(resolved?.status).toBe('approved');
   });
 
-  test("emits approval_resolved(expired) on timeout so the dialog can converge", async () => {
+  test('emits approval_resolved(expired) on timeout so the dialog can converge', async () => {
     let executed = 0;
     const gateway = createGateway([
-      [{ type: "tool_call_start", toolCall: { id: "c1", name: "lookup", arguments: { query: "x" } } }, { type: "done" }],
-      [{ type: "done" }],
+      [
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'c1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
+      ],
+      [{ type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createApprovalTool(async () => {
-        executed += 1;
-        return { content: [{ type: "text", text: "ok" }], details: {} };
-      })],
+      agentTools: [
+        createApprovalTool(async () => {
+          executed += 1;
+          return { content: [{ type: 'text', text: 'ok' }], details: {} };
+        }),
+      ],
       authorizeToolCall: async () => ({
         approved: false,
-        approvalRequest: { id: "req-5", toolName: "lookup", input: { query: "x" }, expiresAt: new Date(Date.now() + 60_000).toISOString() },
+        approvalRequest: {
+          id: 'req-5',
+          toolName: 'lookup',
+          input: { query: 'x' },
+          expiresAt: new Date(Date.now() + 60_000).toISOString(),
+        },
       }),
-      waitForApproval: async () => ({ approved: false, status: "expired", reason: "审批等待超时，已默认拒绝" }),
+      waitForApproval: async () => ({
+        approved: false,
+        status: 'expired',
+        reason: '审批等待超时，已默认拒绝',
+      }),
     });
 
-    const chunks = await collect(loop.runStream({ agentId: "agent", userId: "user", tenantId: "tenant", message: "run" }));
+    const chunks = await collect(
+      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+    );
 
-    const resolved = chunks.find((c) => c.type === "approval_resolved") as
-      | { type: "approval_resolved"; status: string; reason?: string }
+    const resolved = chunks.find((c) => c.type === 'approval_resolved') as
+      | { type: 'approval_resolved'; status: string; reason?: string }
       | undefined;
-    expect(resolved?.status).toBe("expired");
-    expect(resolved?.reason).toContain("超时");
+    expect(resolved?.status).toBe('expired');
+    expect(resolved?.reason).toContain('超时');
     expect(executed).toBe(0);
   });
 });
 
-describe("iteration budget exhaustion finalize", () => {
-  test("forces a final tool-free answer when maxIterations is exhausted mid-tools", async () => {
+describe('iteration budget exhaustion finalize', () => {
+  test('forces a final tool-free answer when maxIterations is exhausted mid-tools', async () => {
     const requests: ChatParams[] = [];
     const gateway = createGateway(
       [
         [
-          { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-          { type: "done" },
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+          },
+          { type: 'done' },
         ],
-        [{ type: "content", delta: "最终结论" }, { type: "done" }],
+        [{ type: 'content', delta: '最终结论' }, { type: 'done' }],
       ],
       requests,
     );
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      agentTools: [
+        createTool(async () => ({ content: [{ type: 'text', text: 'ok' }], details: {} })),
+      ],
       agentService: {
         async getById() {
           return {
-            id: "agent", name: "agent", systemPrompt: "base", models: ["default"], tenantId: "tenant",
+            id: 'agent',
+            name: 'agent',
+            systemPrompt: 'base',
+            models: ['default'],
+            tenantId: 'tenant',
             maxIterations: 1,
           };
         },
       },
     });
 
-    const chunks = await collect(loop.runStream({
-      agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
-    }));
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
 
     // 预算耗尽后必须产出收尾回答，而不是在 tool_result 后静默结束
-    expect(chunks.some((c) => c.type === "content" && c.delta === "最终结论")).toBe(true);
+    expect(chunks.some((c) => c.type === 'content' && c.delta === '最终结论')).toBe(true);
     expect(requests.length).toBe(2);
     // 收尾请求不携带工具定义，并注入收尾指令作为最后一条消息
     expect(requests[1]?.tools).toBeUndefined();
     const last = requests[1]?.messages.at(-1);
-    expect(last?.role).toBe("user");
-    expect(last?.content).toContain("工具调用次数上限");
+    expect(last?.role).toBe('user');
+    expect(last?.content).toContain('工具调用次数上限');
   });
 
-  test("does not run the finalize call when the loop ended with a regular answer", async () => {
+  test('does not run the finalize call when the loop ended with a regular answer', async () => {
     const requests: ChatParams[] = [];
     const gateway = createGateway(
       [
         [
-          { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-          { type: "done" },
+          {
+            type: 'tool_call_start',
+            toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+          },
+          { type: 'done' },
         ],
-        [{ type: "content", delta: "常规回答" }, { type: "done" }],
+        [{ type: 'content', delta: '常规回答' }, { type: 'done' }],
       ],
       requests,
     );
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async () => ({ content: [{ type: "text", text: "ok" }], details: {} }))],
+      agentTools: [
+        createTool(async () => ({ content: [{ type: 'text', text: 'ok' }], details: {} })),
+      ],
     });
 
-    const chunks = await collect(loop.runStream({
-      agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
-    }));
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
 
-    expect(chunks.some((c) => c.type === "content" && c.delta === "常规回答")).toBe(true);
+    expect(chunks.some((c) => c.type === 'content' && c.delta === '常规回答')).toBe(true);
     // 第二轮是常规续轮（携带工具定义、以 tool 结果收尾），不是收尾调用
     expect(requests.length).toBe(2);
     expect(requests[1]?.tools?.length).toBeGreaterThan(0);
-    expect(requests[1]?.messages.at(-1)?.role).toBe("tool");
+    expect(requests[1]?.messages.at(-1)?.role).toBe('tool');
   });
 });
 
-describe("tool_result output summary", () => {
-  test("carries a truncated tool output text on the tool_result chunk", async () => {
-    const longText = "x".repeat(3000);
+describe('tool_result output summary', () => {
+  test('carries a truncated tool output text on the tool_result chunk', async () => {
+    const longText = 'x'.repeat(3000);
     const gateway = createGateway([
       [
-        { type: "tool_call_start", toolCall: { id: "call-1", name: "lookup", arguments: { query: "x" } } },
-        { type: "done" },
+        {
+          type: 'tool_call_start',
+          toolCall: { id: 'call-1', name: 'lookup', arguments: { query: 'x' } },
+        },
+        { type: 'done' },
       ],
-      [{ type: "content", delta: "done" }, { type: "done" }],
+      [{ type: 'content', delta: 'done' }, { type: 'done' }],
     ]);
     const loop = createAgentLoop({
       llmGateway: gateway,
-      agentTools: [createTool(async () => ({ content: [{ type: "text", text: longText }], details: {} }))],
+      agentTools: [
+        createTool(async () => ({ content: [{ type: 'text', text: longText }], details: {} })),
+      ],
     });
 
-    const chunks = await collect(loop.runStream({
-      agentId: "agent", userId: "user", tenantId: "tenant", message: "run",
-    }));
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'run',
+      }),
+    );
 
-    const toolResult = chunks.find((c) => c.type === "tool_result") as
-      | { type: "tool_result"; output?: string }
+    const toolResult = chunks.find((c) => c.type === 'tool_result') as
+      | { type: 'tool_result'; output?: string }
       | undefined;
     expect(toolResult?.output).toBeDefined();
     expect(toolResult!.output!.length).toBeLessThanOrEqual(2020);
-    expect(toolResult!.output).toContain("已截断");
+    expect(toolResult!.output).toContain('已截断');
   });
 });
 
-describe("withStallTimeout", () => {
-  test("passes chunks through for a healthy stream", async () => {
+describe('withStallTimeout', () => {
+  test('passes chunks through for a healthy stream', async () => {
     async function* healthy(): AsyncIterable<StreamChunk> {
-      yield { type: "content", delta: "a" };
-      yield { type: "done" };
+      yield { type: 'content', delta: 'a' };
+      yield { type: 'done' };
     }
     const chunks: StreamChunk[] = [];
     for await (const chunk of withStallTimeout(healthy(), 1000)) chunks.push(chunk);
-    expect(chunks.map((c) => c.type)).toEqual(["content", "done"]);
+    expect(chunks.map((c) => c.type)).toEqual(['content', 'done']);
   });
 
-  test("throws when the provider stream stalls beyond the timeout", async () => {
+  test('throws when the provider stream stalls beyond the timeout', async () => {
     async function* stalled(): AsyncIterable<StreamChunk> {
-      yield { type: "content", delta: "partial" };
+      yield { type: 'content', delta: 'partial' };
       await new Promise(() => {}); // 永不返回，模拟供应商挂起
     }
     const chunks: StreamChunk[] = [];
@@ -964,7 +1331,143 @@ describe("withStallTimeout", () => {
       (async () => {
         for await (const chunk of withStallTimeout(stalled(), 30)) chunks.push(chunk);
       })(),
-    ).rejects.toThrow("无响应");
-    expect(chunks.map((c) => c.type)).toEqual(["content"]);
+    ).rejects.toThrow('无响应');
+    expect(chunks.map((c) => c.type)).toEqual(['content']);
+  });
+});
+
+describe('expert team delegation', () => {
+  const teamMembers = [
+    { id: 'm1', slug: 'reviewer', name: '评审专家', description: '代码评审' },
+    { id: 'm2', slug: 'writer', name: '写手' },
+  ];
+
+  function createTeamLoop(
+    turns: StreamChunk[][],
+    requests: ChatParams[],
+    delegateLog: Array<[string, string]>,
+  ) {
+    return createAgentLoop({
+      llmGateway: createGateway(turns, requests),
+      resolveExpert: async () => ({
+        name: '质量团队',
+        prompt: '# 团队主 prompt',
+        expertType: 'team',
+      }),
+      resolveExpertTeamMembers: async () => teamMembers,
+      defaultDelegateRunner: async (memberId, task) => {
+        delegateLog.push([memberId, task]);
+        return '成员成果文本';
+      },
+    });
+  }
+
+  test('team 专家注入 delegate_expert；委派路由到 runner，结果回灌下一轮', async () => {
+    const requests: ChatParams[] = [];
+    const delegateLog: Array<[string, string]> = [];
+    const loop = createTeamLoop(
+      [
+        [
+          {
+            type: 'tool_call_start',
+            toolCall: {
+              id: 'c1',
+              name: 'delegate_expert',
+              arguments: { member: 'writer', task: '写一节文档' },
+            },
+          },
+          { type: 'done' },
+        ],
+        [{ type: 'content', delta: '汇总完成' }, { type: 'done' }],
+      ],
+      requests,
+      delegateLog,
+    );
+
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: '把方案落地',
+        expertId: 'team-1',
+      }),
+    );
+
+    expect(delegateLog).toEqual([['m2', '写一节文档']]);
+    expect(chunks.some((c) => c.type === 'content' && c.delta === '汇总完成')).toBe(true);
+    // 下一轮 LLM 请求包含成员成果（tool 结果回灌）
+    const toolResult = requests[1]?.messages.find((m) => m.role === 'tool');
+    expect(String(toolResult?.content ?? '')).toContain('成员成果文本');
+    expect(String(toolResult?.content ?? '')).toContain('写手（writer）');
+  });
+
+  test('systemPrompt 为协调者模式：不拼接成员全文，包含协作说明与成员清单', async () => {
+    const requests: ChatParams[] = [];
+    const loop = createTeamLoop(
+      [[{ type: 'content', delta: 'ok' }, { type: 'done' }]],
+      requests,
+      [],
+    );
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hi',
+        expertId: 'team-1',
+      }),
+    );
+    const system = requests[0]?.messages.find((m) => m.role === 'system');
+    const text = String(system?.content ?? '');
+    expect(text).toContain('# 团队主 prompt');
+    expect(text).toContain('团队协作模式');
+    expect(text).toContain('delegate_expert');
+    expect(text).toContain('writer（写手）');
+    expect(text).not.toContain('成员全文占位');
+  });
+
+  test('team 成员不可用时 fail-closed（EXPERT_TEAM_MEMBERS_UNAVAILABLE）', async () => {
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'x' }, { type: 'done' }]]),
+      resolveExpert: async () => ({ name: '质量团队', prompt: 'p', expertType: 'team' }),
+      resolveExpertTeamMembers: async () => null,
+      defaultDelegateRunner: async () => 'x',
+    });
+    const chunks = await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hi',
+        expertId: 'team-1',
+      }),
+    );
+    const err = chunks.find((c) => c.type === 'error');
+    expect(err).toBeDefined();
+  });
+
+  test('非 team 专家保持原拼接行为，不注入委派工具', async () => {
+    const requests: ChatParams[] = [];
+    const loop = createAgentLoop({
+      llmGateway: createGateway([[{ type: 'content', delta: 'ok' }, { type: 'done' }]], requests),
+      resolveExpert: async () => ({ name: '单专家', prompt: '单专家 prompt', expertType: 'agent' }),
+      resolveExpertTeamMembers: async () => {
+        throw new Error('不应被调用');
+      },
+    });
+    await collect(
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        message: 'hi',
+        expertId: 'expert-1',
+      }),
+    );
+    const system = String(requests[0]?.messages.find((m) => m.role === 'system')?.content ?? '');
+    expect(system).toContain('单专家 prompt');
+    expect(system).toContain('原角色设定');
+    expect(system).not.toContain('团队协作模式');
   });
 });

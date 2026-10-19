@@ -1,13 +1,31 @@
+import type { SpanHandle, Tracer } from '@ventostack/observability';
 import type { KnowledgeBaseService } from '../knowledge-base/types';
-import type { ChatMessage, LLMGateway, LLMToolDefinition, ResearchStage, RunMode, StreamChunk, ThinkingLevel, ToolCall, ToolResultChunk } from '../llm-gateway/types';
-import type { Tracer, SpanHandle } from '@ventostack/observability';
+import type {
+  ChatMessage,
+  LLMGateway,
+  LLMToolDefinition,
+  ResearchStage,
+  RunMode,
+  StreamChunk,
+  ThinkingLevel,
+  ToolCall,
+  ToolResultChunk,
+} from '../llm-gateway/types';
 import type { MemoryService } from '../memory/types';
-import type { McpToolSource } from './mcp-tool-source';
-import type { Skill } from '../skills/types';
 import { formatSkillInvocation } from '../skills/system-prompt';
+import type { Skill } from '../skills/types';
 import type { ToolRegistry } from '../tool-registry';
-import type { AgentEvent, AgentEventEmitter, AgentEventMessage, AgentRunContext, AgentRunMeta, AgentToolResultEventMessage } from './events';
+import { createDelegateExpertTool } from '../tools/delegate-expert';
+import type {
+  AgentEvent,
+  AgentEventEmitter,
+  AgentEventMessage,
+  AgentRunContext,
+  AgentRunMeta,
+  AgentToolResultEventMessage,
+} from './events';
 import { createEventEmitter } from './events';
+import type { McpToolSource } from './mcp-tool-source';
 import { fitMessagesToBudget } from './prompt-builder';
 import { type PromptGuard, createPromptGuard } from './prompt-guard';
 import { validateAgentToolArguments } from './tool-call-handler';
@@ -16,11 +34,11 @@ import type {
   AgentLoopConfig,
   AgentTool,
   AgentToolResult,
-  ApprovalRequestInfo,
   ApprovalProvenance,
+  ApprovalRequestInfo,
   ApprovalWaiter,
-  ToolExecutionMode,
   ToolCallAuthorizer,
+  ToolExecutionMode,
 } from './types';
 
 // ---- 配置与依赖 ----
@@ -85,7 +103,10 @@ export async function* withStallTimeout(
     let timer: ReturnType<typeof setTimeout> | undefined;
     const timeoutPromise = new Promise<never>((_, reject) => {
       timer = setTimeout(
-        () => reject(new Error(`模型流 ${Math.round(timeoutMs / 1000)} 秒无响应，已中止（供应商挂起）`)),
+        () =>
+          reject(
+            new Error(`模型流 ${Math.round(timeoutMs / 1000)} 秒无响应，已中止（供应商挂起）`),
+          ),
         timeoutMs,
       );
     });
@@ -330,6 +351,8 @@ export interface AgentConfig {
   approvalModel?: string;
   /** 默认思考强度（请求未显式指定时生效；所选模型不支持思考时应置 off），来自 ai_agent.config.defaultThinkingLevel */
   defaultThinkingLevel?: ThinkingLevel;
+  /** 来源团队专家 slug（来自 ai_agent.config.sourceExpert）：存在时运行时反查成员并注入团委派工具 */
+  sourceExpert?: string;
   tenantId: string;
   requiresVirtualEnvironment?: boolean;
   sandboxStatus?: string;
@@ -344,7 +367,12 @@ export interface AgentLoopDeps {
   toolRegistry?: ToolRegistry;
   knowledgeBase?: KnowledgeBaseService;
   memory?: MemoryService;
-  scheduleMemoryConsolidation?: (params: { sessionId: string; tenantId: string; userId: string; model: string }) => Promise<void>;
+  scheduleMemoryConsolidation?: (params: {
+    sessionId: string;
+    tenantId: string;
+    userId: string;
+    model: string;
+  }) => Promise<void>;
   promptGuard?: PromptGuard;
   eventEmitter?: AgentEventEmitter;
   agentService?: AgentCrudService;
@@ -352,7 +380,10 @@ export interface AgentLoopDeps {
    * 解析模型端声明的可用思考档位（ai_model.reasoning_options）。
    * 请求与 Agent 默认档位都要照此校验，防止绕过前端直传非法值导致上游 400。
    */
-  resolveAllowedThinkingLevels?: (modelRef: string, tenantId: string) => Promise<ThinkingLevel[] | null>;
+  resolveAllowedThinkingLevels?: (
+    modelRef: string,
+    tenantId: string,
+  ) => Promise<ThinkingLevel[] | null>;
   /** Agent 级别的 tools（增强版，支持 hooks） */
   agentTools?: AgentTool[];
   /** beforeToolCall 钩子 */
@@ -366,7 +397,35 @@ export interface AgentLoopDeps {
   shouldStopAfterTurn?: AgentLoopConfig['shouldStopAfterTurn'];
   mcpToolSource?: McpToolSource;
   resolveSkills?: (skillIds: string[], tenantId: string) => Promise<Skill[]>;
-  resolveAgentTools?: (agentId: string, tenantId: string, toolNames: string[], userId?: string, sessionId?: string) => Promise<AgentTool[]>;
+  /** 解析会话级专家（含磁盘 sha256 复核）；不可用（未安装/禁用/扫描未过/文件缺失）返回 null */
+  resolveExpert?: (
+    expertId: string,
+    tenantId: string,
+  ) => Promise<{ name: string; prompt: string; expertType?: string } | null>;
+  /**
+   * 解析团队专家的可委派成员清单（expertType=team 时非 null）；
+   * 非 team 或任何成员不可用返回 null（fail-closed）。
+   */
+  resolveExpertTeamMembers?: (
+    expertId: string,
+    tenantId: string,
+  ) => Promise<Array<{ id: string; slug: string; name: string; description?: string }> | null>;
+  /**
+   * 专家团委派子运行执行器（缺省由装配层提供）。
+   * 为成员专家新开独立 agent-loop 运行（独立上下文），返回其最终文本成果。
+   */
+  defaultDelegateRunner?: (
+    memberExpertId: string,
+    task: string,
+    context: { tenantId: string; userId: string; model: string; signal?: AbortSignal },
+  ) => Promise<string>;
+  resolveAgentTools?: (
+    agentId: string,
+    tenantId: string,
+    toolNames: string[],
+    userId?: string,
+    sessionId?: string,
+  ) => Promise<AgentTool[]>;
   authorizeToolCall?: ToolCallAuthorizer;
   /** 等待工具审批 decision（与 authorizeToolCall 返回的 approvalRequest 配对） */
   waitForApproval?: ApprovalWaiter;
@@ -387,7 +446,10 @@ export interface AgentLoopDeps {
    * 解析工具结果声明的动态新工具（对齐参考实现 addedToolNames）。
    * 解析成功后工具会被注册到运行时工具集，供后续轮次使用。
    */
-  dynamicToolResolver?: (toolName: string, tenantId: string) => Promise<AgentTool | undefined> | AgentTool | undefined;
+  dynamicToolResolver?: (
+    toolName: string,
+    tenantId: string,
+  ) => Promise<AgentTool | undefined> | AgentTool | undefined;
   /**
    * 分布式追踪器（@ventostack/observability）。提供时会在 agent 运行 / 每轮 LLM 请求 / 每次工具执行
    * 处埋 span，记录 model、token、耗时、错误等属性。
@@ -410,6 +472,17 @@ export interface AgentRunParams {
   mcpServerIds?: string[];
   knowledgeBaseIds?: string[];
   attachmentPaths?: string[];
+  /** 会话级专家绑定（Role Override）：显式指定时专家定义覆盖 Agent 人设 */
+  expertId?: string;
+  /**
+   * 专家团委派子运行执行器（本运行级覆盖；缺省用 deps.defaultDelegateRunner）。
+   * 仅在绑定 team 专家时被用于构造 delegate_expert 工具。
+   */
+  delegateRunner?: (
+    memberExpertId: string,
+    task: string,
+    context: { tenantId: string; userId: string; model: string; signal?: AbortSignal },
+  ) => Promise<string>;
   /** Runtime overrides used by higher-level harnesses. */
   systemPrompt?: string;
   model?: string;
@@ -445,9 +518,7 @@ function wrapRegistryTools(registry: ToolRegistry, filterTools?: string[]): Agen
   const allTools = registry.list();
   // filterTools 为 undefined 时返回全部；空数组表示默认拒绝（不暴露任何注册表工具）
   const filtered =
-    filterTools === undefined
-      ? allTools
-      : allTools.filter((t) => filterTools.includes(t.name));
+    filterTools === undefined ? allTools : allTools.filter((t) => filterTools.includes(t.name));
 
   return filtered.map((toolDef) => ({
     name: toolDef.name,
@@ -487,7 +558,9 @@ function wrapRegistryTools(registry: ToolRegistry, filterTools?: string[]): Agen
         terminate: false,
       };
     },
-    ...(toolDef.requiresApproval === undefined ? {} : { requiresApproval: toolDef.requiresApproval }),
+    ...(toolDef.requiresApproval === undefined
+      ? {}
+      : { requiresApproval: toolDef.requiresApproval }),
     ...(toolDef.riskLevel === undefined ? {} : { riskLevel: toolDef.riskLevel }),
     ...(toolDef.timeout === undefined ? {} : { timeout: toolDef.timeout }),
   }));
@@ -538,7 +611,9 @@ async function resolvePendingApproval(
     return {
       result: {
         kind: 'immediate',
-        result: createErrorToolResult(`工具 ${pending.toolCall.name} 需要人工审批，但审批等待器未配置`),
+        result: createErrorToolResult(
+          `工具 ${pending.toolCall.name} 需要人工审批，但审批等待器未配置`,
+        ),
         isError: true,
       },
       status: 'rejected',
@@ -548,14 +623,21 @@ async function resolvePendingApproval(
   const decision = await waitForApproval(pending.request, signal);
   if (decision.approved) {
     return {
-      result: { kind: 'prepared', toolCall: pending.toolCall, tool: pending.tool, args: pending.args },
+      result: {
+        kind: 'prepared',
+        toolCall: pending.toolCall,
+        tool: pending.tool,
+        args: pending.args,
+      },
       status: 'approved',
     };
   }
   return {
     result: {
       kind: 'immediate',
-      result: createErrorToolResult(decision.reason ?? `Tool ${pending.toolCall.name} was not approved`),
+      result: createErrorToolResult(
+        decision.reason ?? `Tool ${pending.toolCall.name} was not approved`,
+      ),
       isError: true,
     },
     status: decision.status ?? 'rejected',
@@ -701,7 +783,10 @@ function mergeToolResult(
   };
 }
 
-function createToolSignal(signal: AbortSignal | undefined, timeout: number | undefined): AbortSignal | undefined {
+function createToolSignal(
+  signal: AbortSignal | undefined,
+  timeout: number | undefined,
+): AbortSignal | undefined {
   const signals: AbortSignal[] = [];
   if (signal) signals.push(signal);
   if (timeout !== undefined) signals.push(AbortSignal.timeout(timeout));
@@ -724,7 +809,10 @@ async function executePreparedToolCall(
   const start = Date.now();
   const toolSpan = tracer ? tracer.startSpan('ai.tool', parentSpanContext) : null;
   toolSpan?.setAttribute('tool', toolCall.name);
-  await emit({ type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args }, signal);
+  await emit(
+    { type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args },
+    signal,
+  );
 
   let result: AgentToolResult;
   let isError = false;
@@ -734,13 +822,16 @@ async function executePreparedToolCall(
       args,
       createToolSignal(signal, tool.timeout),
       (partialResult) => {
-        void emit({
-          type: 'tool_execution_update',
-          toolCallId: toolCall.id,
-          toolName: toolCall.name,
-          args,
-          partialResult,
-        }, signal);
+        void emit(
+          {
+            type: 'tool_execution_update',
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args,
+            partialResult,
+          },
+          signal,
+        );
       },
     );
 
@@ -765,13 +856,16 @@ async function executePreparedToolCall(
     toolSpan?.end();
   }
 
-  await emit({
-    type: 'tool_execution_end',
-    toolCallId: toolCall.id,
-    toolName: toolCall.name,
-    result,
-    isError,
-  }, signal);
+  await emit(
+    {
+      type: 'tool_execution_end',
+      toolCallId: toolCall.id,
+      toolName: toolCall.name,
+      result,
+      isError,
+    },
+    signal,
+  );
   const durationMs = Date.now() - start;
   // 同步下发 tool_result 到 SSE 流：前端据此实时收敛工具状态与真实耗时（不再等会话结束），
   // 并携带截断输出摘要供前端展开查看
@@ -805,13 +899,51 @@ async function executeToolCallsSequential(
     const prepared = preparedList[index];
     if (!prepared) break;
     if (prepared.kind === 'immediate') {
-      await emit({ type: 'tool_execution_start', toolCallId: tc.id, toolName: tc.name, args: tc.arguments }, signal);
-      await emit({ type: 'tool_execution_end', toolCallId: tc.id, toolName: tc.name, result: prepared.result, isError: prepared.isError }, signal);
-      onToolResult?.({ type: 'tool_result', toolCallId: tc.id, toolName: tc.name, durationMs: 0, isError: prepared.isError, ...(summarizeToolOutput(prepared.result) === undefined ? {} : { output: summarizeToolOutput(prepared.result) }) });
-      results.push({ toolCall: tc, result: prepared.result, durationMs: 0, isError: prepared.isError });
+      await emit(
+        { type: 'tool_execution_start', toolCallId: tc.id, toolName: tc.name, args: tc.arguments },
+        signal,
+      );
+      await emit(
+        {
+          type: 'tool_execution_end',
+          toolCallId: tc.id,
+          toolName: tc.name,
+          result: prepared.result,
+          isError: prepared.isError,
+        },
+        signal,
+      );
+      onToolResult?.({
+        type: 'tool_result',
+        toolCallId: tc.id,
+        toolName: tc.name,
+        durationMs: 0,
+        isError: prepared.isError,
+        ...(summarizeToolOutput(prepared.result) === undefined
+          ? {}
+          : { output: summarizeToolOutput(prepared.result) }),
+      });
+      results.push({
+        toolCall: tc,
+        result: prepared.result,
+        durationMs: 0,
+        isError: prepared.isError,
+      });
       continue;
     }
-    results.push(await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext, onToolResult));
+    results.push(
+      await executePreparedToolCall(
+        context,
+        assistantMessage,
+        prepared,
+        afterToolCall,
+        emit,
+        signal,
+        tracer,
+        parentSpanContext,
+        onToolResult,
+      ),
+    );
   }
   return results;
 }
@@ -828,19 +960,65 @@ async function executeToolCallsParallel(
   parentSpanContext?: { traceId: string; spanId: string },
   onToolResult?: (chunk: ToolResultChunk) => void,
 ): Promise<FinalizedToolCall[]> {
-  const results = await Promise.all(preparedList.map(async (prepared, index) => {
-    const toolCall = toolCalls[index]!;
-    if (prepared.kind === 'immediate') {
-      await emit({ type: 'tool_execution_start', toolCallId: toolCall.id, toolName: toolCall.name, args: toolCall.arguments }, signal);
-      await emit({ type: 'tool_execution_end', toolCallId: toolCall.id, toolName: toolCall.name, result: prepared.result, isError: prepared.isError }, signal);
-      onToolResult?.({ type: 'tool_result', toolCallId: toolCall.id, toolName: toolCall.name, durationMs: 0, isError: prepared.isError, ...(summarizeToolOutput(prepared.result) === undefined ? {} : { output: summarizeToolOutput(prepared.result) }) });
-      return { index, finalized: { toolCall, result: prepared.result, durationMs: 0, isError: prepared.isError } };
-    }
-    return {
-      index,
-      finalized: await executePreparedToolCall(context, assistantMessage, prepared, afterToolCall, emit, signal, tracer, parentSpanContext, onToolResult),
-    };
-  }));
+  const results = await Promise.all(
+    preparedList.map(async (prepared, index) => {
+      const toolCall = toolCalls[index]!;
+      if (prepared.kind === 'immediate') {
+        await emit(
+          {
+            type: 'tool_execution_start',
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            args: toolCall.arguments,
+          },
+          signal,
+        );
+        await emit(
+          {
+            type: 'tool_execution_end',
+            toolCallId: toolCall.id,
+            toolName: toolCall.name,
+            result: prepared.result,
+            isError: prepared.isError,
+          },
+          signal,
+        );
+        onToolResult?.({
+          type: 'tool_result',
+          toolCallId: toolCall.id,
+          toolName: toolCall.name,
+          durationMs: 0,
+          isError: prepared.isError,
+          ...(summarizeToolOutput(prepared.result) === undefined
+            ? {}
+            : { output: summarizeToolOutput(prepared.result) }),
+        });
+        return {
+          index,
+          finalized: {
+            toolCall,
+            result: prepared.result,
+            durationMs: 0,
+            isError: prepared.isError,
+          },
+        };
+      }
+      return {
+        index,
+        finalized: await executePreparedToolCall(
+          context,
+          assistantMessage,
+          prepared,
+          afterToolCall,
+          emit,
+          signal,
+          tracer,
+          parentSpanContext,
+          onToolResult,
+        ),
+      };
+    }),
+  );
   return results.sort((a, b) => a.index - b.index).map(({ finalized }) => finalized);
 }
 
@@ -868,9 +1046,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       const emit = (event: AgentEvent, s?: AbortSignal): Promise<void> =>
         emitter.emit({ ...event, run: runContext }, s);
 
-      // 1. 获取 Agent 配置（配置了 agentService 时必须命中，失败/不存在一律拒绝运行）
+      // 1. 获取 Agent 配置（配置了 agentService 时必须命中，失败/不存在一律拒绝运行）。
+      // agentId 为空 = 无 Agent 绑定的专家子运行（团委派成员），人设/模型/工具全部由 params 提供，
+      // 且工具白名单为空（registry 工具不暴露）——最小权限。
       let agentConfig: AgentConfig | null = null;
-      if (deps.agentService) {
+      if (deps.agentService && agentId) {
         try {
           agentConfig = await deps.agentService.getById(agentId, tenantId);
         } catch (err) {
@@ -889,8 +1069,90 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       }
 
       let systemPrompt = params.systemPrompt ?? agentConfig?.systemPrompt ?? '你是一个智能助手。';
+
+      // 会话级专家 Role Override：显式 expertId 优先于 Agent 自身人设。
+      // 专家 prompt 成为主体；原人设降级为补充参考。fail-closed：专家不可用则拒绝运行，
+      // 避免静默降级为无人设运行造成权限/行为歧义。
+      // team 类型走「协调者 + 可委派成员」模式：不拼接成员全文，注入 delegate_expert 工具。
+      let teamMembers: Array<{
+        id: string;
+        slug: string;
+        name: string;
+        description?: string;
+      }> | null = null;
+      if (params.expertId) {
+        if (!deps.resolveExpert) {
+          const notSupported = {
+            code: 'EXPERT_NOT_SUPPORTED' as const,
+            message: '当前运行时未启用专家能力（缺少 resolveExpert）',
+            recoverable: false,
+          };
+          await emit({ type: 'error', error: notSupported }, signal);
+          yield { type: 'error', error: notSupported };
+          return;
+        }
+        const expert = await deps.resolveExpert(params.expertId, tenantId);
+        if (!expert) {
+          const notFound = {
+            code: 'EXPERT_NOT_FOUND' as const,
+            message: `专家 ${params.expertId} 不可用（未安装、已停用、安全扫描未通过或内容校验失败）`,
+            recoverable: false,
+          };
+          await emit({ type: 'error', error: notFound }, signal);
+          yield { type: 'error', error: notFound };
+          return;
+        }
+        if (expert.expertType === 'team') {
+          // 团队协调者模式：成员清单 fail-closed，缺任一成员即拒绝运行
+          const members = await deps.resolveExpertTeamMembers?.(params.expertId, tenantId);
+          if (!members || members.length === 0) {
+            const membersUnavailable = {
+              code: 'EXPERT_TEAM_MEMBERS_UNAVAILABLE' as const,
+              message: `团队专家 ${expert.name} 的成员不可用（缺失、停用或校验失败），无法以团队模式运行`,
+              recoverable: false,
+            };
+            await emit({ type: 'error', error: membersUnavailable }, signal);
+            yield { type: 'error', error: membersUnavailable };
+            return;
+          }
+          if (!params.delegateRunner && !deps.defaultDelegateRunner) {
+            const notSupported = {
+              code: 'EXPERT_NOT_SUPPORTED' as const,
+              message: '当前运行时未启用团队委派能力（缺少 delegateRunner）',
+              recoverable: false,
+            };
+            await emit({ type: 'error', error: notSupported }, signal);
+            yield { type: 'error', error: notSupported };
+            return;
+          }
+          teamMembers = members;
+          const memberList = members
+            .map((m) => `- ${m.slug}（${m.name}）${m.description ? `：${m.description}` : ''}`)
+            .join('\n');
+          systemPrompt = `${expert.prompt}
+
+---
+## 团队协作模式
+
+你是本团队的协调者。你的职责是拆解任务、委派执行、把关与汇总成果：
+
+1. 按成员专长拆分子任务，通过 delegate_expert 工具委派给对应成员。
+2. 委派的 task 必须自包含：成员在独立上下文中运行，看不到当前对话，需要把背景、要求、输出格式写全。
+3. 收到成员成果后你要审校、整合；成果不合格可补充上下文重新委派。
+4. 简单的事务性内容（澄清、格式调整）不需要委派，你直接处理。
+5. 最终回复以你的汇总为准，说明哪些成员参与了哪些部分。
+
+当前团队成员：
+${memberList}`;
+        } else {
+          systemPrompt = `${expert.prompt}\n\n---\n## 原角色设定（已被专家「${expert.name}」覆盖，仅作补充参考；与专家角色冲突时一律以专家为准）\n${systemPrompt}`;
+        }
+      }
       const memoryEnabled = agentConfig?.memoryConfig?.enabled !== false;
-      if (params.sessionId && agentConfig?.tools?.some((name) => name === 'file-read' || name === 'file-write')) {
+      if (
+        params.sessionId &&
+        agentConfig?.tools?.some((name) => name === 'file-read' || name === 'file-write')
+      ) {
         systemPrompt = `${systemPrompt}\n\n## 会话产物\nfile-read 和 file-write 的 path 必须使用当前会话内的相对路径。需要交付给用户的文件必须通过 file-write 写入；禁止使用绝对路径或 ..。`;
       }
       if (agentConfig?.requiresVirtualEnvironment) {
@@ -941,9 +1203,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         agentConfig?.maxIterations === -1
           ? Number.MAX_SAFE_INTEGER
           : (agentConfig?.maxIterations ?? 200);
-      let maxTokensPerTurn = agentConfig?.maxTokensPerTurn === undefined
-        ? undefined
-        : Math.min(agentConfig.maxTokensPerTurn, AGENT_MAX_TOKENS_PER_TURN_LIMIT);
+      let maxTokensPerTurn =
+        agentConfig?.maxTokensPerTurn === undefined
+          ? undefined
+          : Math.min(agentConfig.maxTokensPerTurn, AGENT_MAX_TOKENS_PER_TURN_LIMIT);
 
       // 深度研究模式：探索强度决定计算预算，并注入研究方法论
       // 自定义预算（ResearchConfig 字段）覆盖深度预设，未配置时取 RESEARCH_DEPTH_MAP 默认值
@@ -966,7 +1229,7 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       if (deps.resolveSkills && skillIds.length > 0) {
         const skills = await deps.resolveSkills(skillIds, tenantId);
         if (skills.length > 0) {
-          systemPrompt = `${systemPrompt}\n\n${skills.map((skill) => formatSkillInvocation(skill)).join("\n\n")}`;
+          systemPrompt = `${systemPrompt}\n\n${skills.map((skill) => formatSkillInvocation(skill)).join('\n\n')}`;
         }
       }
 
@@ -1003,10 +1266,19 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
             if (!allowedTools.includes(name)) allowedTools.push(name);
           }
         }
-        if (attachmentPaths.length > 0 && registry.get('read_document') && !allowedTools.includes('read_document')) {
+        if (
+          attachmentPaths.length > 0 &&
+          registry.get('read_document') &&
+          !allowedTools.includes('read_document')
+        ) {
           allowedTools.push('read_document');
         }
-        if (params.sessionId && memoryEnabled && registry.get('memory-candidate') && !allowedTools.includes('memory-candidate')) {
+        if (
+          params.sessionId &&
+          memoryEnabled &&
+          registry.get('memory-candidate') &&
+          !allowedTools.includes('memory-candidate')
+        ) {
           allowedTools.push('memory-candidate');
         }
 
@@ -1023,11 +1295,39 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
         const selected = agentConfig.tools ?? [];
         const virtualNames = new Set(['terminal', 'file_read', 'file_write']);
         agentTools = agentTools.filter((tool) => !virtualNames.has(tool.name));
-        agentTools.push(...await deps.resolveAgentTools(agentId, tenantId, selected, userId, params.sessionId));
+        agentTools.push(
+          ...(await deps.resolveAgentTools(agentId, tenantId, selected, userId, params.sessionId)),
+        );
       }
 
       // 运行时工具集：后续轮次可通过工具结果的 addedToolNames 动态扩充
       const runtimeTools: AgentTool[] = [...agentTools];
+
+      // 2b. 团队协调者模式：注入 delegate_expert 委派工具（仅 team 绑定且具备执行器时）。
+      // 来源一：会话级专家绑定（params.expertId 为 team）；来源二：实例化自团队专家的 Agent
+      // （config.sourceExpert，运行时反查成员清单保证成员启停/升级即时生效）。
+      const delegateRunner = params.delegateRunner ?? deps.defaultDelegateRunner;
+      const sourceExpertId =
+        !params.expertId && agentConfig?.sourceExpert ? agentConfig.sourceExpert : undefined;
+      const teamExpertId = params.expertId ?? sourceExpertId;
+      if (teamExpertId && delegateRunner) {
+        const members =
+          teamMembers ?? (await deps.resolveExpertTeamMembers?.(teamExpertId, tenantId)) ?? null;
+        if (members && members.length > 0) {
+          runtimeTools.push(
+            createDelegateExpertTool({
+              members,
+              runDelegate: (memberExpertId, task) =>
+                delegateRunner(memberExpertId, task, {
+                  tenantId,
+                  userId,
+                  model,
+                  signal,
+                }),
+            }),
+          );
+        }
+      }
 
       // 3. 输入安全检查
       const inputCheck = guard.checkInput(message);
@@ -1059,11 +1359,13 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       let history: ChatMessage[] = params.history ? [...params.history] : [];
       if (!params.history && deps.memory && params.sessionId && memoryEnabled) {
         try {
-          history = (await deps.memory.getHistory(
-            params.sessionId,
-            { tenantId, userId },
-            agentConfig?.memoryConfig?.maxHistoryMessages ?? 20,
-          )).flatMap((item) =>
+          history = (
+            await deps.memory.getHistory(
+              params.sessionId,
+              { tenantId, userId },
+              agentConfig?.memoryConfig?.maxHistoryMessages ?? 20,
+            )
+          ).flatMap((item) =>
             item.role === 'system' || item.role === 'user' || item.role === 'assistant'
               ? [{ role: item.role, content: item.content }]
               : [],
@@ -1107,7 +1409,10 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       // 4.2 会话级记忆注入：Memory Agent 固化的 MEMORY.md（用户在会话中确认的事实/偏好/决策）
       if (memoryEnabled && deps.memory && params.sessionId) {
         try {
-          const sessionMemory = await deps.memory.getSessionMemory(params.sessionId, { tenantId, userId });
+          const sessionMemory = await deps.memory.getSessionMemory(params.sessionId, {
+            tenantId,
+            userId,
+          });
           const content = sessionMemory?.content?.trim();
           if (content) {
             systemPrompt = `${systemPrompt}\n\n本对话已积累的会话记忆（可作为背景事实引用，注意甄别过时信息）：\n${content}`;
@@ -1178,7 +1483,11 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       await emit(
         {
           type: 'context',
-          messages: messages.map((m) => ({ role: m.role, content: m.content, timestamp: Date.now() })),
+          messages: messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            timestamp: Date.now(),
+          })),
           systemPrompt,
         },
         signal,
@@ -1213,608 +1522,632 @@ export function createAgentLoop(deps: AgentLoopDeps): AgentLoop {
       }
 
       try {
-      // prepareNextTurn：替换下一轮请求的 model / systemPrompt
-      let turnStartIndex = 0;
-      async function applyPrepareNextTurn(
-        assistantMsg: AgentEventMessage,
-        toolResults: AgentToolResultEventMessage[],
-      ): Promise<void> {
-        if (!deps.prepareNextTurn) return;
-        const newMessages = messages.slice(turnStartIndex) as AgentEventMessage[];
-        const update = await deps.prepareNextTurn(
-          { message: assistantMsg, toolResults, context, newMessages },
-          signal,
-        );
-        if (!update) return;
-        if (update.model !== undefined && update.model !== model) {
-          model = update.model;
-        }
-        if (update.systemPrompt !== undefined && update.systemPrompt !== systemPrompt) {
-          systemPrompt = update.systemPrompt;
-          context.systemPrompt = systemPrompt;
-          const systemIdx = messages.findIndex((m) => m.role === 'system');
-          if (systemIdx >= 0) messages[systemIdx] = { role: 'system', content: systemPrompt };
-        }
-      }
-
-      // 动态工具：将工具结果声明的 addedToolNames 解析并注册到运行时工具集
-      async function applyAddedTools(
-        addedToolNames: string[] | undefined,
-      ): Promise<AgentTool[]> {
-        if (!addedToolNames || addedToolNames.length === 0 || !deps.dynamicToolResolver) return [];
-        const previousToolNames = runtimeTools.map((t) => t.name);
-        const added: AgentTool[] = [];
-        for (const name of addedToolNames) {
-          if (runtimeTools.some((t) => t.name === name)) continue;
-          const tool = await deps.dynamicToolResolver(name, tenantId);
-          if (tool) {
-            runtimeTools.push(tool);
-            added.push(tool);
+        // prepareNextTurn：替换下一轮请求的 model / systemPrompt
+        let turnStartIndex = 0;
+        async function applyPrepareNextTurn(
+          assistantMsg: AgentEventMessage,
+          toolResults: AgentToolResultEventMessage[],
+        ): Promise<void> {
+          if (!deps.prepareNextTurn) return;
+          const newMessages = messages.slice(turnStartIndex) as AgentEventMessage[];
+          const update = await deps.prepareNextTurn(
+            { message: assistantMsg, toolResults, context, newMessages },
+            signal,
+          );
+          if (!update) return;
+          if (update.model !== undefined && update.model !== model) {
+            model = update.model;
+          }
+          if (update.systemPrompt !== undefined && update.systemPrompt !== systemPrompt) {
+            systemPrompt = update.systemPrompt;
+            context.systemPrompt = systemPrompt;
+            const systemIdx = messages.findIndex((m) => m.role === 'system');
+            if (systemIdx >= 0) messages[systemIdx] = { role: 'system', content: systemPrompt };
           }
         }
-        if (added.length > 0) {
+
+        // 动态工具：将工具结果声明的 addedToolNames 解析并注册到运行时工具集
+        async function applyAddedTools(addedToolNames: string[] | undefined): Promise<AgentTool[]> {
+          if (!addedToolNames || addedToolNames.length === 0 || !deps.dynamicToolResolver)
+            return [];
+          const previousToolNames = runtimeTools.map((t) => t.name);
+          const added: AgentTool[] = [];
+          for (const name of addedToolNames) {
+            if (runtimeTools.some((t) => t.name === name)) continue;
+            const tool = await deps.dynamicToolResolver(name, tenantId);
+            if (tool) {
+              runtimeTools.push(tool);
+              added.push(tool);
+            }
+          }
+          if (added.length > 0) {
+            await emit(
+              {
+                type: 'tools_added',
+                toolNames: added.map((t) => t.name),
+                previousToolNames,
+                tools: added.map((t) => ({
+                  name: t.name,
+                  description: t.description,
+                  parameters: t.parameters,
+                })),
+              },
+              signal,
+            );
+          }
+          return added;
+        }
+
+        // 深度研究：规划轮产出子问题 → 并行子任务检索 → 注入结果并进入综合轮
+        // 返回需要下发的 stage 事件（由生成器主体 yield）与是否继续进入综合轮
+        async function runResearchStageIfNeeded(): Promise<{
+          shouldContinue: boolean;
+          stageEvents: Array<{ type: 'stage'; stage: ResearchStage }>;
+        }> {
+          if (!researchMode || subtasksRan) return { shouldContinue: false, stageEvents: [] };
+          const maxSubtasks = Math.min(researchConfig?.maxSubtasks ?? 6, MAX_RESEARCH_SUBTASKS);
+          const subtasks = parseSubtasks(fullContent, maxSubtasks);
+          if (subtasks.length === 0) return { shouldContinue: false, stageEvents: [] };
+          subtasksRan = true;
+
+          const stageEvents: Array<{ type: 'stage'; stage: ResearchStage }> = [
+            { type: 'stage', stage: 'researching' },
+          ];
+          const results = await Promise.all(
+            subtasks.map((question) =>
+              runResearchSubtask(deps, {
+                question,
+                model,
+                tenantId,
+                userId,
+                ...(agentId ? { agentId } : {}),
+                toolNames: RESEARCH_SUBTASK_TOOLS,
+                signal,
+                toolRegistry: registry,
+                maxSubtaskTurns: Math.min(
+                  researchConfig?.maxSubtaskTurns ?? 4,
+                  MAX_RESEARCH_SUBTASK_TURNS,
+                ),
+              }),
+            ),
+          );
+
+          const injected = results
+            .map(
+              (r, i) =>
+                `### 子问题 ${i + 1}：${r.question}\n${r.summary}\n来源：\n${r.sources.map((s) => `- ${s}`).join('\n')}`,
+            )
+            .join('\n\n');
+          messages.push({
+            role: 'system',
+            content: `以下是并行子任务的研究结果，请基于这些结果综合撰写最终报告，并在报告中列出来源清单。\n\n${injected}`,
+          });
+
+          for (const r of results) {
+            for (const s of r.sources) {
+              if (!allSources.includes(s)) allSources.push(s);
+            }
+          }
+
+          stageEvents.push({ type: 'stage', stage: 'synthesizing' });
+          return { shouldContinue: true, stageEvents };
+        }
+
+        while (iteration < maxIterations) {
+          iteration++;
+          if (signal?.aborted) break;
+          // 深度研究：规划阶段（首轮）
+          if (researchMode && iteration === 1) {
+            yield { type: 'stage', stage: 'planning' };
+          }
+          await emit({ type: 'turn_start' }, signal);
+          // 记录本轮起始消息数，用于 prepareNextTurn 的 newMessages
+          turnStartIndex = messages.length;
+
+          // 动态 API Key（对齐参考实现 getApiKey；无 provider 前缀时回退网关默认 provider）
+          const apiKeyProvider = model.includes('/')
+            ? (model.split('/')[0] ?? model)
+            : (deps.llmGateway.listProviders()[0]?.name ?? model);
+
+          // provider 声明的上下文窗口（token）：供上下文洞察计算占用率。
+          // 走网关的动态解析（静态 provider 列表为空时也能拿到能力）；未声明时 undefined，不猜测。
+          const contextWindow = (await deps.llmGateway.resolveProviderFor(model, tenantId))
+            ?.capabilities.maxContextLength;
           await emit(
             {
-              type: 'tools_added',
-              toolNames: added.map((t) => t.name),
-              previousToolNames,
-              tools: added.map((t) => ({
-                name: t.name,
-                description: t.description,
-                parameters: t.parameters,
-              })),
+              type: 'before_provider_request',
+              model,
+              messageCount: messages.length,
+              ...(contextWindow !== undefined ? { contextWindow } : {}),
             },
             signal,
           );
-        }
-        return added;
-      }
 
-      // 深度研究：规划轮产出子问题 → 并行子任务检索 → 注入结果并进入综合轮
-      // 返回需要下发的 stage 事件（由生成器主体 yield）与是否继续进入综合轮
-      async function runResearchStageIfNeeded(): Promise<{
-        shouldContinue: boolean;
-        stageEvents: Array<{ type: 'stage'; stage: ResearchStage }>;
-      }> {
-        if (!researchMode || subtasksRan) return { shouldContinue: false, stageEvents: [] };
-        const maxSubtasks = Math.min(researchConfig?.maxSubtasks ?? 6, MAX_RESEARCH_SUBTASKS);
-        const subtasks = parseSubtasks(fullContent, maxSubtasks);
-        if (subtasks.length === 0) return { shouldContinue: false, stageEvents: [] };
-        subtasksRan = true;
-
-        const stageEvents: Array<{ type: 'stage'; stage: ResearchStage }> = [
-          { type: 'stage', stage: 'researching' },
-        ];
-        const results = await Promise.all(
-          subtasks.map((question) =>
-            runResearchSubtask(deps, {
-              question,
-              model,
-              tenantId,
-              userId,
-              ...(agentId ? { agentId } : {}),
-              toolNames: RESEARCH_SUBTASK_TOOLS,
-              signal,
-              toolRegistry: registry,
-              maxSubtaskTurns: Math.min(
-                researchConfig?.maxSubtaskTurns ?? 4,
-                MAX_RESEARCH_SUBTASK_TURNS,
-              ),
-            }),
-          ),
-        );
-
-        const injected = results
-          .map(
-            (r, i) =>
-              `### 子问题 ${i + 1}：${r.question}\n${r.summary}\n来源：\n${r.sources.map((s) => `- ${s}`).join('\n')}`,
-          )
-          .join('\n\n');
-        messages.push({
-          role: 'system',
-          content: `以下是并行子任务的研究结果，请基于这些结果综合撰写最终报告，并在报告中列出来源清单。\n\n${injected}`,
-        });
-
-        for (const r of results) {
-          for (const s of r.sources) {
-            if (!allSources.includes(s)) allSources.push(s);
+          // 上下文变换钩子（对齐参考实现 transformContext；钩子抛错时回退原消息）
+          let turnMessages: ChatMessage[] = messages;
+          if (deps.transformContext) {
+            try {
+              const transformed = await deps.transformContext(messages, signal);
+              turnMessages = Array.isArray(transformed) ? transformed : messages;
+            } catch {
+              turnMessages = messages;
+            }
           }
-        }
 
-        stageEvents.push({ type: 'stage', stage: 'synthesizing' });
-        return { shouldContinue: true, stageEvents };
-      }
+          // Token 预算裁剪
+          const trimmedMessages = fitMessagesToBudget(turnMessages, systemPrompt);
 
-      while (iteration < maxIterations) {
-        iteration++;
-        if (signal?.aborted) break;
-        // 深度研究：规划阶段（首轮）
-        if (researchMode && iteration === 1) {
-          yield { type: 'stage', stage: 'planning' };
-        }
-        await emit({ type: 'turn_start' }, signal);
-        // 记录本轮起始消息数，用于 prepareNextTurn 的 newMessages
-        turnStartIndex = messages.length;
+          const resolvedApiKey = deps.getApiKey ? await deps.getApiKey(apiKeyProvider) : undefined;
 
-        // 动态 API Key（对齐参考实现 getApiKey；无 provider 前缀时回退网关默认 provider）
-        const apiKeyProvider = model.includes('/')
-          ? (model.split('/')[0] ?? model)
-          : (deps.llmGateway.listProviders()[0]?.name ?? model);
-
-        // provider 声明的上下文窗口（token）：供上下文洞察计算占用率。
-        // 走网关的动态解析（静态 provider 列表为空时也能拿到能力）；未声明时 undefined，不猜测。
-        const contextWindow = (
-          await deps.llmGateway.resolveProviderFor(model, tenantId)
-        )?.capabilities.maxContextLength;
-        await emit(
-          {
-            type: 'before_provider_request',
+          // 调用 LLM
+          const effectiveTemperature = params.temperature ?? agentConfig?.temperature;
+          // 运行时覆盖同样受硬封顶约束
+          const effectiveMaxTokens =
+            params.maxTokens !== undefined
+              ? Math.min(params.maxTokens, AGENT_MAX_TOKENS_PER_TURN_LIMIT)
+              : maxTokensPerTurn;
+          const toolDefs = buildToolDefs();
+          const stream = deps.llmGateway.chatStream({
             model,
-            messageCount: messages.length,
-            ...(contextWindow !== undefined ? { contextWindow } : {}),
-          },
-          signal,
-        );
+            tenantId,
+            messages: trimmedMessages,
+            ...(toolDefs === undefined ? {} : { tools: toolDefs }),
+            ...(signal === undefined ? {} : { signal }),
+            ...(params.thinkingLevel === undefined
+              ? agentConfig?.defaultThinkingLevel === undefined
+                ? {}
+                : { thinkingLevel: agentConfig.defaultThinkingLevel }
+              : { thinkingLevel: params.thinkingLevel }),
+            ...(effectiveTemperature === undefined ? {} : { temperature: effectiveTemperature }),
+            ...(effectiveMaxTokens === undefined ? {} : { maxTokens: effectiveMaxTokens }),
+            ...(resolvedApiKey === undefined ? {} : { apiKey: resolvedApiKey }),
+          });
 
-        // 上下文变换钩子（对齐参考实现 transformContext；钩子抛错时回退原消息）
-        let turnMessages: ChatMessage[] = messages;
-        if (deps.transformContext) {
-          try {
-            const transformed = await deps.transformContext(messages, signal);
-            turnMessages = Array.isArray(transformed) ? transformed : messages;
-          } catch {
-            turnMessages = messages;
-          }
-        }
+          let assistantContent = '';
+          // 本轮思考内容：随本轮 assistant 消息落盘用于刷新后回显；不计入 assistantContent 与 LLM 上下文
+          let roundReasoning = '';
+          const toolCalls: ToolCall[] = [];
+          let turnUsage: { promptTokens: number; completionTokens: number } | undefined;
 
-        // Token 预算裁剪
-        const trimmedMessages = fitMessagesToBudget(turnMessages, systemPrompt);
-
-        const resolvedApiKey = deps.getApiKey ? await deps.getApiKey(apiKeyProvider) : undefined;
-
-        // 调用 LLM
-        const effectiveTemperature = params.temperature ?? agentConfig?.temperature;
-        // 运行时覆盖同样受硬封顶约束
-        const effectiveMaxTokens = params.maxTokens !== undefined
-          ? Math.min(params.maxTokens, AGENT_MAX_TOKENS_PER_TURN_LIMIT)
-          : maxTokensPerTurn;
-        const toolDefs = buildToolDefs();
-        const stream = deps.llmGateway.chatStream({
-          model,
-          tenantId,
-          messages: trimmedMessages,
-          ...(toolDefs === undefined ? {} : { tools: toolDefs }),
-          ...(signal === undefined ? {} : { signal }),
-          ...(params.thinkingLevel === undefined
-            ? agentConfig?.defaultThinkingLevel === undefined
-              ? {}
-              : { thinkingLevel: agentConfig.defaultThinkingLevel }
-            : { thinkingLevel: params.thinkingLevel }),
-          ...(effectiveTemperature === undefined ? {} : { temperature: effectiveTemperature }),
-          ...(effectiveMaxTokens === undefined ? {} : { maxTokens: effectiveMaxTokens }),
-          ...(resolvedApiKey === undefined ? {} : { apiKey: resolvedApiKey }),
-        });
-
-        let assistantContent = '';
-        // 本轮思考内容：随本轮 assistant 消息落盘用于刷新后回显；不计入 assistantContent 与 LLM 上下文
-        let roundReasoning = '';
-        const toolCalls: ToolCall[] = [];
-        let turnUsage: { promptTokens: number; completionTokens: number } | undefined;
-
-        for await (const chunk of withStallTimeout(stream)) {
-          switch (chunk.type) {
-            case 'content':
-              assistantContent += chunk.delta ?? '';
-              fullContent += chunk.delta ?? '';
-              yield chunk;
-              break;
-            case 'reasoning':
-              // 推理内容只透传前端并随本条消息落盘，不计入 assistant 正文与 LLM 上下文
-              roundReasoning += chunk.delta ?? '';
-              yield chunk;
-              break;
-            case 'tool_call_start':
-              if (chunk.toolCall) toolCalls.push(chunk.toolCall);
-              yield chunk;
-              break;
-            case 'tool_call_delta':
-              yield chunk;
-              break;
-            case 'usage':
-              turnUsage = chunk.usage;
-              yield chunk;
-              break;
-            case 'error':
-              // 流错误：补发 error 终止事件（订阅方如链路追踪据此收敛状态），再结束生成器
-              if (chunk.error) {
-                await emit(
-                  {
-                    type: 'error',
-                    error: {
-                      code: chunk.error.code,
-                      message: chunk.error.message,
-                      recoverable: chunk.error.recoverable,
+          for await (const chunk of withStallTimeout(stream)) {
+            switch (chunk.type) {
+              case 'content':
+                assistantContent += chunk.delta ?? '';
+                fullContent += chunk.delta ?? '';
+                yield chunk;
+                break;
+              case 'reasoning':
+                // 推理内容只透传前端并随本条消息落盘，不计入 assistant 正文与 LLM 上下文
+                roundReasoning += chunk.delta ?? '';
+                yield chunk;
+                break;
+              case 'tool_call_start':
+                if (chunk.toolCall) toolCalls.push(chunk.toolCall);
+                yield chunk;
+                break;
+              case 'tool_call_delta':
+                yield chunk;
+                break;
+              case 'usage':
+                turnUsage = chunk.usage;
+                yield chunk;
+                break;
+              case 'error':
+                // 流错误：补发 error 终止事件（订阅方如链路追踪据此收敛状态），再结束生成器
+                if (chunk.error) {
+                  await emit(
+                    {
+                      type: 'error',
+                      error: {
+                        code: chunk.error.code,
+                        message: chunk.error.message,
+                        recoverable: chunk.error.recoverable,
+                      },
                     },
-                  },
-                  signal,
-                );
-              }
-              yield chunk;
-              return;
-            case 'done':
-              break;
+                    signal,
+                  );
+                }
+                yield chunk;
+                return;
+              case 'done':
+                break;
+            }
           }
-        }
 
-        // 构建 assistant 消息（附带本轮模型调用元数据：模型/提供商/终止原因/Token 用量）
-        const assistantEventMsg: AgentEventMessage = {
-          role: 'assistant',
-          content: assistantContent,
-          ...(toolCalls.length > 0 ? { toolCalls } : {}),
-          model,
-          provider: apiKeyProvider,
-          stopReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
-          ...(turnUsage
-            ? {
-                usage: {
-                  promptTokens: turnUsage.promptTokens,
-                  completionTokens: turnUsage.completionTokens,
-                  totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
-                },
-              }
-            : {}),
-          timestamp: Date.now(),
-        };
+          // 构建 assistant 消息（附带本轮模型调用元数据：模型/提供商/终止原因/Token 用量）
+          const assistantEventMsg: AgentEventMessage = {
+            role: 'assistant',
+            content: assistantContent,
+            ...(toolCalls.length > 0 ? { toolCalls } : {}),
+            model,
+            provider: apiKeyProvider,
+            stopReason: toolCalls.length > 0 ? 'tool_calls' : 'stop',
+            ...(turnUsage
+              ? {
+                  usage: {
+                    promptTokens: turnUsage.promptTokens,
+                    completionTokens: turnUsage.completionTokens,
+                    totalTokens: turnUsage.promptTokens + turnUsage.completionTokens,
+                  },
+                }
+              : {}),
+            timestamp: Date.now(),
+          };
 
-        // 保存 assistant 消息
-        const assistantChatMsg: ChatMessage = {
-          role: 'assistant',
-          content: assistantContent,
-          ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
-        };
-        messages.push(assistantChatMsg);
+          // 保存 assistant 消息
+          const assistantChatMsg: ChatMessage = {
+            role: 'assistant',
+            content: assistantContent,
+            ...(toolCalls.length > 0 ? { tool_calls: toolCalls } : {}),
+          };
+          messages.push(assistantChatMsg);
 
-        // 增量持久化 assistant 消息（含工具调用摘要、生成模型与思考内容，跨轮/跨进程保留）
-        await persistMemoryMessage({
-          role: 'assistant',
-          content:
-            toolCalls.length > 0
-              ? `${assistantContent}\n[工具调用: ${toolCalls.map((tc) => tc.name).join(', ')}]`
-              : assistantContent,
-          model,
-          ...(roundReasoning ? { reasoning: roundReasoning } : {}),
-        });
+          // 增量持久化 assistant 消息（含工具调用摘要、生成模型与思考内容，跨轮/跨进程保留）
+          await persistMemoryMessage({
+            role: 'assistant',
+            content:
+              toolCalls.length > 0
+                ? `${assistantContent}\n[工具调用: ${toolCalls.map((tc) => tc.name).join(', ')}]`
+                : assistantContent,
+            model,
+            ...(roundReasoning ? { reasoning: roundReasoning } : {}),
+          });
 
-        await emit({ type: 'message_start', message: assistantEventMsg }, signal);
-        await emit({ type: 'message_end', message: assistantEventMsg }, signal);
+          await emit({ type: 'message_start', message: assistantEventMsg }, signal);
+          await emit({ type: 'message_end', message: assistantEventMsg }, signal);
 
-        // 如果没有工具调用，先处理 steering/follow-up，再决定是否结束
-        if (toolCalls.length === 0) {
-          lastTurnHadToolCalls = false;
-          await emit({ type: 'turn_end', message: assistantEventMsg, toolResults: [] }, signal);
-          runSpan?.addEvent('ai.turn', { iteration, model, tool_calls: 0, output_chars: assistantContent.length });
-          await applyPrepareNextTurn(assistantEventMsg, []);
-          if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
+          // 如果没有工具调用，先处理 steering/follow-up，再决定是否结束
+          if (toolCalls.length === 0) {
+            lastTurnHadToolCalls = false;
+            await emit({ type: 'turn_end', message: assistantEventMsg, toolResults: [] }, signal);
+            runSpan?.addEvent('ai.turn', {
+              iteration,
+              model,
+              tool_calls: 0,
+              output_chars: assistantContent.length,
+            });
+            await applyPrepareNextTurn(assistantEventMsg, []);
+            if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
 
-          // 深度研究：规划轮（无工具）→ 并行子任务 → 综合轮
+            // 深度研究：规划轮（无工具）→ 并行子任务 → 综合轮
+            {
+              const stage = await runResearchStageIfNeeded();
+              for (const ev of stage.stageEvents) yield ev;
+              if (stage.shouldContinue) continue;
+            }
+
+            const queued = [
+              ...((await deps.getSteeringMessages?.()) ?? []),
+              ...((await deps.getFollowUpMessages?.()) ?? []),
+            ];
+            if (queued.length === 0) break;
+            for (const queuedMessage of queued) {
+              messages.push(queuedMessage);
+              const eventMessage: AgentEventMessage = {
+                role: queuedMessage.role,
+                content: queuedMessage.content,
+                timestamp: Date.now(),
+              };
+              await emit({ type: 'message_start', message: eventMessage }, signal);
+              await emit({ type: 'message_end', message: eventMessage }, signal);
+            }
+            continue;
+          }
+
+          lastTurnHadToolCalls = true;
+          const validToolCalls = toolCalls.map((tc) => ({
+            id: tc.id,
+            name: tc.name,
+            arguments: tc.arguments,
+          }));
+
+          // 执行工具（使用运行时工具集，动态引入的工具可被调用）
+          // prepare 阶段：参数校验 / beforeToolCall / 审批请求创建
+          const preparedList: PrepareResult[] = [];
+          for (const tc of validToolCalls) {
+            let prepared = await prepareToolCall(
+              context,
+              assistantEventMsg,
+              tc,
+              runtimeTools,
+              deps.beforeToolCall,
+              deps.authorizeToolCall,
+              signal,
+            );
+            // 审批握手：在 generator 作用域内 yield 审批卡片并等待 decision（通过则同轮继续执行）
+            if (prepared.kind === 'pending_approval') {
+              yield { type: 'approval_required', approval: prepared.request };
+              const resolution = await resolvePendingApproval(
+                prepared,
+                deps.waitForApproval,
+                signal,
+              );
+              // 下发审批结论：前端据此立即收敛弹窗（拒绝/超时也必须收敛，否则弹窗永远关不掉）
+              yield {
+                type: 'approval_resolved',
+                approvalId: prepared.request.id,
+                status: resolution.status,
+                ...(resolution.reason ? { reason: resolution.reason } : {}),
+              };
+              prepared = resolution.result;
+            }
+            preparedList.push(prepared);
+          }
+
+          let finalized: FinalizedToolCall[];
+          const hasSequentialTool = validToolCalls.some(
+            (call) =>
+              runtimeTools.find((tool) => tool.name === call.name)?.executionMode === 'sequential',
+          );
+          // 工具执行过程中实时收集 tool_result chunk，执行完成后按完成顺序下发到 SSE 流
+          const toolResultChunks: ToolResultChunk[] = [];
+          const collectToolResult = (chunk: ToolResultChunk): void => {
+            toolResultChunks.push(chunk);
+          };
+          if (toolExecMode === 'parallel' && !hasSequentialTool) {
+            finalized = await executeToolCallsParallel(
+              context,
+              assistantEventMsg,
+              validToolCalls,
+              preparedList,
+              deps.afterToolCall,
+              (ev, s) => emit(ev, s),
+              signal,
+              deps.tracer,
+              runSpan?.context(),
+              collectToolResult,
+            );
+          } else {
+            finalized = await executeToolCallsSequential(
+              context,
+              assistantEventMsg,
+              validToolCalls,
+              preparedList,
+              deps.afterToolCall,
+              (ev, s) => emit(ev, s),
+              signal,
+              deps.tracer,
+              runSpan?.context(),
+              collectToolResult,
+            );
+          }
+          for (const chunk of toolResultChunks) yield chunk;
+
+          // 将工具结果添加到消息
+          const toolResultEvents: AgentToolResultEventMessage[] = [];
+          for (const fin of finalized) {
+            const resultStr = fin.result.content
+              .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
+              .map((c) => c.text)
+              .join('\n');
+
+            // 输出安全检查（覆盖全部工具结果：web/MCP 等外部内容是间接注入与提示词泄露的主要通道）
+            const outputCheck = guard.checkOutput(resultStr, context.systemPrompt);
+            if (!outputCheck.safe) {
+              messages.push({
+                role: 'tool',
+                tool_call_id: fin.toolCall.id,
+                content: JSON.stringify({ error: true, message: '工具输出被安全策略拦截' }),
+              });
+              continue;
+            }
+
+            // 截断工具结果
+            const truncated =
+              resultStr.length > 8000 ? `${resultStr.slice(0, 8000)}\n...[结果已截断]` : resultStr;
+
+            messages.push({
+              role: 'tool',
+              tool_call_id: fin.toolCall.id,
+              content: truncated,
+            });
+
+            // 增量持久化工具结果（保证会话内可追溯）：JSON 信封携带参数/输出/耗时，
+            // 历史回显时前端据此重建可展开的工具块（role:'tool' 不会回放给 LLM）
+            await persistMemoryMessage({
+              role: 'tool',
+              content: JSON.stringify({
+                toolCallId: fin.toolCall.id,
+                name: fin.toolCall.name,
+                arguments: fin.toolCall.arguments,
+                output: truncated,
+                durationMs: fin.durationMs,
+                isError: fin.isError,
+              }),
+            });
+
+            const toolMessage: AgentEventMessage = {
+              role: 'tool',
+              content: truncated,
+              toolCallId: fin.toolCall.id,
+              timestamp: Date.now(),
+            };
+            await emit({ type: 'message_start', message: toolMessage }, signal);
+            await emit({ type: 'message_end', message: toolMessage }, signal);
+
+            // 动态工具引入（对齐参考实现 addedToolNames）
+            const added = await applyAddedTools(fin.result.addedToolNames);
+            toolResultEvents.push({
+              toolCallId: fin.toolCall.id,
+              toolName: fin.toolCall.name,
+              content: truncated,
+              isError: fin.isError,
+              timestamp: Date.now(),
+              ...(added.length > 0 ? { addedToolNames: added.map((t) => t.name) } : {}),
+            });
+          }
+
+          await emit(
+            {
+              type: 'turn_end',
+              message: assistantEventMsg,
+              toolResults: toolResultEvents,
+            },
+            signal,
+          );
+          runSpan?.addEvent('ai.turn', {
+            iteration,
+            model,
+            tool_calls: validToolCalls.length,
+            tool_results: toolResultEvents.length,
+            output_chars: assistantContent.length,
+          });
+
+          // prepareNextTurn（对齐参考实现）：替换下一轮 model / systemPrompt
+          await applyPrepareNextTurn(assistantEventMsg, toolResultEvents);
+
+          // 检查提前终止
+          if (isEarlyTermination(finalized)) {
+            terminatedByTool = true;
+            break;
+          }
+
+          // 深度研究：规划轮（有工具）→ 并行子任务 → 综合轮
           {
             const stage = await runResearchStageIfNeeded();
             for (const ev of stage.stageEvents) yield ev;
             if (stage.shouldContinue) continue;
           }
 
-          const queued = [
-            ...((await deps.getSteeringMessages?.()) ?? []),
-            ...((await deps.getFollowUpMessages?.()) ?? []),
-          ];
-          if (queued.length === 0) break;
-          for (const queuedMessage of queued) {
-            messages.push(queuedMessage);
-            const eventMessage: AgentEventMessage = {
-              role: queuedMessage.role,
-              content: queuedMessage.content,
-              timestamp: Date.now(),
-            };
-            await emit({ type: 'message_start', message: eventMessage }, signal);
-            await emit({ type: 'message_end', message: eventMessage }, signal);
-          }
-          continue;
-        }
-
-        lastTurnHadToolCalls = true;
-        const validToolCalls = toolCalls.map((tc) => ({
-          id: tc.id,
-          name: tc.name,
-          arguments: tc.arguments,
-        }));
-
-        // 执行工具（使用运行时工具集，动态引入的工具可被调用）
-        // prepare 阶段：参数校验 / beforeToolCall / 审批请求创建
-        const preparedList: PrepareResult[] = [];
-        for (const tc of validToolCalls) {
-          let prepared = await prepareToolCall(
-            context,
-            assistantEventMsg,
-            tc,
-            runtimeTools,
-            deps.beforeToolCall,
-            deps.authorizeToolCall,
-            signal,
-          );
-          // 审批握手：在 generator 作用域内 yield 审批卡片并等待 decision（通过则同轮继续执行）
-          if (prepared.kind === 'pending_approval') {
-            yield { type: 'approval_required', approval: prepared.request };
-            const resolution = await resolvePendingApproval(prepared, deps.waitForApproval, signal);
-            // 下发审批结论：前端据此立即收敛弹窗（拒绝/超时也必须收敛，否则弹窗永远关不掉）
-            yield {
-              type: 'approval_resolved',
-              approvalId: prepared.request.id,
-              status: resolution.status,
-              ...(resolution.reason ? { reason: resolution.reason } : {}),
-            };
-            prepared = resolution.result;
-          }
-          preparedList.push(prepared);
-        }
-
-        let finalized: FinalizedToolCall[];
-        const hasSequentialTool = validToolCalls.some((call) =>
-          runtimeTools.find((tool) => tool.name === call.name)?.executionMode === 'sequential',
-        );
-        // 工具执行过程中实时收集 tool_result chunk，执行完成后按完成顺序下发到 SSE 流
-        const toolResultChunks: ToolResultChunk[] = [];
-        const collectToolResult = (chunk: ToolResultChunk): void => {
-          toolResultChunks.push(chunk);
-        };
-        if (toolExecMode === 'parallel' && !hasSequentialTool) {
-          finalized = await executeToolCallsParallel(
-            context,
-            assistantEventMsg,
-            validToolCalls,
-            preparedList,
-            deps.afterToolCall,
-            (ev, s) => emit(ev, s),
-            signal,
-            deps.tracer,
-            runSpan?.context(),
-            collectToolResult,
-          );
-        } else {
-          finalized = await executeToolCallsSequential(
-            context,
-            assistantEventMsg,
-            validToolCalls,
-            preparedList,
-            deps.afterToolCall,
-            (ev, s) => emit(ev, s),
-            signal,
-            deps.tracer,
-            runSpan?.context(),
-            collectToolResult,
-          );
-        }
-        for (const chunk of toolResultChunks) yield chunk;
-
-        // 将工具结果添加到消息
-        const toolResultEvents: AgentToolResultEventMessage[] = [];
-        for (const fin of finalized) {
-          const resultStr = fin.result.content
-            .filter((c): c is { type: 'text'; text: string } => c.type === 'text')
-            .map((c) => c.text)
-            .join('\n');
-
-          // 输出安全检查（覆盖全部工具结果：web/MCP 等外部内容是间接注入与提示词泄露的主要通道）
-          const outputCheck = guard.checkOutput(resultStr, context.systemPrompt);
-          if (!outputCheck.safe) {
-            messages.push({
-              role: 'tool',
-              tool_call_id: fin.toolCall.id,
-              content: JSON.stringify({ error: true, message: '工具输出被安全策略拦截' }),
-            });
-            continue;
+          const steeringMessages = (await deps.getSteeringMessages?.()) ?? [];
+          if (steeringMessages.length > 0) {
+            for (const steeringMessage of steeringMessages) {
+              messages.push(steeringMessage);
+              const eventMessage: AgentEventMessage = {
+                role: steeringMessage.role,
+                content: steeringMessage.content,
+                timestamp: Date.now(),
+              };
+              await emit({ type: 'message_start', message: eventMessage }, signal);
+              await emit({ type: 'message_end', message: eventMessage }, signal);
+            }
           }
 
-          // 截断工具结果
-          const truncated =
-            resultStr.length > 8000 ? `${resultStr.slice(0, 8000)}\n...[结果已截断]` : resultStr;
+          if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
+        }
 
-          messages.push({
-            role: 'tool',
-            tool_call_id: fin.toolCall.id,
-            content: truncated,
-          });
-
-          // 增量持久化工具结果（保证会话内可追溯）：JSON 信封携带参数/输出/耗时，
-          // 历史回显时前端据此重建可展开的工具块（role:'tool' 不会回放给 LLM）
-          await persistMemoryMessage({
-            role: 'tool',
-            content: JSON.stringify({
-              toolCallId: fin.toolCall.id,
-              name: fin.toolCall.name,
-              arguments: fin.toolCall.arguments,
-              output: truncated,
-              durationMs: fin.durationMs,
-              isError: fin.isError,
-            }),
-          });
-
-          const toolMessage: AgentEventMessage = {
-            role: 'tool',
-            content: truncated,
-            toolCallId: fin.toolCall.id,
-            timestamp: Date.now(),
+        // 迭代预算耗尽且最后一轮仍是工具调用：强制一次无工具收尾调用，保证用户总能拿到最终回答。
+        // 否则流会在最后一个 tool_result 后直接结束，用户看不到任何结论。
+        if (
+          lastTurnHadToolCalls &&
+          !terminatedByTool &&
+          iteration >= maxIterations &&
+          !signal?.aborted
+        ) {
+          const finalizeNudge: ChatMessage = {
+            role: 'user',
+            content:
+              '已达本轮工具调用次数上限。请立即基于以上已获取的工具结果给出最终回答，不要再尝试调用工具；如信息不足，请说明已掌握的内容与缺失的部分。',
           };
-          await emit({ type: 'message_start', message: toolMessage }, signal);
-          await emit({ type: 'message_end', message: toolMessage }, signal);
-
-          // 动态工具引入（对齐参考实现 addedToolNames）
-          const added = await applyAddedTools(fin.result.addedToolNames);
-          toolResultEvents.push({
-            toolCallId: fin.toolCall.id,
-            toolName: fin.toolCall.name,
-            content: truncated,
-            isError: fin.isError,
-            timestamp: Date.now(),
-            ...(added.length > 0 ? { addedToolNames: added.map((t) => t.name) } : {}),
+          const finalizeMessages = fitMessagesToBudget([...messages, finalizeNudge], systemPrompt);
+          const finalizeProvider = model.includes('/')
+            ? (model.split('/')[0] ?? model)
+            : (deps.llmGateway.listProviders()[0]?.name ?? model);
+          const finalizeApiKey = deps.getApiKey
+            ? await deps.getApiKey(finalizeProvider)
+            : undefined;
+          const finalizeTemperature = params.temperature ?? agentConfig?.temperature;
+          const finalizeStream = deps.llmGateway.chatStream({
+            model,
+            tenantId,
+            messages: finalizeMessages,
+            ...(signal === undefined ? {} : { signal }),
+            ...(params.thinkingLevel === undefined
+              ? agentConfig?.defaultThinkingLevel === undefined
+                ? {}
+                : { thinkingLevel: agentConfig.defaultThinkingLevel }
+              : { thinkingLevel: params.thinkingLevel }),
+            ...(finalizeTemperature === undefined ? {} : { temperature: finalizeTemperature }),
+            ...(maxTokensPerTurn === undefined ? {} : { maxTokens: maxTokensPerTurn }),
+            ...(finalizeApiKey === undefined ? {} : { apiKey: finalizeApiKey }),
           });
-        }
-
-        await emit({
-          type: 'turn_end',
-          message: assistantEventMsg,
-          toolResults: toolResultEvents,
-        }, signal);
-        runSpan?.addEvent('ai.turn', {
-          iteration,
-          model,
-          tool_calls: validToolCalls.length,
-          tool_results: toolResultEvents.length,
-          output_chars: assistantContent.length,
-        });
-
-        // prepareNextTurn（对齐参考实现）：替换下一轮 model / systemPrompt
-        await applyPrepareNextTurn(assistantEventMsg, toolResultEvents);
-
-        // 检查提前终止
-        if (isEarlyTermination(finalized)) {
-          terminatedByTool = true;
-          break;
-        }
-
-        // 深度研究：规划轮（有工具）→ 并行子任务 → 综合轮
-        {
-          const stage = await runResearchStageIfNeeded();
-          for (const ev of stage.stageEvents) yield ev;
-          if (stage.shouldContinue) continue;
-        }
-
-        const steeringMessages = (await deps.getSteeringMessages?.()) ?? [];
-        if (steeringMessages.length > 0) {
-          for (const steeringMessage of steeringMessages) {
-            messages.push(steeringMessage);
-            const eventMessage: AgentEventMessage = {
-              role: steeringMessage.role,
-              content: steeringMessage.content,
-              timestamp: Date.now(),
-            };
-            await emit({ type: 'message_start', message: eventMessage }, signal);
-            await emit({ type: 'message_end', message: eventMessage }, signal);
-          }
-        }
-
-        if (deps.shouldStopAfterTurn?.(assistantEventMsg, [], context)) break;
-      }
-
-      // 迭代预算耗尽且最后一轮仍是工具调用：强制一次无工具收尾调用，保证用户总能拿到最终回答。
-      // 否则流会在最后一个 tool_result 后直接结束，用户看不到任何结论。
-      if (lastTurnHadToolCalls && !terminatedByTool && iteration >= maxIterations && !signal?.aborted) {
-        const finalizeNudge: ChatMessage = {
-          role: 'user',
-          content:
-            '已达本轮工具调用次数上限。请立即基于以上已获取的工具结果给出最终回答，不要再尝试调用工具；如信息不足，请说明已掌握的内容与缺失的部分。',
-        };
-        const finalizeMessages = fitMessagesToBudget([...messages, finalizeNudge], systemPrompt);
-        const finalizeProvider = model.includes('/')
-          ? (model.split('/')[0] ?? model)
-          : (deps.llmGateway.listProviders()[0]?.name ?? model);
-        const finalizeApiKey = deps.getApiKey ? await deps.getApiKey(finalizeProvider) : undefined;
-        const finalizeTemperature = params.temperature ?? agentConfig?.temperature;
-        const finalizeStream = deps.llmGateway.chatStream({
-          model,
-          tenantId,
-          messages: finalizeMessages,
-          ...(signal === undefined ? {} : { signal }),
-          ...(params.thinkingLevel === undefined
-            ? agentConfig?.defaultThinkingLevel === undefined
-              ? {}
-              : { thinkingLevel: agentConfig.defaultThinkingLevel }
-            : { thinkingLevel: params.thinkingLevel }),
-          ...(finalizeTemperature === undefined ? {} : { temperature: finalizeTemperature }),
-          ...(maxTokensPerTurn === undefined ? {} : { maxTokens: maxTokensPerTurn }),
-          ...(finalizeApiKey === undefined ? {} : { apiKey: finalizeApiKey }),
-        });
-        let finalizeContent = '';
-        // 收尾轮的思考内容：与收尾回答一起落盘用于刷新后回显
-        let finalizeReasoning = '';
-        for await (const chunk of withStallTimeout(finalizeStream)) {
-          if (chunk.type === 'content') {
-            finalizeContent += chunk.delta ?? '';
-            fullContent += chunk.delta ?? '';
-            yield chunk;
-          } else if (chunk.type === 'reasoning') {
-            // 推理内容只透传前端并随本条消息落盘，不计入 assistant 正文与 LLM 上下文
-            finalizeReasoning += chunk.delta ?? '';
-            yield chunk;
-          } else if (chunk.type === 'usage') {
-            yield chunk;
-          } else if (chunk.type === 'error' && chunk.error) {
-            await emit(
-              {
-                type: 'error',
-                error: {
-                  code: chunk.error.code,
-                  message: chunk.error.message,
-                  recoverable: chunk.error.recoverable,
+          let finalizeContent = '';
+          // 收尾轮的思考内容：与收尾回答一起落盘用于刷新后回显
+          let finalizeReasoning = '';
+          for await (const chunk of withStallTimeout(finalizeStream)) {
+            if (chunk.type === 'content') {
+              finalizeContent += chunk.delta ?? '';
+              fullContent += chunk.delta ?? '';
+              yield chunk;
+            } else if (chunk.type === 'reasoning') {
+              // 推理内容只透传前端并随本条消息落盘，不计入 assistant 正文与 LLM 上下文
+              finalizeReasoning += chunk.delta ?? '';
+              yield chunk;
+            } else if (chunk.type === 'usage') {
+              yield chunk;
+            } else if (chunk.type === 'error' && chunk.error) {
+              await emit(
+                {
+                  type: 'error',
+                  error: {
+                    code: chunk.error.code,
+                    message: chunk.error.message,
+                    recoverable: chunk.error.recoverable,
+                  },
                 },
-              },
-              signal,
-            );
-            yield chunk;
-            return;
+                signal,
+              );
+              yield chunk;
+              return;
+            }
+          }
+          if (finalizeContent.length > 0) {
+            messages.push({ role: 'assistant', content: finalizeContent });
+            await persistMemoryMessage({
+              role: 'assistant',
+              content: finalizeContent,
+              model,
+              ...(finalizeReasoning ? { reasoning: finalizeReasoning } : {}),
+            });
+            const finalizeEventMsg: AgentEventMessage = {
+              role: 'assistant',
+              content: finalizeContent,
+              model,
+              provider: finalizeProvider,
+              stopReason: 'stop',
+              timestamp: Date.now(),
+            };
+            await emit({ type: 'message_start', message: finalizeEventMsg }, signal);
+            await emit({ type: 'message_end', message: finalizeEventMsg }, signal);
+            runSpan?.addEvent('ai.turn', {
+              iteration,
+              model,
+              finalize: true,
+              tool_calls: 0,
+              output_chars: finalizeContent.length,
+            });
           }
         }
-        if (finalizeContent.length > 0) {
-          messages.push({ role: 'assistant', content: finalizeContent });
-          await persistMemoryMessage({
-            role: 'assistant',
-            content: finalizeContent,
-            model,
-            ...(finalizeReasoning ? { reasoning: finalizeReasoning } : {}),
-          });
-          const finalizeEventMsg: AgentEventMessage = {
-            role: 'assistant',
-            content: finalizeContent,
-            model,
-            provider: finalizeProvider,
-            stopReason: 'stop',
-            timestamp: Date.now(),
+
+        // 深度研究：下发引用来源清单（供前端渲染来源卡片）
+        if (researchMode && allSources.length > 0) {
+          yield {
+            type: 'sources',
+            sources: allSources.map((url) => ({ title: url, url })),
           };
-          await emit({ type: 'message_start', message: finalizeEventMsg }, signal);
-          await emit({ type: 'message_end', message: finalizeEventMsg }, signal);
-          runSpan?.addEvent('ai.turn', {
-            iteration,
+        }
+
+        // 9. 对话已在循环中增量持久化（用户消息先行落盘，assistant/工具轨迹逐轮写入），无需重复保存
+
+        await emit(
+          {
+            type: 'agent_end',
+            messages: [{ role: 'assistant', content: fullContent, timestamp: Date.now() }],
+          },
+          signal,
+        );
+        if (params.sessionId && memoryEnabled && deps.scheduleMemoryConsolidation) {
+          await deps.scheduleMemoryConsolidation({
+            sessionId: params.sessionId,
+            tenantId,
+            userId,
             model,
-            finalize: true,
-            tool_calls: 0,
-            output_chars: finalizeContent.length,
           });
         }
-      }
 
-      // 深度研究：下发引用来源清单（供前端渲染来源卡片）
-      if (researchMode && allSources.length > 0) {
-        yield {
-          type: 'sources',
-          sources: allSources.map((url) => ({ title: url, url })),
-        };
-      }
-
-      // 9. 对话已在循环中增量持久化（用户消息先行落盘，assistant/工具轨迹逐轮写入），无需重复保存
-
-      await emit(
-        {
-          type: 'agent_end',
-          messages: [{ role: 'assistant', content: fullContent, timestamp: Date.now() }],
-        },
-        signal,
-      );
-      if (params.sessionId && memoryEnabled && deps.scheduleMemoryConsolidation) {
-        await deps.scheduleMemoryConsolidation({ sessionId: params.sessionId, tenantId, userId, model });
-      }
-
-      runSpan?.setAttribute('iterations', iteration);
-      runSpan?.setAttribute('output_chars', fullContent.length);
-      runSpan?.setStatus('ok');
+        runSpan?.setAttribute('iterations', iteration);
+        runSpan?.setAttribute('output_chars', fullContent.length);
+        runSpan?.setStatus('ok');
       } catch (error) {
         // 异常路径补发 error 终止事件（订阅方据此收敛状态，避免链路记录停留在 running）
         await emit(
