@@ -1183,6 +1183,10 @@ function AgentConversation(): React.ReactElement {
       thinkingLevel,
       runMode,
       attachments,
+      // 召唤/取消/切换专家必须重建回调：漏掉会导致闭包持有旧值，expertId 不随请求下发
+      summonedExpert,
+      // 模型白名单判断依赖最新模型列表
+      dbModels,
       fetchThreads,
     ],
   );
@@ -1530,11 +1534,13 @@ function AgentConversation(): React.ReactElement {
                 <MemoryPanel sessionId={sessionId} />
               </div>
             )}
-            {activeTab === 'context' && canViewContext && selectedAgent?.contextCollectionEnabled && (
-              <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
-                <ContextPanel sessionId={sessionId} />
-              </div>
-            )}
+            {activeTab === 'context' &&
+              canViewContext &&
+              selectedAgent?.contextCollectionEnabled && (
+                <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
+                  <ContextPanel sessionId={sessionId} />
+                </div>
+              )}
             {activeTab === 'knowledge' && (
               <div className="mx-auto h-full min-h-0 w-full max-w-[960px] px-4">
                 <KnowledgePanel
