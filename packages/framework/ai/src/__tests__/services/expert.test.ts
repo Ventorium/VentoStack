@@ -269,6 +269,34 @@ describe('createExpertService', () => {
     expect(await service.readExpertContent('expert-id-1', 'tenant1')).toBeNull();
   });
 
+  test('readExpertContent 剥离 md frontmatter，仅返回正文（sha256 校验针对原文）', async () => {
+    const frontmatter = '---\nname: 测试专家\ndescription: 用于测试\nversion: 1.0.0\n---\n\n';
+    const rawWithFm = `${frontmatter}${PROMPT}`;
+    const { db } = createMockDatabase({
+      // sha256 记录的是磁盘原始内容（含 frontmatter）
+      'id = $1': [dbRow({ content_sha256: sha256Hex(rawWithFm) })],
+    });
+    const service = createExpertService({
+      db,
+      hub: makeHub(makeManifest([]), new Map()),
+      dataDir,
+    });
+    const versionDir = join(dataDir, 'experts', 'test-expert', '1.0.0');
+    await mkdir(versionDir, { recursive: true });
+    await writeFile(join(versionDir, 'expert.md'), rawWithFm);
+    await writeFile(
+      join(versionDir, 'meta.json'),
+      JSON.stringify(makeMeta('test-expert', '1.0.0')),
+    );
+
+    const ok = await service.readExpertContent('expert-id-1', 'tenant1');
+    expect(ok).not.toBeNull();
+    // 正文剥离了 frontmatter，且校验通过（原文哈希匹配）
+    expect(ok?.prompt).toBe(PROMPT);
+    expect(ok?.prompt).not.toContain('---');
+    expect(ok?.prompt).not.toContain('name: 测试专家');
+  });
+
   test('setEnabled 扫描未通过时不可启用', async () => {
     const { db } = createMockDatabase({
       'id = $1': [dbRow({ scan_status: 'failed' })],

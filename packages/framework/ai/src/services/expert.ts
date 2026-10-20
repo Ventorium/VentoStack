@@ -533,6 +533,15 @@ export function createExpertService(deps: ExpertServiceDeps) {
   // ---- 运行时读取（注入用，fail-closed） ----
 
   /**
+   * 剥离 md 头部的 YAML frontmatter（--- ... ---）：元数据由 meta.json 提供，
+   * 注入 LLM 的提示词只需正文。必须在校验之后调用（sha256 针对文件原始字节）。
+   */
+  function stripFrontmatter(raw: string): string {
+    const match = /^---\r?\n[\s\S]*?\r?\n---\r?\n?/.exec(raw);
+    return match ? raw.slice(match[0].length).trimStart() : raw;
+  }
+
+  /**
    * 读取单条记录对应的磁盘专家内容并做 sha256 复核（不含 team 组合）。
    * 任何失败返回 null。
    */
@@ -543,12 +552,12 @@ export function createExpertService(deps: ExpertServiceDeps) {
       const absPath = resolve(join(dataDir, record.filePath));
       if (!absPath.startsWith(expertsDir + sep)) return null;
       if (!existsSync(absPath)) return null;
-      const prompt = await readFile(absPath, 'utf-8');
-      if (record.contentSha256 && sha256Hex(prompt) !== record.contentSha256) return null;
+      const raw = await readFile(absPath, 'utf-8');
+      if (record.contentSha256 && sha256Hex(raw) !== record.contentSha256) return null;
       const metaPath = resolve(join(absPath, '..', 'meta.json'));
       if (!existsSync(metaPath)) return null;
       const meta = JSON.parse(await readFile(metaPath, 'utf-8')) as HubExpertMeta;
-      return { meta, prompt };
+      return { meta, prompt: stripFrontmatter(raw) };
     } catch {
       return null;
     }
