@@ -16,6 +16,7 @@ import ContextPanel from '../components/ContextPanel';
 import { useAuth } from '@/store/useAuth';
 import type { RunMode } from '../components/RunModeSelect';
 import type { SummonedExpert } from '../components/ExpertSummon';
+import { readSummonedExpert, writeSummonedExpert } from '../expert-summon-storage';
 import ThreadList, { DEFAULT_WIDTH as DEFAULT_THREAD_LIST_WIDTH } from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
 import TrashDialog from '../components/TrashDialog';
@@ -196,35 +197,18 @@ function AgentConversation(): React.ReactElement {
   >('off');
   // 审批策略：默认需人工审批；只对「本次发送」生效，发送后回到默认，不静默延续
   const [runMode, setRunMode] = useState<RunMode>('ask');
-  // 召唤专家（会话级）：null = 未召唤（使用 Agent 自身人设）；按会话持久化到 localStorage
+  // 召唤专家（会话级）：null = 未召唤（使用 Agent 自身人设）；按会话持久化到 localStorage。
+  // 会话的创建与切换都是显式转移（handleSelectAgent / handleSelectThread / handleNewChat /
+  // onSession / handleAttach），不再用「sessionId 变化即读存储」的 effect：
+  // 新建会话在存储里必然没有值，按切换读取会把刚召唤的专家清空，表现为问答后选中效果丢失。
   const [summonedExpert, setSummonedExpert] = useState<SummonedExpert | null>(null);
-  const summonedStorageKey = sessionId ? `expert-summon:${sessionId}` : null;
-  // 切换会话时恢复该会话的召唤状态
-  useEffect(() => {
-    if (!summonedStorageKey) {
-      setSummonedExpert(null);
-      return;
-    }
-    try {
-      const raw = localStorage.getItem(summonedStorageKey);
-      setSummonedExpert(raw ? (JSON.parse(raw) as SummonedExpert) : null);
-    } catch {
-      setSummonedExpert(null);
-    }
-  }, [summonedStorageKey]);
   const changeSummonedExpert = useCallback(
     (expert: SummonedExpert | null) => {
       setSummonedExpert(expert);
-      try {
-        if (summonedStorageKey) {
-          if (expert) localStorage.setItem(summonedStorageKey, JSON.stringify(expert));
-          else localStorage.removeItem(summonedStorageKey);
-        }
-      } catch {
-        /* 存储不可用时仅内存态生效 */
-      }
+      // 尚无会话（新对话首条消息前）只保留内存态，等会话 ID 下发后再落盘
+      if (sessionId) writeSummonedExpert(sessionId, expert);
     },
-    [summonedStorageKey],
+    [sessionId],
   );
   // Agent 配置的默认思考强度：等模型列表就绪后由白名单同步 effect 应用（null 表示未暂存）
   const pendingThinkingRef = useRef<'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | null>(
@@ -538,6 +522,8 @@ function AgentConversation(): React.ReactElement {
       setThreads([]);
       setActiveThreadId(null);
       setSessionId(undefined);
+      // 换 Agent 即离开原会话：召唤态随之清空（专家属于上一会话，不跨 Agent 继承）
+      setSummonedExpert(null);
       setAttachments([]);
       setBoundKbIds([]);
       // 若当前在上下文页签但新 Agent 未开启采集，切回对话
@@ -833,6 +819,8 @@ function AgentConversation(): React.ReactElement {
     async (threadId: string) => {
       setActiveThreadId(threadId);
       setSessionId(threadId);
+      // 打开历史会话：召唤态以该会话已持久化的值为准（含刷新后经 ?s= 恢复的路径）
+      setSummonedExpert(readSummonedExpert(threadId));
       setMessages([]);
       setAttachments([]);
       setTotalTokens({ input: 0, output: 0 });
@@ -1070,7 +1058,10 @@ function AgentConversation(): React.ReactElement {
             );
           },
           onSession: (sid) => {
-            // 新建会话时后端下发 sessionId，绑定以便后续消息延续同一会话
+            // 新建会话时后端下发 sessionId，绑定以便后续消息延续同一会话。
+            // 先把当前召唤态落到该会话的键下：会话 ID 此刻才出现，不落盘的话，
+            // 之后刷新或切走再回来都恢复不出召唤态（问答后选中效果丢失的根因之一）
+            writeSummonedExpert(sid, summonedExpert);
             setSessionId(sid);
             setActiveThreadId(sid);
           },
@@ -1207,6 +1198,8 @@ function AgentConversation(): React.ReactElement {
           })) as { data?: { id: string }; error?: unknown };
           if (error || !data?.id) throw new Error('创建会话失败');
           targetSessionId = data.id;
+          // 上传附件会先创建会话：把当前召唤态落到该会话键下，刷新后不丢
+          writeSummonedExpert(targetSessionId, summonedExpert);
           setSessionId(targetSessionId);
           setActiveThreadId(targetSessionId);
         }
@@ -1229,7 +1222,7 @@ function AgentConversation(): React.ReactElement {
         setUploadingAttachment(false);
       }
     },
-    [selectedAgent, attachments.length, sessionId, fetchWorkspaceFiles],
+    [selectedAgent, attachments.length, sessionId, fetchWorkspaceFiles, summonedExpert],
   );
 
   // 聊天内嵌审批：用户对高风险工具调用做出决定，成功后本地更新卡片状态，后端唤醒流继续执行
@@ -1309,6 +1302,8 @@ function AgentConversation(): React.ReactElement {
     setMessages([]);
     setSessionId(undefined);
     setActiveThreadId(null);
+    // 新会话不继承上一会话的召唤态（专家是会话级绑定，原会话的持久化不受影响）
+    setSummonedExpert(null);
     setAttachments([]);
     setTotalTokens({ input: 0, output: 0 });
     // 重置能力开关为 agent 默认配置
