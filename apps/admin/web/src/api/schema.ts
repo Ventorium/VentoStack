@@ -4700,6 +4700,10 @@ export type OpenAPIs = {
          */
         isPublic?: boolean,
         /**
+         * @description 是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）
+         */
+        contextCollectionEnabled?: boolean,
+        /**
          * @description 是否为 Agent 创建独占虚拟环境（创建后不可修改）
          */
         requiresVirtualEnvironment?: boolean
@@ -6414,7 +6418,11 @@ export type OpenAPIs = {
         /**
          * @description 是否公开
          */
-        isPublic?: boolean
+        isPublic?: boolean,
+        /**
+         * @description 是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）
+         */
+        contextCollectionEnabled?: boolean
       },
       response: any
     },
