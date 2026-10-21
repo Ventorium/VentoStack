@@ -50,7 +50,10 @@ interface PasskeyRecord {
 
 /** 通行密钥服务接口 */
 export interface PasskeyService {
-  beginRegistration(userId: string): Promise<{
+  beginRegistration(
+    userId: string,
+    username?: string,
+  ): Promise<{
     options: PublicKeyCredentialCreationOptionsJSON;
     challengeId: string;
   }>;
@@ -93,7 +96,7 @@ export function createPasskeyService(deps: {
   const { db, cache, rpID, rpName, rpOrigins, auditStore } = deps;
 
   return {
-    async beginRegistration(userId) {
+    async beginRegistration(userId, username) {
       // 检查数量限制
       const count = await db
         .query(PasskeyModel)
@@ -119,7 +122,8 @@ export function createPasskeyService(deps: {
       const options = await generateRegistrationOptions({
         rpID,
         rpName,
-        userName: userId,
+        userName: username ?? userId,
+        userDisplayName: username ?? userId,
         excludeCredentials,
         authenticatorSelection: {
           residentKey: 'preferred',

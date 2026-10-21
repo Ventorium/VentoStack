@@ -6,11 +6,13 @@
  */
 
 import type { Cache } from '@ventostack/cache';
-import { createRouter, fail, parseBody, safeErrorMessage, success } from '@ventostack/core';
+import { createRouter, createTagLogger, fail, parseBody, safeErrorMessage, success } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { AuthService } from '../services/auth';
 import type { ConfigService } from '../services/config';
 import type { PasskeyService } from '../services/passkey';
+
+const log = createTagLogger('passkey');
 
 /** IP 每分钟最大请求次数 */
 const MAX_IP_REQUESTS_PER_MINUTE = 20;
@@ -128,6 +130,7 @@ export function createPasskeyRoutes(
         return success(result);
       } catch (e) {
         const msg = safeErrorMessage(e, '通行密钥登录失败');
+        log.error('通行密钥登录失败', { error: e instanceof Error ? e.message : String(e) });
         return fail(msg, 400);
       }
     },
@@ -220,9 +223,9 @@ export function createPasskeyRoutes(
       try {
         const enabled = (await configService.getValue('sys_passkey_enabled')) !== 'false';
         if (!enabled) return fail('通行密钥未启用', 403);
-        const user = ctx.user as { id: string } | undefined;
+        const user = ctx.user as { id: string; username?: string } | undefined;
         if (!user?.id) return fail('未登录', 401, 401);
-        const result = await passkeyService.beginRegistration(user.id);
+        const result = await passkeyService.beginRegistration(user.id, user.username);
         return success(result);
       } catch (e) {
         const msg = safeErrorMessage(e, '通行密钥注册失败');
@@ -261,6 +264,7 @@ export function createPasskeyRoutes(
         );
         return success(result);
       } catch (e) {
+        log.error('通行密钥注册完成失败', { error: e instanceof Error ? e.message : String(e) });
         const msg = safeErrorMessage(e, '通行密钥注册完成失败');
         return fail(msg, 400);
       }
