@@ -1,3 +1,5 @@
+import { mkdir } from 'node:fs/promises';
+import { dirname, join, resolve, sep } from 'node:path';
 /**
  * AI 模块聚合 — 增强版
  *
@@ -13,11 +15,15 @@
 import { createRouter } from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
 import type { EventBus } from '@ventostack/events';
-import { mkdir } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
 import { AIGatewayError } from './errors';
 
 import type { ConfigEncryptor } from '@ventostack/core';
+import type { RiskLevel } from './agent-engine/types';
+import {
+  APPROVAL_JUDGE_PROMPT,
+  parseApprovalVerdict,
+  resolveApprovalAction,
+} from './approval-policy';
 // LLM Gateway
 import { createLLMGateway } from './llm-gateway';
 import { createModelRegistry } from './llm-gateway/model-registry';
@@ -28,8 +34,6 @@ import { createOpenAIProvider } from './llm-gateway/providers/openai';
 import { createOpenAIResponsesProvider } from './llm-gateway/providers/openai-responses';
 import { allowedThinkingLevels } from './llm-gateway/thinking-levels';
 import type { LLMGateway, LLMProvider, RunMode } from './llm-gateway/types';
-import type { RiskLevel } from './agent-engine/types';
-import { APPROVAL_JUDGE_PROMPT, parseApprovalVerdict, resolveApprovalAction } from './approval-policy';
 
 // Agent Engine
 import { type AgentConfig, type AgentLoop, createAgentLoop } from './agent-engine/agent-loop';
@@ -51,9 +55,9 @@ import type {
 import { createKnowledgeBaseService } from './knowledge-base/service';
 import type { KnowledgeBaseService } from './knowledge-base/types';
 
+import { createMemoryConsolidator } from './memory/consolidator';
 // Memory
 import { createMemoryService } from './memory/service';
-import { createMemoryConsolidator } from './memory/consolidator';
 import type { ApprovalDecisionEntry, ApprovalRequestEntry, MemoryService } from './memory/types';
 
 // Skills
@@ -66,17 +70,28 @@ import type { CompactionSettings } from './compaction/compaction';
 // Session + Compaction
 import { createLazyJsonlSessionStorage, createSession } from './session';
 
+import { createRequire } from 'node:module';
+import { createAgentRuntimeClient } from './agent-runtime/client';
+import type { AgentRuntimeConfig } from './agent-runtime/client';
+import { createAgentRuntimeTools } from './agent-runtime/tools';
 import { type AgentCrudService, createAgentRoutes } from './routes/agent';
 import { type ConversationService, createChatRoutes } from './routes/chat';
 // Routes
+import { createExpertRoutes } from './routes/expert';
 import { createKnowledgeBaseRoutes } from './routes/knowledge-base';
 import { createMcpServerRoutes } from './routes/mcp-server';
 import { createProviderRoutes } from './routes/provider';
 import { createSkillRoutes } from './routes/skill';
 import { createToolRegistryRoutes } from './routes/tool-registry';
 import { createAgentService } from './services/agent';
-import { IN_CHAT_APPROVAL_WAIT_MS, createApprovalService, createApprovalWaiter } from './services/approval';
+import {
+  IN_CHAT_APPROVAL_WAIT_MS,
+  createApprovalService,
+  createApprovalWaiter,
+} from './services/approval';
 import type { ApprovalWaitResult } from './services/approval';
+import { createExpertService } from './services/expert';
+import type { ExpertService } from './services/expert';
 import { createScopedKBService } from './services/kb-scope';
 import { createMcpServerService } from './services/mcp-server';
 import type { McpServerService } from './services/mcp-server';
@@ -87,12 +102,7 @@ import { createSkillStoreService } from './services/skill-store';
 import type { SkillStoreService } from './services/skill-store';
 import { createToolRegistry } from './tool-registry';
 import type { ToolRegistry } from './tool-registry';
-import { createRequire } from 'node:module';
-import { createAgentRuntimeClient } from './agent-runtime/client';
-import type { AgentRuntimeConfig } from './agent-runtime/client';
-import { createAgentRuntimeTools } from './agent-runtime/tools';
 import {
-  createReadDocumentTool,
   createBase64Tool,
   createCalculatorTool,
   createDatetimeTool,
@@ -105,6 +115,7 @@ import {
   createKBOutlineTool,
   createKBReadTool,
   createKBSearchTool,
+  createReadDocumentTool,
   createUuidTool,
   createWebFetchTool,
   createWebSearchTool,
@@ -127,6 +138,7 @@ export interface AIModule {
     eventEmitter: AgentEventEmitter;
     skillStoreService: SkillStoreService;
     skillService: SkillService;
+    expertService: ExpertService;
     modelConfigService: ModelConfigService;
     scopedKBService: ScopedKBService;
     mcpServerService: McpServerService;
@@ -196,6 +208,12 @@ export interface AIModuleDeps {
   storagePath: string;
   /** Skill 目录列表 */
   skillDirs?: string[];
+  /** 专家数据目录（磁盘权威存储）；默认 ${storagePath}/experts，生产 /app/data/experts */
+  expertDataDir?: string;
+  /** ExpertHub 地址；默认 CloudSmith 公开前缀 */
+  expertHubBaseUrl?: string;
+  /** ExpertHub manifest 签名公钥（ed25519 hex）；配置后强制校验 manifest.sig */
+  expertHubSigningPubkey?: string;
   /** Prompt Template 路径列表 */
   templatePaths?: string[];
   /** 自定义模型配置 */
@@ -213,23 +231,31 @@ export interface AIModuleDeps {
     transformContext?: (
       messages: import('./llm-gateway/types').ChatMessage[],
       signal?: AbortSignal,
-    ) => Promise<import('./llm-gateway/types').ChatMessage[]> | import('./llm-gateway/types').ChatMessage[];
+    ) =>
+      | Promise<import('./llm-gateway/types').ChatMessage[]>
+      | import('./llm-gateway/types').ChatMessage[];
     prepareNextTurn?: (
       context: import('./agent-engine/types').PrepareNextTurnContext,
       signal?: AbortSignal,
-    ) => Promise<import('./agent-engine/types').AgentLoopTurnUpdate | undefined> | import('./agent-engine/types').AgentLoopTurnUpdate | undefined;
+    ) =>
+      | Promise<import('./agent-engine/types').AgentLoopTurnUpdate | undefined>
+      | import('./agent-engine/types').AgentLoopTurnUpdate
+      | undefined;
     getApiKey?: (provider: string) => Promise<string | undefined> | string | undefined;
     dynamicToolResolver?: (
       toolName: string,
       tenantId: string,
-    ) => Promise<import('./agent-engine/types').AgentTool | undefined> | import('./agent-engine/types').AgentTool | undefined;
+    ) =>
+      | Promise<import('./agent-engine/types').AgentTool | undefined>
+      | import('./agent-engine/types').AgentTool
+      | undefined;
   };
   /** 压缩设置 */
   compactionSettings?: CompactionSettings;
   /** 动态 system prompt */
   systemPrompt?: AgentHarnessOptions['systemPrompt'];
   /** 分布式追踪器（@ventostack/observability）；提供时自动埋 AI span */
-  tracer?: import("@ventostack/observability").Tracer;
+  tracer?: import('@ventostack/observability').Tracer;
   /** 父 span 上下文 */
   parentSpanContext?: { traceId: string; spanId: string };
   /** 独立 Firecracker runtime；未配置时普通 Agent 仍可工作。 */
@@ -239,7 +265,9 @@ export interface AIModuleDeps {
 // ---- Provider 创建 ----
 
 /** 从 agent 的 config JSON 中提取深度研究配置（存在 research 字段时返回） */
-function extractResearch(config: unknown): { research: AgentConfig['research'] } | Record<string, never> {
+function extractResearch(
+  config: unknown,
+): { research: AgentConfig['research'] } | Record<string, never> {
   if (!config || typeof config !== 'object' || Array.isArray(config)) return {};
   const research = (config as Record<string, unknown>).research;
   if (!research || typeof research !== 'object' || Array.isArray(research)) return {};
@@ -248,7 +276,13 @@ function extractResearch(config: unknown): { research: AgentConfig['research'] }
     // 透传自定义预算字段（创建 Agent 时可按需覆盖深度预设；非法值忽略）
     const raw = research as Record<string, unknown>;
     const out: AgentConfig['research'] = { depth };
-    for (const key of ['maxIterations', 'maxTokensPerTurn', 'searchCount', 'maxSubtasks', 'maxSubtaskTurns'] as const) {
+    for (const key of [
+      'maxIterations',
+      'maxTokensPerTurn',
+      'searchCount',
+      'maxSubtasks',
+      'maxSubtaskTurns',
+    ] as const) {
       const value = raw[key];
       if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
         out[key] = value;
@@ -262,8 +296,11 @@ function extractResearch(config: unknown): { research: AgentConfig['research'] }
 /** 从 agent 的 config JSON 中提取会话总结模型、审批模型与默认思考强度 */
 function extractAgentConfigExtras(
   config: unknown,
-): Pick<AgentConfig, 'summaryModel' | 'approvalModel' | 'defaultThinkingLevel'> {
-  const out: Pick<AgentConfig, 'summaryModel' | 'approvalModel' | 'defaultThinkingLevel'> = {};
+): Pick<AgentConfig, 'summaryModel' | 'approvalModel' | 'defaultThinkingLevel' | 'sourceExpert'> {
+  const out: Pick<
+    AgentConfig,
+    'summaryModel' | 'approvalModel' | 'defaultThinkingLevel' | 'sourceExpert'
+  > = {};
   if (!config || typeof config !== 'object' || Array.isArray(config)) return out;
   const raw = config as Record<string, unknown>;
   const modelRef = (value: unknown): string | undefined =>
@@ -272,6 +309,8 @@ function extractAgentConfigExtras(
   if (summaryModel) out.summaryModel = summaryModel;
   const approvalModel = modelRef(raw.approvalModel);
   if (approvalModel) out.approvalModel = approvalModel;
+  const sourceExpert = modelRef(raw.sourceExpert);
+  if (sourceExpert) out.sourceExpert = sourceExpert;
   const thinking = raw.defaultThinkingLevel;
   if (
     typeof thinking === 'string' &&
@@ -282,7 +321,8 @@ function extractAgentConfigExtras(
   return out;
 }
 
-export function createConfiguredProvider(  config: LLMProviderConfig,
+export function createConfiguredProvider(
+  config: LLMProviderConfig,
   customFactories: Record<string, LLMProviderFactory> = {},
 ): LLMProvider {
   const providerConfig = {
@@ -291,8 +331,13 @@ export function createConfiguredProvider(  config: LLMProviderConfig,
     ...(config.baseUrl !== undefined ? { baseUrl: config.baseUrl } : {}),
     ...(config.headers !== undefined ? { headers: config.headers } : {}),
   };
-  const apiFormat = config.apiFormat
-    ?? (config.name === 'anthropic' ? 'anthropic' : config.name === 'google' ? 'google' : 'openai_chat');
+  const apiFormat =
+    config.apiFormat ??
+    (config.name === 'anthropic'
+      ? 'anthropic'
+      : config.name === 'google'
+        ? 'google'
+        : 'openai_chat');
   const customFactory = customFactories[apiFormat];
   if (customFactory) return customFactory(providerConfig);
   switch (apiFormat) {
@@ -312,11 +357,12 @@ export function createConfiguredProvider(  config: LLMProviderConfig,
 // ---- Module Factory ----
 
 export function createAIModule(deps: AIModuleDeps): AIModule {
-  const { db, authMiddleware, permMiddleware, eventBus, storagePath, cache } = deps;
+  const { db, authMiddleware, eventBus, storagePath, cache } = deps;
   let agentRuntime: import('./agent-runtime/types').AgentRuntimeClient | undefined;
   if (deps.agentRuntime) {
     const bindings = createRequire(import.meta.url)('@ventostack/vm-runtime') as {
       requestRuntime: import('./agent-runtime/client').RuntimePackageBindings['request'];
+      // biome-ignore format: 多行 import() 类型带尾逗号会被 Bun 转译器拒绝
       requestRuntimeBinary: import('./agent-runtime/client').RuntimePackageBindings['requestBinary'];
     };
     agentRuntime = createAgentRuntimeClient(deps.agentRuntime, {
@@ -369,9 +415,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       // gateway 在 defaultModel 未配置时会把 'default' 替换为 undefined 传入，此处必须一并兜底
       if (!effectiveModel || effectiveModel === 'default') {
         // 双轨对齐：优先读取前端设置页写入的 default_model，兼容历史 model_purpose_default_chat
-        effectiveModel = (await providerService.getConfig('default_model'))
-          ?? (await providerService.getConfig('model_purpose_default_chat'))
-          ?? '';
+        effectiveModel =
+          (await providerService.getConfig('default_model')) ??
+          (await providerService.getConfig('model_purpose_default_chat')) ??
+          '';
       }
       if (!effectiveModel) return null;
       const runtime = await providerService.resolveRuntimeModel(
@@ -379,12 +426,6 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         tenantId || 'default',
       );
       if (!runtime) return null;
-      const common = {
-        name: runtime.providerName,
-        apiKey: runtime.apiKey,
-        baseUrl: runtime.baseUrl,
-        headers: runtime.headers,
-      };
       const provider = createConfiguredProvider(
         {
           name: runtime.providerName,
@@ -440,7 +481,14 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     status: ApprovalDecisionEntry['status'],
   ): Promise<void> {
     const event = payload as
-      | { id?: string; sessionId?: string | null; tenantId?: string; requestedBy?: string; reviewedBy?: string | null; reason?: string | null }
+      | {
+          id?: string;
+          sessionId?: string | null;
+          tenantId?: string;
+          requestedBy?: string;
+          reviewedBy?: string | null;
+          reason?: string | null;
+        }
       | undefined;
     if (!event?.id || !event.sessionId || !event.requestedBy) return;
     await appendApprovalJournal(
@@ -506,7 +554,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(tenantId)) {
       throw new Error(`Invalid tenantId for tool registry: ${tenantId}`);
     }
-    for (const [field, value] of [['userId', userId], ['sessionId', sessionId]] as const) {
+    for (const [field, value] of [
+      ['userId', userId],
+      ['sessionId', sessionId],
+    ] as const) {
       if (value !== undefined && !/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(value)) {
         throw new Error(`Invalid ${field} for tool registry`);
       }
@@ -527,20 +578,51 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         name: 'memory-candidate',
         description: '记录会影响当前会话后续回答或执行的候选记忆。不要记录普通对话摘要。',
         parameters: [
-          { name: 'type', type: 'string', description: 'concern/hypothesis/correction/decision/constraint/preference/observation', required: true },
-          { name: 'content', type: 'string', description: '有明确证据的简洁记忆内容', required: true },
-          { name: 'sourceMessageIds', type: 'array', description: '来源消息 ID，可为空', required: false, schema: { items: { type: 'string' }, maxItems: 20 } },
+          {
+            name: 'type',
+            type: 'string',
+            description: 'concern/hypothesis/correction/decision/constraint/preference/observation',
+            required: true,
+          },
+          {
+            name: 'content',
+            type: 'string',
+            description: '有明确证据的简洁记忆内容',
+            required: true,
+          },
+          {
+            name: 'sourceMessageIds',
+            type: 'array',
+            description: '来源消息 ID，可为空',
+            required: false,
+            schema: { items: { type: 'string' }, maxItems: 20 },
+          },
         ],
         riskLevel: 'low',
         async handler(params) {
           const type = String(params.type);
-          const allowed = ['concern', 'hypothesis', 'correction', 'decision', 'constraint', 'preference', 'observation'] as const;
-          if (!allowed.includes(type as typeof allowed[number])) return { error: '不支持的记忆事件类型' };
-          return memory.appendMemoryEvent(sessionId, { tenantId, userId }, {
-            type: type as typeof allowed[number],
-            content: String(params.content ?? ''),
-            sourceMessageIds: Array.isArray(params.sourceMessageIds) ? params.sourceMessageIds.filter((id): id is string => typeof id === 'string') : [],
-          });
+          const allowed = [
+            'concern',
+            'hypothesis',
+            'correction',
+            'decision',
+            'constraint',
+            'preference',
+            'observation',
+          ] as const;
+          if (!allowed.includes(type as (typeof allowed)[number]))
+            return { error: '不支持的记忆事件类型' };
+          return memory.appendMemoryEvent(
+            sessionId,
+            { tenantId, userId },
+            {
+              type: type as (typeof allowed)[number],
+              content: String(params.content ?? ''),
+              sourceMessageIds: Array.isArray(params.sourceMessageIds)
+                ? params.sourceMessageIds.filter((id): id is string => typeof id === 'string')
+                : [],
+            },
+          );
         },
       });
     }
@@ -551,7 +633,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         parameters: [{ name: 'command', type: 'array', description: '命令及参数', required: true }],
         riskLevel: 'high',
         requiresApproval: true,
-        async handler() { return { error: '当前 Agent 未绑定虚拟环境' }; },
+        async handler() {
+          return { error: '当前 Agent 未绑定虚拟环境' };
+        },
       });
     }
 
@@ -565,11 +649,23 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     // 知识库文件浏览由 kb-* 工具承担；不提供 ls/cat/grep 等重复工具（避免与 kb-* 职责重叠）
 
     // 文件读写工具（租户作用域：仅允许访问本租户目录，防止跨租户文件读取/写入）
-    const artifactRoot = userId && sessionId
-      ? join(storagePath, 'memories', tenantId, 'users', userId, 'sessions', sessionId, 'artifacts')
-      : join(storagePath, 'memories', tenantId);
+    const artifactRoot =
+      userId && sessionId
+        ? join(
+            storagePath,
+            'memories',
+            tenantId,
+            'users',
+            userId,
+            'sessions',
+            sessionId,
+            'artifacts',
+          )
+        : join(storagePath, 'memories', tenantId);
     registry.register(createFileReadTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }));
-    registry.register(createFileWriteTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }));
+    registry.register(
+      createFileWriteTool({ allowedPaths: [artifactRoot], rootPath: artifactRoot }),
+    );
     if (userId && sessionId) registry.register(createReadDocumentTool({ rootPath: artifactRoot }));
 
     return registry;
@@ -626,13 +722,19 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           systemPrompt: item.systemPrompt,
           models: item.model,
           ...(Array.isArray(item.tools) ? { tools: item.tools as string[] } : {}),
-          ...(Array.isArray(item.knowledgeBaseIds) ? { knowledgeBaseIds: item.knowledgeBaseIds as string[] } : {}),
+          ...(Array.isArray(item.knowledgeBaseIds)
+            ? { knowledgeBaseIds: item.knowledgeBaseIds as string[] }
+            : {}),
           ...(Array.isArray(item.skillIds) ? { skillIds: item.skillIds as string[] } : {}),
-          ...(Array.isArray(item.mcpServerIds) ? { mcpServerIds: item.mcpServerIds as string[] } : {}),
+          ...(Array.isArray(item.mcpServerIds)
+            ? { mcpServerIds: item.mcpServerIds as string[] }
+            : {}),
           ...(typeof item.maxIterations === 'number' ? { maxIterations: item.maxIterations } : {}),
-          ...(typeof item.maxTokensPerTurn === 'number' ? { maxTokensPerTurn: item.maxTokensPerTurn } : {}),
+          ...(typeof item.maxTokensPerTurn === 'number'
+            ? { maxTokensPerTurn: item.maxTokensPerTurn }
+            : {}),
           ...(item.memoryConfig ? { memoryConfig: item.memoryConfig } : {}),
-          ...(extractResearch(item.config)),
+          ...extractResearch(item.config),
           ...extractAgentConfigExtras(item.config),
           tenantId: item.tenantId,
           requiresVirtualEnvironment: item.requiresVirtualEnvironment,
@@ -649,7 +751,12 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       };
     },
     update: (id, params, tenantId, opts) =>
-      agentDbService.update(id, params as Parameters<typeof agentDbService.update>[1], tenantId, opts),
+      agentDbService.update(
+        id,
+        params as Parameters<typeof agentDbService.update>[1],
+        tenantId,
+        opts,
+      ),
     delete: (id, tenantId, opts) => agentDbService.delete(id, tenantId, opts),
     publish: (id, tenantId, opts) => agentDbService.publish(id, tenantId, opts),
   };
@@ -675,7 +782,12 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const activeMemoryJobs = new Set<string>();
   const rerunMemoryJobs = new Set<string>();
   const sessionSandboxJobs = new Map<string, Promise<string>>();
-  const scheduleMemoryConsolidation = async (params: { sessionId: string; tenantId: string; userId: string; model?: string }): Promise<void> => {
+  const scheduleMemoryConsolidation = async (params: {
+    sessionId: string;
+    tenantId: string;
+    userId: string;
+    model?: string;
+  }): Promise<void> => {
     const scope = { tenantId: params.tenantId, userId: params.userId };
     await memory.setMemoryConsolidationStatus(params.sessionId, scope, 'pending');
     if (activeMemoryJobs.has(params.sessionId)) {
@@ -687,7 +799,11 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       try {
         do {
           rerunMemoryJobs.delete(params.sessionId);
-          await consolidateMemory({ sessionId: params.sessionId, scope, model: params.model ?? deps.defaultModel });
+          await consolidateMemory({
+            sessionId: params.sessionId,
+            scope,
+            model: params.model ?? deps.defaultModel,
+          });
         } while (rerunMemoryJobs.has(params.sessionId));
       } finally {
         activeMemoryJobs.delete(params.sessionId);
@@ -697,7 +813,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   queueMicrotask(async () => {
     const pending = await memory.listPendingMemoryConsolidations().catch(() => []);
     for (const item of pending) {
-      await scheduleMemoryConsolidation({ sessionId: item.sessionId, ...item.scope }).catch(() => undefined);
+      await scheduleMemoryConsolidation({ sessionId: item.sessionId, ...item.scope }).catch(
+        () => undefined,
+      );
     }
   });
   /**
@@ -744,6 +862,23 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       return null;
     }
   }
+
+  // Expert 服务（数据目录独立于 storagePath 约定：专用卷 /app/data/experts；须在 agentLoop 之前创建供 resolveExpert 闭包引用）
+  const expertService = createExpertService({
+    db,
+    eventBus,
+    dataDir: deps.expertDataDir ?? `${storagePath}/experts`,
+    ...(deps.expertHubBaseUrl ? { hubBaseUrl: deps.expertHubBaseUrl } : {}),
+    ...(deps.expertHubSigningPubkey ? { hubSigningPubkey: deps.expertHubSigningPubkey } : {}),
+    // 一键实例化：闭包引用后置创建的 modelConfigService（请求期才执行，无时序问题）
+    agentFactory: (params) =>
+      agentDbService.create(params as Parameters<typeof agentDbService.create>[0]),
+    resolveDefaultModel: () => modelConfigService.get('default_chat'),
+  });
+
+  // 团队委派子运行对 agentLoop 的惰性引用：deps 闭包先于 agentLoop 完成创建，
+  // 首次委派发生在请求期，届时引用必然已赋值。
+  let agentLoopRef: AgentLoop | null = null;
 
   const agentLoop = createAgentLoop({
     llmGateway,
@@ -896,13 +1031,57 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       return skills.flatMap((skill) => {
         if (!skill?.enabled || !skill.skillMdContent) return [];
         const content = skill.skillMdContent.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n/, '').trim();
-        return [{
-          name: skill.slug,
-          description: skill.description ?? skill.name,
-          content,
-          filePath: `${storagePath}/skills/${skill.slug}/${skill.installedVersion ?? 'current'}/SKILL.md`,
-        }];
+        return [
+          {
+            name: skill.slug,
+            description: skill.description ?? skill.name,
+            content,
+            filePath: `${storagePath}/skills/${skill.slug}/${skill.installedVersion ?? 'current'}/SKILL.md`,
+          },
+        ];
       });
+    },
+    // 会话级专家：磁盘 sha256 复核 + 启用/扫描状态 fail-closed（readExpertContent 内部处理）。
+    // team 传 composeTeam=false：协调者模式只用团队主 prompt，成员清单由
+    // resolveExpertTeamMembers 运行时解析，成员全文不进协调者上下文。
+    async resolveExpert(expertId, tenantId) {
+      const found = await expertService.readExpertContent(expertId, tenantId, {
+        composeTeam: false,
+      });
+      return found
+        ? { name: found.meta.name, prompt: found.prompt, expertType: found.meta.expertType }
+        : null;
+    },
+    // 团队专家可委派成员（fail-closed：任一成员不可用即 null）
+    resolveExpertTeamMembers: (expertId, tenantId) =>
+      expertService.resolveTeamMembers(expertId, tenantId),
+    // 专家团委派子运行：为成员专家新开独立 agent-loop 运行（agentId 空 = 无 Agent 绑定的
+    // 最小权限运行：无 registry 工具、人设与模型全部显式提供；不携带任何委派能力 → 深度固定 1）。
+    async defaultDelegateRunner(memberExpertId, task, ctx) {
+      const content = await expertService.readExpertContent(memberExpertId, ctx.tenantId);
+      if (!content || content.meta.expertType === 'team') {
+        throw new Error(`成员专家 ${memberExpertId} 不可用`);
+      }
+      if (!agentLoopRef) {
+        throw new Error('AI 运行时尚未就绪');
+      }
+      let output = '';
+      for await (const chunk of agentLoopRef.runStream({
+        agentId: '',
+        userId: ctx.userId || 'system',
+        tenantId: ctx.tenantId,
+        message: task,
+        systemPrompt: content.prompt,
+        model: ctx.model,
+        maxTokens: 2048,
+        ...(ctx.signal ? { signal: ctx.signal } : {}),
+      })) {
+        if (chunk.type === 'content' && chunk.delta) output += chunk.delta;
+        if (chunk.type === 'error') {
+          throw new Error(chunk.error?.message ?? '成员专家运行失败');
+        }
+      }
+      return output.trim() || '（成员专家未返回内容）';
     },
     async resolveAgentTools(agentId, tenantId, toolNames, userId, sessionId) {
       if (!agentRuntime) return [];
@@ -915,51 +1094,61 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         const jobKey = `${tenantId}:${userId}:${sessionId}`;
         let job = sessionSandboxJobs.get(jobKey);
         if (!job) {
-          job = agentRuntime.createSandbox({ sessionId: `${agentId}-${sessionId}` }).then(async (sandbox) => {
-            try {
-              await memory.setSessionRuntimeSandbox(sessionId, scope, sandbox.sandboxId);
-              return sandbox.sandboxId;
-            } catch (error) {
-              await agentRuntime.destroySandbox(sandbox.sandboxId).catch(() => undefined);
-              throw error;
-            }
-          }).finally(() => sessionSandboxJobs.delete(jobKey));
+          job = agentRuntime
+            .createSandbox({ sessionId: `${agentId}-${sessionId}` })
+            .then(async (sandbox) => {
+              try {
+                await memory.setSessionRuntimeSandbox(sessionId, scope, sandbox.sandboxId);
+                return sandbox.sandboxId;
+              } catch (error) {
+                await agentRuntime.destroySandbox(sandbox.sandboxId).catch(() => undefined);
+                throw error;
+              }
+            })
+            .finally(() => sessionSandboxJobs.delete(jobKey));
           sessionSandboxJobs.set(jobKey, job);
         }
         sandboxId = await job;
       }
-      const artifactRoot = userId && sessionId
-        ? await memory.getArtifactRoot(sessionId, scope)
-        : null;
+      const artifactRoot =
+        userId && sessionId ? await memory.getArtifactRoot(sessionId, scope) : null;
       const workspace = '/workspace';
       const persistArtifact = async (path: string, content: Uint8Array): Promise<void> => {
         if (!artifactRoot) return;
         const target = resolve(join(artifactRoot, path));
-        if (target !== artifactRoot && !target.startsWith(artifactRoot + sep)) throw new Error('产物路径不合法');
+        if (target !== artifactRoot && !target.startsWith(artifactRoot + sep))
+          throw new Error('产物路径不合法');
         await mkdir(dirname(target), { recursive: true });
         await Bun.write(target, content);
       };
       return createAgentRuntimeTools(agentRuntime, sandboxId, {
         workspace,
-        ...(artifactRoot ? {
-          onFileWritten: persistArtifact,
-          async onWorkspaceChanged() {
-            const result = await agentRuntime.runCommand(
-              sandboxId,
-              ['find', '.', '-type', 'f', '-size', '-2097153c', '-print0'],
-              workspace,
-            );
-            const paths = result.stdout.split('\0').filter(Boolean).slice(0, 1000);
-            for (const path of paths) {
-              const relative = path.replace(/^\.\//, '');
-              if (!relative || relative.includes('\0') || relative.split('/').includes('..')) continue;
-              await persistArtifact(relative, await agentRuntime.readFile(sandboxId, `${workspace}/${relative}`));
+        ...(artifactRoot
+          ? {
+              onFileWritten: persistArtifact,
+              async onWorkspaceChanged() {
+                const result = await agentRuntime.runCommand(
+                  sandboxId,
+                  ['find', '.', '-type', 'f', '-size', '-2097153c', '-print0'],
+                  workspace,
+                );
+                const paths = result.stdout.split('\0').filter(Boolean).slice(0, 1000);
+                for (const path of paths) {
+                  const relative = path.replace(/^\.\//, '');
+                  if (!relative || relative.includes('\0') || relative.split('/').includes('..'))
+                    continue;
+                  await persistArtifact(
+                    relative,
+                    await agentRuntime.readFile(sandboxId, `${workspace}/${relative}`),
+                  );
+                }
+              },
             }
-          },
-        } : {}),
+          : {}),
       }).filter((tool) => selected.has(tool.name));
     },
   });
+  agentLoopRef = agentLoop;
 
   // 创建中间件（由调用方注入，见 AIModuleDeps）
   const perm = deps.permMiddleware;
@@ -1023,57 +1212,64 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     },
   };
 
-  const chatRouter = createChatRoutes(agentLoop, conversationService, authMiddleware, perm, memory, {
-    // 对话/流式请求按 ctx.user.tenantId 构建请求级工具注册表（KB 工具绑定请求租户）
-    createTenantToolRegistry: buildToolRegistry,
-    // 聊天内嵌审批：请求者自确认
-    approvalService,
-    scheduleMemoryConsolidation,
-    // 会话标题生成：Agent 配置 summaryModel（轻量快速模型）时，对话结束后生成 ≤20 字标题
-    generateSessionTitle: async ({ sessionId, agentId, tenantId, userId }) => {
-      try {
-        const agent = await agentCrudService.getById(agentId, tenantId);
-        const summaryModel = agent?.summaryModel;
-        if (!summaryModel) return null;
-        // 已有自定义标题（非默认命名）则跳过，避免覆盖用户/历史命名
-        const existing = await memory.getSession(sessionId, { tenantId, userId });
-        if (!existing) return null;
-        if (existing.title !== `对话 ${sessionId.slice(0, 8)}`) return null;
-        const history = (await memory.getHistory(sessionId, { tenantId, userId }, 20))
-          .filter((m) => m.role === 'user' || m.role === 'assistant')
-          .slice(-10);
-        if (history.length === 0) return null;
-        const result = await llmGateway.chat({
-          model: summaryModel,
-          tenantId,
-          // 标题是纯摘要任务：关掉思考，避免推理模型把 token 预算耗在 reasoning_content 上
-          // 导致 content 为空（finish_reason=length）而拿不到标题
-          thinkingLevel: 'off',
-          maxTokens: 256,
-          messages: [
-            {
-              role: 'system',
-              content:
-                '你是会话标题生成器。根据以下对话内容生成一个不超过20字的中文标题，只输出标题本身，不要输出任何其他内容、引号或解释。',
-            },
-            ...history,
-          ],
-        });
-        const title = result.content
-          .trim()
-          .replace(/^[「『"'“”]+|[」』"'“”]+$/g, '')
-          .split('\n')[0]
-          .slice(0, 20)
-          .trim();
-        if (!title) return null;
-        await memory.renameSession(sessionId, { tenantId, userId }, title);
-        return title;
-      } catch (err) {
-        console.error('[ai] 会话标题生成失败:', err);
-        return null;
-      }
+  const chatRouter = createChatRoutes(
+    agentLoop,
+    conversationService,
+    authMiddleware,
+    perm,
+    memory,
+    {
+      // 对话/流式请求按 ctx.user.tenantId 构建请求级工具注册表（KB 工具绑定请求租户）
+      createTenantToolRegistry: buildToolRegistry,
+      // 聊天内嵌审批：请求者自确认
+      approvalService,
+      scheduleMemoryConsolidation,
+      // 会话标题生成：Agent 配置 summaryModel（轻量快速模型）时，对话结束后生成 ≤20 字标题
+      generateSessionTitle: async ({ sessionId, agentId, tenantId, userId }) => {
+        try {
+          const agent = await agentCrudService.getById(agentId, tenantId);
+          const summaryModel = agent?.summaryModel;
+          if (!summaryModel) return null;
+          // 已有自定义标题（非默认命名）则跳过，避免覆盖用户/历史命名
+          const existing = await memory.getSession(sessionId, { tenantId, userId });
+          if (!existing) return null;
+          if (existing.title !== `对话 ${sessionId.slice(0, 8)}`) return null;
+          const history = (await memory.getHistory(sessionId, { tenantId, userId }, 20))
+            .filter((m) => m.role === 'user' || m.role === 'assistant')
+            .slice(-10);
+          if (history.length === 0) return null;
+          const result = await llmGateway.chat({
+            model: summaryModel,
+            tenantId,
+            // 标题是纯摘要任务：关掉思考，避免推理模型把 token 预算耗在 reasoning_content 上
+            // 导致 content 为空（finish_reason=length）而拿不到标题
+            thinkingLevel: 'off',
+            maxTokens: 256,
+            messages: [
+              {
+                role: 'system',
+                content:
+                  '你是会话标题生成器。根据以下对话内容生成一个不超过20字的中文标题，只输出标题本身，不要输出任何其他内容、引号或解释。',
+              },
+              ...history,
+            ],
+          });
+          const title = result.content
+            .trim()
+            .replace(/^[「『"'“”]+|[」』"'“”]+$/g, '')
+            .split('\n')[0]
+            .slice(0, 20)
+            .trim();
+          if (!title) return null;
+          await memory.renameSession(sessionId, { tenantId, userId }, title);
+          return title;
+        } catch (err) {
+          console.error('[ai] 会话标题生成失败:', err);
+          return null;
+        }
+      },
     },
-  });
+  );
 
   // Skill 服务
   const modelConfigService = createModelConfigService({ db });
@@ -1084,6 +1280,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     storagePath: `${storagePath}/skills`,
     workspacePath: `${storagePath}/skills/.workspace`,
   });
+
+  // Expert 路由
+  const expertRouter = createExpertRoutes(expertService, authMiddleware, perm);
 
   // MCP Server 服务
   const mcpRouter = createMcpServerRoutes(mcpServerService, authMiddleware, perm);
@@ -1098,6 +1297,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(chatRouter);
   router.merge(providerRouter);
   router.merge(skillRouter);
+  router.merge(expertRouter);
   router.merge(mcpRouter);
   router.merge(toolRegistryRouter);
 
@@ -1112,10 +1312,12 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       gateway: llmGateway,
       session:
         partialOptions.session ??
-        createSession(createLazyJsonlSessionStorage(sessionPath, {
-          cwd: storagePath,
-          sessionId,
-        })),
+        createSession(
+          createLazyJsonlSessionStorage(sessionPath, {
+            cwd: storagePath,
+            sessionId,
+          }),
+        ),
       skillManager,
       promptTemplateManager,
       modelRegistry,
@@ -1143,6 +1345,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       eventEmitter,
       skillStoreService,
       skillService,
+      expertService,
       modelConfigService,
       scopedKBService,
       mcpServerService,

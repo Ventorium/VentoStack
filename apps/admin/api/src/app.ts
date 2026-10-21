@@ -179,6 +179,11 @@ export async function buildApp(opts?: {
             defaultModel: env.AI_DEFAULT_MODEL,
             storagePath: env.AI_STORAGE_PATH,
             credentialEncryptionKey: env.AI_CREDENTIAL_ENCRYPTION_KEY!,
+            ...(env.EXPERT_DATA_DIR ? { expertDataDir: env.EXPERT_DATA_DIR } : {}),
+            ...(env.EXPERT_HUB_BASE_URL ? { expertHubBaseUrl: env.EXPERT_HUB_BASE_URL } : {}),
+            ...(env.EXPERT_HUB_SIGNING_PUBKEY
+              ? { expertHubSigningPubkey: env.EXPERT_HUB_SIGNING_PUBKEY }
+              : {}),
             ...(env.VENTO_RUNTIME_URL && env.VENTO_RUNTIME_TOKEN
               ? {
                   agentRuntime: {

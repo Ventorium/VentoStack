@@ -68,6 +68,8 @@ export interface ChatStreamParams {
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
   /** 审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批 */
   runMode?: 'ask' | 'auto' | 'trust';
+  /** 召唤专家（会话级 Role Override）：传入已安装专家记录 ID，本次消息以专家逻辑覆盖 Agent 人设 */
+  expertId?: string;
   /** 编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史（后端截断会话） */
   truncateUserMessages?: number;
 }

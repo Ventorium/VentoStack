@@ -43,9 +43,9 @@ RUN bun build src/index.ts --outdir dist --target bun --minify
 FROM oven/bun:1.3-slim AS release
 WORKDIR /app
 
-# 预建上传目录并授权非 root 用户（bun），保证 named volume 首次挂载时可写
+# 预建上传目录与专家数据目录并授权非 root 用户（bun），保证 named volume 首次挂载时可写
 # 注意：必须在 USER bun 之前以 root 执行
-RUN mkdir -p /app/uploads && chown -R bun:bun /app/uploads
+RUN mkdir -p /app/uploads /app/data/experts && chown -R bun:bun /app/uploads /app/data/experts
 
 # 安全基线：非 root 用户
 USER bun

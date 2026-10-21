@@ -77,10 +77,14 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       STORAGE_DRIVER: local
       STORAGE_LOCAL_PATH: /app/uploads
+      EXPERT_DATA_DIR: /app/data/experts
+      # 专家仓库（CloudSmith 公开前缀，匿名下载；如需切换自建 hub 再配置）
+      # EXPERT_HUB_BASE_URL: https://dl.cloudsmith.io/public/vento/ventostack/raw/files/
     ports:
       - "${APP_PORT:-9320}:9320"
     volumes:
       - upload_data:/app/uploads
+      - expert_data:/app/data/experts
     read_only: true
     tmpfs:
       - /tmp
@@ -99,6 +103,8 @@ volumes:
   redis_data:
     driver: local
   upload_data:
+    driver: local
+  expert_data:
     driver: local
 
 networks:

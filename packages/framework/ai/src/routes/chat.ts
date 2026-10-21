@@ -1,16 +1,24 @@
 /**
  * 对话路由（含 SSE 流式）
  */
-import { createRouter, fail, handleError, longRunning, parseBody, success, rateLimit } from '@ventostack/core';
+import {
+  createRouter,
+  fail,
+  handleError,
+  longRunning,
+  parseBody,
+  rateLimit,
+  success,
+} from '@ventostack/core';
 import type { Middleware, Router } from '@ventostack/core';
+import { createConverter } from '@ventostack/file2md';
 import type { AgentLoop } from '../agent-engine/agent-loop';
+import { createFileValidator } from '../knowledge-base/file-security';
+import { RUN_MODES } from '../llm-gateway/types';
+import type { RunMode, ThinkingLevel } from '../llm-gateway/types';
 import type { MemoryService } from '../memory/types';
 import { createSSEResponse } from '../stream-engine/sse';
 import type { ToolRegistry } from '../tool-registry';
-import { createFileValidator } from '../knowledge-base/file-security';
-import { createConverter } from '@ventostack/file2md';
-import { RUN_MODES } from '../llm-gateway/types';
-import type { RunMode, ThinkingLevel } from '../llm-gateway/types';
 import { routeDoc } from './schema';
 
 export interface ConversationService {
@@ -56,10 +64,18 @@ export function createChatRoutes(
   memoryService?: MemoryService,
   options?: {
     /** 按请求 tenantId 构建请求级工具注册表（KB 等租户相关工具绑定请求租户） */
-    createTenantToolRegistry?: (tenantId: string, userId?: string, sessionId?: string) => ToolRegistry;
+    createTenantToolRegistry?: (
+      tenantId: string,
+      userId?: string,
+      sessionId?: string,
+    ) => ToolRegistry;
     /** 审批服务：聊天内嵌审批的请求者自确认 */
     approvalService?: ChatApprovalService;
-    scheduleMemoryConsolidation?: (params: { sessionId: string; tenantId: string; userId: string }) => Promise<void>;
+    scheduleMemoryConsolidation?: (params: {
+      sessionId: string;
+      tenantId: string;
+      userId: string;
+    }) => Promise<void>;
     /** 会话标题生成：对话结束后由总结模型产出 ≤20 字标题（Agent 未配置总结模型时返回 null） */
     generateSessionTitle?: (params: {
       sessionId: string;
@@ -80,27 +96,54 @@ export function createChatRoutes(
     { controller: AbortController; tenantId: string; userId: string; startedAt: number }
   >();
   const attachmentValidator = createFileValidator({ maxFileSize: 20 * 1024 * 1024 });
-  const thinkingLevels = new Set<ThinkingLevel>(['off', 'minimal', 'low', 'medium', 'high', 'xhigh']);
+  const thinkingLevels = new Set<ThinkingLevel>([
+    'off',
+    'minimal',
+    'low',
+    'medium',
+    'high',
+    'xhigh',
+  ]);
   const runModes = new Set<RunMode>(RUN_MODES);
 
-  function requestOptions(body: Record<string, unknown>): {
-    thinkingLevel?: ThinkingLevel;
-    runMode?: RunMode;
-    attachmentPaths?: string[];
-  } | Response {
+  function requestOptions(body: Record<string, unknown>):
+    | {
+        thinkingLevel?: ThinkingLevel;
+        runMode?: RunMode;
+        attachmentPaths?: string[];
+      }
+    | Response {
     const thinkingLevel = body.thinkingLevel;
-    if (thinkingLevel !== undefined && (typeof thinkingLevel !== 'string' || !thinkingLevels.has(thinkingLevel as ThinkingLevel))) {
+    if (
+      thinkingLevel !== undefined &&
+      (typeof thinkingLevel !== 'string' || !thinkingLevels.has(thinkingLevel as ThinkingLevel))
+    ) {
       return fail('thinkingLevel 不合法', 400, 400);
     }
     const runMode = body.runMode;
-    if (runMode !== undefined && (typeof runMode !== 'string' || !runModes.has(runMode as RunMode))) {
+    if (
+      runMode !== undefined &&
+      (typeof runMode !== 'string' || !runModes.has(runMode as RunMode))
+    ) {
       return fail('runMode 不合法', 400, 400);
     }
     const attachmentPaths = body.attachmentPaths;
-    if (attachmentPaths !== undefined && (!Array.isArray(attachmentPaths) || attachmentPaths.length > 10 || attachmentPaths.some((path) => {
-      if (typeof path !== 'string' || !path || path.startsWith('/') || path.startsWith('\\') || path.includes('\0')) return true;
-      return path.split(/[/\\]/).includes('..');
-    }))) {
+    if (
+      attachmentPaths !== undefined &&
+      (!Array.isArray(attachmentPaths) ||
+        attachmentPaths.length > 10 ||
+        attachmentPaths.some((path) => {
+          if (
+            typeof path !== 'string' ||
+            !path ||
+            path.startsWith('/') ||
+            path.startsWith('\\') ||
+            path.includes('\0')
+          )
+            return true;
+          return path.split(/[/\\]/).includes('..');
+        }))
+    ) {
       return fail('attachmentPaths 不合法', 400, 400);
     }
     return {
@@ -136,7 +179,7 @@ export function createChatRoutes(
     attachmentPaths?: string[],
   ): Promise<Response | undefined> {
     if (!attachmentPaths?.length) return undefined;
-    const artifacts = await memoryService?.listArtifacts(sessionId, { tenantId, userId }) ?? [];
+    const artifacts = (await memoryService?.listArtifacts(sessionId, { tenantId, userId })) ?? [];
     const available = new Set(artifacts.map((item) => item.path));
     if (attachmentPaths.some((path) => !available.has(path))) {
       return fail('附件不存在或不属于当前会话', 400, 400);
@@ -158,7 +201,10 @@ export function createChatRoutes(
   });
 
   /** 请求级工具注册表：有租户标识且配置了工厂时构建，否则使用 agentLoop 的默认注册表 */
-  function buildRequestToolRegistry(ctx: { user?: unknown }, sessionId?: string): ToolRegistry | undefined {
+  function buildRequestToolRegistry(
+    ctx: { user?: unknown },
+    sessionId?: string,
+  ): ToolRegistry | undefined {
     const tenantId = (ctx.user as { tenantId?: string } | undefined)?.tenantId ?? '';
     const userId = (ctx.user as { id?: string } | undefined)?.id ?? '';
     if (!tenantId || !options?.createTenantToolRegistry) return undefined;
@@ -171,7 +217,12 @@ export function createChatRoutes(
     '/api/ai/chat/approvals/:id/confirm',
     routeDoc('聊天内确认工具审批', {
       body: {
-        decision: { type: 'string', enum: ['approved', 'rejected'], required: true, description: '审批决定' },
+        decision: {
+          type: 'string',
+          enum: ['approved', 'rejected'],
+          required: true,
+          description: '审批决定',
+        },
         reason: { type: 'string', description: '备注原因（可选）' },
       },
     }),
@@ -259,7 +310,10 @@ export function createChatRoutes(
       query: {
         agentId: { type: 'string', description: '按 Agent 过滤' },
         limit: { type: 'int', description: '每页数量（默认 50，最大 100）' },
-        before: { type: 'string', description: '游标分页：只返回 updated_at 早于该 ISO 时间的记录' },
+        before: {
+          type: 'string',
+          description: '游标分页：只返回 updated_at 早于该 ISO 时间的记录',
+        },
       },
     }),
     async (ctx) => {
@@ -307,7 +361,12 @@ export function createChatRoutes(
     '/api/ai/conversations/trash/restore',
     routeDoc('从回收站恢复会话', {
       body: {
-        sessionIds: { type: 'array', items: { type: 'string' }, required: true, description: '会话 ID 列表' },
+        sessionIds: {
+          type: 'array',
+          items: { type: 'string' },
+          required: true,
+          description: '会话 ID 列表',
+        },
       },
     }),
     async (ctx) => {
@@ -336,7 +395,11 @@ export function createChatRoutes(
     '/api/ai/conversations/trash/purge',
     routeDoc('彻底删除回收站会话', {
       body: {
-        sessionIds: { type: 'array', items: { type: 'string' }, description: '会话 ID 列表（缺省清空全部）' },
+        sessionIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '会话 ID 列表（缺省清空全部）',
+        },
       },
     }),
     async (ctx) => {
@@ -381,7 +444,12 @@ export function createChatRoutes(
         const fileName = attachmentValidator.sanitizeFileName(file.name);
         if (!fileName) return fail('附件文件名不合法', 400, 400);
         const path = `attachments/${fileName}`;
-        await memoryService.writeArtifact(id, { tenantId, userId }, path, new Uint8Array(await file.arrayBuffer()));
+        await memoryService.writeArtifact(
+          id,
+          { tenantId, userId },
+          path,
+          new Uint8Array(await file.arrayBuffer()),
+        );
         return success({ path, name: file.name, size: file.size });
       } catch (e) {
         return handleError(e);
@@ -452,7 +520,9 @@ export function createChatRoutes(
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         // limit 上限保护：防止一次性拉取超大历史导致内存/IO 压力
         const rawLimit = Number((ctx.query as Record<string, unknown>)?.limit ?? 50);
-        const limit = Number.isFinite(rawLimit) ? Math.min(Math.max(1, Math.floor(rawLimit)), 200) : 50;
+        const limit = Number.isFinite(rawLimit)
+          ? Math.min(Math.max(1, Math.floor(rawLimit)), 200)
+          : 50;
         const messages = await conversationService.getMessages(id, userId, tenantId, limit);
         return success(messages);
       } catch (e) {
@@ -508,8 +578,14 @@ export function createChatRoutes(
 
         // 图片：base64 data URL
         const imageTypes: Record<string, string> = {
-          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif',
-          webp: 'image/webp', svg: 'image/svg+xml', ico: 'image/x-icon', bmp: 'image/bmp',
+          png: 'image/png',
+          jpg: 'image/jpeg',
+          jpeg: 'image/jpeg',
+          gif: 'image/gif',
+          webp: 'image/webp',
+          svg: 'image/svg+xml',
+          ico: 'image/x-icon',
+          bmp: 'image/bmp',
         };
         if (ext in imageTypes) {
           const b64 = Buffer.from(bytes).toString('base64');
@@ -519,20 +595,67 @@ export function createChatRoutes(
         // 纯文本类：直接 utf-8 输出；Markdown 单独标记以便前端渲染
         const markdownExts = new Set(['md', 'markdown']);
         const textExts = new Set([
-          'txt', 'log', 'json', 'jsonl', 'js', 'jsx', 'ts', 'tsx',
-          'py', 'java', 'go', 'rs', 'c', 'h', 'cpp', 'hpp', 'css', 'scss', 'less',
-          'html', 'htm', 'xml', 'yml', 'yaml', 'toml', 'ini', 'env', 'sh', 'bash',
-          'sql', 'csv', 'gitignore', 'dockerfile', 'lock',
+          'txt',
+          'log',
+          'json',
+          'jsonl',
+          'js',
+          'jsx',
+          'ts',
+          'tsx',
+          'py',
+          'java',
+          'go',
+          'rs',
+          'c',
+          'h',
+          'cpp',
+          'hpp',
+          'css',
+          'scss',
+          'less',
+          'html',
+          'htm',
+          'xml',
+          'yml',
+          'yaml',
+          'toml',
+          'ini',
+          'env',
+          'sh',
+          'bash',
+          'sql',
+          'csv',
+          'gitignore',
+          'dockerfile',
+          'lock',
         ]);
         if (markdownExts.has(ext)) {
-          return success({ kind: 'markdown', name, content: new TextDecoder('utf-8').decode(bytes) });
+          return success({
+            kind: 'markdown',
+            name,
+            content: new TextDecoder('utf-8').decode(bytes),
+          });
         }
         if (!ext || textExts.has(ext) || name.toLowerCase() === 'dockerfile') {
           return success({ kind: 'text', name, content: new TextDecoder('utf-8').decode(bytes) });
         }
 
         // Office / PDF / EPUB 等：file2md 转 Markdown 预览
-        const convertibleExts = new Set(['docx', 'pdf', 'xlsx', 'xls', 'pptx', 'ppt', 'epub', 'doc', 'rtf', 'odt', 'ods', 'odp']);
+        const convertibleExts = new Set([
+          'docx',
+          'pdf',
+          'xlsx',
+          'xls',
+          'pptx',
+          'ppt',
+          'epub',
+          'doc',
+          'rtf',
+          'odt',
+          'ods',
+          'odp',
+        ]);
         if (convertibleExts.has(ext)) {
           try {
             const converter = createConverter({ maxFileSize: 10 * 1024 * 1024 });
@@ -579,7 +702,8 @@ export function createChatRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        if (!memoryService || !(await memoryService.getSession(id, { tenantId, userId }))) return fail('会话不存在', 404, 404);
+        if (!memoryService || !(await memoryService.getSession(id, { tenantId, userId })))
+          return fail('会话不存在', 404, 404);
         await options.scheduleMemoryConsolidation({ sessionId: id, tenantId, userId });
         return success({ status: 'pending' });
       } catch (e) {
@@ -661,12 +785,32 @@ export function createChatRoutes(
         model: { type: 'string', description: '用户选择的模型 ID（须在 Agent 白名单内）' },
         tools: { type: 'array', items: { type: 'string' }, description: '工具过滤' },
         skillIds: { type: 'array', items: { type: 'string' }, description: '技能过滤' },
+        expertId: {
+          type: 'string',
+          description: '会话级专家（Role Override，本次对话覆盖 Agent 人设）',
+        },
         mcpServerIds: { type: 'array', items: { type: 'string' }, description: 'MCP 过滤' },
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
-        attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
-        thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
-        runMode: { type: 'string', enum: ['ask', 'auto', 'trust'], description: '审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）' },
-        truncateUserMessages: { type: 'integer', description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史' },
+        attachmentPaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '当前会话附件路径',
+        },
+        thinkingLevel: {
+          type: 'string',
+          enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+          description: '思考强度',
+        },
+        runMode: {
+          type: 'string',
+          enum: ['ask', 'auto', 'trust'],
+          description:
+            '审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）',
+        },
+        truncateUserMessages: {
+          type: 'integer',
+          description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史',
+        },
       },
       responses: {
         200: {
@@ -700,7 +844,12 @@ export function createChatRoutes(
           });
           returnedSessionId = conv.id;
         }
-        const truncateError = await truncateHistoryForResend(returnedSessionId, tenantId, userId, body);
+        const truncateError = await truncateHistoryForResend(
+          returnedSessionId,
+          tenantId,
+          userId,
+          body,
+        );
         if (truncateError) return truncateError;
         const toolRegistry = buildRequestToolRegistry(ctx, returnedSessionId);
         const runOptions = requestOptions(body);
@@ -723,6 +872,7 @@ export function createChatRoutes(
           // 能力过滤器
           tools: body.tools as string[] | undefined,
           skillIds: body.skillIds as string[] | undefined,
+          expertId: body.expertId as string | undefined,
           mcpServerIds: body.mcpServerIds as string[] | undefined,
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
           model: body.model as string | undefined,
@@ -757,12 +907,32 @@ export function createChatRoutes(
         model: { type: 'string', description: '用户选择的模型 ID（须在 Agent 白名单内）' },
         tools: { type: 'array', items: { type: 'string' }, description: '工具过滤' },
         skillIds: { type: 'array', items: { type: 'string' }, description: '技能过滤' },
+        expertId: {
+          type: 'string',
+          description: '会话级专家（Role Override，本次对话覆盖 Agent 人设）',
+        },
         mcpServerIds: { type: 'array', items: { type: 'string' }, description: 'MCP 过滤' },
         knowledgeBaseIds: { type: 'array', items: { type: 'string' }, description: '知识库过滤' },
-        attachmentPaths: { type: 'array', items: { type: 'string' }, description: '当前会话附件路径' },
-        thinkingLevel: { type: 'string', enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'], description: '思考强度' },
-        runMode: { type: 'string', enum: ['ask', 'auto', 'trust'], description: '审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）' },
-        truncateUserMessages: { type: 'integer', description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史' },
+        attachmentPaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '当前会话附件路径',
+        },
+        thinkingLevel: {
+          type: 'string',
+          enum: ['off', 'minimal', 'low', 'medium', 'high', 'xhigh'],
+          description: '思考强度',
+        },
+        runMode: {
+          type: 'string',
+          enum: ['ask', 'auto', 'trust'],
+          description:
+            '审批策略：ask=需人工审批（默认）、auto=子智能体审批、trust=跳过审批（critical 工具仍人工审批）',
+        },
+        truncateUserMessages: {
+          type: 'integer',
+          description: '编辑重发：仅保留前 N 轮用户消息及其回复，丢弃其后全部历史',
+        },
       },
       responses: {
         200: {
@@ -814,7 +984,12 @@ export function createChatRoutes(
         // 同一会话已有进行中的运行：先中断旧的，避免两个 run 同时写一份会话历史
         activeRuns.get(sessionId)?.controller.abort();
         const runController = new AbortController();
-        activeRuns.set(sessionId, { controller: runController, tenantId, userId, startedAt: Date.now() });
+        activeRuns.set(sessionId, {
+          controller: runController,
+          tenantId,
+          userId,
+          startedAt: Date.now(),
+        });
 
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
@@ -828,6 +1003,7 @@ export function createChatRoutes(
           // 能力过滤器
           tools: body.tools as string[] | undefined,
           skillIds: body.skillIds as string[] | undefined,
+          expertId: body.expertId as string | undefined,
           mcpServerIds: body.mcpServerIds as string[] | undefined,
           knowledgeBaseIds: body.knowledgeBaseIds as string[] | undefined,
           model: body.model as string | undefined,
@@ -855,7 +1031,8 @@ export function createChatRoutes(
             }
           } finally {
             // 运行真正结束（正常 / 停止 / 断开后后台跑完）才摘掉句柄
-            if (activeRuns.get(sessionId)?.controller === runController) activeRuns.delete(sessionId);
+            if (activeRuns.get(sessionId)?.controller === runController)
+              activeRuns.delete(sessionId);
           }
         })();
 

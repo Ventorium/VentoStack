@@ -350,6 +350,22 @@ export { addAgentRuntime } from './migrations/013_add_agent_runtime';
 export { agentModelsArray } from './migrations/014_agent_models_array';
 export { dropAiToolLog } from './migrations/015_drop_ai_tool_log';
 export { addApprovalSessionId } from './migrations/017_add_approval_session_id';
+export { createAiExpertTables } from './migrations/018_create_ai_expert_tables';
+
+// ---- Expert System ----
+export { createExpertHubService, sha256Hex, ExpertHubError } from './services/expert-hub';
+export type {
+  ExpertHubService, ExpertHubDeps,
+  HubManifest, HubExpertMeta, HubCategory,
+} from './services/expert-hub';
+export { scanExpert, MAX_PROMPT_LENGTH } from './services/expert-scan';
+export type { ScanResult, ScanFinding, ExpertScanner } from './services/expert-scan';
+export { createExpertService, ExpertServiceError } from './services/expert';
+export type {
+  ExpertService, ExpertServiceDeps, ExpertRecord,
+  RemoteExpertList, ExpertListParams, BatchInstallResult,
+} from './services/expert';
+export { createExpertRoutes } from './routes/expert';
 export { createAgentRuntimeClient } from './agent-runtime/client';
 export { createMemoryConsolidator } from './memory/consolidator';
 export type { AgentRuntimeClient, RuntimeSandbox, SandboxStatus } from './agent-runtime/types';
