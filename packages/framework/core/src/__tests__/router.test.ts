@@ -758,6 +758,74 @@ describe("Router - body schema", () => {
     const body = await res.json();
     expect(body.error).toBe("VALIDATION_ERROR");
   });
+
+  test("accepts a bodyless POST as empty object (no Content-Type)", async () => {
+    const router = createRouter();
+    router.post(
+      "/channels/:id/test",
+      {
+        body: {
+          text: { type: "string" },
+        },
+      },
+      (ctx) => ctx.json({ body: ctx.body }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/channels/:id/test"] as Record<string, RouteHandler>).POST!;
+    // 触发类 POST：无 body、无 Content-Type（浏览器 fetch / curl 都是这么发的）
+    const req = new Request("http://localhost:3000/channels/a/test", { method: "POST" });
+    const res = await handler(req);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ body: {} });
+  });
+
+  test("bodyless POST still enforces required body fields", async () => {
+    const router = createRouter();
+    router.post(
+      "/users",
+      {
+        body: {
+          name: { type: "string", required: true },
+        },
+      },
+      (ctx) => ctx.json({ name: ctx.body.name }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/users"] as Record<string, RouteHandler>).POST!;
+    const req = new Request("http://localhost:3000/users", { method: "POST" });
+    const res = await handler(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.error).toBe("VALIDATION_ERROR");
+    expect(body.errors).toEqual(["name is required"]);
+  });
+
+  test("rejects a non-empty body with unsupported Content-Type", async () => {
+    const router = createRouter();
+    router.post(
+      "/users",
+      {
+        body: {
+          name: { type: "string" },
+        },
+      },
+      (ctx) => ctx.json({ name: ctx.body.name }),
+    );
+
+    const compiled = router.compile();
+    const handler = (compiled["/users"] as Record<string, RouteHandler>).POST!;
+    const req = new Request("http://localhost:3000/users", {
+      method: "POST",
+      headers: { "Content-Type": "text/plain" },
+      body: "name=Alice",
+    });
+    const res = await handler(req);
+    expect(res.status).toBe(400);
+    const body = await res.json();
+    expect(body.errors).toEqual(["Unsupported Content-Type for body validation"]);
+  });
 });
 
 describe("Router - formData schema", () => {

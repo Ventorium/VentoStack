@@ -290,6 +290,21 @@ function normalizeContentType(contentType: string | null): string | undefined {
   return normalized && normalized.length > 0 ? normalized : undefined;
 }
 
+/**
+ * 请求是否「完全没有 body」。
+ *
+ * 只看 metadata，不消费请求流，因此 handler 里仍可安全 `parseBody(ctx.request)`。
+ * 显式 Content-Length 优先（含 `Content-Length: 0`），缺失时看运行时是否给了 body 流。
+ */
+function isBodylessRequest(req: Request): boolean {
+  const declared = req.headers.get("content-length");
+  if (declared !== null) {
+    const length = Number(declared);
+    if (Number.isFinite(length)) return length <= 0;
+  }
+  return req.body === null;
+}
+
 function createResponseValidationError(errors: string[]): Response {
   return new Response(JSON.stringify({ error: "RESPONSE_VALIDATION_ERROR", errors }), {
     status: 500,
@@ -971,7 +986,11 @@ export function createRouter(): Router {
             if (schema.body) {
               const contentType = req.headers.get("content-type") ?? "";
               let result: { data: Record<string, unknown>; errors: string[] };
-              if (contentType.includes("application/json")) {
+              if (isBodylessRequest(req)) {
+                // 无请求体（"触发类" POST 常见，如 POST /xxx/test）：按空对象校验。
+                // 此时 Content-Type 描述的是不存在的载荷，不该因此 400；required 仍照常报缺失。
+                result = coerceAndValidate({}, schema.body, strict);
+              } else if (contentType.includes("application/json")) {
                 result = await coerceAndValidateJSONBody(req, schema.body, strict);
               } else if (contentType.includes("application/x-www-form-urlencoded")) {
                 result = await coerceAndValidateFormBody(req, schema.body, strict);
