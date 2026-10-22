@@ -2327,6 +2327,103 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * OAuth 授权回调（匿名端点；一次性 state 防 CSRF/重放）
+     */
+    '/api/ai/connectors/oauth/callback': {
+      query: {
+        state: string,
+        code: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取连接器目录（含当前用户绑定状态）
+     */
+    '/api/ai/connectors/catalog': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取当前用户的连接器绑定列表
+     */
+    '/api/ai/connectors/bindings': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取虚拟机宿主列表
+     */
+    '/api/ai/runtime-hosts': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取虚拟机宿主预检要求与命令
+     */
+    '/api/ai/runtime-hosts/preflight': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取虚拟机宿主详情
+     */
+    '/api/ai/runtime-hosts/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取宿主上的虚拟机实例
+     */
+    '/api/ai/runtime-hosts/:id/instances': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取当前用户的虚拟机资源可用性
+     */
+    '/api/ai/runtime/availability': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取当前用户的虚拟机实例
+     */
+    '/api/ai/runtime/instances': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 获取工具列表
      */
     '/api/ai/tools': {
@@ -2344,6 +2441,592 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 渠道入站回调（URL 验证）
+     */
+    '/api/ai/channels/inbound/:channelId': {
+      query: never,
+      params: {
+        channelId: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取渠道类型目录（字段定义 / 默认值 / 接入引导）
+     */
+    '/api/ai/channels/catalog': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道目录
+         */
+        data?: {
+          /**
+           * @description 对外可访问地址；未配置时为 null（webhook 类渠道需先配置）
+           */
+          publicBaseUrl?: string,
+          /**
+           * @description 全部渠道类型
+           */
+          items?: {
+            /**
+             * @description 渠道类型标识
+             */
+            type?: string,
+            /**
+             * @description 渠道名称
+             */
+            name?: string,
+            /**
+             * @description 分组
+             * @enum im,office,iot
+             */
+            category?: string,
+            /**
+             * @description 一句话说明
+             */
+            description?: string,
+            /**
+             * @description 是否官方渠道
+             */
+            official?: boolean,
+            /**
+             * @description 接入方式
+             * @enum polling,long-conn,webhook
+             */
+            transport?: string,
+            /**
+             * @description 是否必须公网可达
+             */
+            requiresPublicUrl?: boolean,
+            /**
+             * @description 是否依赖扫码登录
+             */
+            requiresLogin?: boolean,
+            /**
+             * @description 风险与限制提示
+             */
+            warning?: string,
+            /**
+             * @description 官方文档深链
+             */
+            docsUrl?: string,
+            /**
+             * @description 接入步骤
+             */
+            setupGuide?: string[],
+            /**
+             * @description 接入步骤内联链接（按 text 在步骤文案中匹配）
+             */
+            setupLinks?: {
+              /**
+               * @description 步骤文案里要变成链接的片段
+               */
+              text?: string,
+              /**
+               * @description 链接目标
+               */
+              href?: string
+            }[],
+            /**
+             * @description 非密配置字段
+             */
+            configFields?: {
+              /**
+               * @description 字段键名
+               */
+              key?: string,
+              /**
+               * @description 字段标签
+               */
+              label?: string,
+              /**
+               * @description 控件类型
+               * @enum text,password,number,boolean,select,textarea
+               */
+              type?: string,
+              /**
+               * @description 是否必填
+               */
+              required?: boolean,
+              /**
+               * @description 格式示例
+               */
+              placeholder?: string,
+              /**
+               * @description 填写说明
+               */
+              help?: string,
+              /**
+               * @description 官方文档深链
+               */
+              docsUrl?: string,
+              /**
+               * @description 默认值
+               */
+              default?: {},
+              /**
+               * @description select 字段的候选项
+               */
+              options?: {
+                /**
+                 * @description 展示文案
+                 */
+                label?: string,
+                /**
+                 * @description 取值
+                 */
+                value?: string,
+                /**
+                 * @description 选中后的补充说明
+                 */
+                hint?: string
+              }[],
+              /**
+               * @description 数值下限
+               */
+              min?: number,
+              /**
+               * @description 数值上限
+               */
+              max?: number,
+              /**
+               * @description 是否只读（扫码回填）
+               */
+              readOnly?: boolean
+            }[],
+            /**
+             * @description 敏感字段（加密存储）
+             */
+            secretFields?: {
+              /**
+               * @description 字段键名
+               */
+              key?: string,
+              /**
+               * @description 字段标签
+               */
+              label?: string,
+              /**
+               * @description 控件类型
+               * @enum text,password,number,boolean,select,textarea
+               */
+              type?: string,
+              /**
+               * @description 是否必填
+               */
+              required?: boolean,
+              /**
+               * @description 格式示例
+               */
+              placeholder?: string,
+              /**
+               * @description 填写说明
+               */
+              help?: string,
+              /**
+               * @description 官方文档深链
+               */
+              docsUrl?: string,
+              /**
+               * @description 默认值
+               */
+              default?: {},
+              /**
+               * @description select 字段的候选项
+               */
+              options?: {
+                /**
+                 * @description 展示文案
+                 */
+                label?: string,
+                /**
+                 * @description 取值
+                 */
+                value?: string,
+                /**
+                 * @description 选中后的补充说明
+                 */
+                hint?: string
+              }[],
+              /**
+               * @description 数值下限
+               */
+              min?: number,
+              /**
+               * @description 数值上限
+               */
+              max?: number,
+              /**
+               * @description 是否只读（扫码回填）
+               */
+              readOnly?: boolean
+            }[],
+            /**
+             * @description 平台默认值
+             */
+            defaults?: {},
+            /**
+             * @description 单条消息字符上限
+             */
+            maxMessageLength?: number
+          }[]
+        }
+      }
+    },
+    /**
+     * 获取我的渠道列表
+     */
+    '/api/ai/channels': {
+      query: never,
+      params: never,
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道列表
+         */
+        data?: {
+          /**
+           * @description 渠道列表
+           */
+          items?: {
+            /**
+             * @description 渠道 ID
+             */
+            id?: string,
+            /**
+             * @description 渠道类型
+             */
+            type?: string,
+            /**
+             * @description 展示名
+             */
+            name?: string,
+            /**
+             * @description 非密配置（已脱敏回显）
+             */
+            config?: {},
+            /**
+             * @description 是否已配置凭证
+             */
+            hasSecret?: boolean,
+            /**
+             * @description 已配置的凭证字段名
+             */
+            secretKeys?: string[],
+            /**
+             * @description 绑定的 Agent ID，null 表示用平台默认
+             */
+            agentId?: string,
+            /**
+             * @description 是否启用
+             */
+            enabled?: boolean,
+            /**
+             * @description 运行状态
+             * @enum inactive,pending_login,connecting,active,degraded,error,standby
+             */
+            status?: string,
+            /**
+             * @description 状态说明（错误原因等）
+             */
+            statusDetail?: string,
+            /**
+             * @description webhook 模式下回填给平台的回调地址
+             */
+            webhookUrl?: string,
+            /**
+             * @description 是否需要扫码登录
+             */
+            requiresLogin?: boolean,
+            /**
+             * @description 是否需要公网地址
+             */
+            requiresPublicUrl?: boolean,
+            /**
+             * @description 接入方式
+             * @enum polling,long-conn,webhook
+             */
+            transport?: string,
+            /**
+             * @description 最近一次收发时间
+             */
+            lastActiveAt?: string,
+            /**
+             * @description 创建时间
+             */
+            createdAt?: string,
+            /**
+             * @description 更新时间
+             */
+            updatedAt?: string
+          }[]
+        }
+      }
+    },
+    /**
+     * 获取渠道已绑定账号
+     */
+    '/api/ai/channels/:id/identities': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 绑定列表
+         */
+        data?: {
+          /**
+           * @description 绑定列表
+           */
+          items?: {
+            /**
+             * @description 绑定记录 ID
+             */
+            id?: string,
+            /**
+             * @description 外部用户 ID（前 4 位 + ***）
+             */
+            externalUserId?: string,
+            /**
+             * @description 外部昵称
+             */
+            displayName?: string,
+            /**
+             * @description 绑定确认时间
+             */
+            verifiedAt?: string,
+            /**
+             * @description 创建时间
+             */
+            createdAt?: string
+          }[]
+        }
+      }
+    },
+    /**
+     * 获取渠道最近收发记录（脱敏摘要）
+     */
+    '/api/ai/channels/:id/messages': {
+      query: {
+        page?: number,
+        pageSize?: number
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 收发记录分页
+         */
+        data?: {
+          /**
+           * @description 当前页记录
+           */
+          list?: {
+            /**
+             * @description 记录 ID
+             */
+            id?: string,
+            /**
+             * @description 方向：入站 / 出站
+             * @enum in,out
+             */
+            direction?: string,
+            /**
+             * @description 出站种类
+             * @enum reply,notify,progress
+             */
+            kind?: string,
+            /**
+             * @description 处理状态
+             */
+            status?: string,
+            /**
+             * @description 关联的 AI 会话 ID
+             */
+            sessionId?: string,
+            /**
+             * @description 正文预览（已脱敏截断）
+             */
+            preview?: string,
+            /**
+             * @description 失败原因
+             */
+            error?: string,
+            /**
+             * @description 重试次数
+             */
+            attempts?: number,
+            /**
+             * @description 创建时间
+             */
+            createdAt?: string
+          }[],
+          /**
+           * @description 总条数
+           */
+          total?: number,
+          /**
+           * @description 页码
+           */
+          page?: number,
+          /**
+           * @description 每页数量
+           */
+          pageSize?: number
+        }
+      }
+    },
+    /**
+     * 轮询扫码状态（confirmed 时自动落库并启用）
+     */
+    '/api/ai/channels/:id/qr-login/status': {
+      query: {
+        qrcode: string,
+        verifyCode?: string
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 扫码状态
+         */
+        data?: {
+          /**
+           * @description 扫码状态
+           * @enum wait,scaned,confirmed,expired,need_verifycode,blocked
+           */
+          status?: string,
+          /**
+           * @description 状态说明
+           */
+          detail?: string
+        }
+      }
+    },
+    /**
+     * 读取会话的渠道通知设置
+     */
+    '/api/ai/conversations/:id/channel-notify': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 通知设置与可用渠道
+         */
+        data?: {
+          /**
+           * @description 会话级渠道通知设置
+           */
+          settings?: {
+            /**
+             * @description 是否允许推送结果到渠道
+             */
+            notifyEnabled?: boolean,
+            /**
+             * @description 指定渠道 id；空数组表示全部已启用渠道
+             */
+            notifyChannelIds?: string[],
+            /**
+             * @description 每轮结束是否由子智能体总结后自动推送
+             */
+            autoNotifyOnFinish?: boolean,
+            /**
+             * @description 最近一次成功推送时间
+             */
+            notifiedAt?: string
+          },
+          /**
+           * @description 可用渠道
+           */
+          available?: {
+            /**
+             * @description 渠道 ID
+             */
+            id?: string,
+            /**
+             * @description 渠道类型
+             */
+            type?: string,
+            /**
+             * @description 渠道名称
+             */
+            name?: string,
+            /**
+             * @description 是否已绑定当前用户账号
+             */
+            bound?: boolean
+          }[]
+        }
+      }
     },
     /**
      * 获取上下文概览（KPI / 构成 / 每日账目）
@@ -3139,6 +3822,7 @@ export type OpenAPIs = {
   post: {
     /**
      * 用户登录
+     * @description 连续失败达到 sys_login_max_attempts 后锁定账号，锁定期间返回 account_locked 与 retryAfterMinutes。
      */
     '/api/auth/login': {
       query: never,
@@ -4704,9 +5388,13 @@ export type OpenAPIs = {
          */
         contextCollectionEnabled?: boolean,
         /**
-         * @description 是否为 Agent 创建独占虚拟环境（创建后不可修改）
+         * @description 是否开启虚拟机环境（创建/编辑均可修改；开启时会校验可用资源）
          */
-        requiresVirtualEnvironment?: boolean
+        requiresVirtualEnvironment?: boolean,
+        /**
+         * @description 虚拟机是否允许出网；默认 true，仅开启虚拟机时有意义
+         */
+        networkEnabled?: boolean
       },
       response: {
         /**
@@ -5237,6 +5925,660 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 发起连接器 OAuth 授权（返回授权跳转 URL，由前端 popup 打开）
+     */
+    '/api/ai/connectors/:kind/connect': {
+      query: never,
+      params: {
+        kind: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 以 API Key / 个人令牌连接连接器
+     */
+    '/api/ai/connectors/:kind/credentials': {
+      query: never,
+      params: {
+        kind: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 凭证字段键值对（字段键以目录 auth_template.fields 为准）
+         */
+        values: {}
+      },
+      response: any
+    },
+    /**
+     * 新增虚拟机宿主
+     */
+    '/api/ai/runtime-hosts': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 宿主名称
+         */
+        name: string,
+        /**
+         * @description 备注
+         */
+        note?: string,
+        /**
+         * @description 宿主机监听地址（IP:PORT）
+         */
+        listenAddress: string,
+        /**
+         * @description CPU 核数（可留空，接入后自动探测）
+         */
+        cpuTotal?: number,
+        /**
+         * @description 内存 MB（可留空）
+         */
+        memoryMbTotal?: number,
+        /**
+         * @description 磁盘 MB（可留空）
+         */
+        diskMbTotal?: number,
+        /**
+         * @description 最大沙箱数
+         */
+        maxSandboxes?: number
+      },
+      response: any
+    },
+    /**
+     * 验证虚拟机宿主连接
+     */
+    '/api/ai/runtime-hosts/:id/verify': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 宿主地址
+         */
+        baseUrl: string
+      },
+      response: any
+    },
+    /**
+     * 刷新虚拟机宿主状态
+     */
+    '/api/ai/runtime-hosts/:id/refresh': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 轮换虚拟机宿主 Token
+     */
+    '/api/ai/runtime-hosts/:id/rotate-token': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 暂停虚拟机实例
+     */
+    '/api/ai/runtime/instances/:id/pause': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 恢复虚拟机实例
+     */
+    '/api/ai/runtime/instances/:id/resume': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 销毁虚拟机实例
+     */
+    '/api/ai/runtime/instances/:id/destroy': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 渠道入站回调（消息推送，验签即认证）
+     */
+    '/api/ai/channels/inbound/:channelId': {
+      query: never,
+      params: {
+        channelId: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 新建渠道
+     */
+    '/api/ai/channels': {
+      query: never,
+      params: never,
+      headers: never,
+      body: {
+        /**
+         * @description 渠道类型（见 catalog）
+         */
+        type: string,
+        /**
+         * @description 展示名，缺省为「我的{渠道名}」
+         */
+        name?: string,
+        /**
+         * @description 非密配置
+         */
+        config?: {},
+        /**
+         * @description 凭证（加密存储，不回显）
+         */
+        secrets?: {},
+        /**
+         * @description 绑定的 Agent，缺省用平台默认
+         */
+        agentId?: string
+      },
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道视图
+         */
+        data?: {
+          /**
+           * @description 渠道 ID
+           */
+          id?: string,
+          /**
+           * @description 渠道类型
+           */
+          type?: string,
+          /**
+           * @description 展示名
+           */
+          name?: string,
+          /**
+           * @description 非密配置（已脱敏回显）
+           */
+          config?: {},
+          /**
+           * @description 是否已配置凭证
+           */
+          hasSecret?: boolean,
+          /**
+           * @description 已配置的凭证字段名
+           */
+          secretKeys?: string[],
+          /**
+           * @description 绑定的 Agent ID，null 表示用平台默认
+           */
+          agentId?: string,
+          /**
+           * @description 是否启用
+           */
+          enabled?: boolean,
+          /**
+           * @description 运行状态
+           * @enum inactive,pending_login,connecting,active,degraded,error,standby
+           */
+          status?: string,
+          /**
+           * @description 状态说明（错误原因等）
+           */
+          statusDetail?: string,
+          /**
+           * @description webhook 模式下回填给平台的回调地址
+           */
+          webhookUrl?: string,
+          /**
+           * @description 是否需要扫码登录
+           */
+          requiresLogin?: boolean,
+          /**
+           * @description 是否需要公网地址
+           */
+          requiresPublicUrl?: boolean,
+          /**
+           * @description 接入方式
+           * @enum polling,long-conn,webhook
+           */
+          transport?: string,
+          /**
+           * @description 最近一次收发时间
+           */
+          lastActiveAt?: string,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string,
+          /**
+           * @description 更新时间
+           */
+          updatedAt?: string
+        }
+      }
+    },
+    /**
+     * 启用渠道
+     */
+    '/api/ai/channels/:id/enable': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道视图
+         */
+        data?: {
+          /**
+           * @description 渠道 ID
+           */
+          id?: string,
+          /**
+           * @description 渠道类型
+           */
+          type?: string,
+          /**
+           * @description 展示名
+           */
+          name?: string,
+          /**
+           * @description 非密配置（已脱敏回显）
+           */
+          config?: {},
+          /**
+           * @description 是否已配置凭证
+           */
+          hasSecret?: boolean,
+          /**
+           * @description 已配置的凭证字段名
+           */
+          secretKeys?: string[],
+          /**
+           * @description 绑定的 Agent ID，null 表示用平台默认
+           */
+          agentId?: string,
+          /**
+           * @description 是否启用
+           */
+          enabled?: boolean,
+          /**
+           * @description 运行状态
+           * @enum inactive,pending_login,connecting,active,degraded,error,standby
+           */
+          status?: string,
+          /**
+           * @description 状态说明（错误原因等）
+           */
+          statusDetail?: string,
+          /**
+           * @description webhook 模式下回填给平台的回调地址
+           */
+          webhookUrl?: string,
+          /**
+           * @description 是否需要扫码登录
+           */
+          requiresLogin?: boolean,
+          /**
+           * @description 是否需要公网地址
+           */
+          requiresPublicUrl?: boolean,
+          /**
+           * @description 接入方式
+           * @enum polling,long-conn,webhook
+           */
+          transport?: string,
+          /**
+           * @description 最近一次收发时间
+           */
+          lastActiveAt?: string,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string,
+          /**
+           * @description 更新时间
+           */
+          updatedAt?: string
+        }
+      }
+    },
+    /**
+     * 停用渠道
+     */
+    '/api/ai/channels/:id/disable': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道视图
+         */
+        data?: {
+          /**
+           * @description 渠道 ID
+           */
+          id?: string,
+          /**
+           * @description 渠道类型
+           */
+          type?: string,
+          /**
+           * @description 展示名
+           */
+          name?: string,
+          /**
+           * @description 非密配置（已脱敏回显）
+           */
+          config?: {},
+          /**
+           * @description 是否已配置凭证
+           */
+          hasSecret?: boolean,
+          /**
+           * @description 已配置的凭证字段名
+           */
+          secretKeys?: string[],
+          /**
+           * @description 绑定的 Agent ID，null 表示用平台默认
+           */
+          agentId?: string,
+          /**
+           * @description 是否启用
+           */
+          enabled?: boolean,
+          /**
+           * @description 运行状态
+           * @enum inactive,pending_login,connecting,active,degraded,error,standby
+           */
+          status?: string,
+          /**
+           * @description 状态说明（错误原因等）
+           */
+          statusDetail?: string,
+          /**
+           * @description webhook 模式下回填给平台的回调地址
+           */
+          webhookUrl?: string,
+          /**
+           * @description 是否需要扫码登录
+           */
+          requiresLogin?: boolean,
+          /**
+           * @description 是否需要公网地址
+           */
+          requiresPublicUrl?: boolean,
+          /**
+           * @description 接入方式
+           * @enum polling,long-conn,webhook
+           */
+          transport?: string,
+          /**
+           * @description 最近一次收发时间
+           */
+          lastActiveAt?: string,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string,
+          /**
+           * @description 更新时间
+           */
+          updatedAt?: string
+        }
+      }
+    },
+    /**
+     * 渠道探活
+     */
+    '/api/ai/channels/:id/health': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道健康状态
+         */
+        data?: {
+          /**
+           * @description 当前状态
+           * @enum inactive,pending_login,connecting,active,degraded,error,standby
+           */
+          status?: string,
+          /**
+           * @description 状态说明
+           */
+          detail?: string
+        }
+      }
+    },
+    /**
+     * 发送测试消息
+     */
+    '/api/ai/channels/:id/test': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 自定义文案，缺省为固定测试语
+         */
+        text?: string
+      },
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 测试消息结果
+         */
+        data?: {
+          /**
+           * @description 是否已发出
+           */
+          sent?: boolean
+        }
+      }
+    },
+    /**
+     * 生成账号绑定码（6 位，5 分钟有效）
+     */
+    '/api/ai/channels/:id/bind-code': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 绑定码
+         */
+        data?: {
+          /**
+           * @description 6 位验证码（5 分钟有效、一次性）
+           */
+          code?: string,
+          /**
+           * @description 过期时间（ISO 8601）
+           */
+          expiresAt?: string,
+          /**
+           * @description 给用户看的操作指引
+           */
+          instruction?: string
+        }
+      }
+    },
+    /**
+     * 获取微信扫码登录二维码
+     */
+    '/api/ai/channels/:id/qr-login/begin': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 扫码登录二维码
+         */
+        data?: {
+          /**
+           * @description 二维码标识（轮询状态时回传）
+           */
+          qrcode?: string,
+          /**
+           * @description 二维码要编码的内容（liteapp 落地页 URL），由前端渲染成二维码图形
+           */
+          qrcodeContent?: string,
+          /**
+           * @description 有效期秒数
+           */
+          expiresIn?: number
+        }
+      }
+    },
+    /**
+     * 提交扫码验证码
+     */
+    '/api/ai/channels/:id/qr-login/verify-code': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 二维码标识
+         */
+        qrcode: string,
+        /**
+         * @description 手机收到的验证码
+         */
+        verifyCode: string
+      },
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 扫码状态
+         */
+        data?: {
+          /**
+           * @description 扫码状态
+           * @enum wait,scaned,confirmed,expired,need_verifycode,blocked
+           */
+          status?: string,
+          /**
+           * @description 状态说明
+           */
+          detail?: string
+        }
+      }
     }
   },
   delete: {
@@ -5579,6 +6921,93 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 解绑连接器（级联停用托管 MCP）
+     */
+    '/api/ai/connectors/bindings/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 删除虚拟机宿主
+     */
+    '/api/ai/runtime-hosts/:id': {
+      query: {
+        force?: string
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 删除渠道
+     */
+    '/api/ai/channels/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 删除结果
+         */
+        data?: {
+          /**
+           * @description 是否已删除
+           */
+          deleted?: boolean
+        }
+      }
+    },
+    /**
+     * 解绑账号
+     */
+    '/api/ai/channels/:id/identities/:identityId': {
+      query: never,
+      params: {
+        id: string,
+        identityId: string
+      },
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 解绑结果
+         */
+        data?: {
+          /**
+           * @description 是否已解绑
+           */
+          unbound?: boolean
+        }
+      }
     }
   },
   put: {
@@ -6422,7 +7851,15 @@ export type OpenAPIs = {
         /**
          * @description 是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）
          */
-        contextCollectionEnabled?: boolean
+        contextCollectionEnabled?: boolean,
+        /**
+         * @description 是否开启虚拟机环境（开启时会校验可用资源）
+         */
+        requiresVirtualEnvironment?: boolean,
+        /**
+         * @description 虚拟机是否允许出网；默认 true
+         */
+        networkEnabled?: boolean
       },
       response: any
     },
@@ -6505,6 +7942,47 @@ export type OpenAPIs = {
       headers: never,
       body: never,
       response: any
+    },
+    /**
+     * 更新虚拟机宿主
+     */
+    '/api/ai/runtime-hosts/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 宿主名称
+         */
+        name?: string,
+        /**
+         * @description 备注
+         */
+        note?: string,
+        /**
+         * @description 是否启用
+         */
+        enabled?: boolean,
+        /**
+         * @description CPU 核数
+         */
+        cpuTotal?: number,
+        /**
+         * @description 内存 MB
+         */
+        memoryMbTotal?: number,
+        /**
+         * @description 磁盘 MB
+         */
+        diskMbTotal?: number,
+        /**
+         * @description 最大沙箱数
+         */
+        maxSandboxes?: number
+      },
+      response: any
     }
   },
   patch: {
@@ -6524,6 +8002,179 @@ export type OpenAPIs = {
         title: string
       },
       response: any
+    },
+    /**
+     * 更新渠道
+     */
+    '/api/ai/channels/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 展示名
+         */
+        name?: string,
+        /**
+         * @description 非密配置（按字段合并）
+         */
+        config?: {},
+        /**
+         * @description 凭证；留空表示不修改
+         */
+        secrets?: {},
+        /**
+         * @description 绑定的 Agent
+         */
+        agentId?: string
+      },
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 渠道视图
+         */
+        data?: {
+          /**
+           * @description 渠道 ID
+           */
+          id?: string,
+          /**
+           * @description 渠道类型
+           */
+          type?: string,
+          /**
+           * @description 展示名
+           */
+          name?: string,
+          /**
+           * @description 非密配置（已脱敏回显）
+           */
+          config?: {},
+          /**
+           * @description 是否已配置凭证
+           */
+          hasSecret?: boolean,
+          /**
+           * @description 已配置的凭证字段名
+           */
+          secretKeys?: string[],
+          /**
+           * @description 绑定的 Agent ID，null 表示用平台默认
+           */
+          agentId?: string,
+          /**
+           * @description 是否启用
+           */
+          enabled?: boolean,
+          /**
+           * @description 运行状态
+           * @enum inactive,pending_login,connecting,active,degraded,error,standby
+           */
+          status?: string,
+          /**
+           * @description 状态说明（错误原因等）
+           */
+          statusDetail?: string,
+          /**
+           * @description webhook 模式下回填给平台的回调地址
+           */
+          webhookUrl?: string,
+          /**
+           * @description 是否需要扫码登录
+           */
+          requiresLogin?: boolean,
+          /**
+           * @description 是否需要公网地址
+           */
+          requiresPublicUrl?: boolean,
+          /**
+           * @description 接入方式
+           * @enum polling,long-conn,webhook
+           */
+          transport?: string,
+          /**
+           * @description 最近一次收发时间
+           */
+          lastActiveAt?: string,
+          /**
+           * @description 创建时间
+           */
+          createdAt?: string,
+          /**
+           * @description 更新时间
+           */
+          updatedAt?: string
+        }
+      }
+    },
+    /**
+     * 更新会话的渠道通知设置
+     */
+    '/api/ai/conversations/:id/channel-notify': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: {
+        /**
+         * @description 是否允许推送结果到渠道
+         */
+        notifyEnabled?: boolean,
+        /**
+         * @description 指定渠道 id；空数组表示全部已启用渠道
+         */
+        notifyChannelIds?: string[],
+        /**
+         * @description 每轮结束是否由子智能体总结后自动推送
+         */
+        autoNotifyOnFinish?: boolean
+      },
+      response: {
+        /**
+         * @description 业务码，0 为成功
+         */
+        code?: number,
+        /**
+         * @description 提示信息
+         */
+        message?: string,
+        /**
+         * @description 更新后的通知设置
+         */
+        data?: {
+          /**
+           * @description 会话级渠道通知设置
+           */
+          settings?: {
+            /**
+             * @description 是否允许推送结果到渠道
+             */
+            notifyEnabled?: boolean,
+            /**
+             * @description 指定渠道 id；空数组表示全部已启用渠道
+             */
+            notifyChannelIds?: string[],
+            /**
+             * @description 每轮结束是否由子智能体总结后自动推送
+             */
+            autoNotifyOnFinish?: boolean,
+            /**
+             * @description 最近一次成功推送时间
+             */
+            notifiedAt?: string
+          }
+        }
+      }
     }
   }
 }

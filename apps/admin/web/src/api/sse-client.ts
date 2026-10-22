@@ -35,6 +35,12 @@ export interface StreamCallbacks {
   onSession?: (sessionId: string) => void;
   /** 会话标题事件（配置了会话总结模型时，对话结束后下发生成的标题） */
   onTitle?: (title: string) => void;
+  /** 虚拟机环境准备进度 */
+  onEnvironment?: (state: {
+    phase: 'preparing' | 'ready' | 'error';
+    message: string;
+    elapsedMs?: number;
+  }) => void;
   /** 工具审批请求事件（高风险工具需要用户在聊天内确认后才能继续执行） */
   onApprovalRequired?: (approval: {
     id: string;
@@ -89,6 +95,7 @@ export interface AIStreamChunk {
     | 'sources'
     | 'session'
     | 'title'
+    | 'environment'
     | 'approval_required'
     | 'approval_resolved'
     | 'error'
@@ -105,6 +112,9 @@ export interface AIStreamChunk {
   sources?: Array<{ title: string; url: string }>;
   sessionId?: string;
   title?: string;
+  phase?: 'preparing' | 'ready' | 'error';
+  message?: string;
+  elapsedMs?: number;
   /** approval_required：待审批请求；tool_result：非人工放行来源（auto/trust） */
   approval?:
     | {
@@ -218,6 +228,15 @@ export function dispatchChunk(chunk: AIStreamChunk, callbacks: StreamCallbacks):
       break;
     case 'title':
       if (chunk.title) callbacks.onTitle?.(chunk.title);
+      break;
+    case 'environment':
+      if (chunk.phase) {
+        callbacks.onEnvironment?.({
+          phase: chunk.phase,
+          message: chunk.message ?? '',
+          ...(chunk.elapsedMs === undefined ? {} : { elapsedMs: chunk.elapsedMs }),
+        });
+      }
       break;
     case 'approval_required':
       if (chunk.approval && 'id' in chunk.approval) callbacks.onApprovalRequired?.(chunk.approval);

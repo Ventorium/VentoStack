@@ -17,7 +17,7 @@ import {
   createPermMiddleware,
 } from '@ventostack/auth';
 import type { Cache } from '@ventostack/cache';
-import type { Router } from '@ventostack/core';
+import type { Middleware, Router } from '@ventostack/core';
 import { createConfigEncryptor, createRouter, createTagLogger } from '@ventostack/core';
 import type { Database, SqlExecutor, TableSchemaInfo } from '@ventostack/database';
 import { createDatabase } from '@ventostack/database';
@@ -70,15 +70,63 @@ export interface AIModule {
   services: {
     /** 事件发射器，供 ai-context 订阅 */
     eventEmitter: unknown;
+    /** 会话统一入口（渠道侧复用，避免渠道自建一套会话） */
+    sessionService?: unknown;
+    /** Agent 循环（渠道内直接运行 Agent，不经过 HTTP） */
+    agentLoop?: unknown;
+    /** 请求级工具注册表工厂（渠道工具由 extraTools 注入） */
+    createToolRegistry?: (
+      tenantId: string,
+      userId?: string,
+      sessionId?: string,
+    ) => Promise<unknown>;
+    /** 通知摘要用的模型网关 */
+    llmGateway?: unknown;
+    /** Agent 读取（取 summaryModel） */
+    agentCrud?: {
+      list(params: {
+        tenantId: string;
+        userId: string;
+        isAdmin: boolean;
+        page?: number;
+        pageSize?: number;
+      }): Promise<{ list: unknown[]; total: number }>;
+    };
   };
   router: Router;
   init(): Promise<void>;
+  shutdown?(): Promise<void>;
 }
 
 /** AI 上下文模块最小结构（createAiContextModule 返回值，结构兼容即可） */
 export interface AiContextModule {
   router: Router;
   init(): Promise<void>;
+}
+
+/** AI 渠道模块最小结构（createAiChannelModule 返回值，结构兼容即可） */
+export interface AiChannelModule {
+  services: {
+    /** 按会话开关返回渠道工具（注入到 AI 的 extraTools） */
+    createTools(params: {
+      tenantId: string;
+      userId: string;
+      sessionId?: string;
+    }): Promise<unknown[]>;
+    /** 一轮对话结束后的自动推送（注入到 AI 的 onRunFinished） */
+    notifier: {
+      onRunFinished(params: {
+        sessionId: string;
+        agentId: string;
+        tenantId: string;
+        userId: string;
+        finalContent: string;
+      }): Promise<void>;
+    };
+  };
+  router: Router;
+  init(): Promise<void>;
+  shutdown?(): Promise<void>;
 }
 
 /** 平台配置 */
@@ -133,6 +181,8 @@ export interface PlatformConfig {
     ai?: boolean;
     /** AI 上下文洞察（依赖 ai 模块，缺省跟随 ai 开关） */
     aiContext?: boolean;
+    /** 个人级对话渠道（依赖 ai 模块，缺省跟随 ai 开关） */
+    aiChannel?: boolean;
     /** OAuth 2.0 / OpenID Connect 认证中心 */
     oauth?: boolean;
   };
@@ -165,6 +215,19 @@ export interface PlatformConfig {
     expertHubBaseUrl?: string;
     /** ExpertHub manifest 签名公钥（ed25519 hex）；配置后强制校验 manifest.sig */
     expertHubSigningPubkey?: string;
+    /** 对外可访问地址；用于生成连接器 OAuth 的 redirect_uri（缺省时 OAuth 连接 fail-closed） */
+    publicBaseUrl?: string;
+  };
+
+  /** AI 渠道模块配置（modules.aiChannel 为 true 时生效） */
+  aiChannelConfig?: {
+    /**
+     * 对外可访问地址，用于给飞书/企微/QQ/钉钉回填 webhook 回调地址。
+     * 未配置时 webhook 类渠道会在 UI 上提示「先配置公网地址」。
+     */
+    publicBaseUrl?: string;
+    /** 渠道未显式绑定 Agent 时的默认 Agent；缺省按租户取第一个可用 Agent */
+    defaultAgentId?: string;
   };
 
   /** 当前部署的可信租户标识；所有 Admin 资源必须绑定该值 */
@@ -208,12 +271,16 @@ export interface Platform {
   ai?: AIModule;
   /** AI 上下文模块 */
   aiContext?: AiContextModule;
+  /** AI 对话渠道模块 */
+  aiChannel?: AiChannelModule;
   /** OAuth 2.0 / OpenID Connect 模块 */
   oauth?: OAuthModule;
   /** 所有路由的聚合 */
   router: Router;
   /** 初始化所有模块 */
   init(): Promise<void>;
+  /** 优雅关停（停长连接、停定时器）；由宿主在 SIGTERM 时调用 */
+  shutdown(): Promise<void>;
 }
 
 const bootLog = createTagLogger('boot');
@@ -230,6 +297,38 @@ async function loadAIModule(params: {
   defaultModel: string;
   storagePath: string;
   agentRuntime?: { baseUrl: string; token: string; timeoutMs: number };
+  platformAdminMiddleware?: Middleware;
+  notification?: {
+    send(params: {
+      templateId?: string;
+      receiverId: string;
+      channel: string;
+      title?: string;
+      content: string;
+      variables?: Record<string, unknown>;
+    }): Promise<{ messageId: string }>;
+  };
+  notifyPlatformAdmins?: (params: {
+    tenantId: string;
+    title: string;
+    content: string;
+  }) => Promise<void>;
+  /** 渠道工具注入点；channel 模块晚于 ai 模块创建，闭包内按需解析 */
+  extraTools?: (params: {
+    tenantId: string;
+    userId: string;
+    sessionId?: string;
+  }) => Promise<unknown[]>;
+  /** 会话结束钩子；同上 */
+  onRunFinished?: (params: {
+    sessionId: string;
+    agentId: string;
+    tenantId: string;
+    userId: string;
+    finalContent: string;
+  }) => Promise<void>;
+  /** 对外可访问地址；用于连接器 OAuth 回调地址 */
+  publicBaseUrl?: string;
 }): Promise<AIModule> {
   let factory: (deps: unknown) => AIModule;
   try {
@@ -271,6 +370,45 @@ async function loadAiContextModule(params: {
     );
   }
   return factory(params);
+}
+
+/**
+ * 动态加载可选 AI 渠道模块（@ventostack/ai-channel 未安装时给出明确指引）
+ *
+ * 装配顺序是「两段式」：
+ *   1. 先建 ai 模块，拿到 sessionService / agentLoop / createToolRegistry；
+ *   2. 再用这些能力建渠道模块，并把渠道的 createTools / notifier 通过
+ *      extraTools / onRunFinished 注回 ai 模块。
+ * 循环引用用「闭包晚绑定」解决：extraTools 在请求期才执行，届时 channel 模块已就绪。
+ */
+async function loadAiChannelModule(params: {
+  db: Database;
+  cache: Cache;
+  authMiddleware: ReturnType<typeof createAuthMiddleware>;
+  permMiddleware: ReturnType<typeof createPermMiddleware>;
+  ai: unknown;
+  credentialEncryptionKey: string;
+  publicBaseUrl?: string;
+  defaultAgentId?: string;
+  resolveAgentId?(input: { tenantId: string; userId: string }): Promise<string | null>;
+}): Promise<AiChannelModule> {
+  let factory: (deps: unknown) => AiChannelModule;
+  try {
+    factory = (
+      (await import('@ventostack/ai-channel')) as {
+        createAiChannelModule: (deps: unknown) => AiChannelModule;
+      }
+    ).createAiChannelModule;
+  } catch (error) {
+    throw new Error(
+      `modules.aiChannel 已启用但未安装 @ventostack/ai-channel（可选依赖）。请安装该包，或将 modules.aiChannel 设为 false。原始错误：${String(error)}`,
+    );
+  }
+  return factory({
+    ...params,
+    // 渠道凭据复用 AI 的加密密钥：同一套部署只需管理一把 32 字节密钥
+    encryptor: createConfigEncryptor({ key: params.credentialEncryptionKey }),
+  });
 }
 
 /**
@@ -331,6 +469,8 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ai: moduleFlags?.ai === true,
     // 链路追踪依赖 ai 模块：ai 关闭时强制禁用
     aiContext: moduleFlags?.aiContext !== false && moduleFlags?.ai === true,
+    // 对话渠道同样依赖 ai 模块（会话 / Agent 循环都在 ai 里）
+    aiChannel: moduleFlags?.aiChannel !== false && moduleFlags?.ai === true,
     oauth: moduleFlags?.oauth === true,
   };
 
@@ -512,6 +652,12 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   // AI 模块：仅在实际启用时动态加载 @ventostack/ai / @ventostack/ai-context。
   // 这两个包是 optionalDependencies，未启用 AI 的应用不必安装；
   // 动态 import 使未安装时不影响包解析与构建（bun build --packages=external 保留 import 语句，仅运行时触发）。
+  //
+  // 渠道模块必须晚于 AI 模块创建（它要用 sessionService / agentLoop），
+  // 而 AI 模块又要拿渠道的 extraTools / onRunFinished —— 用「闭包晚绑定」破环：
+  // 两个钩子只在请求期执行，那时 aiChannelMod 必然已经赋值。
+  let aiChannelMod: AiChannelModule | undefined;
+
   const aiMod = enabled.ai
     ? await loadAIModule({
         db,
@@ -524,6 +670,35 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         llmProviders: config.aiConfig?.llmProviders ?? [],
         defaultModel: config.aiConfig?.defaultModel ?? 'gpt-4o-mini',
         storagePath: config.aiConfig?.storagePath ?? './data/knowledge-bases',
+        ...(system
+          ? { platformAdminMiddleware: system.services.governance.adminOnlyMiddleware }
+          : {}),
+        ...(notification ? { notification: notification.services.notification } : {}),
+        ...(notification && system
+          ? {
+              async notifyPlatformAdmins(params) {
+                const rows = (await db.raw(
+                  `SELECT DISTINCT ur.user_id
+                   FROM sys_user_role ur
+                   JOIN sys_role r ON r.id = ur.role_id AND r.tenant_id = ur.tenant_id
+                   JOIN sys_user u ON u.id = ur.user_id AND u.tenant_id = ur.tenant_id
+                   WHERE ur.tenant_id = $1 AND r.code = 'admin' AND r.status = 1
+                     AND u.status = 1 AND u.deleted_at IS NULL`,
+                  [params.tenantId],
+                )) as Array<{ user_id: string }>;
+                await Promise.all(
+                  rows.map((row) =>
+                    notification.services.notification.send({
+                      receiverId: row.user_id,
+                      channel: 'in_app',
+                      title: params.title,
+                      content: params.content,
+                    }),
+                  ),
+                );
+              },
+            }
+          : {}),
         ...(config.aiConfig?.expertDataDir ? { expertDataDir: config.aiConfig.expertDataDir } : {}),
         ...(config.aiConfig?.expertHubBaseUrl
           ? { expertHubBaseUrl: config.aiConfig.expertHubBaseUrl }
@@ -531,9 +706,72 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
         ...(config.aiConfig?.expertHubSigningPubkey
           ? { expertHubSigningPubkey: config.aiConfig.expertHubSigningPubkey }
           : {}),
+        ...(config.aiConfig?.publicBaseUrl
+          ? { publicBaseUrl: config.aiConfig.publicBaseUrl }
+          : {}),
         ...(config.aiConfig?.agentRuntime ? { agentRuntime: config.aiConfig.agentRuntime } : {}),
+        // 渠道工具：会话开启「渠道通知」时才返回，因此必须异步（要查会话设置）
+        ...(enabled.aiChannel
+          ? {
+              extraTools: async (params) =>
+                aiChannelMod ? await aiChannelMod.services.createTools(params) : [],
+            }
+          : {}),
+        // 一轮结束后的自动推送：finalContent 是本轮最后一次完整回复
+        ...(enabled.aiChannel
+          ? {
+              onRunFinished: async (params) => {
+                if (!aiChannelMod) return;
+                await aiChannelMod.services.notifier.onRunFinished(params);
+              },
+            }
+          : {}),
       })
     : undefined;
+
+  // AI 对话渠道：个人级 IM/IoT 入口，与 Web 会话共用同一份 session
+  const aiChannelDeps = config.aiChannelConfig;
+  const aiChannel =
+    enabled.aiChannel && aiMod
+      ? await loadAiChannelModule({
+          db,
+          cache,
+          authMiddleware: createAuthMiddleware(jwt, jwtSecret, normalizedTenantId),
+          permMiddleware: createPermMiddleware(rbac),
+          credentialEncryptionKey: config.aiConfig!.credentialEncryptionKey,
+          // 只暴露渠道真正需要的能力，避免渠道反向依赖 ai 模块的其它服务
+          ai: {
+            sessionService: aiMod.services.sessionService,
+            agentLoop: aiMod.services.agentLoop,
+            createToolRegistry: aiMod.services.createToolRegistry,
+            llmGateway: aiMod.services.llmGateway,
+            agentCrud: aiMod.services.agentCrud,
+          },
+          ...(aiChannelDeps?.publicBaseUrl ? { publicBaseUrl: aiChannelDeps.publicBaseUrl } : {}),
+          ...(aiChannelDeps?.defaultAgentId
+            ? { defaultAgentId: aiChannelDeps.defaultAgentId }
+            : {}),
+          // 兜底：租户内第一个 Agent（渠道未绑定时用，避免「装上却不能用」）
+          resolveAgentId: async ({ tenantId, userId }) => {
+            try {
+              const result = await aiMod.services.agentCrud?.list({
+                tenantId,
+                userId,
+                isAdmin: true,
+                page: 1,
+                pageSize: 1,
+              });
+              const first = result?.list?.[0];
+              const id = (first as { id?: unknown } | undefined)?.id;
+              return typeof id === 'string' && id ? id : null;
+            } catch {
+              return null;
+            }
+          },
+        })
+      : undefined;
+
+  aiChannelMod = aiChannel;
 
   // AI 上下文洞察：订阅 ai 模块事件流（system 须先创建以提供配置读取）
   const aiContextMod =
@@ -565,6 +803,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
   if (schedulerMod) router.merge(schedulerMod.router);
   if (genMod) router.merge(genMod.router);
   if (aiMod) router.merge(aiMod.router);
+  if (aiChannel) router.merge(aiChannel.router);
   if (aiContextMod) router.merge(aiContextMod.router);
 
   return {
@@ -578,6 +817,7 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
     ...(genMod !== undefined ? { gen: genMod } : {}),
     router,
     ...(aiMod !== undefined ? { ai: aiMod } : {}),
+    ...(aiChannel !== undefined ? { aiChannel } : {}),
     ...(aiContextMod !== undefined ? { aiContext: aiContextMod } : {}),
     ...(oauthMod !== undefined ? { oauth: oauthMod } : {}),
     async init() {
@@ -590,8 +830,27 @@ export async function createPlatform(config: PlatformConfig): Promise<Platform> 
       if (schedulerMod) await schedulerMod.init();
       if (genMod) await genMod.init();
       if (aiMod) await aiMod.init();
+      // 渠道必须在 AI 之后启动：runtime.boot() 会拉起长连接并调用 agentLoop
+      if (aiChannel) await aiChannel.init();
       if (aiContextMod) await aiContextMod.init();
       if (oauthMod) await oauthMod.init();
+    },
+    async shutdown() {
+      // 渠道要第一个停：长连接轮询会持续打外部 API，晚停会让对端重投
+      if (aiChannel?.shutdown) {
+        try {
+          await aiChannel.shutdown();
+        } catch (error) {
+          bootLog.error(`渠道关停失败: ${String(error)}`);
+        }
+      }
+      if (aiMod?.shutdown) {
+        try {
+          await aiMod.shutdown();
+        } catch (error) {
+          bootLog.error(`AI 模块关停失败: ${String(error)}`);
+        }
+      }
     },
   };
 }

@@ -38,6 +38,7 @@
   },
   "optionalDependencies": {
     "@ventostack/ai": "workspace:*",
-    "@ventostack/ai-context": "workspace:*"
+    "@ventostack/ai-context": "workspace:*",
+    "@ventostack/ai-channel": "workspace:*"
   }
 }

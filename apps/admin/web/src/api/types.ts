@@ -496,6 +496,8 @@ export interface AgentItem {
   status: string;
   isPublic: boolean;
   requiresVirtualEnvironment: boolean;
+  /** 虚拟机是否允许出网，默认 true */
+  networkEnabled?: boolean;
   /** 上下文采集开关（调试信息，仅管理员可在对话内查看） */
   contextCollectionEnabled: boolean;
   sandboxStatus?: string;
@@ -590,6 +592,58 @@ export interface McpToolInfo {
   name: string;
   description: string;
   inputSchema?: Record<string, unknown>;
+}
+
+/** 连接器目录项（capabilities 连接器 tab） */
+export interface ConnectorCatalogItem {
+  id: string;
+  kind: string;
+  name: string;
+  description: string | null;
+  category: string;
+  icon: string | null;
+  authType: 'oauth2' | 'api_key' | 'personal_token' | 'custom_fields';
+  authTemplate: ConnectorAuthTemplate | null;
+  transport: string;
+  mcpUrl: string | null;
+  builtIn: boolean;
+  sortOrder: number;
+  enabled: boolean;
+  /** 当前请求者在该连接器上的绑定状态 */
+  bindingStatus: ConnectorBindingStatus | null;
+}
+
+export interface ConnectorAuthTemplate {
+  authorize_url?: string;
+  token_url?: string;
+  scope?: string;
+  client_id_env?: string;
+  client_secret_env?: string;
+  userinfo_url?: string;
+  fields?: Array<{ key: string; label: string; secret?: boolean; placeholder?: string; help?: string }>;
+}
+
+export type ConnectorBindingStatus =
+  | 'pending'
+  | 'connected'
+  | 'expired'
+  | 'revoked'
+  | 'error';
+
+/** 连接器绑定（我的连接） */
+export interface ConnectorBindingItem {
+  id: string;
+  connectorId: string;
+  connectorKind: string;
+  connectorName: string;
+  scope: 'tenant' | 'user';
+  ownerId: string | null;
+  displayName: string | null;
+  status: ConnectorBindingStatus;
+  accountHint: string | null;
+  mcpServerId: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 // ===== AI Skill (installed) =====
@@ -735,4 +789,108 @@ export interface TraceDetail {
     endedAt: string | null;
   };
   spans: TraceSpanItem[];
+}
+
+// ========== Agent 虚拟机运行时 ==========
+
+export interface RuntimeHostUsage {
+  sandboxCount: number;
+  runningCount: number;
+  cpu: number;
+  memoryMb: number;
+  diskMb: number;
+  orphans: number;
+  checkedAt: string | null;
+}
+
+export interface RuntimeHostItem {
+  id: string;
+  name: string;
+  note: string | null;
+  listenAddress: string | null;
+  baseUrl: string | null;
+  source: 'manual' | 'env';
+  status: 'pending' | 'online' | 'offline' | 'unauthorized' | 'incompatible' | 'disabled';
+  enabled: boolean;
+  version: string | null;
+  protocolVersion: string | null;
+  cpuTotal: number;
+  memoryMbTotal: number;
+  diskMbTotal: number;
+  maxSandboxes: number;
+  reservedCpu: number;
+  reservedMemoryMb: number;
+  reservedDiskMb: number;
+  usage: RuntimeHostUsage;
+  lastCheckedAt: string | null;
+  lastOnlineAt: string | null;
+  latencyMs: number | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RuntimeInstanceItem {
+  id: string;
+  tenantId: string;
+  userId: string;
+  agentId: string;
+  hostId: string;
+  sandboxId: string | null;
+  state: 'provisioning' | 'running' | 'paused' | 'stopped' | 'failed' | 'lost' | 'destroyed';
+  resources: {
+    cpuCount: number;
+    memoryMb: number;
+    diskMb: number;
+    maxProcesses: number;
+  };
+  networkEnabled?: boolean;
+  lastActiveAt: string | null;
+  lastCheckedAt: string | null;
+  expiresAt: string | null;
+  error: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RuntimeAvailability {
+  available: boolean;
+  onlineHostCount: number;
+  hostCount: number;
+  capacity: {
+    cpu: number;
+    memoryMb: number;
+    diskMb: number;
+    slots: number;
+  };
+  userUsage: {
+    instances: number;
+    cpu: number;
+    memoryMb: number;
+    diskMb: number;
+  };
+  userLimits: {
+    maxInstances: number;
+    maxCpu: number;
+    maxMemoryMb: number;
+    maxDiskMb: number;
+  };
+  defaultResources: {
+    cpuCount: number;
+    memoryMb: number;
+    diskMb: number;
+    maxProcesses: number;
+  };
+  warnings: string[];
+  canManageHosts: boolean;
+}
+
+export interface RuntimePreflight {
+  requirements: string[];
+  command: string;
+}
+
+export interface RuntimeHostCreateResult {
+  item: RuntimeHostItem;
+  installCommand: string;
 }

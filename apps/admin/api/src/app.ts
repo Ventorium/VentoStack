@@ -170,8 +170,22 @@ export async function buildApp(opts?: {
       ai: env.AI_ENABLED,
       // 上下文洞察跟随 ai 开关（运行时可通过后台配置 ai_context_enabled 单独关闭采集）
       aiContext: env.AI_ENABLED,
+      // 对话渠道同样跟随 ai 开关（可用 AI_CHANNEL_ENABLED 单独关掉）
+      aiChannel: env.AI_ENABLED && env.AI_CHANNEL_ENABLED,
       oauth: env.OAUTH_ENABLED,
     },
+    ...(env.AI_ENABLED && env.AI_CHANNEL_ENABLED
+      ? {
+          aiChannelConfig: {
+            ...(env.AI_CHANNEL_PUBLIC_BASE_URL
+              ? { publicBaseUrl: env.AI_CHANNEL_PUBLIC_BASE_URL }
+              : {}),
+            ...(env.AI_CHANNEL_DEFAULT_AGENT_ID
+              ? { defaultAgentId: env.AI_CHANNEL_DEFAULT_AGENT_ID }
+              : {}),
+          },
+        }
+      : {}),
     ...(env.AI_ENABLED
       ? {
           aiConfig: {
@@ -179,6 +193,9 @@ export async function buildApp(opts?: {
             defaultModel: env.AI_DEFAULT_MODEL,
             storagePath: env.AI_STORAGE_PATH,
             credentialEncryptionKey: env.AI_CREDENTIAL_ENCRYPTION_KEY!,
+            ...(env.AI_PUBLIC_BASE_URL
+              ? { publicBaseUrl: env.AI_PUBLIC_BASE_URL }
+              : {}),
             ...(env.EXPERT_DATA_DIR ? { expertDataDir: env.EXPERT_DATA_DIR } : {}),
             ...(env.EXPERT_HUB_BASE_URL ? { expertHubBaseUrl: env.EXPERT_HUB_BASE_URL } : {}),
             ...(env.EXPERT_HUB_SIGNING_PUBKEY
@@ -516,6 +533,10 @@ export async function buildApp(opts?: {
     forceExit.unref();
 
     try {
+      // 先停平台模块（渠道长连接 / 定时器），再关端口与连接池：
+      // 反过来的话，轮询类渠道会在关库后继续打外部 API 并写失败日志
+      await platform.shutdown();
+
       // 先关闭管理端口（不再接受新请求）
       if (adminAppRef) {
         serverLogger.info('正在关闭管理端口...');

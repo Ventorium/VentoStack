@@ -17,9 +17,15 @@ import {
   createAiProviderTables,
   createAiSkillTables,
   createAiExpertTables,
+  createAiConnectorTables,
+  createAiSessionMeta,
+  createAiRuntimeTables,
+  normalizeAiRuntimeJsonb,
+  addAgentNetworkEnabled,
   dropAgentType,
   dropAiToolLog,
 } from '@ventostack/ai';
+import { createAiChannelTables } from '@ventostack/ai-channel';
 import { createContextTables, scopeContextRowIds } from '@ventostack/ai-context';
 import { createTagLogger } from '@ventostack/core';
 import { type SqlExecutor, createMigrationRunner } from '@ventostack/database';
@@ -125,9 +131,20 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(addApprovalSessionId);
   // AI 专家管理注册表（专家数据文件化存储，DB 仅管理）
   runner.addMigration(createAiExpertTables);
+  // AI 连接器：目录 + 绑定 + ai_mcp_server 托管列 + 内置目录 seed
+  runner.addMigration(createAiConnectorTables);
 
   // AI 上下文洞察
   runner.addMigration(createContextTables);
+
+  // 会话元数据投影表：会话设置的落库位置（渠道通知开关要跨会话扫）
+  runner.addMigration(createAiSessionMeta);
+  // Agent 虚拟机：全局宿主池 / 用户配额 / 实例 / 知识库与工作区同步
+  runner.addMigration(createAiRuntimeTables);
+  runner.addMigration(normalizeAiRuntimeJsonb);
+  runner.addMigration(addAgentNetworkEnabled);
+  // 个人级对话渠道：渠道 / 身份绑定 / 绑定码 / 会话绑定 / 消息台账
+  runner.addMigration(createAiChannelTables);
 
   // 清除 ai-trace 遗留（菜单/配置/表），须在建表之后、种子之前
   runner.addMigration(dropAiTraceArtifacts);

@@ -16,6 +16,8 @@ import { addAIMenusSeed } from './seeds/007_ai_menus';
 import { skillCreatorAgentSeed } from './seeds/008_skill_creator_agent';
 import { addDeepResearchSkillSeed } from './seeds/010_deep_research_skill';
 import { addOAuthMenusSeed } from './seeds/012_oauth_menus';
+import { addAiChannelMenuSeed } from './seeds/013_ai_channel_menu';
+import { addAiRuntimePermissionsSeed } from './seeds/014_ai_runtime_permissions';
 
 const log = createTagLogger('seeds');
 
@@ -31,6 +33,8 @@ export async function runSeeds(executor: SqlExecutor): Promise<void> {
   runner.addSeed(skillCreatorAgentSeed);
   runner.addSeed(addDeepResearchSkillSeed);
   runner.addSeed(addOAuthMenusSeed);
+  runner.addSeed(addAiChannelMenuSeed);
+  runner.addSeed(addAiRuntimePermissionsSeed);
 
   await runner.run();
   log.info('All seeds executed');

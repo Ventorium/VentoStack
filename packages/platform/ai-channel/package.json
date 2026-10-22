@@ -1,0 +1,33 @@
+{
+  "name": "@ventostack/ai-channel",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ventorium/VentoStack.git"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@ventostack/cache": "workspace:*",
+    "@ventostack/core": "workspace:*",
+    "@ventostack/database": "workspace:*",
+    "@ventostack/events": "workspace:*",
+    "@ventostack/observability": "workspace:*",
+    "mqtt": "^5.16.1"
+  },
+  "devDependencies": {
+    "@ventostack/testing": "workspace:*"
+  }
+}

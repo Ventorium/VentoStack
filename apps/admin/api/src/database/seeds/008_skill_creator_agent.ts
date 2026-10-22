@@ -1,5 +1,6 @@
 import { generateUUID } from "@ventostack/core";
 import type { Seed } from "@ventostack/database";
+import { env } from "../../config";
 
 /**
  * 预置 skill-creator 智能体
@@ -11,14 +12,22 @@ export const skillCreatorAgentSeed: Seed = {
   name: "008_skill_creator_agent",
 
   async run(executor) {
+    const tenantId = env.TENANT_ID;
+
     // 幂等检查
-    const existing = await executor(`SELECT id FROM ai_agent WHERE name = 'Skill Creator'`);
+    const existing = await executor(
+      `SELECT id FROM ai_agent WHERE tenant_id = $1 AND name = 'Skill Creator'`,
+      [tenantId],
+    );
     if ((existing as unknown[]).length > 0) {
       return;
     }
 
     // 查询 admin 用户 ID
-    const adminUser = await executor(`SELECT id FROM sys_user WHERE username = 'admin'`);
+    const adminUser = await executor(
+      `SELECT id FROM sys_user WHERE tenant_id = $1 AND username = 'admin'`,
+      [tenantId],
+    );
     const adminUserId = (adminUser as unknown as Array<{ id: string }>)?.[0]?.id;
     if (!adminUserId) return;
 
@@ -77,11 +86,11 @@ Instructions for the AI agent on how to use this skill...
         "Skill Creator",
         "AI 技能创建助手，帮助你创建、编辑和导出 Skill",
         systemPrompt,
-        "", // model 留空，由用户在对话时选择
+        '{default}', // text[]：使用 default 占位，用户可在对话时切换真实模型
         tools,
         10,
         4096,
-        "", // tenant_id: 空字符串，与 TENANT_ENABLED=false 时的查询条件一致
+        tenantId, // tenant_id: 部署归属租户，与 AI 模块查询的租户隔离条件一致
         adminUserId,
         "active",
         true,

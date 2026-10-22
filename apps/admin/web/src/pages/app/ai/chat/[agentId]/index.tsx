@@ -1,8 +1,8 @@
 import { client } from '@/api';
 import { type ChatStreamParams, streamChat } from '@/api/sse-client';
-import type { FileEntry } from '@/api/types';
+import type { ConnectorBindingItem, FileEntry } from '@/api/types';
 import { MenuUnfoldOutlined, RestOutlined } from '@ant-design/icons';
-import { Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
+import { Alert, Button, Card, Empty, Form, Input, Modal, Spin, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatApproval, ChatMessage, ModelOption, ToolBlock } from '../types';
@@ -165,6 +165,13 @@ function AgentConversation(): React.ReactElement {
   const navigate = useNavigate();
   const [agents, setAgents] = useState<AgentInfo[]>([]);
   const [selectedAgent, setSelectedAgent] = useState<AgentInfo | null>(null);
+  const vmAgent = selectedAgent?.requiresVirtualEnvironment === true;
+
+  // 虚拟环境 Agent 默认信任执行：VM 内命令按安全策略自动执行并审计，
+  // 用户仍可在输入框切换 ask/auto。切换 Agent 时重新应用默认值。
+  useEffect(() => {
+    if (vmAgent) setRunMode('trust');
+  }, [selectedAgent?.id, vmAgent]);
   const [loadingAgents, setLoadingAgents] = useState(true);
 
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -197,6 +204,11 @@ function AgentConversation(): React.ReactElement {
   >('off');
   // 审批策略：默认需人工审批；只对「本次发送」生效，发送后回到默认，不静默延续
   const [runMode, setRunMode] = useState<RunMode>('ask');
+  const [runtimeStatus, setRuntimeStatus] = useState<{
+    phase: 'preparing' | 'ready' | 'error';
+    message: string;
+    elapsedMs?: number;
+  } | null>(null);
   // 召唤专家（会话级）：null = 未召唤（使用 Agent 自身人设）；按会话持久化到 localStorage。
   // 会话的创建与切换都是显式转移（handleSelectAgent / handleSelectThread / handleNewChat /
   // onSession / handleAttach），不再用「sessionId 变化即读存储」的 effect：
@@ -226,6 +238,8 @@ function AgentConversation(): React.ReactElement {
   const [enabledMcp, setEnabledMcp] = useState<string[]>([]);
   const [enabledKbs, setEnabledKbs] = useState<string[]>([]);
   const [boundKbIds, setBoundKbIds] = useState<string[]>([]);
+  // 我的连接器绑定（能力配置 Popup 的连接器 tab 数据源）
+  const [connectorBindings, setConnectorBindings] = useState<ConnectorBindingItem[]>([]);
 
   // Token 用量追踪
   const [totalTokens, setTotalTokens] = useState({ input: 0, output: 0 });
@@ -401,6 +415,15 @@ function AgentConversation(): React.ReactElement {
           data as { list?: Array<{ id: string; name: string; description: string | null }> }
         )?.list;
         if (list?.length) setAllKnowledgeBases(list);
+      })
+      .catch(() => {});
+
+    // Fetch my connector bindings（能力配置的连接器 tab；无权限/未启用时静默降级为空）
+    client
+      .get('/api/ai/connectors/bindings')
+      .then(({ data }) => {
+        const list = data as ConnectorBindingItem[] | undefined;
+        if (list?.length) setConnectorBindings(list);
       })
       .catch(() => {});
   }, []);
@@ -906,6 +929,7 @@ function AgentConversation(): React.ReactElement {
       setMessages((prev) => [...prev, userMessage, assistantMessage]);
       setLoading(true);
 
+      setRuntimeStatus(null);
       const controller = new AbortController();
       abortControllerRef.current = controller;
 
@@ -1110,7 +1134,16 @@ function AgentConversation(): React.ReactElement {
               ),
             );
           },
+          onEnvironment: (state) => {
+            setRuntimeStatus(state);
+            if (state.phase === 'ready') {
+              setTimeout(() => setRuntimeStatus((current) => (current?.phase === 'ready' ? null : current)), 2000);
+            }
+          },
           onError: (error) => {
+            setRuntimeStatus((current) =>
+              current ? { phase: 'error', message: error.message } : null,
+            );
             // 标记所有 running 工具块为 error
             setMessages((prev) =>
               prev.map((msg) =>
@@ -1432,10 +1465,13 @@ function AgentConversation(): React.ReactElement {
         onToggleKb={(id, enabled) => {
           setEnabledKbs((prev) => (enabled ? [...prev, id] : prev.filter((k) => k !== id)));
         }}
+        connectorBindings={connectorBindings}
+        onManageConnectors={() => navigate('/app/ai/capabilities')}
         activeTab={activeTab}
         onTabChange={setActiveTab}
         canViewContext={canViewContext && !!selectedAgent?.contextCollectionEnabled}
         fileCount={workspaceFiles.length}
+        sessionId={sessionId}
         // 标题区宽度与会话列表一致，拖拽列表时同步；列表收起为窄栏时自适应
         leftWidth={threadListCollapsed ? undefined : threadListWidth}
         onBack={() => {
@@ -1493,6 +1529,25 @@ function AgentConversation(): React.ReactElement {
 
         {/* Chat Column */}
         <div className="flex-1 flex flex-col min-w-0">
+          {runtimeStatus && (
+            <div className="px-4 pt-3 shrink-0">
+              <Alert
+                type={runtimeStatus.phase === 'error' ? 'error' : 'info'}
+                showIcon
+                icon={runtimeStatus.phase === 'preparing' ? <Spin size="small" /> : undefined}
+                message={runtimeStatus.message}
+                description={
+                  runtimeStatus.phase === 'preparing'
+                    ? '首次使用需要创建并初始化虚拟机，通常需要几秒到十几秒。'
+                    : runtimeStatus.phase === 'error'
+                      ? '可以重新发送消息重试；若持续失败，请在「AI 能力 / 虚拟机接入」检查宿主状态。'
+                      : undefined
+                }
+                closable
+                onClose={() => setRuntimeStatus(null)}
+              />
+            </div>
+          )}
           <div className="flex-1 min-h-0 overflow-hidden flex">
             {activeTab === 'chat' && (
               <ChatArea

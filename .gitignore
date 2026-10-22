@@ -5,6 +5,8 @@
 node_modules/
 dist/
 *.log
+# 运行时数据（AI 会话 JSONL、e2e 工作区等），不入库
+/data/
 .env
 .env.local
 .DS_Store

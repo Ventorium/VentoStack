@@ -3,21 +3,30 @@ import {
   ArrowLeftOutlined,
   BlockOutlined,
   BookOutlined,
+  CloudServerOutlined,
   ControlOutlined,
+  MessageOutlined,
   SafetyOutlined,
+  SettingOutlined,
   ToolOutlined,
 } from "@ant-design/icons";
-import { Avatar, Button, Checkbox, Popover, Space, Tag, theme, Typography } from "antd";
+import {
+  Avatar,
+  Button,
+  Checkbox,
+  Empty,
+  Modal,
+  Space,
+  Tabs,
+  Tag,
+  theme,
+  Typography,
+} from "antd";
+import { useState } from "react";
+import ChannelNotifyModal from "./ChannelNotifyModal";
 import FunctionTabs from "./FunctionTabs";
 
 const { Text } = Typography;
-
-interface AgentAbility {
-  id: string;
-  name: string;
-  description?: string | null;
-  toolCount?: number;
-}
 
 interface TopToolbarProps {
   agentName: string;
@@ -30,6 +39,14 @@ interface TopToolbarProps {
   };
   /** 工具名称 → 说明（来自 /api/ai/tools 注册表） */
   toolDescriptions?: Record<string, string>;
+  /** 连接器绑定（当前用户已连接的连接器及其托管 MCP） */
+  connectorBindings?: Array<{
+    id: string;
+    connectorKind: string;
+    connectorName: string;
+    status: string;
+    mcpServerId: string | null;
+  }>;
   enabledTools?: string[];
   enabledSkills?: string[];
   enabledMcp?: string[];
@@ -38,80 +55,239 @@ interface TopToolbarProps {
   onToggleSkill?: (id: string, enabled: boolean) => void;
   onToggleMcp?: (id: string, enabled: boolean) => void;
   onToggleKb?: (id: string, enabled: boolean) => void;
+  /** 点击「去管理连接器」跳转 capabilities */
+  onManageConnectors?: () => void;
   onBack?: () => void;
   /** 功能页签（对话/文件/记忆/知识库/上下文）——原在对话框上方，现由本行承载 */
   activeTab?: string;
   onTabChange?: (key: string) => void;
   canViewContext?: boolean;
   fileCount?: number;
-  /**
-   * 左侧「返回 + 头像 + 智能体名」区块宽度（px）：传会话列表当前宽度，
-   * 标题区与下方会话列表等宽、拖拽列表时同步变化；不传（列表收起为窄栏）则自适应内容。
-   */
   leftWidth?: number;
+  /** 当前会话 ID：渠道通知设置是会话级的，必须先有会话 */
+  sessionId?: string;
 }
 
-function AbilityPopover({
-  title, icon, items, selected, onToggle, renderItem, width = 280,
+/** 单个能力的勾选列表（复用于工具/技能/MCP/知识库/连接器） */
+function AbilityCheckList({
+  items,
+  selected,
+  onToggle,
+  renderItem,
+  emptyText = "暂无可选能力",
 }: {
-  title: string; icon: React.ReactNode;
   items: Array<{ id: string; name: string; description?: string | null; toolCount?: number }>;
   selected: string[];
   onToggle: (id: string, enabled: boolean) => void;
   renderItem?: (item: { id: string; name: string; description?: string | null; toolCount?: number }) => React.ReactNode;
-  width?: number;
+  emptyText?: string;
 }) {
   const { token } = theme.useToken();
-
+  if (items.length === 0) {
+    return <Empty description={emptyText} className="py-8" />;
+  }
   return (
-    <div className="max-h-[320px] overflow-auto" style={{ width }}>
-      <div className="font-medium" style={{ padding: "8px 12px", borderBottom: `1px solid ${token.colorBorderSecondary}` }}>
-        {title}
-      </div>
-      {items.length === 0 ? (
-        <div className="p-4 text-center" style={{ color: token.colorTextSecondary }}>暂无</div>
-      ) : (
-        <div className="p-1">
-          {items.map(item => {
-            const checked = selected.includes(item.id);
-            return (
-              <div
-                key={item.id}
-                className="flex items-start gap-2 rounded cursor-pointer" style={{ padding: "6px 8px", background: checked ? token.colorPrimaryBg : "transparent" }}
-                onClick={() => onToggle(item.id, !checked)}
-              >
-                <Checkbox checked={checked} className="mt-0.5" />
-                <div className="flex-1 min-w-0">
-                  {renderItem ? renderItem(item) : (
-                    <>
-                      <div className="text-[13px]">{item.name}</div>
-                      {item.description && <Text type="secondary" className="text-[11px]">{item.description}</Text>}
-                    </>
+    <div>
+      {items.map((item) => {
+        const checked = selected.includes(item.id);
+        return (
+          <div
+            key={item.id}
+            className="flex cursor-pointer items-start gap-2 rounded"
+            style={{ padding: "8px 10px", background: checked ? token.colorPrimaryBg : "transparent" }}
+            onClick={() => onToggle(item.id, !checked)}
+          >
+            <Checkbox checked={checked} className="mt-0.5" />
+            <div className="min-w-0 flex-1">
+              {renderItem ? (
+                renderItem(item)
+              ) : (
+                <>
+                  <div className="text-[13px]">{item.name}</div>
+                  {item.description && (
+                    <Text type="secondary" className="text-[11px]">
+                      {item.description}
+                    </Text>
                   )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
+                </>
+              )}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
 
 export default function TopToolbar({
-  agentName, agent, toolDescriptions, enabledTools = [], enabledSkills = [], enabledMcp = [], enabledKbs = [],
-  onToggleTool, onToggleSkill, onToggleMcp, onToggleKb, onBack,
-  activeTab = "chat", onTabChange, canViewContext = false, fileCount = 0, leftWidth,
+  agentName,
+  agent,
+  toolDescriptions,
+  connectorBindings = [],
+  enabledTools = [],
+  enabledSkills = [],
+  enabledMcp = [],
+  enabledKbs = [],
+  onToggleTool,
+  onToggleSkill,
+  onToggleMcp,
+  onToggleKb,
+  onManageConnectors,
+  onBack,
+  activeTab = "chat",
+  onTabChange,
+  canViewContext = false,
+  fileCount = 0,
+  leftWidth,
+  sessionId,
 }: TopToolbarProps) {
   const { token } = theme.useToken();
+  const [capOpen, setCapOpen] = useState(false);
+  const [notifyOpen, setNotifyOpen] = useState(false);
+
+  /** 连接器绑定 → 可勾选的 MCP（勾选即并入 mcpServerIds） */
+  const connectorItems = connectorBindings
+    .filter((b) => b.status === "connected" && b.mcpServerId)
+    .map((b) => ({
+      id: b.mcpServerId as string,
+      name: `${b.connectorName}（连接器）`,
+      description: b.connectorKind,
+    }));
+  const enabledConnectors = connectorItems
+    .map((c) => c.id)
+    .filter((id) => enabledMcp.includes(id));
+
+  const totalEnabled =
+    enabledTools.length +
+    enabledSkills.length +
+    enabledMcp.length +
+    enabledKbs.length;
+
+  const tabItems = [
+    {
+      key: "connectors",
+      label: (
+        <span>
+          <CloudServerOutlined /> 连接器
+        </span>
+      ),
+      children: (
+        <div className="p-1">
+          <AbilityCheckList
+            items={connectorItems}
+            selected={enabledConnectors}
+            onToggle={(id, enabled) => onToggleMcp?.(id, enabled)}
+            emptyText="暂无已连接的连接器"
+          />
+          <div className="mt-2 px-2">
+            <Button type="link" size="small" onClick={onManageConnectors}>
+              去管理连接器
+            </Button>
+          </div>
+        </div>
+      ),
+    },
+    {
+      key: "mcp",
+      label: (
+        <span>
+          <ApiOutlined /> MCP 服务
+        </span>
+      ),
+      children: (
+        <div className="p-1">
+          <AbilityCheckList
+            items={agent?.mcpServers.map((m) => ({
+              id: m.id,
+              name: m.name,
+              description: m.description,
+              toolCount: m.toolCount,
+            })) ?? []}
+            selected={enabledMcp}
+            onToggle={(id, enabled) => onToggleMcp?.(id, enabled)}
+            renderItem={(item) => (
+              <div>
+                <Space>
+                  <Text className="text-[13px]">{item.name}</Text>
+                  {item.toolCount && item.toolCount > 0 && (
+                    <Tag className="text-[10px]">{item.toolCount} 工具</Tag>
+                  )}
+                </Space>
+                {item.description && (
+                  <div>
+                    <Text type="secondary" className="text-[11px]">
+                      {item.description}
+                    </Text>
+                  </div>
+                )}
+              </div>
+            )}
+          />
+        </div>
+      ),
+    },
+    {
+      key: "tools",
+      label: (
+        <span>
+          <ToolOutlined /> 工具
+        </span>
+      ),
+      children: (
+        <div className="p-1">
+          <AbilityCheckList
+            items={agent?.tools.map((t) => ({ id: t, name: t, description: toolDescriptions?.[t] })) ?? []}
+            selected={enabledTools}
+            onToggle={(id, enabled) => onToggleTool?.(id, enabled)}
+          />
+        </div>
+      ),
+    },
+    {
+      key: "skills",
+      label: (
+        <span>
+          <BlockOutlined /> 技能
+        </span>
+      ),
+      children: (
+        <div className="p-1">
+          <AbilityCheckList
+            items={agent?.skills ?? []}
+            selected={enabledSkills}
+            onToggle={(id, enabled) => onToggleSkill?.(id, enabled)}
+          />
+        </div>
+      ),
+    },
+    {
+      key: "kbs",
+      label: (
+        <span>
+          <BookOutlined /> 知识库
+        </span>
+      ),
+      children: (
+        <div className="p-1">
+          <div className="px-2 pb-1 text-[11px]" style={{ color: token.colorTextSecondary }}>
+            从智能体绑定的知识库中选取（会话勾选仅缩小范围）
+          </div>
+          <AbilityCheckList
+            items={agent?.knowledgeBases ?? []}
+            selected={enabledKbs}
+            onToggle={(id, enabled) => onToggleKb?.(id, enabled)}
+          />
+        </div>
+      ),
+    },
+  ];
 
   return (
     <div
-      // 左侧不留 padding：让标题区与下方会话列表左边缘对齐，宽度也一致
-      // gap-6：页签距离左侧标题区 24px
-      className="flex items-center gap-6" style={{ padding: "8px 16px 8px 0", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
+      className="flex items-center gap-6"
+      style={{ padding: "8px 16px 8px 0", borderBottom: `1px solid ${token.colorBorderSecondary}`, background: token.colorBgContainer }}
     >
-      {/* Left: Back + Agent Info（宽度跟随会话列表，标题超长省略） */}
+      {/* Left: Back + Agent Info */}
       <div
         className="flex min-w-0 shrink-0 items-center gap-2 pl-2"
         style={leftWidth === undefined ? undefined : { width: leftWidth }}
@@ -119,7 +295,8 @@ export default function TopToolbar({
         <Button type="text" icon={<ArrowLeftOutlined />} onClick={onBack} size="small" title="返回智能体列表" />
         <Avatar
           size={32}
-          className="shrink-0 text-xs font-semibold" style={{ background: token.colorPrimary, borderRadius: token.borderRadiusSM }}
+          className="shrink-0 text-xs font-semibold"
+          style={{ background: token.colorPrimary, borderRadius: token.borderRadiusSM }}
         >
           {agentName.slice(0, 2)}
         </Avatar>
@@ -137,101 +314,69 @@ export default function TopToolbar({
         className="min-w-0 flex-1"
       />
 
-      {/* Right: Ability Toggles */}
+      {/* Right: 能力配置（合并原工具/技能/MCP/知识库四入口） */}
       {agent && (
         <Space size={6} className="shrink-0">
-          {/* Tools */}
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            content={
-              <AbilityPopover
-                title="工具" icon={<ToolOutlined />} width={380}
-                items={agent.tools.map(t => ({ id: t, name: t, description: toolDescriptions?.[t] }))}
-                selected={enabledTools}
-                onToggle={(id, enabled) => onToggleTool?.(id, enabled)}
-              />
-            }
+          <Button
+            size="small"
+            icon={<MessageOutlined />}
+            className="text-xs"
+            style={{ borderRadius: token.borderRadiusLG }}
+            onClick={() => setNotifyOpen(true)}
+            title="把任务结果推送到微信 / QQ 等渠道"
           >
-            <Button size="small" icon={<ToolOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
-              工具{enabledTools.length > 0 ? ` (${enabledTools.length})` : ""}
-            </Button>
-          </Popover>
+            渠道通知
+          </Button>
 
-          {/* Skills */}
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            content={
-              <AbilityPopover
-                title="技能" icon={<BlockOutlined />}
-                items={agent.skills}
-                selected={enabledSkills}
-                onToggle={(id, enabled) => onToggleSkill?.(id, enabled)}
-              />
-            }
+          <Button
+            size="small"
+            icon={<SettingOutlined />}
+            className="text-xs"
+            style={{ borderRadius: token.borderRadiusLG }}
+            onClick={() => setCapOpen(true)}
           >
-            <Button size="small" icon={<BlockOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
-              技能{enabledSkills.length > 0 ? ` (${enabledSkills.length})` : ""}
-            </Button>
-          </Popover>
-
-          {/* MCP */}
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            content={
-              <AbilityPopover
-                title="MCP 服务" icon={<ApiOutlined />}
-                items={agent.mcpServers.map(m => ({ id: m.id, name: m.name, description: m.description, toolCount: m.toolCount }))}
-                selected={enabledMcp}
-                onToggle={(id, enabled) => onToggleMcp?.(id, enabled)}
-                renderItem={item => (
-                  <div>
-                    <Space>
-                      <Text className="text-[13px]">{item.name}</Text>
-                      {item.toolCount && item.toolCount > 0 && <Tag className="text-[10px]">{item.toolCount} 工具</Tag>}
-                    </Space>
-                    {item.description && <div><Text type="secondary" className="text-[11px]">{item.description}</Text></div>}
-                  </div>
-                )}
-              />
-            }
-          >
-            <Button size="small" icon={<ApiOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
-              MCP{enabledMcp.length > 0 ? ` (${enabledMcp.length})` : ""}
-            </Button>
-          </Popover>
-
-          {/* Knowledge Bases */}
-          <Popover
-            trigger="click"
-            placement="bottomRight"
-            content={
-              <AbilityPopover
-                title="知识库" icon={<BookOutlined />}
-                items={agent.knowledgeBases}
-                selected={enabledKbs}
-                onToggle={(id, enabled) => onToggleKb?.(id, enabled)}
-              />
-            }
-          >
-            <Button size="small" icon={<BookOutlined />} className="text-xs" style={{ borderRadius: token.borderRadiusLG }}>
-              知识库{enabledKbs.length > 0 ? ` (${enabledKbs.length})` : ""}
-            </Button>
-          </Popover>
+            能力配置{totalEnabled > 0 ? ` (${totalEnabled})` : ""}
+          </Button>
 
           {agent.requiresVirtualEnvironment && (
             <Tag
               icon={<SafetyOutlined />}
               color="success"
-              className="ml-2" style={{ borderRadius: token.borderRadiusSM }}
+              className="ml-2"
+              style={{ borderRadius: token.borderRadiusSM }}
             >
               虚拟环境
             </Tag>
           )}
         </Space>
       )}
+
+      <Modal
+        title={
+          <Space>
+            <ControlOutlined />
+            <span>能力配置</span>
+          </Space>
+        }
+        open={capOpen}
+        onCancel={() => setCapOpen(false)}
+        footer={null}
+        width={560}
+        destroyOnClose
+      >
+        <Tabs
+          defaultActiveKey="connectors"
+          tabPosition="left"
+          items={tabItems}
+          className="capability-tabs"
+        />
+      </Modal>
+
+      <ChannelNotifyModal
+        open={notifyOpen}
+        sessionId={sessionId}
+        onClose={() => setNotifyOpen(false)}
+      />
     </div>
   );
 }

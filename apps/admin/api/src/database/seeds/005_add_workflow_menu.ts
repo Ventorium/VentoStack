@@ -32,14 +32,14 @@ export const addWorkflowMenuSeed: Seed = {
     // 目录
     await executor(
       `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, NULL, $3, $4, $5, $6, NULL, $7, 3, TRUE, 1, NOW(), NOW())`,
-      [dirId, tenantId, '审批流程', '/workflow', 'LAYOUT', '/workflow/definitions', 1, 'AuditOutlined'],
+       VALUES ($1, $2, NULL, $3, $4, $5, $6, 1, NULL, $7, 3, TRUE, 1, NOW(), NOW())`,
+      [dirId, tenantId, '审批流程', '/workflow', 'LAYOUT', '/workflow/definitions', 'AuditOutlined'],
     );
 
     // 流程定义
     await executor(
       `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 1, TRUE, 1, NOW(), NOW())`,
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, 1, TRUE, 1, NOW(), NOW())`,
       [
         defMenuId,
         tenantId,
@@ -56,7 +56,7 @@ export const addWorkflowMenuSeed: Seed = {
     // 我的申请
     await executor(
       `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 2, TRUE, 1, NOW(), NOW())`,
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, 2, TRUE, 1, NOW(), NOW())`,
       [
         instanceMenuId,
         tenantId,
@@ -73,7 +73,7 @@ export const addWorkflowMenuSeed: Seed = {
     // 我的审批
     await executor(
       `INSERT INTO sys_menu (id, tenant_id, parent_id, name, path, component, redirect, type, permission, icon, sort, visible, status, created_at, updated_at)
-       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, 3, TRUE, 1, NOW(), NOW())`,
+       VALUES ($1, $2, $3, $4, $5, NULL, $6, $7, $8, $9, 3, TRUE, 1, NOW(), NOW())`,
       [
         taskMenuId,
         tenantId,

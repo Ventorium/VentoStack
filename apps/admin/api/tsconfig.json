@@ -51,7 +51,9 @@
       "@ventostack/workflow": ["../../../packages/platform/workflow/src/index.ts"],
       "@ventostack/workflow/*": ["../../../packages/platform/workflow/src/*"],
       "@ventostack/ai-context": ["../../../packages/platform/ai-context/src/index.ts"],
-      "@ventostack/ai-context/*": ["../../../packages/platform/ai-context/src/*"]
+      "@ventostack/ai-context/*": ["../../../packages/platform/ai-context/src/*"],
+      "@ventostack/ai-channel": ["../../../packages/platform/ai-channel/src/index.ts"],
+      "@ventostack/ai-channel/*": ["../../../packages/platform/ai-channel/src/*"]
     }
   },
   "include": ["src"]

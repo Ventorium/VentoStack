@@ -1,0 +1,101 @@
+/** MQTT：IoT 设备对话，topic 约定 {prefix}/{channelId}/in 与 out/{deviceId} */
+
+import type { ChannelCatalogEntry } from './types';
+
+export const mqtt: ChannelCatalogEntry = {
+  type: 'mqtt',
+  name: 'MQTT（IoT）',
+  category: 'iot',
+  description: '让智能硬件 / 嵌入式设备通过 MQTT 与 AI 对话，每个设备一条独立会话。',
+  official: true,
+  transport: 'long-conn',
+  requiresPublicUrl: false,
+  docsUrl: 'https://mqtt.org/',
+  setupGuide: [
+    '准备一个 MQTT Broker：本地调试可用 docker run -p 1883:1883 eclipse-mosquitto',
+    '把 Broker 地址填入下方（生产环境请用 mqtts:// 并配置账号密码）',
+    '保存后服务会自动连上 Broker 并订阅 {主题前缀}/{渠道ID}/in',
+    '设备发布 JSON 到该 topic：{"deviceId":"dev-01","text":"你好"}',
+    'AI 回复会发到 {主题前缀}/{渠道ID}/out/dev-01（纯文本也接受，此时用 deviceId 兜底）',
+  ],
+  configFields: [
+    {
+      key: 'brokerUrl',
+      label: 'Broker 地址',
+      type: 'text',
+      required: true,
+      placeholder: 'mqtts://broker.example.com:8883',
+      help: '支持 mqtt:// 与 mqtts://、ws:// 与 wss://；生产环境请务必使用加密协议',
+    },
+    {
+      key: 'topicPrefix',
+      label: '主题前缀',
+      type: 'text',
+      default: 'ventostack',
+      help: '入站 {前缀}/{渠道ID}/in，出站 {前缀}/{渠道ID}/out/{deviceId}',
+    },
+    {
+      key: 'qos',
+      label: 'QoS',
+      type: 'select',
+      default: '1',
+      help: '0 最多一次、1 至少一次（推荐）、2 恰好一次（开销更大）',
+      options: [
+        { label: '0 - 最多一次', value: '0' },
+        { label: '1 - 至少一次（推荐）', value: '1' },
+        { label: '2 - 恰好一次', value: '2' },
+      ],
+    },
+    {
+      key: 'allowInsecure',
+      label: '允许非加密连接',
+      type: 'boolean',
+      default: false,
+      help: '仅在本地调试时开启；生产环境请保持关闭并使用 mqtts:// / wss://',
+    },
+    {
+      key: 'maxPayloadBytes',
+      label: '报文大小上限（字节）',
+      type: 'number',
+      default: 65536,
+      help: '超过上限的消息会被丢弃，避免被超大报文拖垮服务',
+      min: 1024,
+      max: 262144,
+    },
+    {
+      key: 'maxMessageLength',
+      label: '单条回复上限（字符）',
+      type: 'number',
+      default: 4000,
+      help: '超长回复会自动分片；设备侧需按 deviceId 拼接',
+      min: 200,
+      max: 16000,
+    },
+  ],
+  secretFields: [
+    {
+      key: 'username',
+      label: '用户名',
+      type: 'text',
+      help: 'Broker 开启认证时填写；未开启认证可留空',
+    },
+    {
+      key: 'password',
+      label: '密码',
+      type: 'password',
+      help: '与用户名配套；加密存储，留空表示不修改',
+    },
+  ],
+  defaults: {
+    topicPrefix: 'ventostack',
+    qos: '1',
+    retain: false,
+    allowInsecure: false,
+    maxPayloadBytes: 65536,
+    maxMessageLength: 4000,
+  },
+  maxMessageLength: 4000,
+  rateLimitPerMinute: 60,
+  supportsEdit: false,
+  supportsTyping: false,
+};

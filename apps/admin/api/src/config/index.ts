@@ -190,6 +190,30 @@ const rawConfig = createConfig(
       env: 'AI_STORAGE_PATH',
       default: './data/ai',
     },
+    AI_CHANNEL_ENABLED: {
+      type: 'boolean',
+      env: 'AI_CHANNEL_ENABLED',
+      default: true,
+      description:
+        '是否启用「对话渠道」（微信 / QQ / 飞书 / 企业微信 / 钉钉 / MQTT）。仅在 AI_ENABLED=true 时生效',
+    },
+    AI_CHANNEL_PUBLIC_BASE_URL: {
+      type: 'string',
+      env: 'AI_CHANNEL_PUBLIC_BASE_URL',
+      description:
+        '对外可访问地址（如 https://ai.example.com），用于给 webhook 类渠道回填回调地址；缺省时页面会提示「需先配置公网地址」',
+    },
+    AI_CHANNEL_DEFAULT_AGENT_ID: {
+      type: 'string',
+      env: 'AI_CHANNEL_DEFAULT_AGENT_ID',
+      description: '渠道未绑定 Agent 时的默认 Agent ID；缺省按租户取第一个可用 Agent',
+    },
+    AI_PUBLIC_BASE_URL: {
+      type: 'string',
+      env: 'AI_PUBLIC_BASE_URL',
+      description:
+        '对外可访问地址（如 https://ai.example.com），用于生成连接器 OAuth 的 redirect_uri（须与第三方平台注册的回调地址一致）；缺省时 OAuth 类连接器连接会 fail-closed 报错',
+    },
     EXPERT_HUB_BASE_URL: {
       type: 'string',
       env: 'EXPERT_HUB_BASE_URL',

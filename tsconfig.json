@@ -99,6 +99,12 @@
       "@ventostack/ai-context/*": [
         "./packages/platform/ai-context/src/*"
       ],
+      "@ventostack/ai-channel": [
+        "./packages/platform/ai-channel/src/index.ts"
+      ],
+      "@ventostack/ai-channel/*": [
+        "./packages/platform/ai-channel/src/*"
+      ],
       "@ventostack/file2md": [
         "./packages/framework/file2md/src/index.ts"
       ],
