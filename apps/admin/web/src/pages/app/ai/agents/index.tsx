@@ -16,14 +16,13 @@ import {
   Button,
   Card,
   Checkbox,
-  Col,
+  Divider,
   Empty,
   Form,
   Input,
   InputNumber,
   Modal,
   Radio,
-  Row,
   Select,
   Space,
   Switch,
@@ -76,6 +75,13 @@ const RESEARCH_DEPTHS = [
   { label: '常规', value: 'normal', description: '10 轮左右，平衡速度与深度' },
   { label: '深度', value: 'deep', description: '20 轮以内，穷尽式调研' },
 ];
+
+// 编辑弹窗 Tab 归属：校验失败时据此切到出错字段所在的 Tab，避免错误提示藏在隐藏 Tab 中
+const FIELD_TAB: Record<string, string> = {
+  name: 'basic',
+  model: 'models',
+  systemPrompt: 'session',
+};
 
 // ── 能力选择面板组件 ──
 
@@ -185,7 +191,6 @@ function AbilityPanel({
 // ── 主页面 ──
 
 const AgentsPage = () => {
-  const { token } = theme.useToken();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState<AgentItem[]>([]);
   const [total, setTotal] = useState(0);
@@ -204,6 +209,10 @@ const AgentsPage = () => {
   const [modelOptions, setModelOptions] = useState<
     Array<{ label: string; options: Array<{ label: string; value: string }> }>
   >([]);
+  // 决策模型可选项：仅 JEV 结构化决策模型（providerApiFormat === 'jev'）
+  const [jevModelOptions, setJevModelOptions] = useState<Array<{ label: string; value: string }>>(
+    [],
+  );
   const [tools, setTools] = useState<
     Array<{ id: string; name: string; description: string; riskLevel: string }>
   >([]);
@@ -246,10 +255,15 @@ const AgentsPage = () => {
     undefined,
   );
 
-  // 会话总结模型、审批模型与默认思考强度（对应 ai_agent.config.*）
+  // 轻量模型（config.summaryModel）、子智能体模型（config.approvalModel）、
+  // 决策模型（config.decisionModel）与默认思考强度（config.defaultThinkingLevel）
   const [summaryModel, setSummaryModel] = useState<string | undefined>(undefined);
   const [approvalModel, setApprovalModel] = useState<string | undefined>(undefined);
+  const [decisionModel, setDecisionModel] = useState<string | undefined>(undefined);
   const [defaultThinkingLevel, setDefaultThinkingLevel] = useState<string>('off');
+
+  // 编辑弹窗当前 Tab
+  const [activeTab, setActiveTab] = useState('basic');
 
   // Fetch models
   useEffect(() => {
@@ -257,19 +271,30 @@ const AgentsPage = () => {
       .get('/api/ai/models')
       .then(({ data }) => {
         const models = data as
-          | Array<{ modelId: string; displayName: string | null; providerName: string }>
+          | Array<{
+              modelId: string;
+              displayName: string | null;
+              providerName: string;
+              providerApiFormat: string;
+            }>
           | undefined;
-        if (models?.length) {
-          const groupMap = new Map<string, Array<{ label: string; value: string }>>();
-          for (const m of models) {
-            const group = m.providerName || '其他';
-            if (!groupMap.has(group)) groupMap.set(group, []);
-            groupMap.get(group)!.push({ label: m.displayName || m.modelId, value: m.modelId });
-          }
-          setModelOptions(
-            Array.from(groupMap.entries()).map(([label, options]) => ({ label, options })),
-          );
+        if (!models?.length) return;
+        // JEV 是结构化决策 API（非对话），只能作为「决策模型」；对话类模型选项需排除它
+        setJevModelOptions(
+          models
+            .filter((m) => m.providerApiFormat === 'jev')
+            .map((m) => ({ label: m.displayName || m.modelId, value: m.modelId })),
+        );
+        const groupMap = new Map<string, Array<{ label: string; value: string }>>();
+        for (const m of models) {
+          if (m.providerApiFormat === 'jev') continue;
+          const group = m.providerName || '其他';
+          if (!groupMap.has(group)) groupMap.set(group, []);
+          groupMap.get(group)!.push({ label: m.displayName || m.modelId, value: m.modelId });
         }
+        setModelOptions(
+          Array.from(groupMap.entries()).map(([label, options]) => ({ label, options })),
+        );
       })
       .catch(() => {});
   }, []);
@@ -403,7 +428,9 @@ const AgentsPage = () => {
     setResearchMaxSubtaskTurns(undefined);
     setSummaryModel(undefined);
     setApprovalModel(undefined);
+    setDecisionModel(undefined);
     setDefaultThinkingLevel('off');
+    setActiveTab('basic');
     setEditingAgent(null);
   };
 
@@ -458,11 +485,20 @@ const AgentsPage = () => {
     setResearchMaxSubtasks(research?.maxSubtasks);
     setResearchMaxSubtaskTurns(research?.maxSubtaskTurns);
 
-    // 设置会话总结模型与默认思考强度
-    setSummaryModel(typeof record.config?.summaryModel === 'string' ? record.config.summaryModel : undefined);
-    setApprovalModel(typeof record.config?.approvalModel === 'string' ? record.config.approvalModel : undefined);
+    // 设置轻量模型、子智能体模型、决策模型与默认思考强度
+    setSummaryModel(
+      typeof record.config?.summaryModel === 'string' ? record.config.summaryModel : undefined,
+    );
+    setApprovalModel(
+      typeof record.config?.approvalModel === 'string' ? record.config.approvalModel : undefined,
+    );
+    setDecisionModel(
+      typeof record.config?.decisionModel === 'string' ? record.config.decisionModel : undefined,
+    );
     setDefaultThinkingLevel(
-      typeof record.config?.defaultThinkingLevel === 'string' ? record.config.defaultThinkingLevel : 'off',
+      typeof record.config?.defaultThinkingLevel === 'string'
+        ? record.config.defaultThinkingLevel
+        : 'off',
     );
 
     // 设置选中的能力
@@ -481,15 +517,25 @@ const AgentsPage = () => {
     ...(researchMaxSubtaskTurns ? { maxSubtaskTurns: researchMaxSubtaskTurns } : {}),
   });
 
-  // 组装 ai_agent.config：深度研究 + 会话总结模型 + 默认思考强度
+  // 组装 ai_agent.config：深度研究 + 轻量模型 + 子智能体模型 + 决策模型 + 默认思考强度
   const buildAgentConfig = (): Record<string, unknown> => ({
     ...(agentType === 'deep_research'
       ? { research: { depth: researchDepth, ...buildResearchBudget() } }
       : {}),
     ...(summaryModel ? { summaryModel } : {}),
     ...(approvalModel ? { approvalModel } : {}),
+    ...(decisionModel ? { decisionModel } : {}),
     ...(defaultThinkingLevel && defaultThinkingLevel !== 'off' ? { defaultThinkingLevel } : {}),
   });
+
+  // 校验失败时切到出错字段所在的 Tab，避免错误提示留在隐藏的 Tab 里
+  const focusFirstErrorTab = (error: unknown) => {
+    const first = (error as { errorFields?: Array<{ name: (string | number)[] }> })
+      ?.errorFields?.[0]?.name?.[0];
+    if (typeof first !== 'string') return;
+    const tabKey = FIELD_TAB[first];
+    if (tabKey) setActiveTab(tabKey);
+  };
 
   const handleCreate = async () => {
     try {
@@ -518,7 +564,8 @@ const AgentsPage = () => {
         resetModal();
         refresh(1);
       }
-    } catch {
+    } catch (error) {
+      focusFirstErrorTab(error);
     } finally {
       setModalLoading(false);
     }
@@ -555,7 +602,8 @@ const AgentsPage = () => {
         resetModal();
         refresh();
       }
-    } catch {
+    } catch (error) {
+      focusFirstErrorTab(error);
     } finally {
       setModalLoading(false);
     }
@@ -733,329 +781,442 @@ const AgentsPage = () => {
         okText={modalMode === 'create' ? '创建' : '保存'}
         cancelText="取消"
         width={960}
+        destroyOnHidden
       >
-        <Row gutter={24} className="mt-4">
-          {/* ── 左列：基础信息 ── */}
-          <Col xs={24} lg={10}>
-            <Form form={form} layout="vertical">
-              <Form.Item
-                label="名称"
-                name="name"
-                rules={[{ required: true, message: '请输入 Agent 名称' }]}
-              >
-                <Input placeholder="例如：智能客服助手" />
-              </Form.Item>
-              <Form.Item label="类型">
-                <Select
-                  value={agentType}
-                  onChange={setAgentType}
-                  options={AGENT_TYPES.map((t) => ({
-                    label: (
-                      <Space orientation="vertical" size={0}>
-                        <span>{t.label}</span>
-                        <Text type="secondary" style={{ fontSize: 12 }}>
-                          {t.description}
-                        </Text>
-                      </Space>
-                    ),
-                    value: t.value,
-                  }))}
-                />
-              </Form.Item>
-              {agentType === 'deep_research' && (
-                <>
-                  <Form.Item label="探索强度" tooltip="决定研究轮次、Token 预算与每轮检索数量">
-                    <Radio.Group
-                      value={researchDepth}
-                      onChange={(e) => setResearchDepth(e.target.value)}
-                      className="w-full"
+        <Form
+          form={form}
+          layout="vertical"
+          preserve={false}
+          className="max-h-[64vh] overflow-y-auto pr-1"
+        >
+          <Tabs
+            activeKey={activeTab}
+            onChange={setActiveTab}
+            tabBarGutter={8}
+            items={[
+              {
+                key: 'basic',
+                label: '基础',
+                forceRender: true,
+                children: (
+                  <>
+                    <Form.Item
+                      label="名称"
+                      name="name"
+                      rules={[{ required: true, message: '请输入 Agent 名称' }]}
                     >
-                      <Space orientation="vertical" className="w-full">
-                        {RESEARCH_DEPTHS.map((d) => (
-                          <Radio key={d.value} value={d.value} className="flex items-center">
+                      <Input placeholder="例如：智能客服助手" />
+                    </Form.Item>
+                    <Form.Item label="类型" tooltip="决定 Agent 的运行范式：智能问答 / 深度研究">
+                      <Select
+                        value={agentType}
+                        onChange={setAgentType}
+                        options={AGENT_TYPES.map((t) => ({
+                          label: (
                             <Space orientation="vertical" size={0}>
-                              <span>{d.label}</span>
-                              <Text type="secondary" style={{ fontSize: 12 }}>
-                                {d.description}
+                              <span>{t.label}</span>
+                              <Text type="secondary" className="text-xs">
+                                {t.description}
                               </Text>
                             </Space>
-                          </Radio>
-                        ))}
-                      </Space>
-                    </Radio.Group>
-                  </Form.Item>
-                  <Form.Item
-                    label="自定义预算"
-                    tooltip="覆盖深度预设的计算预算，留空使用预设默认值（子任务上限默认 6、单子任务轮数默认 4）"
-                  >
-                    <div className="grid grid-cols-2 gap-2">
+                          ),
+                          value: t.value,
+                        }))}
+                      />
+                    </Form.Item>
+                    {agentType === 'deep_research' && (
+                      <>
+                        <Form.Item
+                          label="探索强度"
+                          tooltip="决定研究轮次、Token 预算与每轮检索数量"
+                        >
+                          <Radio.Group
+                            value={researchDepth}
+                            onChange={(e) => setResearchDepth(e.target.value)}
+                            className="w-full"
+                          >
+                            <Space orientation="vertical" className="w-full">
+                              {RESEARCH_DEPTHS.map((d) => (
+                                <Radio key={d.value} value={d.value} className="flex items-center">
+                                  <Space orientation="vertical" size={0}>
+                                    <span>{d.label}</span>
+                                    <Text type="secondary" className="text-xs">
+                                      {d.description}
+                                    </Text>
+                                  </Space>
+                                </Radio>
+                              ))}
+                            </Space>
+                          </Radio.Group>
+                        </Form.Item>
+                        <Form.Item
+                          label="自定义预算"
+                          tooltip="覆盖深度预设的计算预算，留空使用预设默认值（子任务上限默认 6、单子任务轮数默认 4）"
+                        >
+                          <div className="grid grid-cols-2 gap-2">
+                            <InputNumber
+                              min={1}
+                              max={200}
+                              placeholder="迭代轮数（预设覆盖）"
+                              value={researchMaxIterations}
+                              onChange={(v) => setResearchMaxIterations(v ?? undefined)}
+                              className="w-full"
+                            />
+                            <InputNumber
+                              min={64}
+                              max={128000}
+                              step={256}
+                              placeholder="单轮 Token（预设覆盖）"
+                              value={researchMaxTokens}
+                              onChange={(v) => setResearchMaxTokens(v ?? undefined)}
+                              className="w-full"
+                            />
+                            <InputNumber
+                              min={1}
+                              max={20}
+                              placeholder="每轮检索次数"
+                              value={researchSearchCount}
+                              onChange={(v) => setResearchSearchCount(v ?? undefined)}
+                              className="w-full"
+                            />
+                            <InputNumber
+                              min={1}
+                              max={12}
+                              placeholder="子任务数量上限"
+                              value={researchMaxSubtasks}
+                              onChange={(v) => setResearchMaxSubtasks(v ?? undefined)}
+                              className="w-full"
+                            />
+                            <InputNumber
+                              min={1}
+                              max={10}
+                              placeholder="单子任务轮数上限"
+                              value={researchMaxSubtaskTurns}
+                              onChange={(v) => setResearchMaxSubtaskTurns(v ?? undefined)}
+                              className="w-full"
+                            />
+                          </div>
+                          <Text type="secondary" className="text-xs">
+                            留空则使用所选探索强度的预设值
+                          </Text>
+                        </Form.Item>
+                      </>
+                    )}
+                    <Form.Item label="描述" name="description">
+                      <TextArea rows={2} placeholder="Agent 描述（可选）" />
+                    </Form.Item>
+                    <Form.Item
+                      label="是否公开"
+                      name="isPublic"
+                      valuePropName="checked"
+                      initialValue={true}
+                      extra="公开后所有用户可见；关闭后仅创建者与管理员可用"
+                    >
+                      <Switch checkedChildren="公开" unCheckedChildren="私有" />
+                    </Form.Item>
+                    <Form.Item
+                      label="是否启用虚拟机环境"
+                      name="requiresVirtualEnvironment"
+                      valuePropName="checked"
+                      initialValue={false}
+                      tooltip="为该 Agent 创建独占 Linux 虚拟环境（创建后不可修改）"
+                    >
+                      <Switch
+                        disabled={modalMode === 'edit'}
+                        checkedChildren="启用"
+                        unCheckedChildren="关闭"
+                      />
+                    </Form.Item>
+                  </>
+                ),
+              },
+              {
+                key: 'models',
+                label: '模型配置',
+                forceRender: true,
+                children: (
+                  <>
+                    <Form.Item
+                      label="主模型"
+                      name="model"
+                      rules={[{ required: true, message: '请选择至少一个模型' }]}
+                      extra="可多选，第一项为默认模型；仅可选对话类模型，JEV 请配置到下方「决策模型」"
+                    >
+                      <Select
+                        options={modelOptions}
+                        placeholder="选择模型（可多选，第一个为默认模型）"
+                        mode="multiple"
+                        maxTagCount="responsive"
+                        showSearch
+                        filterOption={(input, option) =>
+                          (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
+                        }
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="子智能体模型"
+                      tooltip="「自动审批」运行模式下负责判定工具调用是否放行的子智能体模型；留空时回退到轻量模型，两者都未配置则自动审批不可用（转人工审批）"
+                    >
+                      <Select
+                        allowClear
+                        showSearch
+                        placeholder="选择模型（可选，默认回退到轻量模型）"
+                        value={approvalModel}
+                        onChange={(v) => setApprovalModel(v)}
+                        options={modelOptions}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="决策模型"
+                      tooltip="结构化决策模型（JEV）：模型以判断/选择/评分形式给出结构化结论，用于工具放行、意图判定等决策场景"
+                      extra={
+                        jevModelOptions.length === 0
+                          ? '暂无可用决策模型：请先到「模型设置」添加 JEV 提供商并同步模型'
+                          : undefined
+                      }
+                    >
+                      <Select
+                        allowClear
+                        showSearch
+                        placeholder="选择 JEV 决策模型（可选）"
+                        value={decisionModel}
+                        onChange={(v) => setDecisionModel(v)}
+                        options={jevModelOptions}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="轻量模型"
+                      tooltip="对话结束后调用的轻量快速模型：根据会话内容生成 20 字以内标题（Token 消耗极低）；同时作为子智能体模型的兜底。建议选择小参数模型"
+                    >
+                      <Select
+                        allowClear
+                        showSearch
+                        placeholder="选择模型（可选）"
+                        value={summaryModel}
+                        onChange={(v) => setSummaryModel(v)}
+                        options={modelOptions}
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="默认思考强度"
+                      tooltip="AI 对话中的默认思考强度；仅当所选模型支持思考时生效，不支持思考的模型自动为关闭"
+                    >
+                      <Select
+                        value={defaultThinkingLevel}
+                        onChange={setDefaultThinkingLevel}
+                        options={[
+                          { label: '关闭（默认）', value: 'off' },
+                          { label: 'Minimal', value: 'minimal' },
+                          { label: 'Low', value: 'low' },
+                          { label: 'Medium', value: 'medium' },
+                          { label: 'High', value: 'high' },
+                          { label: 'XHigh', value: 'xhigh' },
+                        ]}
+                      />
+                    </Form.Item>
+                  </>
+                ),
+              },
+              {
+                key: 'session',
+                label: '会话配置',
+                forceRender: true,
+                children: (
+                  <>
+                    <Form.Item
+                      label="系统提示词"
+                      name="systemPrompt"
+                      rules={[{ required: true, message: '请输入系统提示词' }]}
+                    >
+                      <TextArea
+                        rows={10}
+                        placeholder="定义 Agent 的行为、角色和能力边界..."
+                        className="font-mono"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="欢迎词"
+                      name="welcomeMessage"
+                      extra="新会话空态展示；留空使用默认欢迎词"
+                    >
+                      <TextArea
+                        rows={2}
+                        maxLength={500}
+                        showCount
+                        placeholder="有什么可以帮助你的？"
+                      />
+                    </Form.Item>
+                    <Form.Item
+                      label="是否开启上下文采集"
+                      name="contextCollectionEnabled"
+                      valuePropName="checked"
+                      initialValue={false}
+                      tooltip="记录该 Agent 每次模型请求装配出的上下文（系统提示 / 工具 schema / 各分桶消息）。属调试信息，仅管理员可在对话内查看，默认关闭"
+                    >
+                      <Switch checkedChildren="开启" unCheckedChildren="关闭" />
+                    </Form.Item>
+                    <Form.Item
+                      label="最大迭代轮数"
+                      name="maxIterations"
+                      tooltip="Agent 单次对话中允许的最多工具调用轮次；-1 表示无上限（默认 200）"
+                    >
+                      <InputNumber
+                        min={-1}
+                        max={10000}
+                        className="w-full"
+                        placeholder="默认 200，-1 表示无上限"
+                      />
+                    </Form.Item>
+                  </>
+                ),
+              },
+              {
+                key: 'memory',
+                label: '记忆配置',
+                forceRender: true,
+                children: (
+                  <div className="max-w-[680px]">
+                    <div className="flex items-start justify-between gap-6">
+                      <div>
+                        <Text strong>是否开启长期记忆</Text>
+                        <div>
+                          <Text type="secondary" className="text-xs">
+                            注入用户长期记忆摘要，跨会话记住用户偏好与关键事实
+                          </Text>
+                        </div>
+                      </div>
+                      <Switch checked={memoryLongTerm} onChange={setMemoryLongTerm} />
+                    </div>
+                    <Divider className="my-4" />
+                    <div className="flex items-start justify-between gap-6">
+                      <div>
+                        <Text strong>是否启用对话记忆</Text>
+                        <div>
+                          <Text type="secondary" className="text-xs">
+                            读写会话历史，按用户隔离
+                          </Text>
+                        </div>
+                      </div>
+                      <Switch checked={memoryEnabled} onChange={setMemoryEnabled} />
+                    </div>
+                    <Divider className="my-4" />
+                    <div className="flex items-start justify-between gap-6">
+                      <div>
+                        <Text strong>历史消息数</Text>
+                        <div>
+                          <Text type="secondary" className="text-xs">
+                            单次对话加载的历史消息条数上限，越大上下文越完整、Token 消耗越高
+                          </Text>
+                        </div>
+                      </div>
                       <InputNumber
                         min={1}
-                        max={200}
-                        placeholder="迭代轮数（预设覆盖）"
-                        value={researchMaxIterations}
-                        onChange={(v) => setResearchMaxIterations(v ?? undefined)}
-                        className="w-full"
-                      />
-                      <InputNumber
-                        min={64}
-                        max={128000}
-                        step={256}
-                        placeholder="单轮 Token（预设覆盖）"
-                        value={researchMaxTokens}
-                        onChange={(v) => setResearchMaxTokens(v ?? undefined)}
-                        className="w-full"
-                      />
-                      <InputNumber
-                        min={1}
-                        max={20}
-                        placeholder="每轮检索次数"
-                        value={researchSearchCount}
-                        onChange={(v) => setResearchSearchCount(v ?? undefined)}
-                        className="w-full"
-                      />
-                      <InputNumber
-                        min={1}
-                        max={12}
-                        placeholder="子任务数量上限"
-                        value={researchMaxSubtasks}
-                        onChange={(v) => setResearchMaxSubtasks(v ?? undefined)}
-                        className="w-full"
-                      />
-                      <InputNumber
-                        min={1}
-                        max={10}
-                        placeholder="单子任务轮数上限"
-                        value={researchMaxSubtaskTurns}
-                        onChange={(v) => setResearchMaxSubtaskTurns(v ?? undefined)}
-                        className="w-full"
+                        max={100}
+                        disabled={!memoryEnabled}
+                        value={memoryMaxHistory}
+                        onChange={(v) => setMemoryMaxHistory(v ?? 20)}
+                        className="w-[120px]"
+                        suffix="条"
                       />
                     </div>
-                    <Text type="secondary" className="text-xs">
-                      留空则使用所选探索强度的预设值
-                    </Text>
-                  </Form.Item>
-                </>
-              )}
-              <Form.Item
-                label="模型"
-                name="model"
-                rules={[{ required: true, message: '请选择至少一个模型' }]}
-              >
-                <Select
-                  options={modelOptions}
-                  placeholder="选择模型（可多选，第一个为默认模型）"
-                  mode="multiple"
-                  maxTagCount="responsive"
-                  showSearch
-                  filterOption={(input, option) =>
-                    (option?.label as string)?.toLowerCase().includes(input.toLowerCase())
-                  }
-                />
-              </Form.Item>
-              <Form.Item label="描述" name="description">
-                <TextArea rows={2} placeholder="Agent 描述（可选）" />
-              </Form.Item>
-              <Form.Item
-                label="欢迎词"
-                name="welcomeMessage"
-                extra="新会话空态展示；留空使用默认欢迎词"
-              >
-                <TextArea rows={2} maxLength={500} showCount placeholder="有什么可以帮助你的？" />
-              </Form.Item>
-              <Form.Item
-                label="系统提示词"
-                name="systemPrompt"
-                rules={[{ required: true, message: '请输入系统提示词' }]}
-              >
-                <TextArea
-                  rows={6}
-                  placeholder="定义 Agent 的行为、角色和能力边界..."
-                  style={{ fontFamily: 'monospace' }}
-                />
-              </Form.Item>
-              <Form.Item label="公开" name="isPublic" valuePropName="checked">
-                <Switch checkedChildren="公开" unCheckedChildren="私有" />
-              </Form.Item>
-              <Form.Item
-                label="虚拟环境"
-                name="requiresVirtualEnvironment"
-                valuePropName="checked"
-                initialValue={false}
-                tooltip="创建独占 Linux 虚拟环境；创建后不可修改"
-              >
-                <Switch
-                  disabled={modalMode === 'edit'}
-                  checkedChildren="启用"
-                  unCheckedChildren="关闭"
-                />
-              </Form.Item>
-              <Form.Item
-                label="上下文采集"
-                name="contextCollectionEnabled"
-                valuePropName="checked"
-                initialValue={false}
-                tooltip="记录该 Agent 每次模型请求装配出的上下文（系统提示 / 工具 schema / 各分桶消息）。属调试信息，仅管理员可在对话内查看，默认关闭"
-              >
-                <Switch checkedChildren="开启" unCheckedChildren="关闭" />
-              </Form.Item>
-              <Form.Item
-                label="最大迭代轮数"
-                name="maxIterations"
-                tooltip="Agent 单次对话中允许的最多工具调用轮次；-1 表示无上限（默认 200）"
-              >
-                <InputNumber min={-1} max={10000} className="w-full" placeholder="默认 200，-1 表示无上限" />
-              </Form.Item>
-              <Form.Item
-                label="会话总结模型"
-                tooltip="对话结束后调用的轻量快速模型：根据会话内容生成 20 字以内标题（仅核心结论，Token 消耗极低）。建议从上方已选模型中挑选一个小模型"
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  placeholder="选择模型（可选）"
-                  value={summaryModel}
-                  onChange={(v) => setSummaryModel(v)}
-                  options={modelOptions}
-                />
-              </Form.Item>
-              <Form.Item
-                label="审批模型"
-                tooltip="「自动审批」运行模式下，由该模型判定工具调用是否放行。未配置时回退到会话总结模型，都没有则自动审批不可用（转人工审批）"
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  placeholder="选择模型（可选）"
-                  value={approvalModel}
-                  onChange={(v) => setApprovalModel(v)}
-                  options={modelOptions}
-                />
-              </Form.Item>
-              <Form.Item
-                label="默认思考强度"
-                tooltip="AI 对话中的默认思考强度；仅当所选模型支持思考时生效，不支持思考的模型自动为关闭"
-              >
-                <Select
-                  value={defaultThinkingLevel}
-                  onChange={setDefaultThinkingLevel}
-                  options={[
-                    { label: '关闭（默认）', value: 'off' },
-                    { label: 'Minimal', value: 'minimal' },
-                    { label: 'Low', value: 'low' },
-                    { label: 'Medium', value: 'medium' },
-                    { label: 'High', value: 'high' },
-                    { label: 'XHigh', value: 'xhigh' },
-                  ]}
-                />
-              </Form.Item>
-              <div
-                className="rounded-md mb-2 p-3"
-                style={{
-                  border: `1px solid ${token.colorBorderSecondary}`,
-                  background: token.colorFillTertiary,
-                }}
-              >
-                <Text strong className="mb-2 block">
-                  记忆配置
-                </Text>
-                <div className="flex items-center justify-between mb-2">
-                  <Space>
-                    <Switch size="small" checked={memoryEnabled} onChange={setMemoryEnabled} />
-                    <Text className="text-[13px]">对话记忆</Text>
-                  </Space>
-                  <Text type="secondary" className="text-xs">
-                    读写会话历史，按用户隔离
-                  </Text>
-                </div>
-                <div className="flex items-center justify-between mb-2">
-                  <Space>
-                    <Switch size="small" checked={memoryLongTerm} onChange={setMemoryLongTerm} />
-                    <Text className="text-[13px]">长期记忆</Text>
-                  </Space>
-                  <Text type="secondary" className="text-xs">
-                    注入用户长期记忆摘要
-                  </Text>
-                </div>
-                <div className="flex items-center justify-between">
-                  <Space>
-                    <Text className="text-[13px]">历史消息数</Text>
-                  </Space>
-                  <InputNumber
-                    size="small"
-                    min={1}
-                    max={100}
-                    disabled={!memoryEnabled}
-                    value={memoryMaxHistory}
-                    onChange={(v) => setMemoryMaxHistory(v ?? 20)}
-                    className="w-[100px]"
-                    suffix="条"
-                  />
-                </div>
-              </div>
-            </Form>
-          </Col>
-
-          {/* ── 右列：能力配置 ── */}
-          <Col xs={24} lg={14}>
-            <div
-              className="rounded-lg p-4"
-              style={{ border: `1px solid ${token.colorBorderSecondary}` }}
-            >
-              <Tabs
-                size="small"
-                items={[
-                  {
-                    key: 'tools',
-                    label: (
-                      <span>
-                        <ToolOutlined /> 工具 <Tag>{selectedTools.length}</Tag>
-                      </span>
-                    ),
-                    children: (
-                      <AbilityPanel
-                        title="内置工具"
-                        icon={<ToolOutlined />}
-                        items={tools}
-                        selected={selectedTools}
-                        onChange={setSelectedTools}
-                        renderItem={(item) => (
-                          <div>
-                            <div className="font-medium text-[13px]">{item.name}</div>
-                            {item.description && (
+                  </div>
+                ),
+              },
+              {
+                key: 'tools',
+                label: '工具启用配置',
+                children: (
+                  <div className="pt-2">
+                    <AbilityPanel
+                      title="内置工具"
+                      icon={<ToolOutlined />}
+                      items={tools}
+                      selected={selectedTools}
+                      onChange={setSelectedTools}
+                      renderItem={(item) => (
+                        <div>
+                          <div className="font-medium text-[13px]">{item.name}</div>
+                          {item.description && (
+                            <Text type="secondary" className="text-xs">
+                              {item.description}
+                            </Text>
+                          )}
+                        </div>
+                      )}
+                    />
+                  </div>
+                ),
+              },
+              {
+                key: 'skills',
+                label: '技能启用配置',
+                children: (
+                  <div className="pt-2">
+                    <AbilityPanel
+                      title="技能"
+                      icon={<BlockOutlined />}
+                      items={skills.map((s) => ({ ...s, disabled: !s.enabled }))}
+                      selected={selectedSkills}
+                      onChange={setSelectedSkills}
+                      renderItem={(item) => (
+                        <div>
+                          <Space>
+                            <Text strong className="text-[13px]">
+                              {item.name}
+                            </Text>
+                            {!item.enabled && (
+                              <Tag color="red" className="text-[11px]">
+                                已禁用
+                              </Tag>
+                            )}
+                          </Space>
+                          {item.description && (
+                            <div>
                               <Text type="secondary" className="text-xs">
                                 {item.description}
                               </Text>
-                            )}
-                          </div>
-                        )}
-                      />
-                    ),
-                  },
-                  {
-                    key: 'skills',
-                    label: (
-                      <span>
-                        <BlockOutlined /> 技能 <Tag>{selectedSkills.length}</Tag>
-                      </span>
-                    ),
-                    children: (
-                      <AbilityPanel
-                        title="技能"
-                        icon={<BlockOutlined />}
-                        items={skills.map((s) => ({ ...s, disabled: !s.enabled }))}
-                        selected={selectedSkills}
-                        onChange={setSelectedSkills}
-                        renderItem={(item) => (
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    />
+                  </div>
+                ),
+              },
+              {
+                key: 'mcp',
+                label: 'MCP 启用配置',
+                children: (
+                  <div className="pt-2">
+                    <AbilityPanel
+                      title="MCP 服务"
+                      icon={<ThunderboltOutlined />}
+                      items={mcpServers.map((m) => ({
+                        id: m.id,
+                        name: m.name,
+                        description: m.description,
+                        disabled: m.status !== 'connected',
+                      }))}
+                      selected={selectedMcp}
+                      onChange={setSelectedMcp}
+                      renderItem={(item) => {
+                        const mcp = mcpServers.find((m) => m.id === item.id);
+                        return (
                           <div>
                             <Space>
                               <Text strong className="text-[13px]">
                                 {item.name}
                               </Text>
-                              {!item.enabled && (
-                                <Tag color="red" className="text-[11px]">
-                                  已禁用
+                              {mcp && (
+                                <Tag
+                                  color={mcp.status === 'connected' ? 'green' : 'red'}
+                                  className="text-[11px]"
+                                >
+                                  {mcp.status === 'connected' ? '已连接' : '未连接'}
                                 </Tag>
+                              )}
+                              {mcp && mcp.toolCount > 0 && (
+                                <Tag className="text-[11px]">{mcp.toolCount} 工具</Tag>
                               )}
                             </Space>
                             {item.description && (
@@ -1066,98 +1227,44 @@ const AgentsPage = () => {
                               </div>
                             )}
                           </div>
-                        )}
-                      />
-                    ),
-                  },
-                  {
-                    key: 'mcp',
-                    label: (
-                      <span>
-                        <ThunderboltOutlined /> MCP <Tag>{selectedMcp.length}</Tag>
-                      </span>
-                    ),
-                    children: (
-                      <AbilityPanel
-                        title="MCP 服务"
-                        icon={<ThunderboltOutlined />}
-                        items={mcpServers.map((m) => ({
-                          id: m.id,
-                          name: m.name,
-                          description: m.description,
-                          disabled: m.status !== 'connected',
-                        }))}
-                        selected={selectedMcp}
-                        onChange={setSelectedMcp}
-                        renderItem={(item) => {
-                          const mcp = mcpServers.find((m) => m.id === item.id);
-                          return (
+                        );
+                      }}
+                    />
+                  </div>
+                ),
+              },
+              {
+                key: 'kb',
+                label: '知识库启用配置',
+                children: (
+                  <div className="pt-2">
+                    <AbilityPanel
+                      title="知识库"
+                      icon={<BookOutlined />}
+                      items={knowledgeBases}
+                      selected={selectedKbs}
+                      onChange={setSelectedKbs}
+                      renderItem={(item) => (
+                        <div>
+                          <Text strong className="text-[13px]">
+                            {item.name}
+                          </Text>
+                          {item.description && (
                             <div>
-                              <Space>
-                                <Text strong className="text-[13px]">
-                                  {item.name}
-                                </Text>
-                                {mcp && (
-                                  <Tag
-                                    color={mcp.status === 'connected' ? 'green' : 'red'}
-                                    className="text-[11px]"
-                                  >
-                                    {mcp.status === 'connected' ? '已连接' : '未连接'}
-                                  </Tag>
-                                )}
-                                {mcp && mcp.toolCount > 0 && (
-                                  <Tag className="text-[11px]">{mcp.toolCount} 工具</Tag>
-                                )}
-                              </Space>
-                              {item.description && (
-                                <div>
-                                  <Text type="secondary" className="text-xs">
-                                    {item.description}
-                                  </Text>
-                                </div>
-                              )}
+                              <Text type="secondary" className="text-xs">
+                                {item.description}
+                              </Text>
                             </div>
-                          );
-                        }}
-                      />
-                    ),
-                  },
-                  {
-                    key: 'kb',
-                    label: (
-                      <span>
-                        <BookOutlined /> 知识库 <Tag>{selectedKbs.length}</Tag>
-                      </span>
-                    ),
-                    children: (
-                      <AbilityPanel
-                        title="知识库"
-                        icon={<BookOutlined />}
-                        items={knowledgeBases}
-                        selected={selectedKbs}
-                        onChange={setSelectedKbs}
-                        renderItem={(item) => (
-                          <div>
-                            <Text strong className="text-[13px]">
-                              {item.name}
-                            </Text>
-                            {item.description && (
-                              <div>
-                                <Text type="secondary" className="text-xs">
-                                  {item.description}
-                                </Text>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      />
-                    ),
-                  },
-                ]}
-              />
-            </div>
-          </Col>
-        </Row>
+                          )}
+                        </div>
+                      )}
+                    />
+                  </div>
+                ),
+              },
+            ]}
+          />
+        </Form>
       </Modal>
     </>
   );

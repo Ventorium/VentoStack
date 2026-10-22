@@ -58,6 +58,7 @@ export interface ModelItem {
   id: string;
   providerId: string;
   providerName: string;
+  providerApiFormat: string;
   modelId: string;
   displayName: string | null;
   contextLength: number;
@@ -273,7 +274,7 @@ export function createProviderService(deps: {
 
   async function listAllModels(tenantId: string): Promise<ModelItem[]> {
     const rows = await db.raw(
-      `SELECT m.*, p.display_name AS provider_display_name, p.name AS provider_name
+      `SELECT m.*, p.display_name AS provider_display_name, p.name AS provider_name, p.api_format AS provider_api_format
        FROM ai_model m
        JOIN ai_provider p ON m.provider_id = p.id
        WHERE m.tenant_id = $1 AND m.status = 1
@@ -561,6 +562,7 @@ export function createProviderService(deps: {
       id: r.id as string,
       providerId: r.provider_id as string,
       providerName: (r.provider_display_name as string) ?? (r.provider_name as string) ?? '',
+      providerApiFormat: (r.provider_api_format as string) ?? '',
       modelId: r.model_id as string,
       displayName: (r.display_name as string) ?? null,
       contextLength: (r.context_length as number) ?? 128000,
