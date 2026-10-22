@@ -7,7 +7,7 @@ export interface ProviderPreset {
   id: string;
   name: string;
   displayName: string;
-  apiFormat: "openai_chat" | "openai_response" | "anthropic" | "custom";
+  apiFormat: "openai_chat" | "openai_response" | "anthropic" | "custom" | "jev";
   baseUrl: string;
   description: string;
   /** models.dev 中的 provider slug，用于自动拉取模型列表 */
@@ -195,6 +195,14 @@ export const PROVIDER_PRESETS: ProviderPreset[] = [
     apiFormat: "openai_chat",
     baseUrl: "http://localhost:11434/v1",
     description: "本地开源模型，默认 localhost",
+  },
+  {
+    id: "jev",
+    name: "jev",
+    displayName: "JEV AI (结构化决策)",
+    apiFormat: "jev",
+    baseUrl: "https://thejevai.com/v1",
+    description: "结构化决策 API（非对话），用于 Agent 决策模型，如 typesafe/jev-1.14",
   },
 ];
 

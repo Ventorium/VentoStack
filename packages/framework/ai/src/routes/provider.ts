@@ -267,6 +267,20 @@ export function createProviderRoutes(
             max_tokens: 1,
             messages: [{ role: "user", content: "1+1=?" }],
           };
+        } else if (provider.apiFormat === "jev") {
+          // JEV AI 结构化决策 API（非对话）
+          url = `${provider.baseUrl.replace(/\/+$/, "")}/systemone`;
+          headers = {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${provider.apiKey}`,
+          };
+          body = {
+            state: "VentoStack 连通性测试",
+            model: model.modelId,
+            questions: {
+              check: { type: "noul", instructions: "Is 1+1=2?" },
+            },
+          };
         } else {
           // openai_chat / openai_response / custom
           const endpoint = provider.apiFormat === "openai_response" ? "responses" : "chat/completions";
@@ -341,6 +355,20 @@ export function createProviderRoutes(
                 model: model.modelId,
                 max_tokens: 1,
                 messages: [{ role: "user", content: "1+1=?" }],
+              };
+            } else if (provider.apiFormat === "jev") {
+              // JEV AI 结构化决策 API（非对话）
+              url = `${provider.baseUrl.replace(/\/+$/, "")}/systemone`;
+              headers = {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${provider.apiKey}`,
+              };
+              reqBody = {
+                state: "VentoStack 连通性测试",
+                model: model.modelId,
+                questions: {
+                  check: { type: "noul", instructions: "Is 1+1=2?" },
+                },
               };
             } else {
               const endpoint = provider.apiFormat === "openai_response" ? "responses" : "chat/completions";

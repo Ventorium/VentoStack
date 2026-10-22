@@ -74,4 +74,5 @@ export const FORMAT_LABELS: Record<string, { label: string; color: string }> = {
   openai_response: { label: 'OpenAI Response', color: 'blue' },
   anthropic: { label: 'Anthropic', color: 'purple' },
   custom: { label: '自定义', color: 'default' },
+  jev: { label: 'JEV (决策)', color: 'gold' },
 };

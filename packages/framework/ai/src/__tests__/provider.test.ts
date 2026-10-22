@@ -9,9 +9,9 @@ import { getPresetById, getPresets } from '../services/provider-presets';
 // ============ Presets ============
 
 describe('ProviderPresets', () => {
-  test('getPresets returns 21 presets', () => {
+  test('getPresets returns 22 presets', () => {
     const presets = getPresets();
-    expect(presets.length).toBe(21);
+    expect(presets.length).toBe(22);
   });
 
   test('each preset has required fields', () => {
@@ -20,7 +20,7 @@ describe('ProviderPresets', () => {
       expect(p.name).toBeTruthy();
       expect(p.displayName).toBeTruthy();
       expect(p.apiFormat).toBeTruthy();
-      expect(['openai_chat', 'openai_response', 'anthropic', 'custom']).toContain(p.apiFormat);
+      expect(['openai_chat', 'openai_response', 'anthropic', 'custom', 'jev']).toContain(p.apiFormat);
     }
   });
 

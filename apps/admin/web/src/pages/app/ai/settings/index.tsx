@@ -805,6 +805,7 @@ export default function AISettingsPage() {
                     { value: 'openai_response', label: 'OpenAI Response' },
                     { value: 'anthropic', label: 'Anthropic Messages' },
                     { value: 'custom', label: '自定义' },
+                    { value: 'jev', label: 'JEV (结构化决策)' },
                   ]}
                 />
               </Form.Item>
@@ -880,6 +881,7 @@ export default function AISettingsPage() {
                 { value: 'openai_response', label: 'OpenAI Response' },
                 { value: 'anthropic', label: 'Anthropic Messages' },
                 { value: 'custom', label: '自定义' },
+                { value: 'jev', label: 'JEV (结构化决策)' },
               ]}
             />
           </Form.Item>
@@ -963,9 +965,11 @@ export default function AISettingsPage() {
                 从 models.dev 同步
               </Button>
             )}
-            <Button icon={<ApiOutlined />} loading={syncingApi} onClick={handleSyncApi}>
-              从接口获取
-            </Button>
+            {modelsProvider?.apiFormat !== 'jev' && (
+              <Button icon={<ApiOutlined />} loading={syncingApi} onClick={handleSyncApi}>
+                从接口获取
+              </Button>
+            )}
             <Button
               icon={<PlusOutlined />}
               onClick={() => {
@@ -983,9 +987,11 @@ export default function AISettingsPage() {
       >
         <div className="mb-4 bg-[#e6f4ff] rounded-md text-[13px] py-[8px] px-[12px]">
           💡{' '}
-          {modelsProvider?.modelsDevSlug
-            ? '点击「从 models.dev 同步」拉取模型与配置，或点击「从接口获取」访问供应商 /models 接口自动识别模型。'
-            : '点击「从接口获取」访问供应商 /models 接口自动识别模型，或点击「添加模型」手动添加。'}{' '}
+          {modelsProvider?.apiFormat === 'jev'
+            ? 'JEV 为结构化决策 API，不提供 /models 列表：请点击「添加模型」手动录入（如 typesafe/jev-1.14）。'
+            : modelsProvider?.modelsDevSlug
+              ? '点击「从 models.dev 同步」拉取模型与配置，或点击「从接口获取」访问供应商 /models 接口自动识别模型。'
+              : '点击「从接口获取」访问供应商 /models 接口自动识别模型，或点击「添加模型」手动添加。'}{' '}
           勾选模型后可批量删除或测试连通性。
         </div>
         {selectedModelIds.length > 0 && (
