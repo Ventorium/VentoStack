@@ -177,8 +177,23 @@ export function createAuthRoutes(
           expiresIn: { type: 'int' as const, description: '过期时间（秒）' },
           tokenType: { type: 'string' as const, description: '令牌类型' },
         },
+        401: {
+          contentType: 'application/json',
+          description:
+            '登录失败；账号锁定（account_locked）时 data.retryAfterMinutes 为剩余分钟数，阈值由 sys_login_max_attempts 控制',
+          schema: {
+            code: { type: 'number' as const, description: '业务错误码' },
+            message: { type: 'string' as const, description: '错误消息' },
+          },
+        },
       },
-      openapi: { summary: '用户登录', tags: ['auth'], operationId: 'login' },
+      openapi: {
+        summary: '用户登录',
+        description:
+          '连续失败达到 sys_login_max_attempts 后锁定账号，锁定期间返回 account_locked 与 retryAfterMinutes。',
+        tags: ['auth'],
+        operationId: 'login',
+      },
     },
     async (ctx) => {
       try {
@@ -193,7 +208,17 @@ export function createAuthRoutes(
         const result = await authService.login(loginParams);
         return withTokenCookies(success(result), ctx.request, result, secureCookies);
       } catch (e: unknown) {
-        const err = e as Error & { code?: string; data?: { tempToken?: string } };
+        const err = e as Error & {
+          code?: string;
+          data?: { tempToken?: string; retryAfterMinutes?: number };
+        };
+        if (err.code === 'account_locked') {
+          const minutes = err.data?.retryAfterMinutes ?? 1;
+          return fail(`账号登录失败已锁定，请等待 ${minutes} 分钟后重试`, 401, 401, {
+            code: 'account_locked',
+            retryAfterMinutes: minutes,
+          });
+        }
         if (err.code === 'password_expired' && err.data?.tempToken) {
           return fail('密码已过期', 403, 403, {
             code: 'password_expired',

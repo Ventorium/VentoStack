@@ -18,6 +18,12 @@ import { RoleModel, UserRoleModel } from '../models/role';
 import { UserModel } from '../models/user';
 import type { ConfigService } from './config';
 import { describeIPLocation } from './ip-location';
+import {
+  createAccountLockedError,
+  loginFailKey,
+  loginLockUntilKey,
+  remainingLockMinutes,
+} from './login-lock';
 import { validatePassword } from './password-policy';
 
 /** 登录结果 */
@@ -253,19 +259,36 @@ export function createAuthService(deps: {
       const lockMinutes =
         Number(await configService.getValue('sys_login_lock_minutes')) || DEFAULT_LOCK_MINUTES;
 
-      // 2. 检查账号锁定（按 IP + 用户名组合）
-      const failKey = `tenant:${tenantId}:login_fail:${ip}:${username}`;
+      // 2. 检查账号锁定（按租户 + 账号；IP 维度由下方限流兜底）
+      const failKey = loginFailKey(tenantId, username);
+      const lockKey = loginLockUntilKey(tenantId, username);
       const failCount = await cache.get<number>(failKey);
-      if (failCount !== null && failCount >= maxAttempts) {
+      const lockedUntil = await cache.get<number>(lockKey);
+      if (lockedUntil !== null && lockedUntil > Date.now()) {
+        const retryAfterMinutes = remainingLockMinutes(lockedUntil, lockMinutes);
         await auditStore.append({
           actor: username,
           action: 'login.locked',
           resource: 'auth',
           result: 'denied',
-          metadata: { ip, reason: 'account_locked' },
+          metadata: { ip, reason: 'account_locked', retryAfterMinutes },
         });
         await recordLoginLog({ username, ip, userAgent, status: 0, message: '账号已锁定' });
-        throw new Error('账号登录失败次数过多，已锁定');
+        throw createAccountLockedError(retryAfterMinutes);
+      }
+      if (failCount !== null && failCount >= maxAttempts) {
+        const until = Date.now() + lockMinutes * 60_000;
+        await cache.set(lockKey, until, { ttl: lockMinutes * 60 });
+        const retryAfterMinutes = remainingLockMinutes(until, lockMinutes);
+        await auditStore.append({
+          actor: username,
+          action: 'login.locked',
+          resource: 'auth',
+          result: 'denied',
+          metadata: { ip, reason: 'account_locked', retryAfterMinutes },
+        });
+        await recordLoginLog({ username, ip, userAgent, status: 0, message: '账号已锁定' });
+        throw createAccountLockedError(retryAfterMinutes);
       }
 
       // 3. 检查 IP 速率限制
@@ -382,7 +405,11 @@ export function createAuthService(deps: {
           status: 0,
           message: '账号已被锁定',
         });
-        throw new Error('账号已被锁定');
+        const retryAfterMinutes = remainingLockMinutes(
+          new Date(user.locked_until).getTime(),
+          lockMinutes,
+        );
+        throw createAccountLockedError(retryAfterMinutes);
       }
 
       // 7. 清除过期锁定
@@ -400,6 +427,11 @@ export function createAuthService(deps: {
         // 9. 密码错误：递增失败计数（缓存 + DB）
         const newFailCount = (failCount ?? 0) + 1;
         await cache.set(failKey, newFailCount, { ttl: lockMinutes * 60 });
+        if (newFailCount >= maxAttempts) {
+          const until = Date.now() + lockMinutes * 60_000;
+          await cache.set(lockKey, until, { ttl: lockMinutes * 60 });
+          throw createAccountLockedError(remainingLockMinutes(until, lockMinutes));
+        }
         await db.raw(
           'UPDATE sys_user SET login_attempts = COALESCE(login_attempts, 0) + 1 WHERE tenant_id = $1 AND id = $2',
           [tenantId, user.id],
@@ -426,6 +458,7 @@ export function createAuthService(deps: {
 
       // 10. 登录成功：清除失败计数（缓存 + DB）
       await cache.del(failKey);
+      await cache.del(lockKey);
       await db
         .query(UserModel)
         .where('tenant_id', '=', tenantId)

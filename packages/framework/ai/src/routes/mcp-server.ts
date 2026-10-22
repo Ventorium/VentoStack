@@ -7,8 +7,8 @@ import type { McpServerItem, McpServerService } from "../services/mcp-server";
 
 /** 对外脱敏：隐藏 env/headers 中敏感字段的真实值（服务层已解密，这里仅做展示脱敏） */
 function maskSecrets(item: McpServerItem): McpServerItem {
-  const sensitive = (v: Record<string, string> | null | undefined) => {
-    if (!v) return v;
+  const sensitive = (v: Record<string, string> | null): Record<string, string> | null => {
+    if (!v) return null;
     const out: Record<string, string> = {};
     for (const [k, val] of Object.entries(v)) {
       out[k] = /password|token|secret|key|authorization|credential/i.test(k) && val ? "********" : val;

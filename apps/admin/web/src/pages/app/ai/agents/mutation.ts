@@ -1,8 +1,7 @@
 export function agentMutationValues(
   values: Record<string, unknown>,
-  mode: 'create' | 'edit',
+  _mode: 'create' | 'edit',
 ): Record<string, unknown> {
-  if (mode === 'create') return values;
-  const { requiresVirtualEnvironment: _immutableRuntime, ...mutableValues } = values;
-  return mutableValues;
+  // 虚拟环境开关允许创建/编辑；是否可用由后端在保存时再次校验。
+  return values;
 }

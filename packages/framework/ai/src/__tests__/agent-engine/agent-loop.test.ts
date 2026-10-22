@@ -216,15 +216,30 @@ describe('Agent loop conformance', () => {
           };
         },
       },
+      async prepareRuntime() {
+        return {
+          instanceId: 'instance-1',
+          sandboxId: 'sandbox-secret',
+          promptBlock:
+            '## 运行环境\n你运行在一台隔离的 Linux 机器中，工作目录 /workspace。\n## 本次会话的文件位置\n- 知识库（只读）：/workspace/session-1/knowledges',
+          tools: [],
+        };
+      },
     });
 
     await collect(
-      loop.runStream({ agentId: 'agent', userId: 'user', tenantId: 'tenant', message: 'run' }),
+      loop.runStream({
+        agentId: 'agent',
+        userId: 'user',
+        tenantId: 'tenant',
+        sessionId: 'session-1',
+        message: 'run',
+      }),
     );
     const prompt = requests[0]?.messages.find((message) => message.role === 'system')?.content;
-    expect(prompt).toContain('环境：隔离的 Linux 虚拟环境');
-    expect(prompt).toContain('工作目录：/workspace');
-    expect(prompt).toContain('终端：terminal');
+    expect(prompt).toContain('你运行在一台隔离的 Linux 机器中');
+    expect(prompt).toContain('/workspace');
+    expect(prompt).toContain('/workspace/session-1/knowledges');
     expect(prompt).not.toContain('sandboxId');
   });
   test('executes directly supplied AgentTools without a ToolRegistry', async () => {

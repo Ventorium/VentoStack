@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createAgentRuntimeTools } from '../../agent-runtime/tools';
+import { createAgentRuntimeTools, isDangerousCommand } from '../../agent-runtime/tools';
 import type { AgentRuntimeClient } from '../../agent-runtime/types';
 
 function runtime(overrides: Partial<AgentRuntimeClient> = {}): AgentRuntimeClient {
@@ -7,7 +7,7 @@ function runtime(overrides: Partial<AgentRuntimeClient> = {}): AgentRuntimeClien
     async createSandbox() { throw new Error('unused'); },
     async getSandbox() { throw new Error('unused'); },
     async destroySandbox() {},
-    async runCommand(_id, command, cwd) { return { exitCode: 0, stdout: `${cwd}:${command.join(' ')}`, stderr: '', timedOut: false }; },
+    async runCommand(_id, command, cwd) { const dir = typeof cwd === 'string' ? cwd : (cwd?.cwd ?? ''); return { exitCode: 0, stdout: `${dir}:${command.join(' ')}`, stderr: '', timedOut: false }; },
     async readFile() { return new TextEncoder().encode('hello'); },
     async writeFile() {},
     ...overrides,
@@ -35,5 +35,20 @@ describe('sandbox-bound Agent tools', () => {
     const write = tools.find((item) => item.name === 'file_write')!;
     await write.execute('call-1', { path: 'reports/today.md', content: 'done' });
     expect(written).toEqual(['reports/today.md']);
+  });
+});
+
+describe('VM command policy', () => {
+  test('blocks destructive root operations', () => {
+    expect(isDangerousCommand(['rm', '-rf', '/'])).toBeTruthy();
+    expect(isDangerousCommand(['mkfs.ext4', '/dev/sda1'])).toBeTruthy();
+    expect(isDangerousCommand(['dd', 'if=/dev/zero', 'of=/dev/sda'])).toBeTruthy();
+    expect(isDangerousCommand(['shutdown', '-h', 'now'])).toBeTruthy();
+  });
+
+  test('allows normal exploration commands', () => {
+    expect(isDangerousCommand(['rg', 'foo', '/workspace'])).toBeNull();
+    expect(isDangerousCommand(['ls', '-al'])).toBeNull();
+    expect(isDangerousCommand(['cat', '/workspace/a.md'])).toBeNull();
   });
 });

@@ -63,12 +63,15 @@ export function createChatRoutes(
   perm: (resource: string, action: string) => Middleware,
   memoryService?: MemoryService,
   options?: {
-    /** 按请求 tenantId 构建请求级工具注册表（KB 等租户相关工具绑定请求租户） */
+    /**
+     * 按请求 tenantId 构建请求级工具注册表（KB 等租户相关工具绑定请求租户）。
+     * 允许返回 Promise：扩展工具是否存在取决于会话级设置（如渠道通知开关）。
+     */
     createTenantToolRegistry?: (
       tenantId: string,
       userId?: string,
       sessionId?: string,
-    ) => ToolRegistry;
+    ) => ToolRegistry | Promise<ToolRegistry>;
     /** 审批服务：聊天内嵌审批的请求者自确认 */
     approvalService?: ChatApprovalService;
     scheduleMemoryConsolidation?: (params: {
@@ -83,6 +86,17 @@ export function createChatRoutes(
       tenantId: string;
       userId: string;
     }) => Promise<string | null>;
+    /**
+     * 一轮对话结束后的平台钩子（渠道自动推送等）。
+     * 与 generateSessionTitle 并列；失败只记日志，不影响对话本身。
+     */
+    onRunFinished?: (params: {
+      sessionId: string;
+      agentId: string;
+      tenantId: string;
+      userId: string;
+      finalContent: string;
+    }) => Promise<void>;
   },
 ): Router {
   const router = createRouter();
@@ -201,10 +215,10 @@ export function createChatRoutes(
   });
 
   /** 请求级工具注册表：有租户标识且配置了工厂时构建，否则使用 agentLoop 的默认注册表 */
-  function buildRequestToolRegistry(
+  async function buildRequestToolRegistry(
     ctx: { user?: unknown },
     sessionId?: string,
-  ): ToolRegistry | undefined {
+  ): Promise<ToolRegistry | undefined> {
     const tenantId = (ctx.user as { tenantId?: string } | undefined)?.tenantId ?? '';
     const userId = (ctx.user as { id?: string } | undefined)?.id ?? '';
     if (!tenantId || !options?.createTenantToolRegistry) return undefined;
@@ -851,7 +865,7 @@ export function createChatRoutes(
           body,
         );
         if (truncateError) return truncateError;
-        const toolRegistry = buildRequestToolRegistry(ctx, returnedSessionId);
+        const toolRegistry = await buildRequestToolRegistry(ctx, returnedSessionId);
         const runOptions = requestOptions(body);
         if (runOptions instanceof Response) return runOptions;
         const attachmentError = await validateAttachments(
@@ -970,7 +984,7 @@ export function createChatRoutes(
         }
         const truncateError = await truncateHistoryForResend(sessionId, tenantId, userId, body);
         if (truncateError) return truncateError;
-        const toolRegistry = buildRequestToolRegistry(ctx, sessionId);
+        const toolRegistry = await buildRequestToolRegistry(ctx, sessionId);
         const runOptions = requestOptions(body);
         if (runOptions instanceof Response) return runOptions;
         const attachmentError = await validateAttachments(
@@ -1012,9 +1026,16 @@ export function createChatRoutes(
 
         // 在流开头下发 session 事件，前端据此绑定会话 ID（新建会话时前端无 sessionId）
         const streamWithSession = (async function* () {
+          // 聚合本轮最终回复：渠道自动推送要把「最后一次完整内容」交给摘要子智能体
+          let finalContent = '';
           try {
             yield { type: 'session' as const, sessionId } as const;
-            yield* stream;
+            for await (const chunk of stream) {
+              if (chunk.type === 'content' && typeof chunk.delta === 'string') {
+                finalContent += chunk.delta;
+              }
+              yield chunk;
+            }
             // 对话结束后：Agent 配置了会话总结模型时生成 ≤20 字标题（失败不影响对话）
             if (options?.generateSessionTitle) {
               try {
@@ -1027,6 +1048,24 @@ export function createChatRoutes(
                 if (title) yield { type: 'title' as const, title } as const;
               } catch {
                 // 标题生成失败静默忽略
+              }
+            }
+            // 平台钩子（渠道自动推送）：此时 done 已下发，用户无感知；
+            // 加超时上限，避免推送链路异常拖住连接释放
+            if (options?.onRunFinished && finalContent) {
+              try {
+                await Promise.race([
+                  options.onRunFinished({
+                    sessionId,
+                    agentId: body.agentId as string,
+                    tenantId,
+                    userId,
+                    finalContent,
+                  }),
+                  new Promise<void>((resolve) => setTimeout(resolve, 8_000)),
+                ]);
+              } catch (err) {
+                console.error('[ai] 会话结束钩子失败（不影响对话）:', err);
               }
             }
           } finally {

@@ -2,8 +2,16 @@
 
 ## Agent 虚拟环境
 
-配置独立的 Vento Agent Runtime 后，创建 Agent 时可设置
-`requiresVirtualEnvironment: true`。该 Agent 会获得独占的持久 sandbox；该开关创建后不可修改。
+Agent 可开启 `requiresVirtualEnvironment`（创建/编辑均可）。开启时只校验“在线宿主 + 用户资源上限”，
+真正创建发生在该用户首次发消息时，并按 `(tenant_id, user_id, agent_id)` 唯一复用：
+
+- 同一用户同一 Agent 的所有会话共享一台持久 Linux 虚拟机；
+- 会话目录：`/workspace/{session_id}/knowledges`（只读知识库）、`/workspace/{session_id}/memories`（只读会话记忆）；
+- 全局记忆：`/root/.vento-agent/memories`（双向同步到用户长期记忆）；
+- Agent 使用 `terminal` / `file_read` / `file_write`，不再注册任何 `kb-*` 工具；
+- `/workspace` 重要文件增量备份，释放/重建后可恢复。
+
+宿主机由平台管理员在「AI 能力 / 虚拟机接入」统一接入；也兼容旧环境变量：
 
 ```dotenv
 VENTO_RUNTIME_URL=http://192.168.8.210:8088
@@ -11,7 +19,8 @@ VENTO_RUNTIME_TOKEN=<runtime bearer token>
 VENTO_RUNTIME_TIMEOUT_MS=30000
 ```
 
-地址和 Token 必须同时配置。runtime 不可用不会阻止 Fullstack 启动；普通 Agent 继续工作，需要虚拟环境的创建请求返回 503。Agent 可按工具白名单启用 `terminal`、`file_read` 和 `file_write`，文件工具被限制在 `/workspace`。
+Runtime 不可用不会阻止 Fullstack 启动；普通 Agent 继续工作，虚拟机 Agent 返回明确的 503/409 错误。
+完整设计见 `docs/designs/ai-agent-virtual-environment.md`。
 
 AI 集成：LLM 接入、RAG、Tool Registry、权限沙箱。
 

@@ -351,6 +351,27 @@ export { agentModelsArray } from './migrations/014_agent_models_array';
 export { dropAiToolLog } from './migrations/015_drop_ai_tool_log';
 export { addApprovalSessionId } from './migrations/017_add_approval_session_id';
 export { createAiExpertTables } from './migrations/018_create_ai_expert_tables';
+export { createAiConnectorTables } from './migrations/019_create_ai_connector_tables';
+
+// ---- Connector System ----
+export { createConnectorService } from './services/connector';
+export type { ConnectorService, ConnectorCatalogItem, ConnectorBindingItem } from './services/connector';
+export { createConnectorRoutes } from './routes/connector';
+export { AiConnectorCatalogModel, AiConnectorBindingModel } from './models/connector';
+export { createAiSessionMeta } from './migrations/020_create_ai_session_meta';
+
+// ---- Session Service ----
+export { createSessionService } from './session-service';
+export type {
+  SessionService,
+  SessionServiceDeps,
+  SessionView,
+  SessionOrigin,
+  SessionSettings,
+  SessionChannelSettings,
+  CreateSessionParams,
+  ListSessionsParams,
+} from './session-service';
 
 // ---- Expert System ----
 export { createExpertHubService, sha256Hex, ExpertHubError } from './services/expert-hub';
@@ -369,3 +390,51 @@ export { createExpertRoutes } from './routes/expert';
 export { createAgentRuntimeClient } from './agent-runtime/client';
 export { createMemoryConsolidator } from './memory/consolidator';
 export type { AgentRuntimeClient, RuntimeSandbox, SandboxStatus } from './agent-runtime/types';
+
+// ---- Agent Runtime / Virtual Environment ----
+export { createAiRuntimeTables } from './migrations/021_create_ai_runtime_tables';
+export { normalizeAiRuntimeJsonb } from './migrations/022_normalize_ai_runtime_jsonb';
+export { addAgentNetworkEnabled } from './migrations/023_add_agent_network_enabled';
+export { createRuntimeHostService } from './services/runtime-host';
+export type {
+  RuntimeHostService,
+  RuntimeHostItem,
+  RuntimeHostStatus,
+  RuntimeHostUsage,
+  CreateRuntimeHostParams,
+  UpdateRuntimeHostParams,
+} from './services/runtime-host';
+export { createRuntimeCapacityService } from './services/runtime-capacity';
+export type {
+  RuntimeCapacityService,
+  RuntimeAvailability,
+  RuntimeUserUsage,
+} from './services/runtime-capacity';
+export { createRuntimeClientRegistry } from './services/runtime-client-registry';
+export type { RuntimeClientRegistry } from './services/runtime-client-registry';
+export { createRuntimeInstanceService } from './services/runtime-instance';
+export type {
+  RuntimeInstanceService,
+  RuntimeInstance,
+  RuntimeInstanceState,
+  EnsuredRuntime,
+} from './services/runtime-instance';
+export { createRuntimeWorkspaceBackupService } from './services/runtime-workspace-backup';
+export type {
+  WorkspaceBackupService,
+  WorkspaceBackupInstance,
+  WorkspaceBackupResult,
+} from './services/runtime-workspace-backup';
+export { createRuntimeKnowledgeSyncService } from './services/runtime-kb-sync';
+export type { KnowledgeSyncService, KnowledgeSyncParams } from './services/runtime-kb-sync';
+export { createRuntimeMemorySyncService } from './services/runtime-memory-sync';
+export type { RuntimeMemorySyncService } from './services/runtime-memory-sync';
+export { createRuntimeHostMonitor } from './services/runtime-monitor';
+export type { RuntimeHostMonitor } from './services/runtime-monitor';
+export { createRuntimeNotifier } from './services/runtime-notifier';
+export type { RuntimeNotifier } from './services/runtime-notifier';
+export { createRuntimeHostRoutes } from './routes/runtime-host';
+export { createRuntimeSettings } from './agent-runtime/settings';
+export type { RuntimeSettings, RuntimeUserLimits, RuntimeWorkspaceBackupSettings } from './agent-runtime/settings';
+export { AiRuntimeHostModel, AiRuntimeUserQuotaModel, AiAgentRuntimeModel, AiSessionRuntimeModel, AiRuntimeSessionKbFileModel, AiRuntimeWorkspaceFileModel } from './models/runtime';
+export type { RuntimeHostInfo, RuntimeResources } from './agent-runtime/types';

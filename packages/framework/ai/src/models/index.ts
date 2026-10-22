@@ -11,3 +11,13 @@ export { AiApprovalRequestModel } from "./approval";
 export { AiLongTermMemoryModel } from "./long-term-memory";
 export { AiSkillModel, AiAgentSkillModel } from "./skill";
 export { AiMcpServerModel, AiAgentMcpModel } from "./mcp-server";
+export { AiConnectorCatalogModel, AiConnectorBindingModel } from "./connector";
+
+export {
+  AiRuntimeHostModel,
+  AiRuntimeUserQuotaModel,
+  AiAgentRuntimeModel,
+  AiSessionRuntimeModel,
+  AiRuntimeSessionKbFileModel,
+  AiRuntimeWorkspaceFileModel,
+} from "./runtime";

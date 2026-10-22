@@ -4,6 +4,7 @@
 export { createKnowledgeBaseRoutes } from "./knowledge-base";
 export { createAgentRoutes } from "./agent";
 export { createChatRoutes } from "./chat";
+export { createConnectorRoutes } from "./connector";
 export { createConversationRoutes } from "./conversation";
 export { createHealthRoutes } from "./health";
 export { createProviderRoutes } from "./provider";
@@ -12,3 +13,4 @@ export type { AgentCrudService } from "./agent";
 export type { ConversationService } from "./chat";
 export type { ConversationCrudService } from "./conversation";
 export type { HealthCheckDeps } from "./health";
+export { createRuntimeHostRoutes } from "./runtime-host";

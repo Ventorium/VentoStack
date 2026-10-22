@@ -355,6 +355,7 @@ export interface AgentConfig {
   sourceExpert?: string;
   tenantId: string;
   requiresVirtualEnvironment?: boolean;
+  networkEnabled?: boolean;
   sandboxStatus?: string;
 }
 
@@ -426,6 +427,19 @@ export interface AgentLoopDeps {
     userId?: string,
     sessionId?: string,
   ) => Promise<AgentTool[]>;
+  /**
+   * VM Agent 的运行时准备：确保实例、同步知识库/记忆、返回提示词与工具。
+   * 返回 null 表示当前 Agent 不需要 VM。
+   */
+  prepareRuntime?: (params: {
+    agentId: string;
+    tenantId: string;
+    userId: string;
+    sessionId: string;
+    knowledgeBaseIds: string[];
+    agentConfig: AgentConfig;
+    signal?: AbortSignal;
+  }) => Promise<PreparedAgentRuntime | null>;
   authorizeToolCall?: ToolCallAuthorizer;
   /** 等待工具审批 decision（与 authorizeToolCall 返回的 approvalRequest 配对） */
   waitForApproval?: ApprovalWaiter;
@@ -494,6 +508,13 @@ export interface AgentRunParams {
   maxTokens?: number;
   /** 按请求注入的工具注册表（KB 等租户相关工具已绑定请求 tenantId）；缺省使用 deps.toolRegistry */
   toolRegistry?: ToolRegistry;
+}
+
+export interface PreparedAgentRuntime {
+  instanceId: string;
+  sandboxId: string;
+  promptBlock: string;
+  tools: AgentTool[];
 }
 
 export interface AgentLoop {
@@ -1158,9 +1179,6 @@ ${memberList}
       ) {
         systemPrompt = `${systemPrompt}\n\n## 会话产物\nfile-read 和 file-write 的 path 必须使用当前会话内的相对路径。需要交付给用户的文件必须通过 file-write 写入；禁止使用绝对路径或 ..。`;
       }
-      if (agentConfig?.requiresVirtualEnvironment) {
-        systemPrompt = `${systemPrompt}\n\n## 执行环境\n环境：隔离的 Linux 虚拟环境\n工作目录：/workspace\n终端：terminal`;
-      }
       // 模型白名单：用户显式传入 model 时必须在 Agent 可用列表内；未传时默认取第一项
       const allowedModels = agentConfig?.models ?? [];
       let model: string;
@@ -1241,7 +1259,82 @@ ${memberList}
       const boundKbIds = params.knowledgeBaseIds
         ? configuredKbIds.filter((id) => params.knowledgeBaseIds!.includes(id))
         : configuredKbIds;
-      if (boundKbIds.length > 0) {
+
+      // VM Agent：确保实例并注入文件路径提示。必须在知识库/工具提示之前完成，
+      // 以便后续完全移除 kb-* 工具与提示词。
+      let runtimePrep: PreparedAgentRuntime | null = null;
+      if (agentConfig?.requiresVirtualEnvironment) {
+        if (!deps.prepareRuntime) {
+          const error = {
+            code: 'AGENT_RUNTIME_UNAVAILABLE' as const,
+            message: '当前运行时未启用虚拟机能力（缺少 prepareRuntime）',
+            recoverable: false,
+          };
+          await emit({ type: 'error', error }, signal);
+          yield { type: 'error', error };
+          return;
+        }
+        if (!params.sessionId || !userId) {
+          const error = {
+            code: 'AGENT_RUNTIME_SESSION_REQUIRED' as const,
+            message: '虚拟机 Agent 必须在已认证的用户会话中运行',
+            recoverable: false,
+          };
+          await emit({ type: 'error', error }, signal);
+          yield { type: 'error', error };
+          return;
+        }
+        yield {
+          type: 'environment' as const,
+          phase: 'preparing' as const,
+          message: '正在准备虚拟机环境…',
+        };
+        const startedAt = Date.now();
+        try {
+          runtimePrep = await deps.prepareRuntime({
+            agentId,
+            tenantId,
+            userId,
+            sessionId: params.sessionId,
+            knowledgeBaseIds: boundKbIds,
+            agentConfig,
+            ...(signal ? { signal } : {}),
+          });
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          const rawCode = (error as { errorCode?: string; code?: unknown } | null)?.errorCode;
+          const fallbackCode = (error as { code?: unknown } | null)?.code;
+          const runtimeError = {
+            code:
+              rawCode ??
+              (typeof fallbackCode === 'string' ? fallbackCode : 'AGENT_RUNTIME_UNAVAILABLE'),
+            message,
+            recoverable: true,
+          };
+          await emit({ type: 'error', error: runtimeError }, signal);
+          yield { type: 'error', error: runtimeError };
+          return;
+        }
+        if (!runtimePrep) {
+          const error = {
+            code: 'AGENT_RUNTIME_UNAVAILABLE' as const,
+            message: '虚拟机环境准备失败',
+            recoverable: true,
+          };
+          await emit({ type: 'error', error }, signal);
+          yield { type: 'error', error };
+          return;
+        }
+        systemPrompt = `${systemPrompt}\n\n${runtimePrep.promptBlock}`;
+        yield {
+          type: 'environment' as const,
+          phase: 'ready' as const,
+          message: '虚拟机环境已就绪',
+          elapsedMs: Date.now() - startedAt,
+        };
+      }
+
+      if (boundKbIds.length > 0 && !runtimePrep) {
         systemPrompt = `${systemPrompt}\n\n## 知识库使用说明\n你已绑定以下知识库 ID：${boundKbIds.join('、')}。回答涉及知识库内容的问题时，必须把其中一个 ID 作为 kbId 调用知识库工具：先用 kb-browse / kb-outline 了解文档结构与标题大纲，再用 kb-search 定位相关内容，最后用 kb-read 阅读原文。不要使用 ls/cat 等普通文件工具访问知识库。禁止凭空回答知识库相关内容。`;
       }
       const attachmentPaths = params.attachmentPaths ?? [];
@@ -1261,12 +1354,21 @@ ${memberList}
             ? agentToolNames.filter((t) => requestFilter.includes(t))
             : agentToolNames;
 
-        // 绑定知识库时自动启用知识库检索工具（租户级只读检索能力）
+        // 绑定知识库时自动启用知识库检索工具（租户级只读检索能力）。
+        // VM Agent 改为文件注入，不再暴露任何 kb-* 工具。
         const allowedTools = [...effectiveTools];
-        if (boundKbIds.length > 0) {
+        if (boundKbIds.length > 0 && !runtimePrep) {
           const kbToolNames = ['kb-browse', 'kb-search', 'kb-read', 'kb-follow-link', 'kb-outline'];
           for (const name of kbToolNames) {
             if (!allowedTools.includes(name)) allowedTools.push(name);
+          }
+        }
+        if (runtimePrep) {
+          for (let index = allowedTools.length - 1; index >= 0; index -= 1) {
+            const name = allowedTools[index]!;
+            if (name.startsWith('kb-') || ['terminal', 'file_read', 'file_write'].includes(name)) {
+              allowedTools.splice(index, 1);
+            }
           }
         }
         if (
@@ -1294,13 +1396,12 @@ ${memberList}
           ...(await deps.mcpToolSource.loadTools(mcpServerIds, tenantId)),
         ];
       }
-      if (agentConfig?.requiresVirtualEnvironment && deps.resolveAgentTools) {
-        const selected = agentConfig.tools ?? [];
+      if (runtimePrep) {
         const virtualNames = new Set(['terminal', 'file_read', 'file_write']);
-        agentTools = agentTools.filter((tool) => !virtualNames.has(tool.name));
-        agentTools.push(
-          ...(await deps.resolveAgentTools(agentId, tenantId, selected, userId, params.sessionId)),
+        agentTools = agentTools.filter(
+          (tool) => !virtualNames.has(tool.name) && !tool.name.startsWith('kb-'),
         );
+        agentTools.push(...runtimePrep.tools);
       }
 
       // 运行时工具集：后续轮次可通过工具结果的 addedToolNames 动态扩充
@@ -1394,7 +1495,7 @@ ${memberList}
       };
 
       // 4.1 长期记忆注入（用户级，按 memory_config.longTerm 开关）
-      if (agentConfig?.memoryConfig?.longTerm === true && deps.memory) {
+      if (!runtimePrep && agentConfig?.memoryConfig?.longTerm === true && deps.memory) {
         try {
           const memories = await deps.memory.listLongTermMemories({ tenantId, userId });
           if (memories.length > 0) {
@@ -1410,7 +1511,7 @@ ${memberList}
       }
 
       // 4.2 会话级记忆注入：Memory Agent 固化的 MEMORY.md（用户在会话中确认的事实/偏好/决策）
-      if (memoryEnabled && deps.memory && params.sessionId) {
+      if (!runtimePrep && memoryEnabled && deps.memory && params.sessionId) {
         try {
           const sessionMemory = await deps.memory.getSessionMemory(params.sessionId, {
             tenantId,
@@ -1435,6 +1536,7 @@ ${memberList}
         { role: 'user', content: message },
       ];
 
+      const effectiveRunMode = params.runMode ?? (runtimePrep ? 'trust' : undefined);
       const context: AgentContext = {
         agentId,
         userId,
@@ -1443,7 +1545,7 @@ ${memberList}
         systemPrompt,
         messages,
         tools: runtimeTools,
-        ...(params.runMode === undefined ? {} : { runMode: params.runMode }),
+        ...(effectiveRunMode === undefined ? {} : { runMode: effectiveRunMode }),
       };
 
       // 用户消息先行落盘：即使后续轮次中断也不丢失

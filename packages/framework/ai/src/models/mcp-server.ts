@@ -24,6 +24,9 @@ export const AiMcpServerModel = defineModel(
     last_error: column.text({ nullable: true }),
     tool_count: column.int({ default: 0 }),
     tools_snapshot: column.json({ nullable: true }), // 缓存的工具列表
+    // 连接器托管：非空表示该 MCP 由连接器创建并托管（origin = connector）
+    connector_binding_id: column.varchar({ length: 36, nullable: true }),
+    origin: column.varchar({ length: 16, default: "custom" }), // custom | connector
     tenant_id: column.varchar({ length: 36, default: "default" }),
   },
   { timestamps: true },

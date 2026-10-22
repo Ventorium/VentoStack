@@ -1,5 +1,5 @@
 import { client } from '@/api';
-import type { AgentItem, PaginatedData } from '@/api/types';
+import type { AgentItem, PaginatedData, RuntimeAvailability } from '@/api/types';
 import ActionColumn from '@/components/ActionColumn';
 import { fmtDate } from '@/utils/fmtDate';
 import {
@@ -13,6 +13,7 @@ import {
   ToolOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   Button,
   Card,
   Checkbox,
@@ -204,6 +205,9 @@ const AgentsPage = () => {
   const [editingAgent, setEditingAgent] = useState<AgentItem | null>(null);
   const [modalLoading, setModalLoading] = useState(false);
   const [form] = Form.useForm();
+  const requiresVm = Form.useWatch('requiresVirtualEnvironment', form) === true;
+  const [vmAvailability, setVmAvailability] = useState<RuntimeAvailability | null>(null);
+  const [vmChecking, setVmChecking] = useState(false);
 
   // 能力数据
   const [modelOptions, setModelOptions] = useState<
@@ -431,7 +435,43 @@ const AgentsPage = () => {
     setDecisionModel(undefined);
     setDefaultThinkingLevel('off');
     setActiveTab('basic');
+    setVmAvailability(null);
     setEditingAgent(null);
+  };
+
+  const handleVmToggle = async (checked: boolean) => {
+    if (!checked) {
+      setVmAvailability(null);
+      return;
+    }
+    setVmChecking(true);
+    try {
+      const runtimeClient = client as unknown as {
+        get(path: string): Promise<{ data?: unknown; error?: unknown }>;
+      };
+      const { data, error } = await runtimeClient.get('/api/ai/runtime/availability');
+      if (error) {
+        message.error((error as { message?: string } | undefined)?.message ?? '虚拟机资源检查失败');
+        form.setFieldValue('requiresVirtualEnvironment', false);
+        return;
+      }
+      const availability = data as RuntimeAvailability;
+      setVmAvailability(availability);
+      if (!availability.available) {
+        message.warning(availability.warnings[0] ?? '当前没有可用的虚拟机资源');
+        form.setFieldValue('requiresVirtualEnvironment', false);
+        return;
+      }
+      setSelectedTools((prev) => {
+        const next = prev.filter((name) => !name.startsWith('kb-'));
+        for (const name of ['terminal', 'file_read', 'file_write']) {
+          if (tools.some((item) => item.name === name) && !next.includes(name)) next.push(name);
+        }
+        return next;
+      });
+    } finally {
+      setVmChecking(false);
+    }
   };
 
   // 打开新增 Modal
@@ -457,6 +497,7 @@ const AgentsPage = () => {
       isPublic: record.isPublic,
       maxIterations: record.maxIterations ?? 200,
       requiresVirtualEnvironment: record.requiresVirtualEnvironment,
+      networkEnabled: record.networkEnabled !== false,
       contextCollectionEnabled: record.contextCollectionEnabled,
     });
 
@@ -500,6 +541,17 @@ const AgentsPage = () => {
         ? record.config.defaultThinkingLevel
         : 'off',
     );
+
+    setVmAvailability(null);
+    if (record.requiresVirtualEnvironment) {
+      const runtimeClient = client as unknown as {
+        get(path: string): Promise<{ data?: unknown; error?: unknown }>;
+      };
+      void runtimeClient
+        .get('/api/ai/runtime/availability')
+        .then(({ data }) => setVmAvailability(data as RuntimeAvailability))
+        .catch(() => undefined);
+    }
 
     // 设置选中的能力
     setSelectedTools(record.tools ?? []);
@@ -563,6 +615,8 @@ const AgentsPage = () => {
         setModalOpen(false);
         resetModal();
         refresh(1);
+      } else {
+        message.error((error as { message?: string } | undefined)?.message ?? '创建失败');
       }
     } catch (error) {
       focusFirstErrorTab(error);
@@ -601,6 +655,8 @@ const AgentsPage = () => {
         setModalOpen(false);
         resetModal();
         refresh();
+      } else {
+        message.error((error as { message?: string } | undefined)?.message ?? '更新失败');
       }
     } catch (error) {
       focusFirstErrorTab(error);
@@ -689,12 +745,12 @@ const AgentsPage = () => {
       title: '运行环境',
       key: 'sandboxStatus',
       width: 120,
-      render: (_, record) => {
-        if (!record.requiresVirtualEnvironment) return <Tag>本机</Tag>;
-        if (record.sandboxStatus === 'RUNNING') return <Tag color="green">虚拟环境可用</Tag>;
-        if (record.sandboxStatus === 'unavailable') return <Tag color="red">虚拟环境不可用</Tag>;
-        return <Tag color="orange">{record.sandboxStatus ?? '状态未知'}</Tag>;
-      },
+      render: (_, record) =>
+        record.requiresVirtualEnvironment ? (
+          <Tag color="cyan">虚拟环境</Tag>
+        ) : (
+          <Tag>本机</Tag>
+        ),
     },
     {
       title: '公开',
@@ -919,12 +975,39 @@ const AgentsPage = () => {
                       name="requiresVirtualEnvironment"
                       valuePropName="checked"
                       initialValue={false}
-                      tooltip="为该 Agent 创建独占 Linux 虚拟环境（创建后不可修改）"
+                      tooltip="开启后按用户+Agent 创建一台持久 Linux 环境；首次对话时创建，后续复用"
                     >
                       <Switch
-                        disabled={modalMode === 'edit'}
+                        loading={vmChecking}
                         checkedChildren="启用"
                         unCheckedChildren="关闭"
+                        onChange={handleVmToggle}
+                      />
+                    </Form.Item>
+                    {requiresVm && (
+                      <Alert
+                        className="mb-4"
+                        type={vmAvailability?.available ? 'info' : 'warning'}
+                        showIcon
+                        message={
+                          vmAvailability
+                            ? `可用宿主 ${vmAvailability.onlineHostCount}/${vmAvailability.hostCount} 台，剩余 ${vmAvailability.capacity.cpu} 核 / ${Math.round(vmAvailability.capacity.memoryMb / 1024)} GB / ${vmAvailability.capacity.slots} 槽位`
+                            : '正在检查虚拟机资源…'
+                        }
+                        description="知识库会以只读目录注入，Agent 将使用 rg/grep/find 等命令探索；不再使用 kb-* 工具。"
+                      />
+                    )}
+                    <Form.Item
+                      label="虚拟机联网"
+                      name="networkEnabled"
+                      valuePropName="checked"
+                      initialValue={true}
+                      tooltip="开启后虚拟机可访问外网；关闭后仅保留本地文件与工具能力。默认允许。"
+                    >
+                      <Switch
+                        disabled={!requiresVm}
+                        checkedChildren="允许"
+                        unCheckedChildren="禁止"
                       />
                     </Form.Item>
                   </>
@@ -1130,7 +1213,7 @@ const AgentsPage = () => {
                     <AbilityPanel
                       title="内置工具"
                       icon={<ToolOutlined />}
-                      items={tools}
+                      items={requiresVm ? tools.filter((item) => !item.name.startsWith('kb-')) : tools}
                       selected={selectedTools}
                       onChange={setSelectedTools}
                       renderItem={(item) => (

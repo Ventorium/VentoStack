@@ -8,10 +8,12 @@ import { useTable } from "@/hooks/useTable";
 import { useAuth } from "@/store/useAuth";
 import { emailRules, getPasswordRules, phoneRules } from "@/utils/validators";
 import {
+  CloudServerOutlined,
   CopyOutlined,
   DeleteOutlined,
   HistoryOutlined,
   KeyOutlined,
+  LaptopOutlined,
   LockOutlined,
   PlusOutlined,
   SafetyOutlined,
@@ -34,6 +36,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
   Upload,
   theme,
@@ -99,17 +102,12 @@ export default function ProfilePage() {
     refresh,
     onPageChange,
   } = useTable<LoginLogItem>(
-    async (params) => {
-      const { error, data } = await client.get(
+    (params) =>
+      client.get(
         // 个人中心使用自助端点（仅本人登录日志）；schema 待 o2t 重新生成后移除断言
         "/api/system/user/login-logs" as unknown as "/api/system/login-logs",
         { query: params },
-      );
-      if (!error && data) {
-        return data;
-      }
-      return { items: [], total: 0 };
-    },
+      ) as unknown as Promise<{ error?: unknown; data?: { list: LoginLogItem[]; total: number; page: number; pageSize: number } }>,
     { defaultPageSize: 10 },
   );
 
@@ -601,7 +599,30 @@ export default function ProfilePage() {
           pagination={false}
           columns={[
             { title: "名称", dataIndex: "name", key: "name" },
-            { title: "设备类型", dataIndex: "deviceType", key: "deviceType" },
+            {
+              title: "设备类型",
+              dataIndex: "deviceType",
+              key: "deviceType",
+              render: (v: string) => {
+                const isMulti = v === "multiDevice";
+                return (
+                  <Tooltip
+                    title={
+                      isMulti
+                        ? "可多设备：凭证已由提供商（如 iCloud 钥匙串、Bitwarden）云同步，可在你的多台设备上使用"
+                        : "单设备：凭证绑定在当前设备上，不可跨设备同步"
+                    }
+                  >
+                    <Tag
+                      color={isMulti ? "blue" : "default"}
+                      icon={isMulti ? <CloudServerOutlined /> : <LaptopOutlined />}
+                    >
+                      {isMulti ? "可多设备" : "单设备"}
+                    </Tag>
+                  </Tooltip>
+                );
+              },
+            },
             {
               title: "云端同步",
               dataIndex: "backedUp",

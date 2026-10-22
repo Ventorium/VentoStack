@@ -9,9 +9,10 @@ describe('Agent virtual environment form contract', () => {
     });
   });
 
-  test('never submits the immutable switch when editing an Agent', () => {
+  test('submits the switch value when editing an Agent', () => {
     expect(agentMutationValues({ name: 'builder', requiresVirtualEnvironment: false }, 'edit')).toEqual({
       name: 'builder',
+      requiresVirtualEnvironment: false,
     });
   });
 });

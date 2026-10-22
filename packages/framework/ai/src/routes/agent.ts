@@ -74,6 +74,7 @@ const AGENT_BODY_FIELDS = [
   'maxTokensPerTurn',
   'isPublic',
   'requiresVirtualEnvironment',
+  'networkEnabled',
   'contextCollectionEnabled',
 ] as const;
 
@@ -102,6 +103,15 @@ function validateAgentBody(body: Record<string, unknown>): string | null {
     if (!Number.isInteger(v) || v < 1 || v > MAX_TOKENS_PER_TURN_LIMIT) {
       return `maxTokensPerTurn 必须是 1-${MAX_TOKENS_PER_TURN_LIMIT} 之间的整数`;
     }
+  }
+  if (
+    body.requiresVirtualEnvironment !== undefined &&
+    typeof body.requiresVirtualEnvironment !== 'boolean'
+  ) {
+    return 'requiresVirtualEnvironment 必须是布尔值';
+  }
+  if (body.networkEnabled !== undefined && typeof body.networkEnabled !== 'boolean') {
+    return 'networkEnabled 必须是布尔值';
   }
   if (body.model !== undefined && body.model !== null) {
     if (!Array.isArray(body.model) || body.model.length === 0) {
@@ -196,7 +206,11 @@ export function createAgentRoutes(
         },
         requiresVirtualEnvironment: {
           type: 'bool',
-          description: '是否为 Agent 创建独占虚拟环境（创建后不可修改）',
+          description: '是否开启虚拟机环境（创建/编辑均可修改；开启时会校验可用资源）',
+        },
+        networkEnabled: {
+          type: 'bool',
+          description: '虚拟机是否允许出网；默认 true，仅开启虚拟机时有意义',
         },
       },
       responses: { 200: { id: { type: 'string', description: 'Agent ID' } } },
@@ -312,6 +326,14 @@ export function createAgentRoutes(
           type: 'bool',
           description: '是否采集该 Agent 的上下文构成（调试信息，仅管理员可见，默认关闭）',
         },
+        requiresVirtualEnvironment: {
+          type: 'bool',
+          description: '是否开启虚拟机环境（开启时会校验可用资源）',
+        },
+        networkEnabled: {
+          type: 'bool',
+          description: '虚拟机是否允许出网；默认 true',
+        },
       },
     }),
     async (ctx) => {
@@ -319,9 +341,6 @@ export function createAgentRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
         const body = await parseBody(ctx.request);
-        if (body.requiresVirtualEnvironment !== undefined) {
-          return fail('requiresVirtualEnvironment 创建后不可修改', 400, 400);
-        }
         // status 只能通过 publish 接口变更，防止普通 update 直接绕过发布校验
         const { status: _ignored, ...rest } = body;
         const validationError = validateAgentBody(rest);

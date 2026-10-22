@@ -7,11 +7,15 @@
 import {
   ApiOutlined,
   BlockOutlined,
+  CloudServerOutlined,
+  HddOutlined,
   TeamOutlined,
   ThunderboltOutlined,
   ToolOutlined,
 } from '@ant-design/icons';
 import { Card, Space, Tabs } from 'antd';
+import ConnectorsTab from './components/connectors-tab';
+import RuntimeTab from './components/runtime-tab';
 import ExpertsTab from './components/experts-tab';
 import McpTab from './components/mcp-tab';
 import SkillsTab from './components/skills-tab';
@@ -28,8 +32,26 @@ export default function AICapabilitiesPage() {
       }
     >
       <Tabs
-        defaultActiveKey="skills"
+        defaultActiveKey="connectors"
         items={[
+          {
+            key: 'connectors',
+            label: (
+              <span>
+                <CloudServerOutlined /> 连接器 Connectors
+              </span>
+            ),
+            children: <ConnectorsTab />,
+          },
+          {
+            key: 'runtime',
+            label: (
+              <span>
+                <HddOutlined /> 虚拟机接入
+              </span>
+            ),
+            children: <RuntimeTab />,
+          },
           {
             key: 'skills',
             label: (

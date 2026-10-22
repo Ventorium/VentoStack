@@ -3,7 +3,7 @@
  */
 
 import type { Database } from '@ventostack/database';
-import type { AgentRuntimeClient, SandboxStatus } from '../agent-runtime/types';
+import type { SandboxStatus } from '../agent-runtime/types';
 
 export interface CreateAgentParams {
   name: string;
@@ -23,6 +23,8 @@ export interface CreateAgentParams {
   maxTokensPerTurn?: number;
   isPublic?: boolean;
   requiresVirtualEnvironment?: boolean;
+  /** 虚拟机是否允许出网，默认 true */
+  networkEnabled?: boolean;
   /** 上下文采集开关（调试信息，仅管理员可见） */
   contextCollectionEnabled?: boolean;
   tenantId: string;
@@ -48,6 +50,9 @@ export interface UpdateAgentParams {
   /** 上下文采集开关（调试信息，仅管理员可见） */
   contextCollectionEnabled?: boolean;
   status?: string;
+  /** 是否开启虚拟环境（允许编辑；开启时由装配层校验资源） */
+  requiresVirtualEnvironment?: boolean;
+  networkEnabled?: boolean;
 }
 
 export interface AgentItem {
@@ -74,6 +79,7 @@ export interface AgentItem {
   createdAt: string;
   updatedAt: string;
   requiresVirtualEnvironment: boolean;
+  networkEnabled: boolean;
   sandboxStatus?: SandboxStatus;
   /** Internal runtime binding; routes must not expose this value. */
   sandboxId?: string;
@@ -126,7 +132,10 @@ function toPgTextArray(items: string[]): string {
 export function createAgentService(deps: {
   db: Database;
   validateRefs?: AgentRefsValidator;
-  runtime?: AgentRuntimeClient;
+  /** 开启虚拟环境前的资源校验（由装配层注入） */
+  assertCanEnable?: (tenantId: string, userId: string) => Promise<void>;
+  /** 删除 Agent 前清理其全部用户级 VM（由装配层注入） */
+  onBeforeDelete?: (agentId: string, tenantId: string) => Promise<void>;
 }) {
   const { db } = deps;
 
@@ -134,19 +143,12 @@ export function createAgentService(deps: {
     await deps.validateRefs?.(params, params.tenantId);
     const id = crypto.randomUUID();
     const requiresVirtualEnvironment = params.requiresVirtualEnvironment ?? false;
-    if (requiresVirtualEnvironment && !deps.runtime) {
-      throw Object.assign(new Error('Agent Runtime 未配置或不可用'), {
-        code: 'AGENT_RUNTIME_UNAVAILABLE',
-        status: 503,
-      });
+    if (requiresVirtualEnvironment) {
+      await deps.assertCanEnable?.(params.tenantId, params.createdBy);
     }
-    const sandbox = requiresVirtualEnvironment
-      ? await deps.runtime!.createSandbox({ sessionId: id })
-      : undefined;
-    try {
-      await db.raw(
-        `INSERT INTO ai_agent (id, name, description, welcome_message, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, sandbox_id, context_collection_enabled)
-       VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', $19, $20, $21)`,
+    await db.raw(
+        `INSERT INTO ai_agent (id, name, description, welcome_message, system_prompt, model, tools, knowledge_base_ids, skill_ids, mcp_server_ids, model_overrides, memory_config, config, max_iterations, max_tokens_per_turn, is_public, tenant_id, created_by, status, requires_virtual_environment, network_enabled, sandbox_id, context_collection_enabled)
+       VALUES ($1, $2, $3, $4, $5, $6::text[], $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, 'draft', $19, $20, $21, $22)`,
         [
           id,
           params.name,
@@ -167,14 +169,11 @@ export function createAgentService(deps: {
           params.tenantId,
           params.createdBy,
           requiresVirtualEnvironment,
-          sandbox?.sandboxId ?? null,
+          params.networkEnabled ?? true,
+          null,
           params.contextCollectionEnabled ?? false,
         ],
       );
-    } catch (error) {
-      if (sandbox) await deps.runtime!.destroySandbox(sandbox.sandboxId).catch(() => undefined);
-      throw error;
-    }
     return { id };
   }
 
@@ -237,6 +236,29 @@ export function createAgentService(deps: {
       sets.push(`config = $${idx++}`);
       values.push(JSON.stringify(params.config));
     }
+    if (params.requiresVirtualEnvironment !== undefined) {
+      if (params.requiresVirtualEnvironment && deps.assertCanEnable) {
+        const current = (await db.raw(
+          `SELECT requires_virtual_environment AS enabled FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
+          [id, tenantId ?? ''],
+        )) as Array<{ enabled: boolean }>;
+        if (!current[0]?.enabled) {
+          if (!opts?.userId) {
+            throw Object.assign(new Error('缺少用户身份，无法校验虚拟机资源'), {
+              code: 'AGENT_RUNTIME_USER_REQUIRED',
+              status: 400,
+            });
+          }
+          await deps.assertCanEnable(tenantId ?? '', opts.userId);
+        }
+      }
+      sets.push(`requires_virtual_environment = $${idx++}`);
+      values.push(params.requiresVirtualEnvironment);
+    }
+    if (params.networkEnabled !== undefined) {
+      sets.push(`network_enabled = $${idx++}`);
+      values.push(params.networkEnabled);
+    }
     if (params.maxIterations !== undefined) {
       sets.push(`max_iterations = $${idx++}`);
       values.push(params.maxIterations);
@@ -290,7 +312,7 @@ export function createAgentService(deps: {
               memory_config as "memoryConfig", config,
               max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
-              requires_virtual_environment as "requiresVirtualEnvironment", sandbox_id as "sandboxId",
+              requires_virtual_environment as "requiresVirtualEnvironment", network_enabled as "networkEnabled", sandbox_id as "sandboxId",
               context_collection_enabled as "contextCollectionEnabled",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent WHERE id = $1 AND tenant_id = $2`,
@@ -299,17 +321,6 @@ export function createAgentService(deps: {
     if (rows.length === 0) return null;
     const r = rows[0] as Record<string, unknown>;
     const parseJSON = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v);
-    let sandboxStatus: SandboxStatus | undefined;
-    const sandboxId = (r.sandboxId as string | null) ?? undefined;
-    if (sandboxId) {
-      try {
-        sandboxStatus = deps.runtime
-          ? (await deps.runtime.getSandbox(sandboxId)).state
-          : 'unavailable';
-      } catch {
-        sandboxStatus = 'unavailable';
-      }
-    }
     return {
       id: r.id as string,
       name: r.name as string,
@@ -334,9 +345,8 @@ export function createAgentService(deps: {
       updatedAt:
         r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ''),
       requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+      networkEnabled: r.networkEnabled !== false,
       contextCollectionEnabled: r.contextCollectionEnabled === true,
-      ...(sandboxStatus ? { sandboxStatus } : {}),
-      ...(sandboxId ? { sandboxId } : {}),
     };
   }
 
@@ -387,7 +397,7 @@ export function createAgentService(deps: {
               memory_config as "memoryConfig", config,
               max_iterations as "maxIterations", max_tokens_per_turn as "maxTokensPerTurn",
               status, is_public as "isPublic", tenant_id as "tenantId",
-              requires_virtual_environment as "requiresVirtualEnvironment", sandbox_id as "sandboxId",
+              requires_virtual_environment as "requiresVirtualEnvironment", network_enabled as "networkEnabled", sandbox_id as "sandboxId",
               context_collection_enabled as "contextCollectionEnabled",
               created_by as "createdBy", created_at as "createdAt", updated_at as "updatedAt"
        FROM ai_agent ${whereClause}
@@ -399,17 +409,6 @@ export function createAgentService(deps: {
     const list = await Promise.all(
       (rows as Array<Record<string, unknown>>).map(async (r) => {
         const pj = (v: unknown) => (typeof v === 'string' ? JSON.parse(v) : v);
-        const sandboxId = (r.sandboxId as string | null) ?? undefined;
-        let sandboxStatus: SandboxStatus | undefined;
-        if (sandboxId) {
-          try {
-            sandboxStatus = deps.runtime
-              ? (await deps.runtime.getSandbox(sandboxId)).state
-              : 'unavailable';
-          } catch {
-            sandboxStatus = 'unavailable';
-          }
-        }
         return {
           id: r.id as string,
           name: r.name as string,
@@ -434,9 +433,8 @@ export function createAgentService(deps: {
           updatedAt:
             r.updatedAt instanceof Date ? r.updatedAt.toISOString() : String(r.updatedAt ?? ''),
           requiresVirtualEnvironment: Boolean(r.requiresVirtualEnvironment),
+          networkEnabled: r.networkEnabled !== false,
           contextCollectionEnabled: r.contextCollectionEnabled === true,
-          ...(sandboxStatus ? { sandboxStatus } : {}),
-          ...(sandboxId ? { sandboxId } : {}),
         };
       }),
     );
@@ -457,20 +455,11 @@ export function createAgentService(deps: {
       values.push(opts.userId);
     }
     const rows = (await db.raw(
-      `SELECT sandbox_id as "sandboxId" FROM ai_agent WHERE ${whereClauses.join(' AND ')}`,
+      `SELECT id FROM ai_agent WHERE ${whereClauses.join(' AND ')}`,
       values,
-    )) as Array<{ sandboxId?: string | null }>;
+    )) as Array<{ id: string }>;
     if (rows.length === 0) return;
-    const sandboxId = rows[0]?.sandboxId;
-    if (sandboxId) {
-      if (!deps.runtime) {
-        throw Object.assign(new Error('Agent Runtime 未配置或不可用'), {
-          code: 'AGENT_RUNTIME_UNAVAILABLE',
-          status: 503,
-        });
-      }
-      await deps.runtime.destroySandbox(sandboxId);
-    }
+    await deps.onBeforeDelete?.(id, tenantId);
     await db.raw(`DELETE FROM ai_agent WHERE ${whereClauses.join(' AND ')}`, values);
   }
 

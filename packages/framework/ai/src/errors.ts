@@ -112,4 +112,13 @@ export const aiErrors = {
     ),
   queueTimeout: () =>
     new AIGatewayError("请求排队超时", 504, "AI_QUEUE_TIMEOUT"),
+  /** 连接器：资源不存在（按 404 语义脱敏，不泄露跨租户存在性） */
+  connectorNotFound: () =>
+    new AIGatewayError("连接器不存在", 404, "AI_CONNECTOR_NOT_FOUND"),
+  /** 连接器：请求参数/配置不满足要求 */
+  connectorBadRequest: (message: string) =>
+    new AIGatewayError(message, 400, "AI_CONNECTOR_BAD_REQUEST"),
+  /** 连接器：无权限操作他人绑定 */
+  connectorForbidden: (message: string) =>
+    new AIGatewayError(message, 403, "AI_CONNECTOR_FORBIDDEN"),
 };

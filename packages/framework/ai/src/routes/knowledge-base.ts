@@ -7,13 +7,31 @@ import type { KnowledgeBaseService } from "../knowledge-base/types";
 import { createFileValidator } from "../knowledge-base/file-security";
 import { routeDoc } from "./schema";
 
+export interface KnowledgeChangeEvent {
+  tenantId: string;
+  kbId: string;
+  op: 'created' | 'meta' | 'deleted' | 'upsert' | 'delete' | 'mkdir';
+  path?: string;
+}
+
 export function createKnowledgeBaseRoutes(
   kbService: KnowledgeBaseService,
   authMiddleware: Middleware,
   perm: (resource: string, action: string) => Middleware,
   providerService?: { getConfig(key: string): Promise<string | null> },
+  options?: { onKbChanged?: (event: KnowledgeChangeEvent) => void },
 ): Router {
   const router = createRouter();
+  const notify = (
+    ctx: { user?: unknown },
+    kbId: string,
+    op: KnowledgeChangeEvent['op'],
+    path?: string,
+  ): void => {
+    if (!options?.onKbChanged) return;
+    const tenantId = (ctx.user as { tenantId?: string } | undefined)?.tenantId ?? '';
+    options.onKbChanged({ tenantId, kbId, op, ...(path === undefined ? {} : { path }) });
+  };
   router.use(authMiddleware);
 
   // ── 知识库 CRUD ──
@@ -32,6 +50,7 @@ export function createKnowledgeBaseRoutes(
           tenantId,
           userId,
         });
+        notify(ctx, result.id, 'created');
         return success(result);
       } catch (e) {
         return handleError(e);
@@ -81,6 +100,7 @@ export function createKnowledgeBaseRoutes(
           },
           tenantId,
         );
+        notify(ctx, id, 'meta');
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -96,6 +116,7 @@ export function createKnowledgeBaseRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.delete(id, tenantId);
+        notify(ctx, id, 'deleted');
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -175,6 +196,7 @@ export function createKnowledgeBaseRoutes(
         }
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.writeFile(id, filePath, content, tenantId);
+        notify(ctx, id, 'upsert', filePath);
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -202,6 +224,9 @@ export function createKnowledgeBaseRoutes(
         if (!filePath || !newName) return fail("path 和 name 字段必填", 400, 400);
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.renameFile(id, filePath, newName, tenantId);
+        notify(ctx, id, 'delete', filePath);
+        const dir = filePath.includes('/') ? filePath.slice(0, filePath.lastIndexOf('/')) : '';
+        notify(ctx, id, 'upsert', dir ? `${dir}/${newName}` : newName);
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -227,6 +252,7 @@ export function createKnowledgeBaseRoutes(
         if (!path) return fail("path 字段必填", 400, 400);
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.mkdir(id, path, tenantId);
+        notify(ctx, id, 'mkdir', path);
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -256,6 +282,7 @@ export function createKnowledgeBaseRoutes(
         }
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.setFileEnabled(id, filePath, enabled, tenantId);
+        notify(ctx, id, enabled ? 'upsert' : 'delete', filePath);
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -278,6 +305,7 @@ export function createKnowledgeBaseRoutes(
           "";
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? "";
         await kbService.deleteFile(id, filePath, tenantId);
+        notify(ctx, id, 'delete', filePath);
         return success(null);
       } catch (e) {
         return handleError(e);
@@ -333,6 +361,7 @@ export function createKnowledgeBaseRoutes(
           },
         );
 
+        notify(ctx, id, 'upsert', result.contentPath);
         return success(result);
       } catch (e) {
         return handleError(e);

@@ -118,6 +118,12 @@ export type StreamChunk =
   | ResearchStageChunk
   | ResearchSourcesChunk
   | { type: 'session'; sessionId: string }
+  | {
+      type: 'environment';
+      phase: 'preparing' | 'ready' | 'error';
+      message: string;
+      elapsedMs?: number;
+    }
   | { type: 'title'; title: string }
   | {
       type: 'approval_required';

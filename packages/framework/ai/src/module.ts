@@ -1,5 +1,4 @@
-import { mkdir } from 'node:fs/promises';
-import { dirname, join, resolve, sep } from 'node:path';
+import { join } from 'node:path';
 /**
  * AI 模块聚合 — 增强版
  *
@@ -72,8 +71,10 @@ import { createLazyJsonlSessionStorage, createSession } from './session';
 
 import { createRequire } from 'node:module';
 import { createAgentRuntimeClient } from './agent-runtime/client';
-import type { AgentRuntimeConfig } from './agent-runtime/client';
+import type { AgentRuntimeConfig, RuntimePackageBindings } from './agent-runtime/client';
 import { createAgentRuntimeTools } from './agent-runtime/tools';
+import { createRuntimeSettings } from './agent-runtime/settings';
+import type { RuntimeSettings } from './agent-runtime/settings';
 import { type AgentCrudService, createAgentRoutes } from './routes/agent';
 import { type ConversationService, createChatRoutes } from './routes/chat';
 // Routes
@@ -84,6 +85,18 @@ import { createProviderRoutes } from './routes/provider';
 import { createSkillRoutes } from './routes/skill';
 import { createToolRegistryRoutes } from './routes/tool-registry';
 import { createAgentService } from './services/agent';
+import { createRuntimeHostService } from './services/runtime-host';
+import { createRuntimeCapacityService } from './services/runtime-capacity';
+import { createRuntimeClientRegistry } from './services/runtime-client-registry';
+import type { RuntimeClientRegistry } from './services/runtime-client-registry';
+import { createRuntimeWorkspaceBackupService } from './services/runtime-workspace-backup';
+import { createRuntimeKnowledgeSyncService } from './services/runtime-kb-sync';
+import { createRuntimeMemorySyncService } from './services/runtime-memory-sync';
+import { createRuntimeInstanceService } from './services/runtime-instance';
+import { createRuntimeHostMonitor } from './services/runtime-monitor';
+import { createRuntimeNotifier } from './services/runtime-notifier';
+import { createRuntimeHostRoutes } from './routes/runtime-host';
+import { createConnectorRoutes } from './routes/connector';
 import {
   IN_CHAT_APPROVAL_WAIT_MS,
   createApprovalService,
@@ -95,13 +108,17 @@ import type { ExpertService } from './services/expert';
 import { createScopedKBService } from './services/kb-scope';
 import { createMcpServerService } from './services/mcp-server';
 import type { McpServerService } from './services/mcp-server';
+import { createConnectorService } from './services/connector';
+import type { ConnectorService } from './services/connector';
 import { createModelConfigService } from './services/model-config';
 import { createProviderService } from './services/provider';
 import { createSkillService } from './services/skill';
 import { createSkillStoreService } from './services/skill-store';
 import type { SkillStoreService } from './services/skill-store';
+import { createSessionService } from './session-service';
+import type { SessionService } from './session-service';
 import { createToolRegistry } from './tool-registry';
-import type { ToolRegistry } from './tool-registry';
+import type { ToolDefinition, ToolRegistry } from './tool-registry';
 import {
   createBase64Tool,
   createCalculatorTool,
@@ -142,11 +159,29 @@ export interface AIModule {
     modelConfigService: ModelConfigService;
     scopedKBService: ScopedKBService;
     mcpServerService: McpServerService;
+    connectorService: ConnectorService;
+    /** 会话统一入口（JSONL 为准 + ai_session_meta 投影）：渠道/定时任务等复用 */
+    sessionService: SessionService;
+    /** 请求级工具注册表工厂：渠道侧运行 Agent 时复用同一套租户工具 */
+    createToolRegistry(tenantId: string, userId?: string, sessionId?: string): Promise<ToolRegistry>;
+    /** Agent 读取（渠道通知摘要要取 summaryModel） */
+    agentCrud: AgentCrudService;
+    /** 虚拟机宿主管理 */
+    runtimeHosts: ReturnType<typeof createRuntimeHostService>;
+    /** 虚拟机实例生命周期 */
+    runtimeInstances: ReturnType<typeof createRuntimeInstanceService>;
+    /** 虚拟机资源可用性 */
+    runtimeCapacity: ReturnType<typeof createRuntimeCapacityService>;
+    /** 知识库 VM 同步 */
+    runtimeKbSync: ReturnType<typeof createRuntimeKnowledgeSyncService>;
+    /** 工作区备份 */
+    runtimeWorkspaceBackup: ReturnType<typeof createRuntimeWorkspaceBackupService>;
   };
   router: Router;
   /** 创建 Agent Harness 实例 */
   createHarness(options: Partial<AgentHarnessOptions>): AgentHarness;
   init(): Promise<void>;
+  shutdown?(): Promise<void>;
 }
 
 /** LLM Provider 配置 */
@@ -260,6 +295,43 @@ export interface AIModuleDeps {
   parentSpanContext?: { traceId: string; spanId: string };
   /** 独立 Firecracker runtime；未配置时普通 Agent 仍可工作。 */
   agentRuntime?: AgentRuntimeConfig;
+  /** 平台管理员实时校验中间件（由 platform/system 注入；缺失时宿主管理 fail-closed） */
+  platformAdminMiddleware?: Middleware;
+  /** 平台管理员站内信（30 天闲置提醒）；缺失时只记录日志 */
+  notifyPlatformAdmins?: (params: {
+    tenantId: string;
+    title: string;
+    content: string;
+  }) => Promise<void>;
+  /** 运行时参数覆盖（测试/部署） */
+  runtimeSettings?: Partial<RuntimeSettings>;
+  /** 原生 vm-runtime 绑定（测试可注入；缺省从 @ventostack/vm-runtime 加载） */
+  runtimeBindings?: RuntimePackageBindings;
+  /**
+   * 对外可访问的基础地址（如 https://ai.example.com）。
+   * 用于生成 MCP / 渠道等需要回填到第三方的回调地址。
+   */
+  publicBaseUrl?: string;
+  /**
+   * 请求级扩展工具工厂（渠道通知等由平台层注入）。
+   * 是否返回工具取决于会话级设置（如「渠道通知」开关），因此必须异步。
+   */
+  extraTools?: (params: {
+    tenantId: string;
+    userId: string;
+    sessionId?: string;
+  }) => Promise<ToolDefinition[]>;
+  /**
+   * 一轮对话结束后的钩子（渠道自动推送等）。
+   * finalContent 为本轮最后一次完整 assistant 回复，供通知子智能体总结后发送。
+   */
+  onRunFinished?: (params: {
+    sessionId: string;
+    agentId: string;
+    tenantId: string;
+    userId: string;
+    finalContent: string;
+  }) => Promise<void>;
 }
 
 // ---- Provider 创建 ----
@@ -358,17 +430,21 @@ export function createConfiguredProvider(
 
 export function createAIModule(deps: AIModuleDeps): AIModule {
   const { db, authMiddleware, eventBus, storagePath, cache } = deps;
-  let agentRuntime: import('./agent-runtime/types').AgentRuntimeClient | undefined;
-  if (deps.agentRuntime) {
-    const bindings = createRequire(import.meta.url)('@ventostack/vm-runtime') as {
-      requestRuntime: import('./agent-runtime/client').RuntimePackageBindings['request'];
-      // biome-ignore format: 多行 import() 类型带尾逗号会被 Bun 转译器拒绝
-      requestRuntimeBinary: import('./agent-runtime/client').RuntimePackageBindings['requestBinary'];
-    };
-    agentRuntime = createAgentRuntimeClient(deps.agentRuntime, {
-      request: bindings.requestRuntime,
-      requestBinary: bindings.requestRuntimeBinary,
-    });
+  const runtimeSettings = createRuntimeSettings({ storagePath, ...(deps.runtimeSettings ?? {}) });
+  let runtimeBindings: RuntimePackageBindings | undefined = deps.runtimeBindings;
+  if (!runtimeBindings) {
+    try {
+      const bindings = createRequire(import.meta.url)('@ventostack/vm-runtime') as {
+        requestRuntime: RuntimePackageBindings['request'];
+        requestRuntimeBinary: RuntimePackageBindings['requestBinary'];
+      };
+      runtimeBindings = {
+        request: bindings.requestRuntime,
+        requestBinary: bindings.requestRuntimeBinary,
+      };
+    } catch (error) {
+      console.warn('[ai] @ventostack/vm-runtime 未加载，虚拟机宿主管理不可用:', error);
+    }
   }
 
   const providerService = createProviderService({
@@ -461,6 +537,159 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     db,
   });
 
+  // 创建虚拟机运行时服务（宿主池 / 容量 / 实例 / 同步）
+  const runtimeDb = db as import('@ventostack/database').Database;
+  const runtimeHostService = createRuntimeHostService({
+    db: runtimeDb,
+    encryptor: deps.credentialEncryptor,
+    settings: runtimeSettings,
+  });
+  const runtimeCapacity = createRuntimeCapacityService({
+    db: runtimeDb,
+    hostService: runtimeHostService,
+    settings: runtimeSettings,
+  });
+  const runtimeClients: RuntimeClientRegistry = runtimeBindings
+    ? createRuntimeClientRegistry({
+        hostService: runtimeHostService,
+        bindings: runtimeBindings,
+        timeoutMs: deps.agentRuntime?.timeoutMs ?? 30_000,
+      })
+    : {
+        async get() {
+          throw Object.assign(new Error('@ventostack/vm-runtime 未安装或加载失败'), {
+            code: 'AGENT_RUNTIME_UNAVAILABLE',
+            status: 503,
+          });
+        },
+        invalidate() {},
+        clear() {},
+      };
+  const runtimeWorkspaceBackup = createRuntimeWorkspaceBackupService({
+    db: runtimeDb,
+    settings: runtimeSettings,
+  });
+  const runtimeKbSync = createRuntimeKnowledgeSyncService({
+    db: runtimeDb,
+    kbService: knowledgeBase,
+    storagePath,
+  });
+  const runtimeMemorySync = createRuntimeMemorySyncService({
+    db: runtimeDb,
+    memory,
+  });
+  const runtimeInstances = createRuntimeInstanceService({
+    db: runtimeDb,
+    settings: runtimeSettings,
+    hostService: runtimeHostService,
+    capacity: runtimeCapacity,
+    clients: runtimeClients,
+    workspaceBackup: runtimeWorkspaceBackup,
+  });
+  const runtimeMonitor = createRuntimeHostMonitor({
+    db: runtimeDb,
+    settings: runtimeSettings,
+    hostService: runtimeHostService,
+    instanceService: runtimeInstances,
+    clients: runtimeClients,
+  });
+  const runtimeNotifier = createRuntimeNotifier({
+    db: runtimeDb,
+    settings: runtimeSettings,
+    instanceService: runtimeInstances,
+    ...(deps.notification ? { notification: deps.notification } : {}),
+    ...(deps.notifyPlatformAdmins
+      ? { notifyPlatformAdmins: deps.notifyPlatformAdmins }
+      : {}),
+  });
+  const runtimeBackupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  let runtimeNotifierTimer: ReturnType<typeof setInterval> | null = null;
+  let runtimeWorkspaceBackupTimer: ReturnType<typeof setInterval> | null = null;
+  let runtimeWorkspaceBackupRunning = false;
+  function scheduleWorkspaceBackup(
+    instance: { id: string; tenantId: string; userId: string; agentId: string; sandboxId: string | null },
+    client: import('./agent-runtime/types').AgentRuntimeClient,
+  ): void {
+    if (!instance.sandboxId) return;
+    const existing = runtimeBackupTimers.get(instance.id);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      runtimeBackupTimers.delete(instance.id);
+      void runtimeWorkspaceBackup
+        .syncInstance(
+          {
+            id: instance.id,
+            tenantId: instance.tenantId,
+            userId: instance.userId,
+            agentId: instance.agentId,
+            sandboxId: instance.sandboxId!,
+          },
+          client,
+        )
+        .catch((error) => {
+          console.warn('[ai] 工作区增量备份失败（不阻断对话）:', error);
+        });
+    }, 2_000);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    runtimeBackupTimers.set(instance.id, timer);
+  }
+
+  const kbSyncTimers = new Map<string, ReturnType<typeof setTimeout>>();
+  function scheduleKbSync(event: {
+    tenantId: string;
+    kbId: string;
+    op: string;
+    path?: string;
+  }): void {
+    if (!event.tenantId || !event.kbId) return;
+    const key = `${event.tenantId}:${event.kbId}`;
+    const existing = kbSyncTimers.get(key);
+    if (existing) clearTimeout(existing);
+    const timer = setTimeout(() => {
+      kbSyncTimers.delete(key);
+      void (async () => {
+        const sessions = await runtimeKbSync.listSessionsForKb(event.tenantId, event.kbId);
+        for (const session of sessions) {
+          try {
+            const instance = await runtimeInstances.getById(session.instanceId);
+            if (!instance?.sandboxId) continue;
+            if (instance.state === 'paused' || instance.state === 'stopped') {
+              await runtimeKbSync.markDirty(event.tenantId, session.sessionId);
+              continue;
+            }
+            const kbIds =
+              event.op === 'deleted'
+                ? session.boundKbIds.filter((id) => id !== event.kbId)
+                : session.boundKbIds;
+            const client = await runtimeClients.get(instance.hostId);
+            await runtimeKbSync.syncSession({
+              tenantId: event.tenantId,
+              userId: instance.userId,
+              agentId: instance.agentId,
+              sessionId: session.sessionId,
+              kbIds,
+              instance: {
+                id: instance.id,
+                sandboxId: instance.sandboxId,
+                tenantId: instance.tenantId,
+              },
+              client,
+            });
+          } catch (error) {
+            console.warn('[ai] 知识库增量同步失败，已标记待重试:', error);
+            await runtimeKbSync
+              .markDirty(event.tenantId, session.sessionId)
+              .catch(() => undefined);
+          }
+        }
+      })().catch((error) => {
+        console.warn('[ai] 知识库增量同步任务失败:', error);
+      });
+    }, 300);
+    (timer as unknown as { unref?: () => void }).unref?.();
+    kbSyncTimers.set(key, timer);
+  }
+
   /**
    * 审批台账：把审批生命周期写回会话 JSONL（custom 条目，不进 LLM 上下文）。
    * 目的：审批不再只活在 SSE 流里——刷新页面后前端靠台账还原待审批弹窗与历史决议。
@@ -545,10 +774,16 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     ? createPromptTemplateManager({ paths: deps.templatePaths })
     : undefined;
 
-  // 创建工具注册表并注册所有内置工具
-  // KB 等租户相关工具按租户绑定：对话路由按请求 tenantId 构建请求级注册表（见 createChatRoutes options），
-  // 此处的默认注册表供工具发现/管理路由使用。
-  function buildToolRegistry(tenantId: string, userId?: string, sessionId?: string): ToolRegistry {
+  /**
+   * 内置工具注册表（同步）。
+   * KB 等租户相关工具按租户绑定：对话路由按请求 tenantId 构建请求级注册表
+   * （见 createChatRoutes options），默认注册表供工具发现/管理路由使用。
+   */
+  function buildBaseToolRegistry(
+    tenantId: string,
+    userId?: string,
+    sessionId?: string,
+  ): ToolRegistry {
     // 防御性校验：tenantId 会拼进文件工具的 allowedPaths，
     // 含路径分隔符或 ../ 的异常值会移动基准目录造成跨租户读写（fail-closed）
     if (!/^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/.test(tenantId)) {
@@ -626,7 +861,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         },
       });
     }
-    if (agentRuntime) {
+    if (runtimeBindings) {
       registry.register({
         name: 'terminal',
         description: '在 Agent 的隔离 Linux 虚拟环境中执行命令。',
@@ -671,13 +906,44 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     return registry;
   }
 
+  /**
+   * 请求级工具注册表：内置工具 + 平台注入的扩展工具。
+   *
+   * 必须异步：扩展工具是否出现取决于会话级设置（如「渠道通知」开关，需查库），
+   * 若强行同步只能「永远注册、handler 内报错」——模型会看到一个总失败的工具，
+   * 白烧 token 且体验差。
+   */
+  async function buildToolRegistry(
+    tenantId: string,
+    userId?: string,
+    sessionId?: string,
+  ): Promise<ToolRegistry> {
+    const registry = buildBaseToolRegistry(tenantId, userId, sessionId);
+    if (!deps.extraTools) return registry;
+    try {
+      const extra = await deps.extraTools({ tenantId, userId: userId ?? '', sessionId });
+      for (const tool of extra) {
+        if (!registry.get(tool.name)) registry.register(tool);
+      }
+    } catch (error) {
+      // 扩展工具故障不能让整轮对话不可用：降级为「本轮没有这些工具」
+      console.error('[ai] 加载扩展工具失败（本轮降级）:', error);
+    }
+    return registry;
+  }
+
   // 默认租户注册表（供工具发现/管理路由；对话按请求 tenantId 另行构建）
-  const toolRegistry = buildToolRegistry('default');
+  const toolRegistry = buildBaseToolRegistry('default');
 
   // Agent CRUD 服务（先创建，供 AgentLoop 使用）
   const agentDbService = createAgentService({
     db: db as import('@ventostack/database').Database,
-    ...(agentRuntime ? { runtime: agentRuntime } : {}),
+    async assertCanEnable(tenantId, userId) {
+      await runtimeCapacity.assertCanEnable(tenantId, userId);
+    },
+    async onBeforeDelete(agentId, tenantId) {
+      await runtimeInstances.destroyByAgent(tenantId, agentId);
+    },
     // 依赖引用校验：model / 知识库 / Skill / MCP 引用必须有效且归属当前租户
     validateRefs: async (params, tenantId) => {
       const tid = tenantId || 'default';
@@ -738,6 +1004,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           ...extractAgentConfigExtras(item.config),
           tenantId: item.tenantId,
           requiresVirtualEnvironment: item.requiresVirtualEnvironment,
+          networkEnabled: item.networkEnabled !== false,
           // 采集开关随详情一并返回，编辑弹窗据此回填（默认关闭）
           contextCollectionEnabled: item.contextCollectionEnabled ?? false,
           ...(item.sandboxStatus ? { sandboxStatus: item.sandboxStatus } : {}),
@@ -769,11 +1036,33 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     .split(',')
     .map((host) => host.trim().toLowerCase())
     .filter((host) => host.length > 0);
+  // 连接器服务先声明（let），在 mcpServerService 之后赋值；
+  // authHeadersProvider 闭包在运行时（出站调用时）才解析 connectorService，避免构造期 TDZ/循环。
+  let connectorService: import('./services/connector').ConnectorService;
   const mcpServerService = createMcpServerService({
     db: db as import('@ventostack/database').Database,
     allowedStdioCommands: allowedMcpCommands,
     allowedHttpHosts: allowedMcpHosts,
     credentialEncryptor: deps.credentialEncryptor,
+    authHeadersProvider: (server) => connectorService.resolveAuthHeaders(server.id, server.tenantId),
+  });
+
+  // 连接器服务：目录 + 授权 + 托管 MCP
+  connectorService = createConnectorService({
+    db: db as import('@ventostack/database').Database,
+    mcpServerService,
+    credentialEncryptor: deps.credentialEncryptor,
+    ...(cache !== undefined
+      ? {
+          stateStore: {
+            get: (key: string) => (cache as import('@ventostack/cache').Cache).get<string>(key),
+            set: (key: string, value: string, ttl: number) =>
+              (cache as import('@ventostack/cache').Cache).set(key, value, { ttl }),
+            delete: (key: string) => (cache as import('@ventostack/cache').Cache).del(key),
+          },
+        }
+      : {}),
+    ...(deps.publicBaseUrl ? { publicBaseUrl: deps.publicBaseUrl } : {}),
   });
   const mcpToolSource = createMcpToolSource(mcpServerService);
 
@@ -781,7 +1070,6 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const consolidateMemory = createMemoryConsolidator({ memory, llmGateway });
   const activeMemoryJobs = new Set<string>();
   const rerunMemoryJobs = new Set<string>();
-  const sessionSandboxJobs = new Map<string, Promise<string>>();
   const scheduleMemoryConsolidation = async (params: {
     sessionId: string;
     tenantId: string;
@@ -880,6 +1168,154 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // 首次委派发生在请求期，届时引用必然已赋值。
   let agentLoopRef: AgentLoop | null = null;
 
+  /** VM Agent 运行时准备：确保实例、同步知识库/记忆、构建提示词与工具。 */
+  async function prepareAgentRuntime(params: {
+    agentId: string;
+    tenantId: string;
+    userId: string;
+    sessionId: string;
+    knowledgeBaseIds: string[];
+    agentConfig: AgentConfig;
+  }): Promise<{
+    instanceId: string;
+    sandboxId: string;
+    promptBlock: string;
+    tools: import('./agent-engine/types').AgentTool[];
+  }> {
+    const rawResources = (
+      params.agentConfig as unknown as {
+        config?: { runtime?: { resources?: Partial<import('./agent-runtime/types').RuntimeResources> } };
+      }
+    ).config?.runtime?.resources;
+    const ensured = await runtimeInstances.ensure({
+      tenantId: params.tenantId,
+      userId: params.userId,
+      agentId: params.agentId,
+      ...(params.agentConfig.networkEnabled === undefined
+        ? {}
+        : { networkEnabled: params.agentConfig.networkEnabled }),
+      ...(rawResources
+        ? {
+            resources: {
+              ...runtimeSettings.defaultResources,
+              ...rawResources,
+            },
+          }
+        : {}),
+    });
+    const { instance, client } = ensured;
+    if (!instance.sandboxId) throw new Error('虚拟机实例尚未就绪');
+    await client
+      .runCommand(instance.sandboxId, [
+        'mkdir',
+        '-p',
+        `/workspace/${params.sessionId}/outputs`,
+      ], { cwd: '/workspace', timeoutMs: 15_000 })
+      .catch((error) => console.warn('[ai] 创建会话输出目录失败（不阻断对话）:', error));
+
+    try {
+      await runtimeKbSync.syncSession({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        agentId: params.agentId,
+        sessionId: params.sessionId,
+        kbIds: params.knowledgeBaseIds,
+        instance: {
+          id: instance.id,
+          sandboxId: instance.sandboxId,
+          tenantId: instance.tenantId,
+        },
+        client,
+      });
+    } catch (error) {
+      await runtimeKbSync.markDirty(params.tenantId, params.sessionId).catch(() => undefined);
+      throw Object.assign(
+        new Error(
+          `知识库同步失败：${error instanceof Error ? error.message : String(error)}`,
+        ),
+        { code: 'KB_SYNC_FAILED', status: 503 },
+      );
+    }
+
+    await runtimeMemorySync
+      .syncSessionMemory({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        sessionId: params.sessionId,
+        instance: { id: instance.id, sandboxId: instance.sandboxId, tenantId: instance.tenantId },
+        client,
+      })
+      .catch((error) => console.warn('[ai] 会话记忆同步失败（不阻断对话）:', error));
+    await runtimeMemorySync
+      .pullGlobal({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        instance: { id: instance.id, sandboxId: instance.sandboxId, tenantId: instance.tenantId },
+        client,
+      })
+      .catch((error) => console.warn('[ai] 全局记忆拉取失败（不阻断对话）:', error));
+
+    const kbBlock = await runtimeKbSync.buildPromptBlock({
+      tenantId: params.tenantId,
+      sessionId: params.sessionId,
+      kbIds: params.knowledgeBaseIds,
+    });
+    const networkEnabled = params.agentConfig.networkEnabled !== false;
+    const promptBlock = [
+      '## 运行环境',
+      '你运行在一台隔离的 Linux 机器中，工作目录 /workspace（持久保存，跨会话保留）。',
+      '基础镜像是 Debian 最小镜像，已预装 rg（ripgrep）和 curl；其余使用系统自带命令（bash/sh、grep、find、cat、sed、awk、head、tail、sort、uniq、xargs、tar 等）。',
+      networkEnabled
+        ? '当前环境已允许出网，可用 curl 访问外部 HTTP/HTTPS；不要依赖 apt/pip/npm 安装系统级软件。'
+        : '当前环境未启用外网，不能访问外部网络或安装新软件，请用现有命令完成任务。',
+      '探索文件时优先使用 rg，阅读用 cat / sed / head / tail；不要假设文件存在。',
+      '',
+      kbBlock,
+      '',
+      '## 工作方式',
+      '- 直接用 terminal 探索和操作；需要交付的 PPT/Excel/Word/PDF/图片/代码等文件写入 `/workspace/${params.sessionId}/outputs`。',
+      `- 不要修改 /workspace/${params.sessionId}/knowledges 与 /workspace/${params.sessionId}/memories；不要访问其他会话目录。`,
+      '- 会话记忆由系统维护；需要记录候选事实时使用 memory-candidate。',
+      '- 长期有效的偏好、结论、项目背景写入 /root/.vento-agent/memories/<主题>.md，使用 Markdown 标题。',
+      '- 命令输出过长时用 head/tail/rg -l 等收敛，避免一次读入超大文件。',
+      '- 运行中的服务/构建使用 background 参数，日志写入 /workspace/.agent-logs。',
+    ].join('\n');
+
+    const selected = new Set(params.agentConfig.tools ?? []);
+    const tools = createAgentRuntimeTools(client, instance.sandboxId, {
+      workspace: '/workspace',
+      readRoots: ['/workspace', '/root/.vento-agent'],
+      writeRoots: ['/workspace', '/root/.vento-agent'],
+      protectedWritePrefixes: [
+        `/workspace/${params.sessionId}/knowledges`,
+        `/workspace/${params.sessionId}/memories`,
+      ],
+      async onWorkspaceChanged() {
+        scheduleWorkspaceBackup(
+          {
+            id: instance.id,
+            tenantId: instance.tenantId,
+            userId: instance.userId,
+            agentId: instance.agentId,
+            sandboxId: instance.sandboxId,
+          },
+          client,
+        );
+      },
+    }).filter((tool) => {
+      if (tool.name === 'terminal') return true;
+      if (selected.size === 0) return false;
+      return selected.has(tool.name);
+    });
+
+    return {
+      instanceId: instance.id,
+      sandboxId: instance.sandboxId,
+      promptBlock,
+      tools,
+    };
+  }
+
   const agentLoop = createAgentLoop({
     llmGateway,
     knowledgeBase,
@@ -890,6 +1326,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     eventEmitter,
     toolRegistry,
     agentService: agentCrudService,
+    prepareRuntime: prepareAgentRuntime,
     // 思考档位以模型端 ai_model.reasoning_options 声明为准：请求值与 Agent 默认值都要照此校验
     async resolveAllowedThinkingLevels(modelRef, tenantId) {
       const runtime = await providerService.resolveRuntimeModel(modelRef, tenantId || 'default');
@@ -1083,70 +1520,6 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       }
       return output.trim() || '（成员专家未返回内容）';
     },
-    async resolveAgentTools(agentId, tenantId, toolNames, userId, sessionId) {
-      if (!agentRuntime) return [];
-      const item = await agentDbService.getById(agentId, tenantId);
-      if (!item?.requiresVirtualEnvironment || !userId || !sessionId) return [];
-      const selected = new Set(toolNames);
-      const scope = { tenantId, userId };
-      let sandboxId = await memory.getSessionRuntimeSandbox(sessionId, scope);
-      if (!sandboxId) {
-        const jobKey = `${tenantId}:${userId}:${sessionId}`;
-        let job = sessionSandboxJobs.get(jobKey);
-        if (!job) {
-          job = agentRuntime
-            .createSandbox({ sessionId: `${agentId}-${sessionId}` })
-            .then(async (sandbox) => {
-              try {
-                await memory.setSessionRuntimeSandbox(sessionId, scope, sandbox.sandboxId);
-                return sandbox.sandboxId;
-              } catch (error) {
-                await agentRuntime.destroySandbox(sandbox.sandboxId).catch(() => undefined);
-                throw error;
-              }
-            })
-            .finally(() => sessionSandboxJobs.delete(jobKey));
-          sessionSandboxJobs.set(jobKey, job);
-        }
-        sandboxId = await job;
-      }
-      const artifactRoot =
-        userId && sessionId ? await memory.getArtifactRoot(sessionId, scope) : null;
-      const workspace = '/workspace';
-      const persistArtifact = async (path: string, content: Uint8Array): Promise<void> => {
-        if (!artifactRoot) return;
-        const target = resolve(join(artifactRoot, path));
-        if (target !== artifactRoot && !target.startsWith(artifactRoot + sep))
-          throw new Error('产物路径不合法');
-        await mkdir(dirname(target), { recursive: true });
-        await Bun.write(target, content);
-      };
-      return createAgentRuntimeTools(agentRuntime, sandboxId, {
-        workspace,
-        ...(artifactRoot
-          ? {
-              onFileWritten: persistArtifact,
-              async onWorkspaceChanged() {
-                const result = await agentRuntime.runCommand(
-                  sandboxId,
-                  ['find', '.', '-type', 'f', '-size', '-2097153c', '-print0'],
-                  workspace,
-                );
-                const paths = result.stdout.split('\0').filter(Boolean).slice(0, 1000);
-                for (const path of paths) {
-                  const relative = path.replace(/^\.\//, '');
-                  if (!relative || relative.includes('\0') || relative.split('/').includes('..'))
-                    continue;
-                  await persistArtifact(
-                    relative,
-                    await agentRuntime.readFile(sandboxId, `${workspace}/${relative}`),
-                  );
-                }
-              },
-            }
-          : {}),
-      }).filter((tool) => selected.has(tool.name));
-    },
   });
   agentLoopRef = agentLoop;
 
@@ -1154,15 +1527,34 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   const perm = deps.permMiddleware;
 
   // 创建路由
-  const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm, providerService);
+  const runtimeHostRouter = createRuntimeHostRoutes({
+    hostService: runtimeHostService,
+    instanceService: runtimeInstances,
+    capacity: runtimeCapacity,
+    clients: runtimeClients,
+    authMiddleware,
+    perm,
+    ...(deps.platformAdminMiddleware
+      ? { platformAdminMiddleware: deps.platformAdminMiddleware }
+      : {}),
+  });
+  const kbRouter = createKnowledgeBaseRoutes(knowledgeBase, authMiddleware, perm, providerService, {
+    onKbChanged: scheduleKbSync,
+  });
   const providerRouter = createProviderRoutes(providerService, authMiddleware, perm);
   const agentRouter = createAgentRoutes(agentCrudService, authMiddleware, perm, {
     storagePath: `${storagePath}/skills/.workspace`,
   });
-  // 会话服务：基于 memory（JSONL 用户级会话存储），实现真实 CRUD 与历史查询
+  // 会话统一入口：JSONL 为准 + ai_session_meta 投影（渠道/定时任务等复用同一层）
+  const sessionService = createSessionService({
+    memory,
+    ...(db ? { db: db as import('@ventostack/database').Database } : {}),
+  });
+
+  // 会话服务适配层：保持既有 ConversationService 契约（字段名 id），并带上 origin
   const conversationService: ConversationService = {
     async create(params) {
-      const { sessionId } = await memory.createSession({
+      const { sessionId } = await sessionService.create({
         userId: params.userId,
         agentId: params.agentId,
         tenantId: params.tenantId,
@@ -1170,45 +1562,62 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       return { id: sessionId };
     },
     async getById(id, userId, tenantId) {
-      const session = await memory.getSession(id, { tenantId, userId });
-      if (!session) return null;
+      const view = await sessionService.get(id, { tenantId, userId });
+      if (!view) return null;
       return {
-        id: session.sessionId,
-        agentId: session.agentId,
-        userId: session.userId,
-        title: session.title,
-        status: session.status,
-        messageCount: session.messageCount,
-        tenantId: session.tenantId,
-        createdAt: session.createdAt.toISOString(),
-        updatedAt: session.updatedAt.toISOString(),
+        id: view.sessionId,
+        agentId: view.agentId,
+        userId: view.userId,
+        title: view.title,
+        status: view.status,
+        messageCount: view.messageCount,
+        tenantId: view.tenantId,
+        origin: view.origin,
+        settings: view.settings,
+        createdAt: view.createdAt,
+        updatedAt: view.updatedAt,
       };
     },
     async list(params) {
-      const sessions = await memory.listSessions(
-        { tenantId: params.tenantId, userId: params.userId },
-        params.agentId,
-      );
-      return sessions.map((s) => ({
-        id: s.sessionId,
-        agentId: s.agentId,
-        userId: s.userId,
-        title: s.title,
-        status: s.status,
-        messageCount: s.messageCount,
-        tenantId: s.tenantId,
-        createdAt: s.createdAt.toISOString(),
-        updatedAt: s.updatedAt.toISOString(),
+      const views = await sessionService.list({
+        tenantId: params.tenantId,
+        userId: params.userId,
+        ...(params.agentId ? { agentId: params.agentId } : {}),
+      });
+      return views.map((v) => ({
+        id: v.sessionId,
+        agentId: v.agentId,
+        userId: v.userId,
+        title: v.title,
+        status: v.status,
+        messageCount: v.messageCount,
+        tenantId: v.tenantId,
+        origin: v.origin,
+        createdAt: v.createdAt,
+        updatedAt: v.updatedAt,
       }));
     },
     async delete(id, userId, tenantId) {
-      const sandboxId = await memory.getSessionRuntimeSandbox(id, { tenantId, userId });
-      if (sandboxId && agentRuntime) await agentRuntime.destroySandbox(sandboxId);
-      // 软删除：移入回收站，可在回收站恢复或彻底删除
-      await memory.moveSessionToTrash(id, { tenantId, userId });
+      // 会话删除只清理会话级运行时镜像，不销毁用户+Agent 共享的虚拟机。
+      try {
+        const view = await sessionService.get(id, { tenantId, userId });
+        if (view) {
+          const instance = await runtimeInstances.get(tenantId, userId, view.agentId);
+          if (instance?.sandboxId) {
+            const client = await runtimeClients.get(instance.hostId);
+            await runtimeKbSync.removeSession(tenantId, id, client);
+          } else {
+            await runtimeKbSync.removeSession(tenantId, id);
+          }
+        }
+      } catch (error) {
+        console.warn('[ai] 清理会话虚拟机镜像失败（继续删除会话）:', error);
+      }
+      // 软删除：移入回收站，可在回收站恢复或彻底删除（同步标记 meta 行）
+      await sessionService.delete(id, { tenantId, userId });
     },
     async getMessages(id, userId, tenantId, limit) {
-      return memory.getHistory(id, { tenantId, userId }, limit ?? 50);
+      return sessionService.getHistory(id, { tenantId, userId }, limit ?? 50);
     },
   };
 
@@ -1224,6 +1633,43 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       // 聊天内嵌审批：请求者自确认
       approvalService,
       scheduleMemoryConsolidation,
+      // 一轮结束后的平台钩子：渠道自动推送 + VM 全局记忆/工作区回写
+      async onRunFinished(params) {
+        if (deps.onRunFinished) {
+          await deps.onRunFinished(params).catch((error) => {
+            console.warn('[ai] 渠道结束钩子失败（不影响对话）:', error);
+          });
+        }
+        const instance = await runtimeInstances
+          .get(params.tenantId, params.userId, params.agentId)
+          .catch(() => null);
+        if (!instance?.sandboxId) return;
+        try {
+          const client = await runtimeClients.get(instance.hostId);
+          await runtimeMemorySync.pushGlobal({
+            tenantId: instance.tenantId,
+            userId: instance.userId,
+            instance: {
+              id: instance.id,
+              sandboxId: instance.sandboxId,
+              tenantId: instance.tenantId,
+            },
+            client,
+          });
+          await runtimeWorkspaceBackup.syncInstance(
+            {
+              id: instance.id,
+              tenantId: instance.tenantId,
+              userId: instance.userId,
+              agentId: instance.agentId,
+              sandboxId: instance.sandboxId,
+            },
+            client,
+          );
+        } catch (error) {
+          console.warn('[ai] 回合结束同步虚拟机数据失败（不阻断对话）:', error);
+        }
+      },
       // 会话标题生成：Agent 配置 summaryModel（轻量快速模型）时，对话结束后生成 ≤20 字标题
       generateSessionTitle: async ({ sessionId, agentId, tenantId, userId }) => {
         try {
@@ -1287,6 +1733,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // MCP Server 服务
   const mcpRouter = createMcpServerRoutes(mcpServerService, authMiddleware, perm);
 
+  // 连接器路由
+  const connectorRouter = createConnectorRoutes(connectorService, authMiddleware, perm);
+
   // 工具注册表路由
   const toolRegistryRouter = createToolRegistryRoutes(toolRegistry, authMiddleware, perm);
 
@@ -1299,6 +1748,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(skillRouter);
   router.merge(expertRouter);
   router.merge(mcpRouter);
+  router.merge(connectorRouter);
+  router.merge(runtimeHostRouter);
   router.merge(toolRegistryRouter);
 
   // 创建 Harness 工厂
@@ -1349,11 +1800,74 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       modelConfigService,
       scopedKBService,
       mcpServerService,
+      connectorService,
+      sessionService,
+      runtimeHosts: runtimeHostService,
+      runtimeInstances,
+      runtimeCapacity,
+      runtimeKbSync,
+      runtimeWorkspaceBackup,
+      createToolRegistry: buildToolRegistry,
+      // 渠道通知等平台侧能力需要读 Agent 的 summaryModel；直接依赖 ai_agent 表会绕过本模块的缓存与校验
+      agentCrud: agentCrudService,
     },
     router,
     createHarness,
     async init() {
       await providerService.encryptStoredCredentials();
+
+      if (deps.agentRuntime) {
+        await runtimeHostService
+          .ensureEnvHost(deps.agentRuntime)
+          .catch((error) => console.warn('[ai] 导入环境变量虚拟机宿主失败:', error));
+      }
+      runtimeMonitor.start();
+      if (runtimeSettings.workspaceBackup.enabled && !runtimeWorkspaceBackupTimer) {
+        const backupAll = () => {
+          if (runtimeWorkspaceBackupRunning) return;
+          runtimeWorkspaceBackupRunning = true;
+          void (async () => {
+            const list = await runtimeInstances.listAll();
+            for (const instance of list) {
+              if (instance.state !== 'running' || !instance.sandboxId) continue;
+              try {
+                const client = await runtimeClients.get(instance.hostId);
+                await runtimeWorkspaceBackup.syncInstance(
+                  {
+                    id: instance.id,
+                    tenantId: instance.tenantId,
+                    userId: instance.userId,
+                    agentId: instance.agentId,
+                    sandboxId: instance.sandboxId,
+                  },
+                  client,
+                );
+              } catch (error) {
+                console.warn('[ai] 定时工作区备份失败（不阻断）:', error);
+              }
+            }
+          })()
+            .catch((error) => console.warn('[ai] 定时工作区备份任务失败:', error))
+            .finally(() => {
+              runtimeWorkspaceBackupRunning = false;
+            });
+        };
+        runtimeWorkspaceBackupTimer = setInterval(
+          backupAll,
+          runtimeSettings.workspaceBackup.intervalMs,
+        );
+        (runtimeWorkspaceBackupTimer as unknown as { unref?: () => void }).unref?.();
+      }
+      if (!runtimeNotifierTimer) {
+        const runNotifier = () => {
+          void runtimeNotifier.runOnce().catch((error) => {
+            console.warn('[ai] 虚拟机闲置提醒任务失败:', error);
+          });
+        };
+        runNotifier();
+        runtimeNotifierTimer = setInterval(runNotifier, 6 * 3_600_000);
+        (runtimeNotifierTimer as unknown as { unref?: () => void }).unref?.();
+      }
 
       // 初始化 skills
       if (skillManager) {
@@ -1377,6 +1891,18 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
           // 清除相关缓存
         });
       }
+    },
+    async shutdown() {
+      runtimeMonitor.stop();
+      if (runtimeNotifierTimer) clearInterval(runtimeNotifierTimer);
+      runtimeNotifierTimer = null;
+      if (runtimeWorkspaceBackupTimer) clearInterval(runtimeWorkspaceBackupTimer);
+      runtimeWorkspaceBackupTimer = null;
+      for (const timer of runtimeBackupTimers.values()) clearTimeout(timer);
+      runtimeBackupTimers.clear();
+      for (const timer of kbSyncTimers.values()) clearTimeout(timer);
+      kbSyncTimers.clear();
+      runtimeClients.clear();
     },
   };
 }

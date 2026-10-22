@@ -65,6 +65,10 @@ export interface McpServerItem {
   lastError: string | null;
   toolCount: number;
   toolsSnapshot: McpToolInfo[] | null;
+  /** 连接器托管：非空表示该 MCP 由连接器创建并托管 */
+  connectorBindingId: string | null;
+  /** custom | connector */
+  origin: "custom" | "connector";
   tenantId: string;
   createdAt: string;
   updatedAt: string;
@@ -127,6 +131,11 @@ export interface McpServerServiceDeps {
   credentialEncryptor?: ConfigEncryptor;
   /** Internal Adapter seam used for alternate transports and deterministic tests. */
   clientFactory?: (server: McpServerItem) => McpClient;
+  /**
+   * 连接器授权头提供者（可选）：server.origin === 'connector' 时，
+   * 出站前调用以注入 Authorization 头（含 token 惰性刷新）。返回 null 表示无注入。
+   */
+  authHeadersProvider?: (server: McpServerItem) => Promise<Record<string, string> | null>;
   /** 连接池策略：上限与空闲回收 */
   pool?: {
     /** 同时存活的最大客户端数（默认 16）；超限时淘汰最久未用的客户端 */
@@ -231,6 +240,8 @@ function mapRow(r: Record<string, unknown>): McpServerItem {
     lastError: (r.last_error as string) ?? null,
     toolCount: Number(r.tool_count ?? 0),
     toolsSnapshot: (r.tools_snapshot as McpToolInfo[]) ?? null,
+    connectorBindingId: (r.connector_binding_id as string) ?? null,
+    origin: ((r.origin as "custom" | "connector") ?? "custom"),
     tenantId: r.tenant_id as string,
     createdAt: r.created_at instanceof Date ? r.created_at.toISOString() : String(r.created_at ?? ""),
     updatedAt: r.updated_at instanceof Date ? r.updated_at.toISOString() : String(r.updated_at ?? ""),
@@ -302,10 +313,24 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     );
   }
 
-  function createClient(server: McpServerItem): McpClient {
-    const client = deps.clientFactory?.(server) ?? (server.transportType === "stdio"
-      ? createMcpStdioClient(server)
-      : createMcpHttpClient(server));
+  async function createClient(server: McpServerItem): Promise<McpClient> {
+    // 连接器托管：出站前注入授权头（含 token 惰性刷新），避免凭证落 headers 明文列。
+    // fail-closed：取不到授权头（绑定缺失/已解绑/token 刷新失败）时拒绝出站，
+    // 绝不匿名连接用户账号资源
+    let effective = server;
+    if (server.origin === "connector") {
+      if (!deps.authHeadersProvider) {
+        throw aiErrors.connectorForbidden("连接器授权未配置，拒绝出站连接");
+      }
+      const authHeaders = await deps.authHeadersProvider(server).catch(() => null);
+      if (!authHeaders) {
+        throw aiErrors.connectorForbidden("连接器授权不可用（可能已解绑或凭证失效），拒绝出站连接");
+      }
+      effective = { ...server, headers: { ...(server.headers ?? {}), ...authHeaders } };
+    }
+    const client = deps.clientFactory?.(effective) ?? (effective.transportType === "stdio"
+      ? createMcpStdioClient(effective)
+      : createMcpHttpClient(effective));
     client.onToolsChanged(() => {
       void client.listTools()
         .then((tools) => persistToolsSnapshot(server.id, server.tenantId, tools))
@@ -314,14 +339,14 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     return client;
   }
 
-  function getOrCreateClient(server: McpServerItem): McpClient {
+  async function getOrCreateClient(server: McpServerItem): Promise<McpClient> {
     const key = clientKey(server.id, server.tenantId);
     const existing = clients.get(key);
     if (existing) {
       existing.lastUsed = Date.now();
       return existing.client;
     }
-    const client = createClient(server);
+    const client = await createClient(server);
     clients.set(key, { client, lastUsed: Date.now() });
     // 超过上限时淘汰最久未用的客户端，保持池大小有界
     void evictToLimit();
@@ -797,7 +822,7 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     const server = await getById(id, tenantId);
     if (!server) return [];
     validateMcpConfig(server, allowedStdioCommands, allowedHttpHosts);
-    const client = getOrCreateClient(server);
+    const client = await getOrCreateClient(server);
     touchClient(server);
     const tools = await client.listTools();
     await persistToolsSnapshot(id, tenantId, tools);
@@ -817,7 +842,7 @@ export function createMcpServerService(deps: McpServerServiceDeps): McpServerSer
     if (!server.toolsSnapshot?.some((tool) => tool.name === toolName)) {
       throw aiErrors.toolNotFound(toolName);
     }
-    const client = getOrCreateClient(server);
+    const client = await getOrCreateClient(server);
     touchClient(server);
     try {
       return await client.callTool(toolName, args, signal);
