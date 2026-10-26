@@ -7,6 +7,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ChatApproval, ChatMessage, ModelOption, ToolBlock } from '../types';
 
+import BackgroundTasksPanel from '../components/BackgroundTasksPanel';
 import BottomInput, { allowedThinkingLevels } from '../components/BottomInput';
 import ChatArea from '../components/ChatArea';
 import FilesPanel from '../components/FilesPanel';
@@ -17,6 +18,10 @@ import { useAuth } from '@/store/useAuth';
 import type { RunMode } from '../components/RunModeSelect';
 import type { SummonedExpert } from '../components/ExpertSummon';
 import { readSummonedExpert, writeSummonedExpert } from '../expert-summon-storage';
+import { fetchTask } from '../../tasks/api';
+import TaskDetailDrawer from '../../tasks/components/task-detail-drawer';
+import { useSessionBackgroundTasks } from '../../tasks/hooks';
+import { isActiveTask, type BackgroundTaskItem } from '../../tasks/types';
 import ThreadList, { DEFAULT_WIDTH as DEFAULT_THREAD_LIST_WIDTH } from '../components/ThreadList';
 import TopToolbar from '../components/TopToolbar';
 import TrashDialog from '../components/TrashDialog';
@@ -806,6 +811,39 @@ function AgentConversation(): React.ReactElement {
           }
           continue;
         }
+        if (m.role === 'background_task') {
+          try {
+            const data = JSON.parse(m.content) as {
+              taskId?: string;
+              title?: string;
+              event?: string;
+              runId?: string;
+              reason?: string;
+              summary?: string;
+              at?: string;
+            };
+            if (typeof data.taskId === 'string') {
+              history.push({
+                id: crypto.randomUUID(),
+                role: 'assistant',
+                content: '',
+                timestamp: '',
+                taskEvent: {
+                  taskId: data.taskId,
+                  ...(data.title ? { title: data.title } : {}),
+                  event: data.event ?? 'unknown',
+                  ...(data.runId ? { runId: data.runId } : {}),
+                  ...(data.reason ? { reason: data.reason } : {}),
+                  ...(data.summary ? { summary: data.summary } : {}),
+                  ...(data.at ? { at: data.at } : {}),
+                },
+              });
+            }
+          } catch {
+            /* 非法任务事件行忽略 */
+          }
+          continue;
+        }
         if (m.role !== 'assistant') continue;
         const text = parsePersistedAssistant(m.content);
         const last = history[history.length - 1];
@@ -858,6 +896,47 @@ function AgentConversation(): React.ReactElement {
     },
     [selectedAgent, loadHistory],
   );
+
+  // 后台任务：会话级轮询；任务状态变化（脚本完成/定时唤醒跑完）时刷新历史，
+  // 让「后台唤醒追加的对话」自动出现在当前会话里。
+  const loadingRef = useRef(false);
+  useEffect(() => {
+    loadingRef.current = loading;
+  }, [loading]);
+  const prevTaskSignatureRef = useRef(new Map<string, string>());
+  const handleBackgroundTaskActivity = useCallback(
+    (list: BackgroundTaskItem[]) => {
+      const prev = prevTaskSignatureRef.current;
+      let changed = false;
+      for (const task of list) {
+        const signature = `${task.status}:${task.lastRunAt ?? ''}:${task.runCount}`;
+        const previous = prev.get(task.id);
+        if (previous !== undefined && previous !== signature) changed = true;
+        prev.set(task.id, signature);
+      }
+      // 首次加载不算「变化」；会话正在流式输出时拖动历史会打断当前渲染，跳过
+      const target = sessionIdRef.current;
+      if (changed && target && !loadingRef.current) void loadHistory(target);
+    },
+    [loadHistory],
+  );
+  const {
+    tasks: backgroundTasks,
+    loading: backgroundTasksLoading,
+    refresh: refreshBackgroundTasks,
+    running: sessionRunning,
+  } = useSessionBackgroundTasks(sessionId, handleBackgroundTaskActivity);
+  const activeBackgroundTaskCount = useMemo(
+    () => backgroundTasks.filter(isActiveTask).length,
+    [backgroundTasks],
+  );
+  // 会话时间线里的任务事件卡片：按 taskId 拉完整任务后复用详情抽屉
+  const [inlineTaskDetail, setInlineTaskDetail] = useState<BackgroundTaskItem | null>(null);
+  const openBackgroundTaskDetail = useCallback((taskId: string) => {
+    void fetchTask(taskId).then((task) => {
+      if (task) setInlineTaskDetail(task);
+    });
+  }, []);
 
   // 链接带 ?s=xxx：Agent 就绪后恢复该会话（只消费一次；消费前不让 URL 同步覆盖它）
   useEffect(() => {
@@ -1187,6 +1266,7 @@ function AgentConversation(): React.ReactElement {
             );
             setLoading(false);
             void fetchThreads();
+            void refreshBackgroundTasks();
             setAttachments([]);
             // 运行模式只对本次发送生效：结束即回到默认「需要审批」
             setRunMode('ask');
@@ -1212,6 +1292,8 @@ function AgentConversation(): React.ReactElement {
       // 模型白名单判断依赖最新模型列表
       dbModels,
       fetchThreads,
+      // 本轮可能创建了后台任务，结束后刷新任务列表角标
+      refreshBackgroundTasks,
     ],
   );
 
@@ -1471,6 +1553,7 @@ function AgentConversation(): React.ReactElement {
         onTabChange={setActiveTab}
         canViewContext={canViewContext && !!selectedAgent?.contextCollectionEnabled}
         fileCount={workspaceFiles.length}
+        taskCount={activeBackgroundTaskCount}
         sessionId={sessionId}
         // 标题区宽度与会话列表一致，拖拽列表时同步；列表收起为窄栏时自适应
         leftWidth={threadListCollapsed ? undefined : threadListWidth}
@@ -1558,6 +1641,16 @@ function AgentConversation(): React.ReactElement {
                 onApprovalDecision={handleApprovalDecision}
                 onCiteClick={handleCiteClick}
                 onEditResend={loading ? undefined : handleEditResend}
+                onOpenBackgroundTask={openBackgroundTaskDetail}
+              />
+            )}
+            {activeTab === 'tasks' && (
+              <BackgroundTasksPanel
+                sessionId={sessionId}
+                tasks={backgroundTasks}
+                loading={backgroundTasksLoading}
+                running={sessionRunning}
+                onRefresh={refreshBackgroundTasks}
               />
             )}
             {activeTab === 'files' && (
@@ -1641,6 +1734,13 @@ function AgentConversation(): React.ReactElement {
           />
         </div>
       </div>
+
+      {/* 会话时间线后台任务详情 */}
+      <TaskDetailDrawer
+        task={inlineTaskDetail}
+        open={inlineTaskDetail !== null}
+        onClose={() => setInlineTaskDetail(null)}
+      />
 
       {/* 导出 Skill Modal */}
       <Modal

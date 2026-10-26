@@ -2054,6 +2054,18 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * 查询会话当前运行状态
+     */
+    '/api/ai/chat/sessions/:id/run': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 获取会话列表
      */
     '/api/ai/conversations': {
@@ -2355,6 +2367,70 @@ export type OpenAPIs = {
     '/api/ai/connectors/bindings': {
       query: never,
       params: never,
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取后台任务列表
+     */
+    '/api/ai/background-tasks': {
+      query: {
+        page?: number,
+        pageSize?: number,
+        sessionId?: string,
+        agentId?: string,
+        status?: string,
+        keyword?: string
+      },
+      params: never,
+      headers: never,
+      body: never,
+      response: {
+        /**
+         * @description 任务列表
+         */
+        list?: {}[],
+        /**
+         * @description 总数
+         */
+        total?: number
+      }
+    },
+    /**
+     * 获取后台任务详情
+     */
+    '/api/ai/background-tasks/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 获取后台任务运行记录
+     */
+    '/api/ai/background-tasks/:id/runs': {
+      query: {
+        limit?: number
+      },
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 读取后台脚本日志尾部
+     */
+    '/api/ai/background-tasks/:id/log': {
+      query: never,
+      params: {
+        id: string
+      },
       headers: never,
       body: never,
       response: any
@@ -5956,6 +6032,54 @@ export type OpenAPIs = {
       response: any
     },
     /**
+     * 取消后台任务
+     */
+    '/api/ai/background-tasks/:id/cancel': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 暂停后台定时任务
+     */
+    '/api/ai/background-tasks/:id/pause': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 恢复已暂停的后台任务
+     */
+    '/api/ai/background-tasks/:id/resume': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 立即执行后台任务（重新入队）
+     */
+    '/api/ai/background-tasks/:id/run': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
      * 新增虚拟机宿主
      */
     '/api/ai/runtime-hosts': {
@@ -6926,6 +7050,18 @@ export type OpenAPIs = {
      * 解绑连接器（级联停用托管 MCP）
      */
     '/api/ai/connectors/bindings/:id': {
+      query: never,
+      params: {
+        id: string
+      },
+      headers: never,
+      body: never,
+      response: any
+    },
+    /**
+     * 删除后台任务及其运行记录
+     */
+    '/api/ai/background-tasks/:id': {
       query: never,
       params: {
         id: string

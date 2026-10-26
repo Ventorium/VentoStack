@@ -14,6 +14,7 @@ import {
 } from '@ant-design/icons';
 import { Avatar, Button, Input, Space, Tooltip, Typography, message as msg, theme } from 'antd';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import TaskEventLine from '../../tasks/components/task-event-line';
 import type { ChatApproval, ChatMessage } from '../types';
 import AgentSteps, { type StepDetail, StepRow } from './AgentSteps';
 import ApprovalModal from './ApprovalModal';
@@ -35,6 +36,8 @@ interface ChatAreaProps {
   onEditResend?: (messageId: string, newContent: string) => void;
   /** 只读历史回放：保留消息样式，隐藏编辑、反馈、重新生成和审批交互 */
   readOnly?: boolean;
+  /** 点击会话时间线里的后台任务事件：打开任务详情 */
+  onOpenBackgroundTask?: (taskId: string) => void;
 }
 
 /** 从引用行解析名称与可选 URL：支持 `- 来源: [标题](url)`、`- 来源: https://...` 与纯文本 */
@@ -207,6 +210,7 @@ export default function ChatArea({
   onCiteClick,
   onEditResend,
   readOnly = false,
+  onOpenBackgroundTask,
 }: ChatAreaProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 审批弹窗的 Portal 目标：挂进对话容器，遮罩只覆盖对话区域
@@ -279,8 +283,7 @@ export default function ChatArea({
   // 待审批请求：同一时刻至多一个（agent-loop 在流内挂起等待 decision），交互交给弹窗。
   // 已过期的不再弹窗（超时即默认拒绝），避免刷新恢复出的过期条目把弹窗永久挂住
   const pendingApproval = messages.find(
-    (msg) =>
-      msg.approval?.status === 'pending' && Date.parse(msg.approval.expiresAt) > Date.now(),
+    (msg) => msg.approval?.status === 'pending' && Date.parse(msg.approval.expiresAt) > Date.now(),
   )?.approval;
 
   if (messages.length === 0) {
@@ -308,6 +311,12 @@ export default function ChatArea({
       <div ref={containerRef} className="flex-1 min-h-0 overflow-auto p-4">
         <div className="max-w-[960px] mx-auto">
           {messages.map((msg) => {
+            // 后台任务事件不是真实聊天消息：渲染为时间线事件卡片（对齐 DSH 的 job/settled 交互）
+            if (msg.taskEvent) {
+              return (
+                <TaskEventLine key={msg.id} event={msg.taskEvent} onClick={onOpenBackgroundTask} />
+              );
+            }
             const isUser = msg.role === 'user';
             // 审批状态标在对应的工具行上：优先按 toolCallId 定位，
             // 历史条目没有 toolCallId 时退化为"最后一个工具行"

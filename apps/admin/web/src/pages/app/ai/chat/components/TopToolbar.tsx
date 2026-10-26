@@ -63,6 +63,8 @@ interface TopToolbarProps {
   onTabChange?: (key: string) => void;
   canViewContext?: boolean;
   fileCount?: number;
+  /** 活跃后台任务数（页签角标） */
+  taskCount?: number;
   leftWidth?: number;
   /** 当前会话 ID：渠道通知设置是会话级的，必须先有会话 */
   sessionId?: string;
@@ -138,6 +140,7 @@ export default function TopToolbar({
   onTabChange,
   canViewContext = false,
   fileCount = 0,
+  taskCount = 0,
   leftWidth,
   sessionId,
 }: TopToolbarProps) {
@@ -311,6 +314,7 @@ export default function TopToolbar({
         onTabChange={onTabChange}
         canViewContext={canViewContext}
         fileCount={fileCount}
+        taskCount={taskCount}
         className="min-w-0 flex-1"
       />
 

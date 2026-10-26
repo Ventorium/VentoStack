@@ -1,5 +1,6 @@
 import {
   DatabaseOutlined,
+  FieldTimeOutlined,
   FileOutlined,
   NodeIndexOutlined,
   SoundOutlined,
@@ -20,6 +21,7 @@ export const CHAT_TABS: ChatTab[] = [
   { key: 'files', label: '文件', icon: <FileOutlined /> },
   { key: 'memory', label: '记忆', icon: <DatabaseOutlined /> },
   { key: 'knowledge', label: '知识库', icon: <DatabaseOutlined /> },
+  { key: 'tasks', label: '后台任务', icon: <FieldTimeOutlined /> },
   { key: 'context', label: '上下文', icon: <NodeIndexOutlined />, adminOnly: true },
 ];
 
@@ -30,6 +32,8 @@ interface FunctionTabsProps {
   canViewContext?: boolean;
   /** 工作区文件数（>0 时在「文件」页签上挂角标） */
   fileCount?: number;
+  /** 活跃后台任务数（>0 时在「后台任务」页签上挂角标） */
+  taskCount?: number;
   className?: string;
 }
 
@@ -38,6 +42,7 @@ export default function FunctionTabs({
   onTabChange,
   canViewContext = false,
   fileCount = 0,
+  taskCount = 0,
   className,
 }: FunctionTabsProps): React.ReactElement {
   return (
@@ -53,6 +58,11 @@ export default function FunctionTabs({
             <span>{tab.label}</span>
             {tab.key === 'files' && fileCount > 0 && (
               <Tag className="m-0 px-1 py-0 text-[10px] leading-[14px]">{fileCount}</Tag>
+            )}
+            {tab.key === 'tasks' && taskCount > 0 && (
+              <Tag color="blue" className="m-0 px-1 py-0 text-[10px] leading-[14px]">
+                {taskCount}
+              </Tag>
             )}
           </Space>
         ),

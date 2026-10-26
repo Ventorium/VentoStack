@@ -41,6 +41,20 @@ export interface ToolBlock {
 
 export type MessageBlock = TextBlock | ToolBlock;
 
+/** 会话时间线里的后台任务事件（由会话 JSONL 的 background_task 自定义条目还原） */
+export interface BackgroundTaskEvent {
+  taskId: string;
+  title?: string;
+  event: string;
+  runId?: string;
+  status?: string;
+  reason?: string;
+  summary?: string;
+  pid?: string;
+  exitCode?: number | null;
+  at?: string;
+}
+
 /** 深度研究阶段 */
 export type ResearchStage = 'planning' | 'researching' | 'synthesizing';
 
@@ -78,6 +92,8 @@ export interface ChatMessage {
   sources?: ResearchSource[];
   /** 工具审批请求（当前消息流中待确认/已确认的工具审批） */
   approval?: ChatApproval;
+  /** 后台任务事件（该条不是真实聊天消息，渲染为时间线事件卡片） */
+  taskEvent?: BackgroundTaskEvent;
   /** 模型推理/思考内容（reasoning），与正文分离展示 */
   thinking?: string;
   model?: string;
