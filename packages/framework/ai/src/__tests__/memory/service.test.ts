@@ -35,6 +35,35 @@ describe("tenant-scoped Memory", () => {
     expect((await memory.listSessions(scope, "agent-a"))[0]?.sessionId).toBe(sessionId);
   });
 
+  test("surfaces background_task custom entries as timeline events without consuming history limit", async () => {
+    const { db } = createMockDatabase();
+    const memory = createMemoryService({ db, storagePath });
+    const scope = { tenantId: "tenant-a", userId: "user-a" };
+    const { sessionId } = await memory.createSession({ ...scope, agentId: "agent-a" });
+
+    await memory.appendMessage(sessionId, scope, { role: "user", content: "后台下载大文件" });
+    await memory.appendCustomEntry(sessionId, scope, "background_task", {
+      taskId: "task-1",
+      title: "下载模型",
+      event: "started",
+      at: "2026-10-26T10:00:00.000Z",
+    });
+    await memory.appendMessage(sessionId, scope, { role: "assistant", content: "已开始后台下载" });
+
+    const history = await memory.getHistory(sessionId, scope);
+    expect(history.map((m) => m.role)).toEqual(["user", "background_task", "assistant"]);
+    const event = JSON.parse(history[1]!.content) as { taskId: string; event: string };
+    expect(event.taskId).toBe("task-1");
+    expect(event.event).toBe("started");
+
+    // limit 只作用于真实消息行：任务事件不占额度（limit=2 仍能拿到两条消息 + 任务事件）
+    const twoMessages = await memory.getHistory(sessionId, scope, 2);
+    expect(twoMessages.map((m) => m.role)).toEqual(["user", "background_task", "assistant"]);
+    // 窗口之外的旧事件随消息一起被裁掉（与审批行一致）
+    const limited = await memory.getHistory(sessionId, scope, 1);
+    expect(limited.map((m) => m.role)).toEqual(["assistant"]);
+  });
+
   test("persists assistant reasoning alongside the message for replay", async () => {
     const { db } = createMockDatabase();
     const memory = createMemoryService({ db, storagePath });

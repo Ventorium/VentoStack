@@ -360,6 +360,54 @@ export { createConnectorRoutes } from './routes/connector';
 export { AiConnectorCatalogModel, AiConnectorBindingModel } from './models/connector';
 export { createAiSessionMeta } from './migrations/020_create_ai_session_meta';
 
+// ---- Background Tasks（后台脚本任务 + 定时唤醒） ----
+export { createAiBackgroundTaskTables } from './migrations/024_create_ai_background_task_tables';
+export { addBackgroundTaskLimits } from './migrations/025_add_background_task_limits';
+export {
+  AiBackgroundTaskModel,
+  AiBackgroundTaskRunModel,
+  AiSessionRunModel,
+} from './models/background-task';
+export { createBackgroundTaskService } from './services/background-task';
+export {
+  DEFAULT_SCRIPT_MAX_RUNTIME_SECONDS,
+  DEFAULT_SCHEDULE_LIFETIME_HOURS,
+} from './services/background-task';
+export type {
+  BackgroundTask,
+  BackgroundTaskRun,
+  BackgroundTaskKind,
+  BackgroundTaskStatus,
+  BackgroundRunStatus,
+  BackgroundRunTrigger,
+  BackgroundTaskScope,
+  CreateBackgroundTaskParams,
+  ListBackgroundTasksParams,
+  BackgroundTaskService,
+} from './services/background-task';
+export {
+  BackgroundScheduleError,
+  computeNextRun,
+  nextCronOccurrence,
+  parseCron,
+  validateSchedule,
+} from './agent-engine/background-task-schedule';
+export type {
+  BackgroundSchedule,
+  BackgroundScheduleKind,
+  ParsedCron,
+} from './agent-engine/background-task-schedule';
+export { createBackgroundTaskRunner, shellQuote } from './agent-engine/background-task-runner';
+export type {
+  BackgroundTaskRunner,
+  BackgroundTaskRunnerDeps,
+  ScriptRuntime,
+} from './agent-engine/background-task-runner';
+export { createRunRegistry } from './agent-engine/run-registry';
+export type { RunRegistry, RunHandle, RunKind, RunScope } from './agent-engine/run-registry';
+export { createBackgroundTaskRoutes } from './routes/background-task';
+export { createBackgroundTaskTools } from './tools/background-task';
+
 // ---- Session Service ----
 export { createSessionService } from './session-service';
 export type {

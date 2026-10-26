@@ -504,6 +504,10 @@ export interface AgentRunParams {
   thinkingLevel?: ThinkingLevel;
   /** 审批策略（ask/auto/trust）；缺省 ask。critical 工具无视该值 */
   runMode?: RunMode;
+  /**
+   * 无人值守运行（后台任务唤醒）：没有人在线审批，需人工审批的工具立即拒绝而非挂起。
+   */
+  unattended?: boolean;
   temperature?: number;
   maxTokens?: number;
   /** 按请求注入的工具注册表（KB 等租户相关工具已绑定请求 tenantId）；缺省使用 deps.toolRegistry */
@@ -1546,6 +1550,7 @@ ${memberList}
         messages,
         tools: runtimeTools,
         ...(effectiveRunMode === undefined ? {} : { runMode: effectiveRunMode }),
+        ...(params.unattended === true ? { unattended: true } : {}),
       };
 
       // 用户消息先行落盘：即使后续轮次中断也不丢失

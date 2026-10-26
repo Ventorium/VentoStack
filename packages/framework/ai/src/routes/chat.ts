@@ -13,6 +13,7 @@ import {
 import type { Middleware, Router } from '@ventostack/core';
 import { createConverter } from '@ventostack/file2md';
 import type { AgentLoop } from '../agent-engine/agent-loop';
+import { type RunRegistry, createRunRegistry } from '../agent-engine/run-registry';
 import { createFileValidator } from '../knowledge-base/file-security';
 import { RUN_MODES } from '../llm-gateway/types';
 import type { RunMode, ThinkingLevel } from '../llm-gateway/types';
@@ -79,6 +80,11 @@ export function createChatRoutes(
       tenantId: string;
       userId: string;
     }) => Promise<void>;
+    /**
+     * 会话运行租约：与后台任务/渠道共用同一把锁，保证同一会话同一时刻只有一个 run 写历史。
+     * 缺省使用进程内实现（单机部署/测试），生产由 AI 模块注入 DB 租约实现。
+     */
+    runRegistry?: RunRegistry;
     /** 会话标题生成：对话结束后由总结模型产出 ≤20 字标题（Agent 未配置总结模型时返回 null） */
     generateSessionTitle?: (params: {
       sessionId: string;
@@ -101,14 +107,12 @@ export function createChatRoutes(
 ): Router {
   const router = createRouter();
   /**
-   * 活跃对话运行表：sessionId → 运行句柄。
-   * 用于「显式停止」——刷新/断开不再等于停止（断开后仍要把本轮跑完并落盘，见 sse.ts），
-   * 因此流内 signal 与 HTTP 请求 signal 解耦：请求 signal 只管写，运行 signal 管取消。
+   * 会话运行租约：刷新/断开不再等于停止（断开后仍要把本轮跑完并落盘，见 sse.ts），
+   * 因此流内 signal 与 HTTP 请求 signal 解耦。注入时与后台任务共享同一把锁；
+   * 未注入时退化为进程内实现（单机/测试），语义不变：新消息抢占旧运行。
    */
-  const activeRuns = new Map<
-    string,
-    { controller: AbortController; tenantId: string; userId: string; startedAt: number }
-  >();
+  const runRegistry: RunRegistry =
+    options?.runRegistry ?? createRunRegistry({ instanceId: `chat-local-${process.pid}` });
   const attachmentValidator = createFileValidator({ maxFileSize: 20 * 1024 * 1024 });
   const thinkingLevels = new Set<ThinkingLevel>([
     'off',
@@ -267,6 +271,23 @@ export function createChatRoutes(
     perm('ai:chat', 'use'),
   );
 
+  // 查询会话当前是否有运行（后台任务面板据此展示「执行中」并避免重复触发）
+  router.get(
+    '/api/ai/chat/sessions/:id/run',
+    routeDoc('查询会话当前运行状态'),
+    async (ctx) => {
+      const id = (ctx.params as Record<string, string>).id!;
+      const userId = (ctx.user as { id?: string })?.id ?? '';
+      const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
+      const run = runRegistry.get(id);
+      if (!run || run.tenantId !== tenantId || run.userId !== userId) {
+        return success({ running: false });
+      }
+      return success({ running: true, kind: run.kind, startedAt: new Date(run.startedAt).toISOString() });
+    },
+    perm('ai:chat', 'use'),
+  );
+
   // 停止会话进行中的回复（显式停止）：断开/刷新不会取消运行，只有这里会
   router.post(
     '/api/ai/chat/sessions/:id/stop',
@@ -276,12 +297,12 @@ export function createChatRoutes(
         const id = (ctx.params as Record<string, string>).id!;
         const userId = (ctx.user as { id?: string })?.id ?? '';
         const tenantId = (ctx.user as { tenantId?: string })?.tenantId ?? '';
-        const run = activeRuns.get(id);
+        const run = runRegistry.get(id);
         // 归属校验：非本人/本租户的运行一律按"不存在"处理，避免探测他人会话
         if (!run || run.tenantId !== tenantId || run.userId !== userId) {
           return fail('该会话没有进行中的回复', 404, 404);
         }
-        run.controller.abort();
+        runRegistry.abort(id, { tenantId, userId });
         return success({ stopped: true });
       } catch (e) {
         return handleError(e);
@@ -996,14 +1017,13 @@ export function createChatRoutes(
         if (attachmentError) return attachmentError;
 
         // 同一会话已有进行中的运行：先中断旧的，避免两个 run 同时写一份会话历史
-        activeRuns.get(sessionId)?.controller.abort();
-        const runController = new AbortController();
-        activeRuns.set(sessionId, {
-          controller: runController,
+        const runHandle = await runRegistry.begin({
+          sessionId,
           tenantId,
           userId,
-          startedAt: Date.now(),
+          kind: 'web',
         });
+        const runController = runHandle.controller;
 
         const stream = agentLoop.runStream({
           agentId: body.agentId as string,
@@ -1069,9 +1089,8 @@ export function createChatRoutes(
               }
             }
           } finally {
-            // 运行真正结束（正常 / 停止 / 断开后后台跑完）才摘掉句柄
-            if (activeRuns.get(sessionId)?.controller === runController)
-              activeRuns.delete(sessionId);
+            // 运行真正结束（正常 / 停止 / 断开后后台跑完）才释放会话租约
+            await runHandle.release();
           }
         })();
 

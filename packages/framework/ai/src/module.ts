@@ -36,6 +36,8 @@ import type { LLMGateway, LLMProvider, RunMode } from './llm-gateway/types';
 
 // Agent Engine
 import { type AgentConfig, type AgentLoop, createAgentLoop } from './agent-engine/agent-loop';
+import { createBackgroundTaskRunner, shellQuote } from './agent-engine/background-task-runner';
+import type { BackgroundTaskRunner } from './agent-engine/background-task-runner';
 import { type AgentEventEmitter, createEventEmitter } from './agent-engine/events';
 import {
   type AgentHarness,
@@ -43,12 +45,21 @@ import {
   createAgentHarness,
 } from './agent-engine/harness';
 import { createMcpToolSource } from './agent-engine/mcp-tool-source';
+import { createRunRegistry } from './agent-engine/run-registry';
+import type { RunRegistry } from './agent-engine/run-registry';
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
   BeforeToolCallContext,
   BeforeToolCallResult,
 } from './agent-engine/types';
+import { createBackgroundTaskRoutes } from './routes/background-task';
+import { createBackgroundTaskService } from './services/background-task';
+import type { BackgroundTask, BackgroundTaskService } from './services/background-task';
+import {
+  createBackgroundTaskToolCatalog,
+  createBackgroundTaskTools,
+} from './tools/background-task';
 
 // Knowledge Base
 import { createKnowledgeBaseService } from './knowledge-base/service';
@@ -70,48 +81,47 @@ import type { CompactionSettings } from './compaction/compaction';
 import { createLazyJsonlSessionStorage, createSession } from './session';
 
 import { createRequire } from 'node:module';
-import { createAgentRuntimeClient } from './agent-runtime/client';
 import type { AgentRuntimeConfig, RuntimePackageBindings } from './agent-runtime/client';
-import { createAgentRuntimeTools } from './agent-runtime/tools';
 import { createRuntimeSettings } from './agent-runtime/settings';
 import type { RuntimeSettings } from './agent-runtime/settings';
+import { createAgentRuntimeTools } from './agent-runtime/tools';
 import { type AgentCrudService, createAgentRoutes } from './routes/agent';
 import { type ConversationService, createChatRoutes } from './routes/chat';
+import { createConnectorRoutes } from './routes/connector';
 // Routes
 import { createExpertRoutes } from './routes/expert';
 import { createKnowledgeBaseRoutes } from './routes/knowledge-base';
 import { createMcpServerRoutes } from './routes/mcp-server';
 import { createProviderRoutes } from './routes/provider';
+import { createRuntimeHostRoutes } from './routes/runtime-host';
 import { createSkillRoutes } from './routes/skill';
 import { createToolRegistryRoutes } from './routes/tool-registry';
 import { createAgentService } from './services/agent';
-import { createRuntimeHostService } from './services/runtime-host';
-import { createRuntimeCapacityService } from './services/runtime-capacity';
-import { createRuntimeClientRegistry } from './services/runtime-client-registry';
-import type { RuntimeClientRegistry } from './services/runtime-client-registry';
-import { createRuntimeWorkspaceBackupService } from './services/runtime-workspace-backup';
-import { createRuntimeKnowledgeSyncService } from './services/runtime-kb-sync';
-import { createRuntimeMemorySyncService } from './services/runtime-memory-sync';
-import { createRuntimeInstanceService } from './services/runtime-instance';
-import { createRuntimeHostMonitor } from './services/runtime-monitor';
-import { createRuntimeNotifier } from './services/runtime-notifier';
-import { createRuntimeHostRoutes } from './routes/runtime-host';
-import { createConnectorRoutes } from './routes/connector';
 import {
   IN_CHAT_APPROVAL_WAIT_MS,
   createApprovalService,
   createApprovalWaiter,
 } from './services/approval';
 import type { ApprovalWaitResult } from './services/approval';
+import { createConnectorService } from './services/connector';
+import type { ConnectorService } from './services/connector';
 import { createExpertService } from './services/expert';
 import type { ExpertService } from './services/expert';
 import { createScopedKBService } from './services/kb-scope';
 import { createMcpServerService } from './services/mcp-server';
 import type { McpServerService } from './services/mcp-server';
-import { createConnectorService } from './services/connector';
-import type { ConnectorService } from './services/connector';
 import { createModelConfigService } from './services/model-config';
 import { createProviderService } from './services/provider';
+import { createRuntimeCapacityService } from './services/runtime-capacity';
+import { createRuntimeClientRegistry } from './services/runtime-client-registry';
+import type { RuntimeClientRegistry } from './services/runtime-client-registry';
+import { createRuntimeHostService } from './services/runtime-host';
+import { createRuntimeInstanceService } from './services/runtime-instance';
+import { createRuntimeKnowledgeSyncService } from './services/runtime-kb-sync';
+import { createRuntimeMemorySyncService } from './services/runtime-memory-sync';
+import { createRuntimeHostMonitor } from './services/runtime-monitor';
+import { createRuntimeNotifier } from './services/runtime-notifier';
+import { createRuntimeWorkspaceBackupService } from './services/runtime-workspace-backup';
 import { createSkillService } from './services/skill';
 import { createSkillStoreService } from './services/skill-store';
 import type { SkillStoreService } from './services/skill-store';
@@ -163,7 +173,11 @@ export interface AIModule {
     /** 会话统一入口（JSONL 为准 + ai_session_meta 投影）：渠道/定时任务等复用 */
     sessionService: SessionService;
     /** 请求级工具注册表工厂：渠道侧运行 Agent 时复用同一套租户工具 */
-    createToolRegistry(tenantId: string, userId?: string, sessionId?: string): Promise<ToolRegistry>;
+    createToolRegistry(
+      tenantId: string,
+      userId?: string,
+      sessionId?: string,
+    ): Promise<ToolRegistry>;
     /** Agent 读取（渠道通知摘要要取 summaryModel） */
     agentCrud: AgentCrudService;
     /** 虚拟机宿主管理 */
@@ -176,6 +190,12 @@ export interface AIModule {
     runtimeKbSync: ReturnType<typeof createRuntimeKnowledgeSyncService>;
     /** 工作区备份 */
     runtimeWorkspaceBackup: ReturnType<typeof createRuntimeWorkspaceBackupService>;
+    /** 后台任务台账（脚本任务/定时唤醒） */
+    backgroundTasks: BackgroundTaskService;
+    /** 后台任务调度运行时 */
+    backgroundTaskRunner: BackgroundTaskRunner;
+    /** 会话运行租约（Web 对话 / 渠道 / 后台触发共用） */
+    runRegistry: RunRegistry;
   };
   router: Router;
   /** 创建 Agent Harness 实例 */
@@ -332,6 +352,14 @@ export interface AIModuleDeps {
     userId: string;
     finalContent: string;
   }) => Promise<void>;
+  /** 后台任务（脚本/定时唤醒）运行参数覆盖（测试/部署） */
+  backgroundTasks?: {
+    tickIntervalMs?: number;
+    maxActiveTasksPerUser?: number;
+    maxTriggerPerTick?: number;
+    maxScriptsPerTick?: number;
+    turnTimeoutMs?: number;
+  };
 }
 
 // ---- Provider 创建 ----
@@ -598,16 +626,38 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     settings: runtimeSettings,
     instanceService: runtimeInstances,
     ...(deps.notification ? { notification: deps.notification } : {}),
-    ...(deps.notifyPlatformAdmins
-      ? { notifyPlatformAdmins: deps.notifyPlatformAdmins }
-      : {}),
+    ...(deps.notifyPlatformAdmins ? { notifyPlatformAdmins: deps.notifyPlatformAdmins } : {}),
   });
+  /** 读取后台脚本日志尾部（后台任务详情接口/工具用） */
+  async function readBackgroundTaskLog(task: BackgroundTask): Promise<string | null> {
+    if (!task.instanceId || !task.sandboxId || !task.execLogPath) return null;
+    try {
+      const instance = await runtimeInstances.getById(task.instanceId);
+      if (!instance?.sandboxId) return null;
+      const client = await runtimeClients.get(instance.hostId);
+      const result = await client.runCommand(
+        task.sandboxId,
+        ['sh', '-lc', `tail -c 20000 ${shellQuote(task.execLogPath)}`],
+        { timeoutMs: 15_000 },
+      );
+      return result.stdout || null;
+    } catch {
+      return null;
+    }
+  }
+
   const runtimeBackupTimers = new Map<string, ReturnType<typeof setTimeout>>();
   let runtimeNotifierTimer: ReturnType<typeof setInterval> | null = null;
   let runtimeWorkspaceBackupTimer: ReturnType<typeof setInterval> | null = null;
   let runtimeWorkspaceBackupRunning = false;
   function scheduleWorkspaceBackup(
-    instance: { id: string; tenantId: string; userId: string; agentId: string; sandboxId: string | null },
+    instance: {
+      id: string;
+      tenantId: string;
+      userId: string;
+      agentId: string;
+      sandboxId: string | null;
+    },
     client: import('./agent-runtime/types').AgentRuntimeClient,
   ): void {
     if (!instance.sandboxId) return;
@@ -677,9 +727,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
             });
           } catch (error) {
             console.warn('[ai] 知识库增量同步失败，已标记待重试:', error);
-            await runtimeKbSync
-              .markDirty(event.tenantId, session.sessionId)
-              .catch(() => undefined);
+            await runtimeKbSync.markDirty(event.tenantId, session.sessionId).catch(() => undefined);
           }
         }
       })().catch((error) => {
@@ -779,6 +827,11 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
    * KB 等租户相关工具按租户绑定：对话路由按请求 tenantId 构建请求级注册表
    * （见 createChatRoutes options），默认注册表供工具发现/管理路由使用。
    */
+  // 后台任务服务在装配后半段创建（依赖 db/session/memory）；工具注册表按请求懒取，
+  // 因此用 ref 占位避免「先建注册表、后建服务」的顺序问题。
+  let backgroundTaskServiceRef: BackgroundTaskService | null = null;
+  let sessionServiceRef: SessionService | null = null;
+
   function buildBaseToolRegistry(
     tenantId: string,
     userId?: string,
@@ -861,6 +914,34 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         },
       });
     }
+    // 后台任务工具：让 Agent 自己布置/查询/取消长任务与定时唤醒。
+    // 需要会话上下文（任务归属到 user+session），且服务已装配。
+    if (userId && sessionId && backgroundTaskServiceRef) {
+      const backgroundTasks = backgroundTaskServiceRef;
+      const tools = createBackgroundTaskTools({
+        tasks: backgroundTasks,
+        scope: { tenantId, userId, sessionId },
+        ...(deps.backgroundTasks?.maxActiveTasksPerUser === undefined
+          ? {}
+          : { maxActiveTasksPerUser: deps.backgroundTasks.maxActiveTasksPerUser }),
+        async resolveAgent() {
+          const view = await sessionServiceRef?.get(sessionId, { tenantId, userId });
+          if (!view) return null;
+          const agent = (await agentCrudService.getById(
+            view.agentId,
+            tenantId,
+          )) as AgentConfig | null;
+          if (!agent) return null;
+          return {
+            agentId: view.agentId,
+            requiresVirtualEnvironment: agent.requiresVirtualEnvironment === true,
+          };
+        },
+        readLog: (task) => readBackgroundTaskLog(task),
+      });
+      for (const tool of tools) registry.register(tool);
+    }
+
     if (runtimeBindings) {
       registry.register({
         name: 'terminal',
@@ -1044,7 +1125,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     allowedStdioCommands: allowedMcpCommands,
     allowedHttpHosts: allowedMcpHosts,
     credentialEncryptor: deps.credentialEncryptor,
-    authHeadersProvider: (server) => connectorService.resolveAuthHeaders(server.id, server.tenantId),
+    authHeadersProvider: (server) =>
+      connectorService.resolveAuthHeaders(server.id, server.tenantId),
   });
 
   // 连接器服务：目录 + 授权 + 托管 MCP
@@ -1184,7 +1266,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   }> {
     const rawResources = (
       params.agentConfig as unknown as {
-        config?: { runtime?: { resources?: Partial<import('./agent-runtime/types').RuntimeResources> } };
+        config?: {
+          runtime?: { resources?: Partial<import('./agent-runtime/types').RuntimeResources> };
+        };
       }
     ).config?.runtime?.resources;
     const ensured = await runtimeInstances.ensure({
@@ -1206,11 +1290,10 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     const { instance, client } = ensured;
     if (!instance.sandboxId) throw new Error('虚拟机实例尚未就绪');
     await client
-      .runCommand(instance.sandboxId, [
-        'mkdir',
-        '-p',
-        `/workspace/${params.sessionId}/outputs`,
-      ], { cwd: '/workspace', timeoutMs: 15_000 })
+      .runCommand(instance.sandboxId, ['mkdir', '-p', `/workspace/${params.sessionId}/outputs`], {
+        cwd: '/workspace',
+        timeoutMs: 15_000,
+      })
       .catch((error) => console.warn('[ai] 创建会话输出目录失败（不阻断对话）:', error));
 
     try {
@@ -1230,9 +1313,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     } catch (error) {
       await runtimeKbSync.markDirty(params.tenantId, params.sessionId).catch(() => undefined);
       throw Object.assign(
-        new Error(
-          `知识库同步失败：${error instanceof Error ? error.message : String(error)}`,
-        ),
+        new Error(`知识库同步失败：${error instanceof Error ? error.message : String(error)}`),
         { code: 'KB_SYNC_FAILED', status: 503 },
       );
     }
@@ -1412,6 +1493,24 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         context.tenantId,
       );
       if (recent) return { approved: true, reason: '该工具此前已获审批' };
+      // 无人值守（后台任务唤醒）：没有人在线点审批，直接拒绝而不是挂起等待超时。
+      // 已批准过的同工具同参数仍可放行（上面的 recent 分支），不引入任何自动批准路径。
+      if (context.unattended) {
+        eventBus?.emit(
+          { name: 'ai.approval.unattended_denied' },
+          {
+            toolName: toolCall.name,
+            riskLevel,
+            tenantId: context.tenantId,
+            requestedBy: context.userId,
+            sessionId: context.sessionId,
+          },
+        );
+        return {
+          approved: false,
+          reason: '后台任务为无人值守运行，需要人工审批的工具未执行',
+        };
+      }
       const sessionId = context.sessionId;
       try {
         const request = await approvalService.request(
@@ -1550,6 +1649,153 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     memory,
     ...(db ? { db: db as import('@ventostack/database').Database } : {}),
   });
+  sessionServiceRef = sessionService;
+
+  // ---- 后台任务（脚本任务 + 定时唤醒） ----
+  // 实例标识用于多实例租约归属；同一实例内的运行互斥由 RunRegistry 进程内 Map 负责。
+  const instanceId =
+    process.env.VENTO_INSTANCE_ID?.trim() || `${process.pid}-${crypto.randomUUID().slice(0, 8)}`;
+  const backgroundTaskService = createBackgroundTaskService({ db: runtimeDb });
+  backgroundTaskServiceRef = backgroundTaskService;
+  // 全局工具注册表只用于「列出工具 / Agent 编辑页勾选」；按请求创建的工具实例在
+  // buildBaseToolRegistry 中注册（带 tenant/user/session 作用域）。这里补目录占位。
+  for (const tool of createBackgroundTaskToolCatalog()) {
+    if (!toolRegistry.get(tool.name)) toolRegistry.register(tool);
+  }
+  const runRegistry = createRunRegistry({ db: runtimeDb, instanceId });
+  const backgroundTaskRunner = createBackgroundTaskRunner({
+    tasks: backgroundTaskService,
+    instanceId,
+    sessionRuns: runRegistry,
+    ...(deps.backgroundTasks?.tickIntervalMs === undefined
+      ? {}
+      : { tickIntervalMs: deps.backgroundTasks.tickIntervalMs }),
+    ...(deps.backgroundTasks?.maxTriggerPerTick === undefined
+      ? {}
+      : { maxTriggerPerTick: deps.backgroundTasks.maxTriggerPerTick }),
+    ...(deps.backgroundTasks?.maxScriptsPerTick === undefined
+      ? {}
+      : { maxScriptsPerTick: deps.backgroundTasks.maxScriptsPerTick }),
+    ...(deps.backgroundTasks?.turnTimeoutMs === undefined
+      ? {}
+      : { turnTimeoutMs: deps.backgroundTasks.turnTimeoutMs }),
+    /** 脚本执行环境：ensure=true 时确保虚拟机就绪（任务首次启动），否则按既有实例探活 */
+    async resolveRuntime(task, options) {
+      try {
+        let instance = options.ensure
+          ? null
+          : task.instanceId
+            ? await runtimeInstances.getById(task.instanceId)
+            : null;
+        if (options.ensure) {
+          const agent = (await agentCrudService.getById(
+            task.agentId,
+            task.tenantId,
+          )) as AgentConfig | null;
+          if (!agent?.requiresVirtualEnvironment) return null;
+          const ensured = await runtimeInstances.ensure({
+            tenantId: task.tenantId,
+            userId: task.userId,
+            agentId: task.agentId,
+            ...(agent.networkEnabled === undefined ? {} : { networkEnabled: agent.networkEnabled }),
+          });
+          instance = ensured.instance;
+          if (!instance.sandboxId) return null;
+          // 会话输出目录与交互式对话保持一致
+          await ensured.client
+            .runCommand(
+              instance.sandboxId,
+              [
+                'sh',
+                '-lc',
+                `mkdir -p ${shellQuote(`/workspace/${task.sessionId}/outputs`)} ${shellQuote('/workspace/.agent-logs')}`,
+              ],
+              { cwd: '/workspace', timeoutMs: 15_000 },
+            )
+            .catch(() => undefined);
+          return {
+            client: ensured.client,
+            instanceId: instance.id,
+            sandboxId: instance.sandboxId,
+            workspace: '/workspace',
+          };
+        }
+        if (!instance || instance.state !== 'running' || !instance.sandboxId) return null;
+        const client = await runtimeClients.get(instance.hostId);
+        return {
+          client,
+          instanceId: instance.id,
+          sandboxId: instance.sandboxId,
+          workspace: '/workspace',
+        };
+      } catch (error) {
+        console.warn(
+          '[ai] 后台任务解析虚拟机运行时失败:',
+          error instanceof Error ? error.message : error,
+        );
+        return null;
+      }
+    },
+    /** 定时唤醒/完成通知：跑一轮无头 Agent（与 Web 对话共用工具注册表与会话运行租约） */
+    async runAgentTurn({ task, message, signal }) {
+      if (!agentLoopRef) throw new Error('AI 运行时尚未就绪');
+      const toolRegistry = await buildToolRegistry(task.tenantId, task.userId, task.sessionId);
+      let finalContent = '';
+      for await (const chunk of agentLoopRef.runStream({
+        agentId: task.agentId,
+        userId: task.userId,
+        tenantId: task.tenantId,
+        sessionId: task.sessionId,
+        message,
+        toolRegistry,
+        // 无人值守：auto 由审批子智能体判定；需要人工审批的工具立即拒绝而非挂起
+        runMode: 'auto',
+        unattended: true,
+        signal,
+      })) {
+        if (chunk.type === 'content' && chunk.delta) finalContent += chunk.delta;
+        if (chunk.type === 'error') {
+          throw new Error(chunk.error?.message ?? '后台 Agent 运行失败');
+        }
+      }
+      // 平台钩子：渠道自动推送 + VM 全局记忆/工作区回写（失败不影响任务结算）
+      if (deps.onRunFinished && finalContent) {
+        await deps
+          .onRunFinished({
+            sessionId: task.sessionId,
+            agentId: task.agentId,
+            tenantId: task.tenantId,
+            userId: task.userId,
+            finalContent,
+          })
+          .catch((error) => console.warn('[ai] 后台任务结束钩子失败（不影响任务）:', error));
+      }
+      return finalContent.trim();
+    },
+    async notify({ task, title, content }) {
+      await deps.notification?.send({
+        receiverId: task.userId,
+        channel: 'in_app',
+        title,
+        content,
+      });
+      eventBus?.emit(
+        { name: 'ai.background_task.notified' },
+        { taskId: task.id, tenantId: task.tenantId, userId: task.userId },
+      );
+    },
+    emit(name, payload) {
+      eventBus?.emit({ name }, payload);
+    },
+    async appendSessionEntry(task, data) {
+      await memory.appendCustomEntry(
+        task.sessionId,
+        { tenantId: task.tenantId, userId: task.userId },
+        'background_task',
+        data,
+      );
+    },
+  });
 
   // 会话服务适配层：保持既有 ConversationService 契约（字段名 id），并带上 origin
   const conversationService: ConversationService = {
@@ -1628,6 +1874,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
     perm,
     memory,
     {
+      // 会话运行租约与后台任务共用：后台唤醒不会与在线对话互相踩历史
+      runRegistry,
       // 对话/流式请求按 ctx.user.tenantId 构建请求级工具注册表（KB 工具绑定请求租户）
       createTenantToolRegistry: buildToolRegistry,
       // 聊天内嵌审批：请求者自确认
@@ -1736,6 +1984,16 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   // 连接器路由
   const connectorRouter = createConnectorRoutes(connectorService, authMiddleware, perm);
 
+  // 后台任务路由（查看/取消/暂停/恢复/立即执行）
+  const backgroundTaskRouter = createBackgroundTaskRoutes(
+    {
+      tasks: backgroundTaskService,
+      readTaskLog: (task) => readBackgroundTaskLog(task),
+    },
+    authMiddleware,
+    perm,
+  );
+
   // 工具注册表路由
   const toolRegistryRouter = createToolRegistryRoutes(toolRegistry, authMiddleware, perm);
 
@@ -1749,6 +2007,7 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
   router.merge(expertRouter);
   router.merge(mcpRouter);
   router.merge(connectorRouter);
+  router.merge(backgroundTaskRouter);
   router.merge(runtimeHostRouter);
   router.merge(toolRegistryRouter);
 
@@ -1810,6 +2069,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       createToolRegistry: buildToolRegistry,
       // 渠道通知等平台侧能力需要读 Agent 的 summaryModel；直接依赖 ai_agent 表会绕过本模块的缓存与校验
       agentCrud: agentCrudService,
+      backgroundTasks: backgroundTaskService,
+      backgroundTaskRunner,
+      runRegistry,
     },
     router,
     createHarness,
@@ -1869,6 +2131,9 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
         (runtimeNotifierTimer as unknown as { unref?: () => void }).unref?.();
       }
 
+      // 后台任务调度循环（脚本探活 + 定时唤醒）；启动时会先做一次崩溃自愈
+      backgroundTaskRunner.start();
+
       // 初始化 skills
       if (skillManager) {
         const { diagnostics } = await skillManager.reload();
@@ -1893,6 +2158,8 @@ export function createAIModule(deps: AIModuleDeps): AIModule {
       }
     },
     async shutdown() {
+      await backgroundTaskRunner.stop();
+      runRegistry.shutdown();
       runtimeMonitor.stop();
       if (runtimeNotifierTimer) clearInterval(runtimeNotifierTimer);
       runtimeNotifierTimer = null;

@@ -22,6 +22,8 @@ import {
   createAiRuntimeTables,
   normalizeAiRuntimeJsonb,
   addAgentNetworkEnabled,
+  addBackgroundTaskLimits,
+  createAiBackgroundTaskTables,
   dropAgentType,
   dropAiToolLog,
 } from '@ventostack/ai';
@@ -143,6 +145,10 @@ export async function runMigrations(executor: SqlExecutor): Promise<void> {
   runner.addMigration(createAiRuntimeTables);
   runner.addMigration(normalizeAiRuntimeJsonb);
   runner.addMigration(addAgentNetworkEnabled);
+  // 后台任务：任务台账 / 运行记录 / 会话运行租约（脚本任务与定时唤醒）
+  runner.addMigration(createAiBackgroundTaskTables);
+  // 后台任务兜底：脚本最大运行时长 / 定时任务有效期 / 连续失败计数
+  runner.addMigration(addBackgroundTaskLimits);
   // 个人级对话渠道：渠道 / 身份绑定 / 绑定码 / 会话绑定 / 消息台账
   runner.addMigration(createAiChannelTables);
 

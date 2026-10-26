@@ -343,21 +343,34 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
           },
         });
       }
-      approvals.sort((left, right) => left.at - right.at);
+      // 后台任务台账（自定义条目，不进 LLM 上下文）：在会话时间线里还原为任务事件卡片，
+      // 与 DeepSeek Harness 的 job/registered、job/settled 写回原会话同一语义。
+      const taskEvents: Array<{ at: number; row: { role: string; content: string } }> = [];
+      for (const entry of fileOrder) {
+        if (entry.type !== "custom" || entry.customType !== "background_task") continue;
+        const data = entry.data as Record<string, unknown> | undefined;
+        if (!data || typeof data.taskId !== "string") continue;
+        taskEvents.push({
+          at: positionOf.get(entry.id) ?? fileOrder.length,
+          row: { role: "background_task", content: JSON.stringify(data) },
+        });
+      }
+      // 审批行与任务事件行合并后按文件位置排序，统一插入消息之间
+      const extras = [...approvals, ...taskEvents].sort((left, right) => left.at - right.at);
 
       const rows: Array<{ role: string; content: string; model?: string; reasoning?: string }> = [];
-      // 消息行在 rows 中的下标：limit 只作用于消息行，审批行不占额度（避免挤掉真实历史）
+      // 消息行在 rows 中的下标：limit 只作用于消息行，审批/任务事件行不占额度（避免挤掉真实历史）
       const messageIndexes: number[] = [];
-      let nextApproval = 0;
-      /** 把位置在当前条目之前的审批行按文件顺序吐出（审批行不占 limit 额度） */
-      const flushApprovalsBefore = (position: number): void => {
-        while (nextApproval < approvals.length && approvals[nextApproval]!.at < position) {
-          rows.push(approvals[nextApproval]!.row);
-          nextApproval += 1;
+      let nextExtra = 0;
+      /** 把位置在当前条目之前的审批/任务事件行按文件顺序吐出（不占 limit 额度） */
+      const flushExtrasBefore = (position: number): void => {
+        while (nextExtra < extras.length && extras[nextExtra]!.at < position) {
+          rows.push(extras[nextExtra]!.row);
+          nextExtra += 1;
         }
       };
       for (const entry of entries) {
-        flushApprovalsBefore(positionOf.get(entry.id) ?? fileOrder.length);
+        flushExtrasBefore(positionOf.get(entry.id) ?? fileOrder.length);
         if (entry.type !== "message") continue;
         messageIndexes.push(rows.length);
         rows.push({
@@ -367,11 +380,11 @@ export function createMemoryService(deps: MemoryServiceDeps): MemoryService {
           ...(entry.message.reasoning ? { reasoning: entry.message.reasoning } : {}),
         });
       }
-      // 分支之后（或分支之外）的审批行补在末尾
-      flushApprovalsBefore(fileOrder.length);
-      while (nextApproval < approvals.length) {
-        rows.push(approvals[nextApproval]!.row);
-        nextApproval += 1;
+      // 分支之后（或分支之外）的审批/任务事件行补在末尾
+      flushExtrasBefore(fileOrder.length);
+      while (nextExtra < extras.length) {
+        rows.push(extras[nextExtra]!.row);
+        nextExtra += 1;
       }
       if (limit && messageIndexes.length > limit) {
         return rows.slice(messageIndexes[messageIndexes.length - limit]!);

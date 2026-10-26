@@ -183,6 +183,11 @@ export interface AgentContext {
   tools?: AgentTool[];
   /** 本轮运行的审批策略（按消息粒度下发；缺省 ask） */
   runMode?: RunMode;
+  /**
+   * 无人值守运行（后台任务定时唤醒）：没有人在线审批，需要人工审批的工具一律立即拒绝，
+   * 绝不挂起等待（否则每次都要白等审批超时）。
+   */
+  unattended?: boolean;
 }
 
 /** 标准聊天消息 */
